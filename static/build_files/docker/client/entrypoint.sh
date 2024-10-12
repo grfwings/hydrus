@@ -1,5 +1,7 @@
 #!/bin/sh
 
+echo Entrypoint script is running...
+
 USER_ID=${UID}
 GROUP_ID=${GID}
 
