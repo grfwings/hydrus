@@ -12,7 +12,15 @@ RUN apk --no-cache add fvwm xvfb tigervnc supervisor opencv mpv mpv-libs ffmpeg 
  py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet \
  py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity
 RUN apk --no-cache add build-base python3-dev fribidi-dev harfbuzz-dev jpeg-dev lcms2-dev openjpeg-dev libjpeg-turbo-dev libheif-dev
+RUN apk --no-cache add xpra openssh-server
 RUN pip install --break-system-packages Send2Trash cloudscraper pyparsing cbor2 Pympler pillow-heif dateparser
+
+# SSHD configuration - allow root login with no password
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN ssh-keygen -q -t rsa -N '' -f /etc/ssh/ssh_host_rsa_key
+RUN sed -i 's/#HostKey/HostKey/' /etc/ssh/sshd_config
+RUN sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+RUN passwd -d root
 
 RUN set -xe \
     && mkdir -p /opt/hydrus \
