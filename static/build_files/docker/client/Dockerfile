@@ -16,6 +16,15 @@ RUN apk --no-cache add fvwm xvfb tigervnc supervisor opencv mpv mpv-libs ffmpeg 
 RUN python3 -m venv /opt/venv --system-site-packages
 RUN /opt/venv/bin/pip install dateparser Pympler pillow-avif-plugin pillow-heif pillow-jxl-plugin
 
+RUN apk --no-cache add xpra openssh-server
+
+# SSHD configuration - allow root login with no password
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN ssh-keygen -q -t rsa -N '' -f /etc/ssh/ssh_host_rsa_key
+RUN sed -i 's/#HostKey/HostKey/' /etc/ssh/sshd_config
+RUN sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+RUN passwd -d root
+
 RUN set -xe \
     && mkdir -p /opt/hydrus \
     && addgroup -g 1000 hydrus \
