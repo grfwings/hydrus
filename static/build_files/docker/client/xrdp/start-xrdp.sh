@@ -9,6 +9,7 @@ start_xrdp_services() {
 
     # Use exec ... to forward SIGNAL to child processes
     xrdp-sesman
+    xhost +
     exec xrdp -n
 }
 
