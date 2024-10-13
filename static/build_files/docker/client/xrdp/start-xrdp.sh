@@ -9,8 +9,9 @@ start_xrdp_services() {
 
     # Use exec ... to forward SIGNAL to child processes
     xrdp-sesman
-    xhost +
-    exec xrdp -n
+    xrdp -n
+    xrdp-sesrun -p rdp -s 127.0.0.1 rdp
+    sudo -u rdp xhost +
 }
 
 stop_xrdp_services() {

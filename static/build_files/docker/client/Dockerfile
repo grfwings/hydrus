@@ -12,7 +12,7 @@ RUN apk --no-cache add supervisor opencv mpv mpv-libs ffmpeg jq libheif \
  py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet \
  py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity
 RUN apk --no-cache add build-base python3-dev fribidi-dev harfbuzz-dev jpeg-dev lcms2-dev openjpeg-dev libjpeg-turbo-dev libheif-dev
-RUN apk --no-cache add xorg-server xorgxrdp xrdp xfce4 xcb-util-cursor-dev xhost
+RUN apk --no-cache add xorg-server xorgxrdp xrdp xfce4 xcb-util-cursor-dev xhost sudo
 RUN pip install --break-system-packages Send2Trash cloudscraper pyparsing cbor2 Pympler pillow-heif dateparser
 
 COPY static/build_files/docker/client/xrdp/xrdp.ini /etc/xrdp/
