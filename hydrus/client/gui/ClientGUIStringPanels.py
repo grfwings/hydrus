@@ -314,6 +314,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_STRING_CONVERTER_CONVERSIONS.ID, self._ConvertConversionToDisplayTuple, self._ConvertConversionToSortTuple )
         
+        # TODO: Yo, if I converted the conversion steps to their own serialisable object, this guy could have import/export/duplicate buttons nice and easy
         self._conversions = ClientGUIListCtrl.BetterListCtrlTreeView( conversions_panel, CGLC.COLUMN_LIST_STRING_CONVERTER_CONVERSIONS.ID, 7, model, delete_key_callback = self._DeleteConversion, activation_callback = self._EditConversion )
         
         conversions_panel.SetListCtrl( self._conversions )
@@ -716,10 +717,10 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
             tt = 'This hashes the string\'s UTF-8-decoded bytes to hexadecimal.'
             self._data_hash_function.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            for e in ( 'hex', 'base64', 'url percent encoding', 'unicode escape characters', 'html entities' ):
+            for e in ( ClientStrings.ENCODING_TYPE_HEX_UTF8, ClientStrings.ENCODING_TYPE_BASE64_UTF8, ClientStrings.ENCODING_TYPE_URL_PERCENT, ClientStrings.ENCODING_TYPE_UNICODE_ESCAPE, ClientStrings.ENCODING_TYPE_HTML_ENTITIES ):
                 
-                self._data_encoding.addItem( e, e )
-                self._data_decoding.addItem( e, e )
+                self._data_encoding.addItem( ClientStrings.encoding_type_str_lookup[ e ], e )
+                self._data_decoding.addItem( ClientStrings.encoding_type_str_lookup[ e ], e )
                 
             
             utf8_tt = '"hex" and "base64" here will use UTF-8 encoding.'
@@ -2168,6 +2169,7 @@ class EditStringProcessorPanel( ClientGUIScrolledPanels.EditPanel ):
         self._controls_panel = ClientGUICommon.StaticBox( self, 'processing steps' )
         
         self._processing_steps = ClientGUIListBoxes.QueueListBox( self, 8, self._ConvertDataToListBoxString, add_callable = self._Add, edit_callable = self._Edit )
+        self._processing_steps.AddImportExportButtons( ( ClientStrings.StringProcessingStep, ) )
         
         #
         

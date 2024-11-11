@@ -27,6 +27,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.metadata import ClientRatings
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchParseSystemPredicates
@@ -653,7 +654,7 @@ def ParseClientAPISearchPredicates( request ) -> typing.List[ ClientSearchPredic
     return predicates
     
 
-def ParseDuplicateSearch( request: HydrusServerRequest.HydrusRequest ):
+def ParsePotentialDuplicatesSearchContext( request: HydrusServerRequest.HydrusRequest ) -> ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext:
     
     location_context = ParseLocationContext( request, ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) )
     
@@ -687,7 +688,6 @@ def ParseDuplicateSearch( request: HydrusServerRequest.HydrusRequest ):
         predicates_2 = ConvertTagListToPredicates( request, tags_2, do_permission_check = False )
         
     
-    
     file_search_context_1 = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context_1, predicates = predicates_1 )
     file_search_context_2 = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context_2, predicates = predicates_2 )
     
@@ -695,13 +695,15 @@ def ParseDuplicateSearch( request: HydrusServerRequest.HydrusRequest ):
     pixel_dupes_preference = request.parsed_request_args.GetValue( 'pixel_duplicates', int, default_value = ClientDuplicates.SIMILAR_FILES_PIXEL_DUPES_ALLOWED )
     max_hamming_distance = request.parsed_request_args.GetValue( 'max_hamming_distance', int, default_value = 4 )
     
-    return (
-        file_search_context_1,
-        file_search_context_2,
-        dupe_search_type,
-        pixel_dupes_preference,
-        max_hamming_distance
-    )
+    potential_duplicates_search_context = ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext()
+    
+    potential_duplicates_search_context.SetFileSearchContext1( file_search_context_1 )
+    potential_duplicates_search_context.SetFileSearchContext2( file_search_context_2 )
+    potential_duplicates_search_context.SetDupeSearchType( dupe_search_type )
+    potential_duplicates_search_context.SetPixelDupesPreference( pixel_dupes_preference )
+    potential_duplicates_search_context.SetMaxHammingDistance( max_hamming_distance )
+    
+    return potential_duplicates_search_context
     
 
 def ParseLocationContext( request: HydrusServerRequest.HydrusRequest, default: ClientLocation.LocationContext, deleted_allowed = True ):
@@ -806,29 +808,54 @@ def ParseHashes( request: HydrusServerRequest.HydrusRequest, optional = False ):
         hashes.extend( more_hashes )
         
     
-    if 'file_id' in request.parsed_request_args:
+    if 'file_id' in request.parsed_request_args or 'file_ids' in request.parsed_request_args:
         
         something_was_set = True
         
-        hash_id = request.parsed_request_args.GetValue( 'file_id', int )
+        hash_ids = []
         
-        hash_ids_to_hashes = CG.client_controller.Read( 'hash_ids_to_hashes', hash_ids = [ hash_id ] )
+        if 'file_id' in request.parsed_request_args:
+            
+            hash_ids.append( request.parsed_request_args.GetValue( 'file_id', int ) )
+            
+        
+        if 'file_ids' in request.parsed_request_args:
+            
+            hash_ids.extend( request.parsed_request_args.GetValue( 'file_ids', list, expected_list_type = int ) )
+            
+        
+        if True in ( hash_id < 0 for hash_id in hash_ids ):
+            
+            raise HydrusExceptions.BadRequestException( 'Was asked about a negative hash_id!' )
+            
+        
+        too_big_m8 = 1024 ** 5 # a quadrillion
+        
+        if True in ( hash_id > too_big_m8 for hash_id in hash_ids ):
+            
+            raise HydrusExceptions.BadRequestException( 'Was asked about a hash_id that was way too big!' )
+            
+        
+        try:
+            
+            hash_ids_to_hashes = CG.client_controller.Read( 'hash_ids_to_hashes', hash_ids = hash_ids, error_on_missing_hash_ids = True )
+            
+        except HydrusExceptions.DBException as e:
+            
+            if isinstance( e.db_e, HydrusExceptions.DataMissing ):
+                
+                raise HydrusExceptions.NotFoundException( f'It seems you gave a file_id that does not exist! {e.db_e}' )
+                
+            else:
+                
+                raise
+                
+            
         
         if len( hash_ids_to_hashes ) > 0:
             
-            hashes.append(hash_ids_to_hashes[ hash_id ])
+            hashes.extend( [ hash_ids_to_hashes[ hash_id ] for hash_id in hash_ids ] )
             
-        
-    
-    if 'file_ids' in request.parsed_request_args:
-        
-        something_was_set = True
-        
-        hash_ids = request.parsed_request_args.GetValue( 'file_ids', list, expected_list_type = int )
-        
-        hash_ids_to_hashes = CG.client_controller.Read( 'hash_ids_to_hashes', hash_ids = hash_ids )
-        
-        hashes.extend( [ hash_ids_to_hashes[ hash_id ] for hash_id in hash_ids ] )
         
     
     if not something_was_set: # subtly different to 'no hashes'

@@ -72,8 +72,8 @@ from hydrus.client.db import ClientDBTagSiblings
 from hydrus.client.db import ClientDBTagSuggestions
 from hydrus.client.db import ClientDBURLMap
 from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.importing import ClientImportFiles
-from hydrus.client.interfaces import ClientControllerInterface
 from hydrus.client.media import ClientMediaManagers
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultCache
@@ -235,7 +235,7 @@ class DB( HydrusDB.HydrusDB ):
     
     READ_WRITE_ACTIONS = [ 'service_info', 'system_predicates', 'missing_thumbnail_hashes' ]
     
-    def __init__( self, controller: ClientControllerInterface.ClientControllerInterface, db_dir, db_name ):
+    def __init__( self, controller: "CG.ClientController.Controller", db_dir, db_name ):
         
         self._initial_messages = []
         
@@ -1267,11 +1267,11 @@ class DB( HydrusDB.HydrusDB ):
         
         self._Execute( 'CREATE TABLE IF NOT EXISTS options ( options TEXT_YAML );', )
         
-        self._Execute( 'CREATE TABLE IF NOT EXISTS remote_thumbnails ( service_id INTEGER, hash_id INTEGER, PRIMARY KEY ( service_id, hash_id ) );' )
-        
-        self._Execute( 'CREATE TABLE IF NOT EXISTS service_info ( service_id INTEGER, info_type INTEGER, info INTEGER, PRIMARY KEY ( service_id, info_type ) );' )
-        
         # inserts
+        
+        self._Execute( 'INSERT INTO version ( version ) VALUES ( ? );', ( HC.SOFTWARE_VERSION, ) )
+        
+        self._Execute( 'INSERT INTO namespaces ( namespace_id, namespace ) VALUES ( ?, ? );', ( 1, '' ) )
         
         self.modules_files_physical_storage.Initialise()
         
@@ -1417,10 +1417,6 @@ class DB( HydrusDB.HydrusDB ):
         column_list_manager = ClientGUIListManager.ColumnListManager()
         
         self.modules_serialisable.SetJSONDump( column_list_manager )
-        
-        self._Execute( 'INSERT INTO namespaces ( namespace_id, namespace ) VALUES ( ?, ? );', ( 1, '' ) )
-        
-        self._Execute( 'INSERT INTO version ( version ) VALUES ( ? );', ( HC.SOFTWARE_VERSION, ) )
         
         self._ExecuteMany( 'INSERT INTO json_dumps_named VALUES ( ?, ?, ?, ?, ? );', ClientDefaults.GetDefaultScriptRows() )
         
@@ -1815,14 +1811,17 @@ class DB( HydrusDB.HydrusDB ):
         HydrusDB.HydrusDB._DoAfterJobWork( self )
         
     
-    def _DuplicatesGetRandomPotentialDuplicateHashes(
-        self,
-        file_search_context_1: ClientSearchFileSearchContext.FileSearchContext,
-        file_search_context_2: ClientSearchFileSearchContext.FileSearchContext,
-        dupe_search_type: int,
-        pixel_dupes_preference,
-        max_hamming_distance
-    ) -> typing.List[ bytes ]:
+    def _DuplicatesGetRandomPotentialDuplicateHashes( self, potential_duplicates_search_context: ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext ) -> typing.List[ bytes ]:
+        
+        potential_duplicates_search_context = potential_duplicates_search_context.Duplicate()
+        
+        potential_duplicates_search_context.OptimiseForSearch()
+        
+        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
+        dupe_search_type = potential_duplicates_search_context.GetDupeSearchType()
+        pixel_dupes_preference = potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
         
         db_location_context = self.modules_files_storage.GetDBLocationContext( file_search_context_1.GetLocationContext() )
         
@@ -1952,12 +1951,22 @@ class DB( HydrusDB.HydrusDB ):
             
         
     
-    def _DuplicatesGetPotentialDuplicatePairsForFiltering( self, file_search_context_1: ClientSearchFileSearchContext.FileSearchContext, file_search_context_2: ClientSearchFileSearchContext.FileSearchContext, dupe_search_type: int, pixel_dupes_preference, max_hamming_distance, max_num_pairs: typing.Optional[ int ] = None ):
+    def _DuplicatesGetPotentialDuplicatePairsForFiltering( self, potential_duplicates_search_context: ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext, max_num_pairs: typing.Optional[ int ] = None ):
         
         if max_num_pairs is None:
             
             max_num_pairs = CG.client_controller.new_options.GetInteger( 'duplicate_filter_max_batch_size' )
             
+        
+        potential_duplicates_search_context = potential_duplicates_search_context.Duplicate()
+        
+        potential_duplicates_search_context.OptimiseForSearch()
+        
+        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
+        dupe_search_type = potential_duplicates_search_context.GetDupeSearchType()
+        pixel_dupes_preference = potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
         
         # we need to batch non-intersecting decisions here to keep it simple at the gui-level
         # we also want to maximise per-decision value
@@ -2155,7 +2164,17 @@ class DB( HydrusDB.HydrusDB ):
         return batch_of_pairs_of_media_results
         
     
-    def _DuplicatesGetPotentialDuplicatesCount( self, file_search_context_1, file_search_context_2, dupe_search_type, pixel_dupes_preference, max_hamming_distance ):
+    def _DuplicatesGetPotentialDuplicatesCount( self, potential_duplicates_search_context: ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext ):
+        
+        potential_duplicates_search_context = potential_duplicates_search_context.Duplicate()
+        
+        potential_duplicates_search_context.OptimiseForSearch()
+        
+        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
+        dupe_search_type = potential_duplicates_search_context.GetDupeSearchType()
+        pixel_dupes_preference = potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
         
         db_location_context = self.modules_files_storage.GetDBLocationContext( file_search_context_1.GetLocationContext() )
         
@@ -4791,6 +4810,11 @@ class DB( HydrusDB.HydrusDB ):
         return results
         
     
+    def _GetTablesAndColumnsUsingDefinitions( self, content_type ):
+        
+        return HydrusLists.MassExtend( ( module.GetTablesAndColumnsThatUseDefinitions( content_type ) for module in self._modules ) )
+        
+    
     def _GetTrashHashes( self, limit = None, minimum_age = None ):
         
         if limit is None:
@@ -6984,6 +7008,7 @@ class DB( HydrusDB.HydrusDB ):
         elif action == 'services': result = self.modules_services.GetServices( *args, **kwargs )
         elif action == 'similar_files_maintenance_status': result = self.modules_similar_files.GetMaintenanceStatus( *args, **kwargs )
         elif action == 'related_tags': result = self._GetRelatedTags( *args, **kwargs )
+        elif action == 'tables_and_columns_using_definitions': result = self._GetTablesAndColumnsUsingDefinitions( *args, **kwargs )
         elif action == 'tag_descendants_lookup': result = self.modules_tag_display.GetDescendantsForTags( *args, **kwargs )
         elif action == 'tag_display_application': result = self.modules_tag_display.GetApplication( *args, **kwargs )
         elif action == 'tag_display_maintenance_status': result = self._CacheTagDisplayGetApplicationStatusNumbers( *args, **kwargs )
