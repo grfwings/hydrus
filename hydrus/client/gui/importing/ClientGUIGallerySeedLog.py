@@ -1,19 +1,19 @@
-import os
+import typing
 
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
-from hydrus.client import ClientTime
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -36,7 +36,7 @@ def ClearGallerySeeds( win: QW.QWidget, gallery_seed_log: ClientImportGallerySee
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         gallery_seed_log.RemoveGallerySeedsByStatus( statuses_to_remove )
         
@@ -85,7 +85,7 @@ def ImportFromPNG( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.G
     
     with QP.FileDialog( win, 'select the png with the urls', wildcard = 'PNG (*.png)' ) as dlg:
         
-        if dlg.exec() == QW.QDialog.Accepted:
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
             path = dlg.GetPath()
             
@@ -128,11 +128,11 @@ def ImportURLs( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.Gall
             return
             
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             urls_to_add = filtered_urls
             
-        elif result == QW.QDialog.Rejected:
+        elif result == QW.QDialog.DialogCode.Rejected:
             
             return
             
@@ -149,13 +149,23 @@ def ImportURLs( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.Gall
             return
             
         
-        can_generate_more_pages = result == QW.QDialog.Rejected
+        can_generate_more_pages = result == QW.QDialog.DialogCode.Rejected
         
     
     gallery_seeds = [ ClientImportGallerySeeds.GallerySeed( url, can_generate_more_pages = can_generate_more_pages ) for url in urls_to_add ]
     
     gallery_seed_log.AddGallerySeeds( gallery_seeds )
     
+
+def ExportGallerySeedsToClipboard( gallery_seeds: typing.Collection[ ClientImportGallerySeeds.GallerySeed ] ):
+    
+    gallery_seeds = HydrusSerialisable.SerialisableList( gallery_seeds )
+    
+    payload = gallery_seeds.DumpToString()
+    
+    CG.client_controller.pub( 'clipboard', 'text', payload )
+    
+
 def ExportToPNG( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog ):
     
     payload = GetExportableURLsString( gallery_seed_log )
@@ -181,12 +191,12 @@ def RetryErrors( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.Gal
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         gallery_seed_log.RetryFailed()
         
     
-def PopulateGallerySeedLogButton( win: QW.QWidget, menu: QW.QMenu, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog, read_only: bool, can_generate_more_pages: bool, gallery_type_string: str ):
+def PopulateGallerySeedLogButton( win: QW.QWidget, menu: QW.QMenu, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog, selected_gallery_seeds: typing.List[ ClientImportGallerySeeds.GallerySeed ], read_only: bool, can_generate_more_pages: bool, gallery_type_string: str ):
     
     num_successful = gallery_seed_log.GetGallerySeedCount( CC.STATUS_SUCCESSFUL_AND_NEW )
     num_vetoed = gallery_seed_log.GetGallerySeedCount( CC.STATUS_VETOED )
@@ -242,6 +252,19 @@ def PopulateGallerySeedLogButton( win: QW.QWidget, menu: QW.QMenu, gallery_seed_
         ClientGUIMenus.AppendMenu( menu, submenu, 'import new urls' )
         
     
+    if len( selected_gallery_seeds ) > 0:
+        
+        submenu = ClientGUIMenus.GenerateMenu( menu )
+        
+        if len( selected_gallery_seeds ) > 0:
+            
+            ClientGUIMenus.AppendMenuItem( submenu, 'export selected page objects to clipboard', 'Advanced JSON inspection.', ExportGallerySeedsToClipboard, selected_gallery_seeds )
+            
+        
+        ClientGUIMenus.AppendMenu( menu, submenu, 'advanced' )
+        
+    
+
 class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def __init__( self, parent, controller: "CG.ClientController.Controller", read_only: bool, can_generate_more_pages: bool, gallery_type_string: str, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog ):
@@ -260,7 +283,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_GALLERY_SEED_LOG.ID, self._ConvertGallerySeedToDisplayTuple, self._ConvertGallerySeedToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, CGLC.COLUMN_LIST_GALLERY_SEED_LOG.ID, 30, model, delete_key_callback = self._DeleteSelected )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 30, model, delete_key_callback = self._DeleteSelected )
         
         #
         
@@ -306,8 +329,8 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
         
         pretty_url = ClientNetworkingFunctions.ConvertURLToHumanString( url )
         pretty_status = CC.status_string_lookup[ status ] if status != CC.STATUS_UNKNOWN else ''
-        pretty_added = ClientTime.TimestampToPrettyTimeDelta( added )
-        pretty_modified = ClientTime.TimestampToPrettyTimeDelta( modified )
+        pretty_added = HydrusTime.TimestampToPrettyTimeDelta( added )
+        pretty_modified = HydrusTime.TimestampToPrettyTimeDelta( modified )
         
         pretty_note = HydrusText.GetFirstLine( note )
         
@@ -380,7 +403,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._gallery_seed_log.RemoveGallerySeeds( gallery_seeds_to_delete )
                 
@@ -402,7 +425,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if len( selected_gallery_seeds ) == 0:
             
-            PopulateGallerySeedLogButton( self, menu, self._gallery_seed_log, self._read_only, self._can_generate_more_pages, self._gallery_type_string )
+            PopulateGallerySeedLogButton( self, menu, self._gallery_seed_log, selected_gallery_seeds, self._read_only, self._can_generate_more_pages, self._gallery_type_string )
             
             return menu
             
@@ -453,7 +476,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
         
         submenu = ClientGUIMenus.GenerateMenu( menu )
         
-        PopulateGallerySeedLogButton( self, submenu, self._gallery_seed_log, self._read_only, self._can_generate_more_pages, self._gallery_type_string )
+        PopulateGallerySeedLogButton( self, submenu, self._gallery_seed_log, selected_gallery_seeds, self._read_only, self._can_generate_more_pages, self._gallery_type_string )
         
         ClientGUIMenus.AppendMenu( menu, submenu, 'whole log' )
         
@@ -472,7 +495,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -599,7 +622,7 @@ class GallerySeedLogButton( ClientGUICommon.ButtonWithMenuArrow ):
         
         gallery_seed_log = self._gallery_seed_log_get_callable()
         
-        PopulateGallerySeedLogButton( self, menu, gallery_seed_log, self._read_only, self._can_generate_more_pages, self._gallery_type_string )
+        PopulateGallerySeedLogButton( self, menu, gallery_seed_log, [], self._read_only, self._can_generate_more_pages, self._gallery_type_string )
         
     
     def _ShowGallerySeedLogFrame( self ):
@@ -633,7 +656,7 @@ class GallerySeedLogButton( ClientGUICommon.ButtonWithMenuArrow ):
                     
                     dlg.SetPanel( panel )
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         self._gallery_seed_log_set_callable( dupe_gallery_seed_log )
                         
@@ -658,7 +681,7 @@ class GallerySeedLogStatusControl( QW.QFrame ):
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Box | QW.QFrame.Raised )
+        self.setFrameStyle( QW.QFrame.Shape.Box | QW.QFrame.Shadow.Raised )
         
         self._controller = controller
         self._read_only = read_only

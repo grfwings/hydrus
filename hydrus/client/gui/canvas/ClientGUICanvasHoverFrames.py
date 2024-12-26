@@ -1,5 +1,3 @@
-import os
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
@@ -34,6 +32,7 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaResultPrettyInfo
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientRatings
 
@@ -363,7 +362,7 @@ class RatingNumericalCanvas( ClientGUIRatings.RatingNumerical ):
         
     
 
-# Note that I go setFocusPolicy( QC.Qt.TabFocus ) on all the icon buttons in the hover windows
+# Note that I go setFocusPolicy( QC.Qt.FocusPolicy.TabFocus ) on all the icon buttons in the hover windows
 # this means that a user can click a button and not give it focus, allowing the arrow keys and space to still propagate up to the main canvas
 
 TOP_HOVER_PROPORTION = 0.6
@@ -381,13 +380,13 @@ class CanvasHoverFrame( QW.QFrame ):
     def __init__( self, parent: QW.QWidget, my_canvas, canvas_key ):
         
         # TODO: Clean up old references to window stuff, decide on lower/hide/show/raise options
-        # OK, so I converted these from this "self.setWindowFlags( QC.Qt.FramelessWindowHint | QC.Qt.Tool )" to normal raise/lower widgets embedded in the canvas
+        # OK, so I converted these from this "self.setWindowFlags( QC.Qt.WindowType.FramelessWindowHint | QC.Qt.Tool )" to normal raise/lower widgets embedded in the canvas
         # this took some hacks, and there is still a bunch of focus and TLW checking code going on here that needs to be cleaned up
         # note I tried to have them just lower rather than hide and it looked really stupid, so that thought is dead for the current moment. atm I just want to do the same thing as before with no graphics errors
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Raised )
+        self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Raised )
         self.setLineWidth( 2 )
         
         # We need this, or else if the QSS does not define a Widget background color (the default), these 'raised' windows are transparent lmao
@@ -406,9 +405,9 @@ class CanvasHoverFrame( QW.QFrame ):
         self.hide()
         self._is_currently_up = False
         
-        self.setCursor( QG.QCursor( QC.Qt.ArrowCursor ) )
+        self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
         
-        self._position_initialised = False
+        self._position_initialised_since_last_media = False
         
         parent.installEventFilter( self )
         
@@ -431,10 +430,13 @@ class CanvasHoverFrame( QW.QFrame ):
             
             self._is_currently_up = False
             
-            self.parentWidget().setFocus( QC.Qt.OtherFocusReason )
+            self.parentWidget().setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
-        pass
+    
+    def _MouseOverImportantDescendant( self ):
+        
+        return False
         
     
     def _RaiseHover( self ):
@@ -455,7 +457,7 @@ class CanvasHoverFrame( QW.QFrame ):
     
     def _ShouldBeHidden( self ):
         
-        return self._current_media is None or not self._my_canvas.isVisible()
+        return self._current_media is None
         
     
     def _ShouldBeShown( self ):
@@ -463,9 +465,10 @@ class CanvasHoverFrame( QW.QFrame ):
         return self._always_on_top
         
     
-    def _SizeAndPosition( self, force = False ):
+    def _SizeAndPosition( self ):
         
-        if self.parentWidget().isVisible() or force:
+        # hey the parentwidget here is the media viewer!
+        if self.parentWidget().isVisible():
             
             ( should_resize, my_ideal_size, my_ideal_position ) = self._GetIdealSizeAndPosition()
             
@@ -481,7 +484,7 @@ class CanvasHoverFrame( QW.QFrame ):
                 self.move( my_ideal_position )
                 
             
-            self._position_initialised = True
+            self._position_initialised_since_last_media = True
             
             if should_resize or should_move:
                 
@@ -494,7 +497,7 @@ class CanvasHoverFrame( QW.QFrame ):
         
         try:
             
-            if event.type() == QC.QEvent.Resize:
+            if event.type() == QC.QEvent.Type.Resize:
                 
                 self._SizeAndPosition()
                 
@@ -535,7 +538,12 @@ class CanvasHoverFrame( QW.QFrame ):
     
     def DoRegularHideShow( self ):
         
-        if not self._position_initialised:
+        if not self.parentWidget().isVisible():
+            
+            return
+            
+        
+        if not self._position_initialised_since_last_media:
             
             self._SizeAndPosition()
             
@@ -591,26 +599,20 @@ class CanvasHoverFrame( QW.QFrame ):
             my_ideal_height = max( my_height, 50 )
             
         
-        in_ideal_x = my_ideal_x <= mouse_x <= my_ideal_x + my_ideal_width
-        in_ideal_y = my_ideal_y <= mouse_y <= my_ideal_y + my_ideal_height
+        ideal_rect = QC.QRect( my_ideal_x, my_ideal_y, my_ideal_width, my_ideal_height )
         
-        in_actual_x = my_x <= mouse_x <= my_x + my_width
-        in_actual_y = my_y <= mouse_y <= my_y + my_height
-        
-        # we test both ideal and actual here because setposition is not always honoured by the OS
-        # for instance, in some Linux window managers on a fullscreen view, the top taskbar is hidden, but when hover window is shown, it takes focus and causes taskbar to reappear
-        # the reappearance shuffles the screen coordinates down a bit so the hover sits +20px y despite wanting to be lined up with the underlying fullscreen viewer
-        # wew lad
-        
-        in_position = ( in_ideal_x or in_actual_x ) and ( in_ideal_y or in_actual_y )
+        # we used to test for 'contains' on both the ideal and actual, to compensate for some Linux window managers that would be upset about a (taskbarless top level) hover window appearing and make the taskbar jitter, altering layout state
+        # but we no longer have top level hover windows!! begone!
+        in_position = ideal_rect.contains( mouse_pos )
         
         menu_open = CGC.core().MenuIsOpen()
+        
+        mouse_over_important_descendant = self._MouseOverImportantDescendant()
         
         dialog_is_open = ClientGUIFunctions.DialogIsOpen()
         
         mouse_is_near_animation_bar = self._my_canvas.MouseIsNearAnimationBar()
         
-        # this used to have the flash media window test to ensure mouse over flash window hid hovers going over it
         mouse_is_over_something_else_important = mouse_is_near_animation_bar
         
         mouse_is_over_a_dominant_hover = False
@@ -625,8 +627,8 @@ class CanvasHoverFrame( QW.QFrame ):
         
         hide_focus_is_good = focus_is_good or current_focus_tlw is None # don't hide if focus is either gone to another problem or temporarily sperging-out due to a click-transition or similar
         
-        ready_to_show = in_position and not mouse_is_over_something_else_important and focus_is_good and not dialog_is_open and not menu_open and not mouse_is_over_a_dominant_hover
-        ready_to_hide = not menu_open and ( not in_position or dialog_is_open or not hide_focus_is_good or mouse_is_over_a_dominant_hover )
+        ready_to_show = not self._is_currently_up and in_position and not mouse_is_over_something_else_important and focus_is_good and not dialog_is_open and not menu_open and not mouse_is_over_a_dominant_hover
+        ready_to_hide = self._is_currently_up and not menu_open and not mouse_over_important_descendant and ( not in_position or dialog_is_open or not hide_focus_is_good or mouse_is_over_a_dominant_hover )
         
         def get_logic_report_string():
             
@@ -651,24 +653,54 @@ class CanvasHoverFrame( QW.QFrame ):
         
         if ready_to_show:
             
+            if HG.hover_window_report_mode:
+                
+                HydrusData.ShowText( 'showing' )
+                
+                h1 = get_logic_report_string()
+                HydrusData.ShowText( h1 )
+                
+            
             self._SizeAndPosition()
+            
+            if HG.hover_window_report_mode:
+                
+                h2 = get_logic_report_string()
+                
+                if h1 == h2:
+                    
+                    HydrusData.ShowText( 'no change' )
+                    
+                else:
+                    
+                    HydrusData.ShowText( h2 )
+                    
+                
             
             self._RaiseHover()
             
         elif ready_to_hide:
             
+            if HG.hover_window_report_mode:
+                
+                HydrusData.ShowText( 'hiding' )
+                HydrusData.ShowText( get_logic_report_string() )
+                
+            
             self._LowerHover()
             
         
     
-    def PositionIsInitialised( self ):
+    def PositionInitialisedSinceLastMedia( self ):
         
-        return self._position_initialised
+        return self._position_initialised_since_last_media
         
     
     def SetMedia( self, media ):
         
         self._current_media = media
+        
+        self._position_initialised_since_last_media = False
         
         if self._current_media is None:
             
@@ -700,8 +732,8 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         self._title_text = ClientGUICommon.BetterStaticText( self, 'title', ellipsize_end = True )
         self._info_text = ClientGUICommon.BetterStaticText( self, 'info', ellipsize_end = True )
         
-        self._title_text.setAlignment( QC.Qt.AlignHCenter | QC.Qt.AlignVCenter )
-        self._info_text.setAlignment( QC.Qt.AlignHCenter | QC.Qt.AlignVCenter )
+        self._title_text.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
+        self._info_text.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
         
         self._PopulateLeftButtons()
         self._PopulateCenterButtons()
@@ -766,22 +798,32 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         return ( should_resize, ideal_size, ideal_position )
         
     
+    def _MouseOverImportantDescendant( self ):
+        
+        if not self._volume_control.isHidden():
+            
+            return self._volume_control.PopupIsVisible()
+            
+        
+        return False
+        
+    
     def _PopulateCenterButtons( self ):
         
         self._archive_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().archive, self._Archive )
-        self._archive_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._archive_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._trash_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._trash_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send to trash' ) )
-        self._trash_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._trash_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._delete_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().trash_delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._delete_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'delete completely' ) )
-        self._delete_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._delete_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._undelete_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().undelete, CG.client_controller.pub, 'canvas_undelete', self._canvas_key )
         self._undelete_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'undelete' ) )
-        self._undelete_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._undelete_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_center_hbox, self._archive_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_center_hbox, self._trash_button, CC.FLAGS_CENTER_PERPENDICULAR )
@@ -802,15 +844,15 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         zoom_in = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_in, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_IN_VIEWER_CENTER ) )
         zoom_in.SetToolTipWithShortcuts( 'zoom in', CAC.SIMPLE_ZOOM_IN )
-        zoom_in.setFocusPolicy( QC.Qt.TabFocus )
+        zoom_in.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         zoom_out = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_out, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_OUT_VIEWER_CENTER ) )
         zoom_out.SetToolTipWithShortcuts( 'zoom out', CAC.SIMPLE_ZOOM_OUT )
-        zoom_out.setFocusPolicy( QC.Qt.TabFocus )
+        zoom_out.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         zoom_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER ) )
         zoom_switch.SetToolTipWithShortcuts( 'zoom switch', CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM )
-        zoom_switch.setFocusPolicy( QC.Qt.TabFocus )
+        zoom_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._volume_control = ClientGUIMediaControls.VolumeControl( self, CC.CANVAS_MEDIA_VIEWER )
         
@@ -821,18 +863,18 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         shortcuts = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().keyboard, self._ShowShortcutMenu )
         shortcuts.setToolTip( ClientGUIFunctions.WrapToolTip( 'shortcuts' ) )
-        shortcuts.setFocusPolicy( QC.Qt.TabFocus )
+        shortcuts.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._show_embedded_metadata_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().listctrl, self._ShowFileEmbeddedMetadata )
-        self._show_embedded_metadata_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._show_embedded_metadata_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         view_options = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().eye, self._ShowViewOptionsMenu )
         view_options.setToolTip( ClientGUIFunctions.WrapToolTip( 'view options' ) )
-        view_options.setFocusPolicy( QC.Qt.TabFocus )
+        view_options.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         fullscreen_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().fullscreen_switch, CG.client_controller.pub, 'canvas_fullscreen_switch', self._canvas_key )
         fullscreen_switch.setToolTip( ClientGUIFunctions.WrapToolTip( 'fullscreen switch' ) )
-        fullscreen_switch.setFocusPolicy( QC.Qt.TabFocus )
+        fullscreen_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         if HC.PLATFORM_MACOS:
             
@@ -841,18 +883,18 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         open_externally = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().open_externally, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM ) )
         open_externally.SetToolTipWithShortcuts( 'open externally', CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM )
-        open_externally.setFocusPolicy( QC.Qt.TabFocus )
+        open_externally.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         drag_button = QW.QPushButton( self )
         drag_button.setIcon( QG.QIcon( CC.global_pixmaps().drag ) )
         drag_button.setIconSize( CC.global_pixmaps().drag.size() )
         drag_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'drag from here to export file' ) )
         drag_button.pressed.connect( self.DragButtonHit )
-        drag_button.setFocusPolicy( QC.Qt.TabFocus )
+        drag_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         close = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
         close.setToolTip( ClientGUIFunctions.WrapToolTip( 'close' ) )
-        close.setFocusPolicy( QC.Qt.TabFocus )
+        close.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_right_hbox, self._zoom_text, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, zoom_in, CC.FLAGS_CENTER_PERPENDICULAR )
@@ -928,7 +970,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
                 
                 if has_human_readable_embedded_metadata:
                     
-                    tt_components.append( 'non-exif human-readable embedded metadata' )
+                    tt_components.append( 'non-exif embedded metadata' )
                     
                 
                 if has_extra_rows:
@@ -968,11 +1010,21 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
                 self._title_text.hide()
                 
             
-            lines = [ line for line in self._current_media.GetPrettyInfoLines( only_interesting_lines = True ) if isinstance( line, str ) ]
+            lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult(), only_interesting_lines = True )
             
-            label = ' | '.join( lines )
+            lines = [ line for line in lines if not line.IsSubmenu() ]
             
-            self._info_text.setText( label )
+            texts = [ line.text for line in lines ]
+            
+            info_string = ' | '.join( texts )
+            
+            self._info_text.setText( info_string )
+            
+            texts = [ line.tooltip for line in lines ]
+            
+            info_string = ' | '.join( texts )
+            
+            self._info_text.setToolTip( info_string )
             
             self._info_text.show()
             
@@ -1085,11 +1137,11 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         media = [ self._current_media ]
         
-        alt_down = QW.QApplication.keyboardModifiers() & QC.Qt.AltModifier
+        alt_down = QW.QApplication.keyboardModifiers() & QC.Qt.KeyboardModifier.AltModifier
         
         result = ClientGUIDragDrop.DoFileExportDragDrop( self, page_key, media, alt_down )
         
-        if result != QC.Qt.IgnoreAction:
+        if result != QC.Qt.DropAction.IgnoreAction:
             
             self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_PAUSE_MEDIA ) )
             
@@ -1149,7 +1201,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         # minimumsize is not immediately updated without this
         self.layout().activate()
         
-        self._SizeAndPosition( force = True )
+        self._SizeAndPosition()
         
     
     def SetIndexString( self, canvas_key, text ):
@@ -1173,7 +1225,7 @@ class CanvasHoverFrameTopArchiveDeleteFilter( CanvasHoverFrameTop ):
         
         self._back_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_BACK ) )
         self._back_button.SetToolTipWithShortcuts( 'back', CAC.SIMPLE_ARCHIVE_DELETE_FILTER_BACK )
-        self._back_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._back_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._back_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1181,7 +1233,7 @@ class CanvasHoverFrameTopArchiveDeleteFilter( CanvasHoverFrameTop ):
         
         self._skip_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().next_bmp, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_SKIP ) )
         self._skip_button.SetToolTipWithShortcuts( 'skip', CAC.SIMPLE_ARCHIVE_DELETE_FILTER_SKIP )
-        self._skip_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._skip_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._skip_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1198,13 +1250,13 @@ class CanvasHoverFrameTopNavigable( CanvasHoverFrameTop ):
         
         self._previous_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_PREVIOUS ) )
         self._previous_button.SetToolTipWithShortcuts( 'previous', CAC.SIMPLE_VIEW_PREVIOUS )
-        self._previous_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._previous_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._index_text = ClientGUICommon.BetterStaticText( self, 'index' )
         
         self._next_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().next_bmp, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
         self._next_button.SetToolTipWithShortcuts( 'next', CAC.SIMPLE_VIEW_NEXT )
-        self._next_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._next_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._previous_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_left_hbox, self._index_text, CC.FLAGS_CENTER_PERPENDICULAR )
@@ -1217,7 +1269,7 @@ class CanvasHoverFrameTopDuplicatesFilter( CanvasHoverFrameTopNavigable ):
         
         self._first_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
         self._first_button.SetToolTipWithShortcuts( 'go back a pair', CAC.SIMPLE_DUPLICATE_FILTER_BACK )
-        self._first_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._first_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._first_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1225,7 +1277,7 @@ class CanvasHoverFrameTopDuplicatesFilter( CanvasHoverFrameTopNavigable ):
         
         self._last_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
         self._last_button.SetToolTipWithShortcuts( 'show a different pair', CAC.SIMPLE_DUPLICATE_FILTER_SKIP )
-        self._last_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._last_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._last_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1236,7 +1288,7 @@ class CanvasHoverFrameTopNavigableList( CanvasHoverFrameTopNavigable ):
         
         self._first_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_FIRST ) )
         self._first_button.SetToolTipWithShortcuts( 'first', CAC.SIMPLE_VIEW_FIRST )
-        self._first_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._first_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._first_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1244,7 +1296,7 @@ class CanvasHoverFrameTopNavigableList( CanvasHoverFrameTopNavigable ):
         
         self._last_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_LAST ) )
         self._last_button.SetToolTipWithShortcuts( 'last', CAC.SIMPLE_VIEW_LAST )
-        self._last_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._last_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._last_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -1277,7 +1329,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         self._location_strings = ClientGUICommon.BetterStaticText( self, '' )
         
-        self._location_strings.setAlignment( QC.Qt.AlignRight | QC.Qt.AlignVCenter )
+        self._location_strings.setAlignment( QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter )
         
         # urls
         
@@ -1324,7 +1376,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             QP.AddToLayout( vbox, control, CC.FLAGS_NONE )
             
-            vbox.setAlignment( control, QC.Qt.AlignRight )
+            vbox.setAlignment( control, QC.Qt.AlignmentFlag.AlignRight )
             
         
         # now incdec
@@ -1360,7 +1412,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         self.setLayout( vbox )
         
-        self._ResetData()
+        self._ResetWidgets()
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
         
@@ -1394,12 +1446,14 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         my_ideal_width = self.sizeHint().width()
         
-        if not self._top_hover.PositionIsInitialised():
+        if not self._top_hover.PositionInitialisedSinceLastMedia():
             
             self._top_hover.DoRegularHideShow()
             
         
-        if self._top_hover.PositionIsInitialised():
+        top_hover_bottom_right = QC.QPoint( 0, 0 )
+        
+        if self._top_hover.PositionInitialisedSinceLastMedia():
             
             # don't use .rect() here, it (sometimes) isn't updated on a hidden window until next show, I think
             top_hover_bottom_right = QC.QPoint( self._top_hover.x() + self._top_hover.width(), self._top_hover.y() + self._top_hover.height() )
@@ -1417,7 +1471,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         ideal_position = QC.QPoint( int( parent_width - my_ideal_width ), 0 )
         
-        if self._top_hover.PositionIsInitialised():
+        if self._top_hover.PositionInitialisedSinceLastMedia():
             
             if top_hover_bottom_right.x() > ideal_position.x():
                 
@@ -1428,7 +1482,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         return ( should_resize, ideal_size, ideal_position )
         
     
-    def _ResetData( self ):
+    def _ResetWidgets( self ):
         
         if self._current_media is not None:
             
@@ -1479,6 +1533,11 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             # urls
             
+            # BE WARY TRAVELLER
+            # unusual sizeHint gubbins occurs here if one does not take care
+            # ensure you check for flicker when transitioning from a topright media with and without urls
+            # and check that it is ok when the mouse is over the hover for the transition vs mouse not over and visiting later
+            
             urls = self._current_media.GetLocationsManager().GetURLs()
             
             if urls != self._last_seen_urls:
@@ -1493,12 +1552,19 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
                     
                     link = ClientGUICommon.BetterHyperLink( self, display_string, url )
                     
-                    link.setAlignment( QC.Qt.AlignRight )
+                    link.setAlignment( QC.Qt.AlignmentFlag.AlignRight )
                     
-                    QP.AddToLayout( self._urls_vbox, link, CC.FLAGS_EXPAND_PERPENDICULAR )
+                    # very important!
+                    # needed for magic hover window crazy layout reasons
+                    link.setVisible( True )
+                    
+                    QP.AddToLayout( self._urls_vbox, link, CC.FLAGS_EXPAND_BOTH_WAYS )
                     
                 
             
+        
+        # dare not remove this
+        self.layout().activate()
         
         self._SizeAndPosition()
         
@@ -1525,7 +1591,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             if do_redraw:
                 
-                self._ResetData()
+                self._ResetWidgets()
                 
             
         
@@ -1534,28 +1600,29 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         super().SetMedia( media )
         
-        self._ResetData()
+        self._ResetWidgets()
         
-        # size is not immediately updated without this
-        self.layout().activate()
-        
-        self._SizeAndPosition( force = True )
+        self._position_initialised_since_last_media = False
         
     
+
 class NotePanel( QW.QWidget ):
     
     editNote = QC.Signal( str )
+    devilsBargainManualUpdateGeometry = QC.Signal()
     
-    def __init__( self, parent: QW.QWidget, name: str, note: str, note_visible: bool ):
+    def __init__( self, parent: "CanvasHoverFrameRightNotes", name: str, note: str, note_visible: bool ):
         
         super().__init__( parent )
+        
+        self._parent = parent
         
         self._name = name
         self._note_visible = note_visible
         
         self._note_name = ClientGUICommon.BetterStaticText( self, label = name )
         
-        self._note_name.setAlignment( QC.Qt.AlignHCenter )
+        self._note_name.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter )
         self._note_name.setWordWrap( True )
         
         font = QG.QFont( self._note_name.font() )
@@ -1566,7 +1633,7 @@ class NotePanel( QW.QWidget ):
         
         self._note_text = ClientGUICommon.BetterStaticText( self, label = note )
         
-        self._note_text.setAlignment( QC.Qt.AlignJustify )
+        self._note_text.setAlignment( QC.Qt.AlignmentFlag.AlignJustify )
         self._note_text.setWordWrap( True )
         
         vbox = QP.VBoxLayout( margin = 0 )
@@ -1574,7 +1641,7 @@ class NotePanel( QW.QWidget ):
         QP.AddToLayout( vbox, self._note_name, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._note_text, CC.FLAGS_EXPAND_BOTH_WAYS )
         
-        self._note_text.setVisible( self._note_visible )
+        self._note_text.setVisible( note_visible )
         
         self.setLayout( vbox )
         
@@ -1586,17 +1653,20 @@ class NotePanel( QW.QWidget ):
         
         try:
             
-            if event.type() == QC.QEvent.MouseButtonPress:
+            if event.type() == QC.QEvent.Type.MouseButtonPress:
                 
-                if event.button() == QC.Qt.LeftButton:
+                if event.button() == QC.Qt.MouseButton.LeftButton:
                     
                     self.editNote.emit( self._name )
                     
                 else:
                     
-                    self._note_text.setVisible( not self._note_text.isVisible() )
+                    self._note_text.setVisible( self._note_text.isHidden() )
                     
-                    self._note_visible = self._note_text.isVisible()
+                    self._note_visible = not self._note_text.isHidden()
+                    
+                    # a normal updateGeometry call doesn't seem to do it (and indeed whatever implicit call occurs), I believe because we have the disconnected layout nonsense
+                    self.devilsBargainManualUpdateGeometry.emit()
                     
                 
                 return True
@@ -1630,7 +1700,7 @@ class NotePanel( QW.QWidget ):
         
         total_height += expected_widget_height
         
-        if self._note_text.isVisibleTo( self ):
+        if not self._note_text.isHidden():
             
             total_height += spacing
             
@@ -1651,14 +1721,16 @@ class NotePanel( QW.QWidget ):
         return total_height
         
     
-    def IsNoteVisible( self ) -> bool:
+    def IsNoteTextVisible( self ) -> bool:
         
+        # through various testing, this property appears to be sometimes whack. or it may be good now but was once tangled up in a mess of hacks
+        # don't really like it, so maybe just do `not self._note_text.isHidden()` live
         return self._note_visible
         
     
     def sizeHint( self ) -> QC.QSize:
         
-        width = self.parentWidget().GetNoteWidth()
+        width = self._parent.GetNoteWidth()
         height = self.heightForWidth( width )
         
         return QC.QSize( width, height )
@@ -1675,7 +1747,7 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
         self._vbox = QP.VBoxLayout( spacing = 2, margin = 2 )
         self._names_to_note_panels = {}
         
-        self.setSizePolicy( QW.QSizePolicy.Fixed, QW.QSizePolicy.Expanding )
+        self.setSizePolicy( QW.QSizePolicy.Policy.Fixed, QW.QSizePolicy.Policy.Expanding )
         
         self.setLayout( self._vbox )
         
@@ -1707,20 +1779,22 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
         my_width = my_size.width()
         my_height = my_size.height()
         
-        my_ideal_width = min( self.sizeHint().width(), parent_width * SIDE_HOVER_PROPORTIONS )
+        my_ideal_width = int( parent_width * SIDE_HOVER_PROPORTIONS )
         
-        ideal_position = QC.QPoint( parent_width - my_width, 0 )
+        ideal_position = QC.QPoint( parent_width - my_ideal_width, 0 )
         
-        if not self._top_right_hover.PositionIsInitialised():
+        if not self._top_right_hover.PositionInitialisedSinceLastMedia():
             
             self._top_right_hover.DoRegularHideShow()
             
         
-        if self._top_right_hover.PositionIsInitialised():
+        spacing = self.layout().spacing()
+        
+        if self._top_right_hover.PositionInitialisedSinceLastMedia():
             
-            my_ideal_width = self._top_right_hover.width()
+            # steer clear of 'top_right.bottomLeft' style gubbins, easy to get tripped up on some weird overspill circumstance
             
-            ideal_position = self._top_right_hover.geometry().bottomRight() + QC.QPoint( 0, 2 ) - QC.QPoint( my_ideal_width, 0 )
+            ideal_position.setY( self._top_right_hover.height() + spacing )
             
         
         max_possible_height = parent_size.height() - ideal_position.y()
@@ -1731,7 +1805,6 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
         # VBoxLayout doesn't support heightForWidth, but statictext does, so let's hack it
         # ideal solution here is to write a new layout that delivers heightforwidth, but lmao. maybe Qt6 will do it. EDIT: It didn't really work?
         
-        spacing = self.layout().spacing()
         margin = self.layout().contentsMargins().top()
         
         my_axis_frame_width = self.frameWidth() * 2
@@ -1760,7 +1833,7 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
         
         for ( name, note_panel ) in list( self._names_to_note_panels.items() ):
             
-            if not note_panel.IsNoteVisible():
+            if not note_panel.IsNoteTextVisible():
                 
                 note_panel_names_with_hidden_notes.add( name )
                 
@@ -1769,6 +1842,10 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
             
             note_panel.deleteLater()
             
+        
+        # BE CAREFUL IF YOU EDIT ANY OF THIS
+        # this is a house of cards because of the whack disconnected layout situation
+        # one minor change and you'll get tumble into flicker hell
         
         self._names_to_note_panels = {}
         
@@ -1784,13 +1861,21 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
                 
                 note_panel = NotePanel( self, name, note, note_visible )
                 
+                # very important
+                # magico fix as per the urls in the top-right
+                note_panel.setVisible( True )
+                
                 QP.AddToLayout( self._vbox, note_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
                 
                 self._names_to_note_panels[ name ] = note_panel
                 
                 note_panel.editNote.connect( self._EditNotes )
+                note_panel.devilsBargainManualUpdateGeometry.connect( self._SizeAndPosition ) # total wewmode to handle note hide/show
                 
             
+        
+        # dare not remove this
+        self.layout().activate()
         
         self._SizeAndPosition()
         
@@ -1843,19 +1928,9 @@ class CanvasHoverFrameRightNotes( CanvasHoverFrame ):
         
         super().SetMedia( media )
         
-        if self._is_currently_up:
-            
-            # magical refresh that makes the labels look correct and not be hidden???
-            self._LowerHover()
-            self._ResetNotes()
-            self._RaiseHover()
-            
-        else:
-            
-            self._ResetNotes()
-            
-            self._position_initialised = False
-            
+        self._ResetNotes()
+        
+        self._position_initialised_since_last_media = False
         
     
 class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
@@ -1874,11 +1949,11 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         self._show_in_a_page_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().fullscreen_switch, self.showPairInPage.emit )
         self._show_in_a_page_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send pair to the duplicates media page, for later processing' ) )
-        self._show_in_a_page_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._show_in_a_page_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._trash_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._trash_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send to trash' ) )
-        self._trash_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._trash_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         menu_items = []
         
@@ -1894,25 +1969,25 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         menu_items.append( ( 'normal', 'edit background lighten/darken switch intensity', 'edit how much the background will brighten or darken as you switch between the pair', self._EditBackgroundSwitchIntensity ) )
         
         self._cog_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().cog, menu_items )
-        self._cog_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._cog_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         close_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
         close_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'close filter' ) )
-        close_button.setFocusPolicy( QC.Qt.TabFocus )
+        close_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._back_a_pair = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
         self._back_a_pair.SetToolTipWithShortcuts( 'go back a pair', CAC.SIMPLE_DUPLICATE_FILTER_BACK )
-        self._back_a_pair.setFocusPolicy( QC.Qt.TabFocus )
+        self._back_a_pair.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._index_text = ClientGUICommon.BetterStaticText( self, 'index' )
         
         self._next_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pair, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
         self._next_button.SetToolTipWithShortcuts( 'next', CAC.SIMPLE_VIEW_NEXT )
-        self._next_button.setFocusPolicy( QC.Qt.TabFocus )
+        self._next_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._skip_a_pair = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
         self._skip_a_pair.SetToolTipWithShortcuts( 'show a different pair', CAC.SIMPLE_DUPLICATE_FILTER_SKIP )
-        self._skip_a_pair.setFocusPolicy( QC.Qt.TabFocus )
+        self._skip_a_pair.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         command_button_vbox = QP.VBoxLayout()
         
@@ -1943,7 +2018,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             for ( label, tooltip, command ) in dupe_commands:
                 
                 command_button = ClientGUICommon.BetterButton( button_panel, label, self.sendApplicationCommand.emit, command )
-                command_button.setFocusPolicy( QC.Qt.TabFocus )
+                command_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
                 
                 command_button.SetToolTipWithShortcuts( tooltip, command.GetSimpleAction() )
                 
@@ -2038,7 +2113,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     new_value = control.GetValue()
                     
@@ -2066,7 +2141,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 duplicate_content_merge_options = panel.GetValue()
                 
@@ -2077,7 +2152,8 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
     
     def _EnableDisableButtons( self ):
         
-        disabled = self._comparison_media is not None and self._comparison_media.HasDeleteLocked()
+        # old delete-lock stuff. maybe it'll be useful to bring back one day, w/e
+        disabled = False
         
         self._this_is_better_and_delete_other.setEnabled( not disabled )
         
@@ -2119,10 +2195,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             show_panel = got_data
             
-            if panel.isVisible() != show_panel:
-                
-                panel.setVisible( show_panel )
-                
+            panel.setVisible( show_panel )
             
             if got_data:
                 
@@ -2164,7 +2237,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             # minimumsize is not immediately updated without this
             self.layout().activate()
             
-            self._SizeAndPosition( force = True )
+            self._SizeAndPosition()
             
         
     

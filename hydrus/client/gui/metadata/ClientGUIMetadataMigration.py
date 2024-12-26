@@ -80,9 +80,9 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._exporter_panel = ClientGUICommon.StaticBox( self, 'destination' )
         
-        self._exporter_button = ClientGUIMetadataMigrationExporters.EditSingleFileMetadataExporterPanel( self._exporter_panel, exporter, self._allowed_exporter_classes )
+        self._exporter_widget = ClientGUIMetadataMigrationExporters.EditSingleFileMetadataExporterWidget( self._exporter_panel, exporter, self._allowed_exporter_classes )
         
-        self._exporter_panel.Add( self._exporter_button, CC.FLAGS_EXPAND_BOTH_WAYS )
+        self._exporter_panel.Add( self._exporter_widget, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         #
         
@@ -171,7 +171,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         importers = self._importers_list.GetData()
         
-        exporter = self._exporter_button.GetValue()
+        exporter = self._exporter_widget.GetValue()
         
         texts = set()
         
@@ -193,7 +193,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         string_processor = self._string_processor_button.GetValue()
         
-        exporter = self._exporter_button.GetValue()
+        exporter = self._exporter_widget.GetValue()
         
         router = ClientMetadataMigration.SingleFileMetadataRouter( importers = importers, string_processor = string_processor, exporter = exporter )
         
@@ -226,7 +226,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_METADATA_ROUTER_TEST_RESULTS.ID, self._ConvertTestRowToDisplayTuple, self._ConvertTestRowToSortTuple )
                 
-                list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._test_notebook, CGLC.COLUMN_LIST_METADATA_ROUTER_TEST_RESULTS.ID, 11, model )
+                list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._test_notebook, 11, model )
                 
                 self._test_notebook.addTab( list_ctrl, 'init' )
                 
@@ -235,7 +235,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             self._test_notebook.setTabText( i, page_name )
             
-            list_ctrl = self._test_notebook.widget( i )
+            list_ctrl: ClientGUIListCtrl.BetterListCtrlTreeView = self._test_notebook.widget( i )
             
             test_objects = self._test_context_factory.GetTestObjects()
             
@@ -337,7 +337,7 @@ class SingleFileMetadataRoutersControl( ClientGUIListBoxes.AddEditDeleteListBox 
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_router = panel.GetValue()
                 
@@ -379,7 +379,7 @@ class SingleFileMetadataRoutersButton( QW.QPushButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 value = control.GetData()
                 

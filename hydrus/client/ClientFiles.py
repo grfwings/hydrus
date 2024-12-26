@@ -30,8 +30,12 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientFilesPhysical
 from hydrus.client import ClientImageHandling
 from hydrus.client import ClientPaths
-from hydrus.client import ClientSVGHandling # important to keep this in, despite not being used, since there's initialisation stuff in here
-from hydrus.client import ClientPDFHandling # important to keep this in, despite not being used, since there's initialisation stuff in here
+
+# noinspection PyUnresolvedReferences
+from hydrus.client import ClientSVGHandling # important to keep this in, even if not being used, since there's initialisation stuff in here
+# noinspection PyUnresolvedReferences
+from hydrus.client import ClientPDFHandling # important to keep this in, even if not being used, since there's initialisation stuff in here
+
 from hydrus.client import ClientThreading
 from hydrus.client import ClientVideoHandling
 from hydrus.client.metadata import ClientContentUpdates
@@ -83,7 +87,7 @@ regen_file_enum_to_str_lookup = {
     REGENERATE_FILE_DATA_JOB_FILE_MODIFIED_TIMESTAMP : 'regenerate file modified time',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_TRANSPARENCY: 'determine if the file has transparency',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_EXIF : 'determine if the file has EXIF metadata',
-    REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA : 'determine if the file has non-EXIF human-readable embedded metadata',
+    REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA : 'determine if the file has non-EXIF embedded metadata',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_ICC_PROFILE : 'determine if the file has an icc profile',
     REGENERATE_FILE_DATA_JOB_PIXEL_HASH : 'regenerate pixel hashes',
     REGENERATE_FILE_DATA_JOB_BLURHASH: 'regenerate blurhash'
@@ -151,7 +155,7 @@ All missing/incorrect files will also have their hashes, tags, and URLs exported
     REGENERATE_FILE_DATA_JOB_FILE_MODIFIED_TIMESTAMP : '''This rechecks the file's modified timestamp and saves it to the database.''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_TRANSPARENCY : '''This loads the file to see if it has an alpha channel with useful data (completely opaque/transparency alpha channels are discarded). Only works for images and animated gif.''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_EXIF : '''This loads the file to see if it has EXIF metadata, which can be shown in the media viewer and searched with "system:image has exif".''',
-    REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA : '''This loads the file to see if it has non-EXIF human-readable metadata, which can be shown in the media viewer and searched with "system:image has human-readable embedded metadata".''',
+    REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA : '''This loads the file to see if it has non-EXIF human-readable embedded metadata, which can be shown in the media viewer and searched with "system:image has human-readable embedded metadata".''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_ICC_PROFILE : '''This loads the file to see if it has an ICC profile, which is used in "system:has icc profile" search.''',
     REGENERATE_FILE_DATA_JOB_PIXEL_HASH : '''This generates a fast unique identifier for the pixels in a still image, which is used in duplicate pixel searches.''',
     REGENERATE_FILE_DATA_JOB_BLURHASH : '''This generates a very small version of the file's thumbnail that can be used as a placeholder while the thumbnail loads.'''
@@ -3061,6 +3065,9 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         
     
     def ForceMaintenance( self, mandated_job_types = None ):
+        
+        # TODO: When you are feeling good, rework this guy into a set of simpler 'work hard' flags and fold it all into a throttle in the mainloop
+        # we can figure out a popup in that mode, but w/e tbh
         
         if self._serious_error_encountered:
             

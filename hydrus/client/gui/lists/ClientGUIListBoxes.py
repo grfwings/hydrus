@@ -1,6 +1,5 @@
 import collections
 import itertools
-import os
 import threading
 import typing
 
@@ -105,7 +104,7 @@ class BetterQListWidget( QW.QListWidget ):
     
     def _GetRowData( self, list_widget_item: QW.QListWidgetItem ):
         
-        return list_widget_item.data( QC.Qt.UserRole )
+        return list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
         
     
     def _GetSelectedIndices( self ):
@@ -139,7 +138,7 @@ class BetterQListWidget( QW.QListWidget ):
         item = QW.QListWidgetItem()
         
         item.setText( text )
-        item.setData( QC.Qt.UserRole, data )
+        item.setData( QC.Qt.ItemDataRole.UserRole, data )
         
         self.addItem( item )
         
@@ -163,7 +162,7 @@ class BetterQListWidget( QW.QListWidget ):
         self._DeleteIndices( indices )
         
     
-    def GetData( self, only_selected: bool = False ) -> typing.List[ object ]:
+    def GetData( self, only_selected: bool = False ) -> typing.List[ typing.Any ]:
         
         datas = []
         
@@ -206,7 +205,7 @@ class BetterQListWidget( QW.QListWidget ):
             
             self._delete_callable()
             
-        elif event.modifiers() & QC.Qt.ControlModifier and event.key() in ( QC.Qt.Key_C, QC.Qt.Key_Insert ):
+        elif event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier and event.key() in ( QC.Qt.Key.Key_C, QC.Qt.Key.Key_Insert ):
             
             event.accept()
             
@@ -216,7 +215,7 @@ class BetterQListWidget( QW.QListWidget ):
                 
                 for list_widget_item in self.selectedItems():
                     
-                    user_role_data = list_widget_item.data( QC.Qt.UserRole )
+                    user_role_data = list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
                     
                     if isinstance( user_role_data, str ):
                         
@@ -313,7 +312,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         super().__init__( parent )
         
         self._listbox = BetterQListWidget( self )
-        self._listbox.setSelectionMode( QW.QListWidget.ExtendedSelection )
+        self._listbox.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         
         self._add_button = ClientGUICommon.BetterButton( self, 'add', self._Add )
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit', self._Edit )
@@ -443,7 +442,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove {} selected?'.format( HydrusNumbers.ToHumanInt( num_selected ) ) )
         
-        if result != QW.QDialog.Accepted:
+        if result != QW.QDialog.DialogCode.Accepted:
             
             return
             
@@ -457,7 +456,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         for list_widget_item in self._listbox.selectedItems():
             
-            data = list_widget_item.data( QC.Qt.UserRole )
+            data = list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
             
             try:
                 
@@ -473,7 +472,7 @@ class AddEditDeleteListBox( QW.QWidget ):
             pretty_new_data = self._data_to_pretty_callable( new_data )
             
             list_widget_item.setText( pretty_new_data )
-            list_widget_item.setData( QC.Qt.UserRole, new_data )
+            list_widget_item.setData( QC.Qt.ItemDataRole.UserRole, new_data )
             
         
         self.listBoxChanged.emit()
@@ -605,9 +604,9 @@ class AddEditDeleteListBox( QW.QWidget ):
     
     def _ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptOpen, fileMode = QW.QFileDialog.ExistingFiles, wildcard = 'PNG (*.png)|*.png' ) as dlg:
+        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)|*.png' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 for path in dlg.GetPaths():
                     
@@ -841,6 +840,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         return self.GetData()
         
     
+
 class AddEditDeleteListBoxUniqueNamedObjects( AddEditDeleteListBox ):
     
     def _SetNonDupeName( self, obj ):
@@ -868,7 +868,7 @@ class QueueListBox( QW.QWidget ):
         self._permitted_object_types = tuple()
         
         self._listbox = BetterQListWidget( self )
-        self._listbox.setSelectionMode( QW.QListWidget.ExtendedSelection )
+        self._listbox.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         
         self._up_button = ClientGUICommon.BetterButton( self, '\u2191', self._Up )
         
@@ -980,7 +980,7 @@ class QueueListBox( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove {} selected?'.format( HydrusNumbers.ToHumanInt( num_selected ) ) )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._listbox.DeleteSelected()
             
@@ -1011,7 +1011,7 @@ class QueueListBox( QW.QWidget ):
         
         for list_widget_item in self._listbox.selectedItems():
             
-            data = list_widget_item.data( QC.Qt.UserRole )
+            data = list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
             
             try:
                 
@@ -1025,7 +1025,7 @@ class QueueListBox( QW.QWidget ):
             pretty_new_data = self._data_to_pretty_callable( new_data )
             
             list_widget_item.setText( pretty_new_data )
-            list_widget_item.setData( QC.Qt.UserRole, new_data )
+            list_widget_item.setData( QC.Qt.ItemDataRole.UserRole, new_data )
             
         
         self.listBoxChanged.emit()
@@ -1145,9 +1145,9 @@ class QueueListBox( QW.QWidget ):
     
     def _ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptOpen, fileMode = QW.QFileDialog.ExistingFiles, wildcard = 'PNG (*.png)|*.png' ) as dlg:
+        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)|*.png' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 for path in dlg.GetPaths():
                     
@@ -1371,9 +1371,9 @@ class ListBox( QW.QScrollArea ):
     def __init__( self, parent: QW.QWidget, terms_may_have_sibling_or_parent_info: bool, height_num_chars = 10, has_async_text_info = False ):
         
         super().__init__( parent )
-        self.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Sunken )
-        self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
-        self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarAsNeeded )
+        self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
+        self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
+        self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         self.setWidget( ListBox._InnerWidget( self ) )
         self.setWidgetResizable( True )
         
@@ -1671,7 +1671,7 @@ class ListBox( QW.QScrollArea ):
         
         y = mouse_event.position().toPoint().y()
         
-        if mouse_event.type() == QC.QEvent.MouseMove:
+        if mouse_event.type() == QC.QEvent.Type.MouseMove:
             
             visible_rect = QP.ScrollAreaVisibleRect( self )
             
@@ -1788,8 +1788,8 @@ class ListBox( QW.QScrollArea ):
         
         logical_index = self._GetLogicalIndexUnderMouse( event )
         
-        shift = event.modifiers() & QC.Qt.ShiftModifier
-        ctrl = event.modifiers() & QC.Qt.ControlModifier
+        shift = event.modifiers() & QC.Qt.KeyboardModifier.ShiftModifier
+        ctrl = event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier
         
         self._Hit( shift, ctrl, logical_index )
         
@@ -2241,6 +2241,10 @@ class ListBox( QW.QScrollArea ):
     
     def _RegenTermsToIndices( self ):
         
+        # TODO: although it is a pain in the neck, it would be best if this just cleared and set a flag for deferred regen
+        # we'll have to go through all references to these variables though and ensure it is all wrapped in 'if dirty, regen' stuff
+        # it mite b cool to also develop 'swap' tech for sort-swapping stuff, which will not change the total rows or indices outside of the range between the two swappers
+        
         self._terms_to_logical_indices = {}
         self._terms_to_positional_indices = {}
         self._positional_indices_to_terms = {}
@@ -2381,8 +2385,13 @@ class ListBox( QW.QScrollArea ):
     
     def keyPressEvent( self, event ):
         
-        shift = event.modifiers() & QC.Qt.ShiftModifier
-        ctrl = event.modifiers() & QC.Qt.ControlModifier
+        if not self.isEnabled():
+            
+            return
+            
+        
+        shift = event.modifiers() & QC.Qt.KeyboardModifier.ShiftModifier
+        ctrl = event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier
         
         key_code = event.key()
         
@@ -2392,7 +2401,7 @@ class ListBox( QW.QScrollArea ):
             
             self._DeleteActivate()
             
-        elif has_focus and key_code == QC.Qt.Key_Escape:
+        elif has_focus and key_code == QC.Qt.Key.Key_Escape:
             
             if len( self._selected_terms ) > 0:
                 
@@ -2403,7 +2412,7 @@ class ListBox( QW.QScrollArea ):
                 event.ignore()
                 
             
-        elif key_code in ( QC.Qt.Key_Enter, QC.Qt.Key_Return ):
+        elif key_code in ( QC.Qt.Key.Key_Enter, QC.Qt.Key.Key_Return ):
             
             self._ActivateFromKeyboard( ctrl, shift )
             
@@ -2413,7 +2422,7 @@ class ListBox( QW.QScrollArea ):
                 
                 self._SelectAll()
                 
-            elif ctrl and key_code in ( ord( 'C' ), ord( 'c' ), QC.Qt.Key_Insert ):
+            elif ctrl and key_code in ( ord( 'C' ), ord( 'c' ), QC.Qt.Key.Key_Insert ):
                 
                 self._CopySelectedTexts()
                 
@@ -2423,11 +2432,11 @@ class ListBox( QW.QScrollArea ):
                 
                 if len( self._ordered_terms ) > 1:
                     
-                    if key_code in ( QC.Qt.Key_Home, ):
+                    if key_code in ( QC.Qt.Key.Key_Home, ):
                         
                         hit_logical_index = 0
                         
-                    elif key_code in ( QC.Qt.Key_End, ):
+                    elif key_code in ( QC.Qt.Key.Key_End, ):
                         
                         hit_logical_index = len( self._ordered_terms ) - 1
                         
@@ -2447,19 +2456,19 @@ class ListBox( QW.QScrollArea ):
                             
                             hit_logical_index = ( self._last_hit_logical_index + 1 ) % len( self._ordered_terms )
                             
-                        elif key_code in ( QC.Qt.Key_Up, ):
+                        elif key_code in ( QC.Qt.Key.Key_Up, ):
                             
                             hit_logical_index = ( self._last_hit_logical_index - 1 ) % len( self._ordered_terms )
                             
-                        elif key_code in ( QC.Qt.Key_Down, ):
+                        elif key_code in ( QC.Qt.Key.Key_Down, ):
                             
                             hit_logical_index = ( self._last_hit_logical_index + 1 ) % len( self._ordered_terms )
                             
-                        elif key_code in ( QC.Qt.Key_PageUp, QC.Qt.Key_PageDown ):
+                        elif key_code in ( QC.Qt.Key.Key_PageUp, QC.Qt.Key.Key_PageDown ):
                             
                             last_hit_positional_index = self._GetPositionalIndexFromLogicalIndex( self._last_hit_logical_index )
                             
-                            if key_code == QC.Qt.Key_PageUp:
+                            if key_code == QC.Qt.Key.Key_PageUp:
                                 
                                 hit_positional_index = max( 0, last_hit_positional_index - self._num_rows_per_page )
                                 
@@ -2491,9 +2500,9 @@ class ListBox( QW.QScrollArea ):
             
             # we do the event filter since we need to 'scroll' the click, so we capture the event on the widget, not ourselves
             
-            if watched == self.widget():
+            if watched == self.widget() and self.isEnabled():
                 
-                if event.type() == QC.QEvent.MouseButtonPress:
+                if event.type() == QC.QEvent.Type.MouseButtonPress:
                     
                     self._HandleClick( event )
                     
@@ -2501,18 +2510,18 @@ class ListBox( QW.QScrollArea ):
                     
                     return True
                     
-                elif event.type() == QC.QEvent.MouseButtonRelease:
+                elif event.type() == QC.QEvent.Type.MouseButtonRelease:
                     
                     self._in_drag = False
                     
                     event.ignore()
                     
-                elif event.type() == QC.QEvent.MouseButtonDblClick:
+                elif event.type() == QC.QEvent.Type.MouseButtonDblClick:
                     
-                    if event.button() == QC.Qt.LeftButton:
+                    if event.button() == QC.Qt.MouseButton.LeftButton:
                         
-                        ctrl_down = event.modifiers() & QC.Qt.ControlModifier
-                        shift_down = event.modifiers() & QC.Qt.ShiftModifier
+                        ctrl_down = event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier
+                        shift_down = event.modifiers() & QC.Qt.KeyboardModifier.ShiftModifier
                         
                         if ctrl_down:
                             
@@ -2556,7 +2565,7 @@ class ListBox( QW.QScrollArea ):
     
     def mouseMoveEvent( self, event ):
         
-        is_dragging = event.buttons() & QC.Qt.LeftButton
+        is_dragging = event.buttons() & QC.Qt.MouseButton.LeftButton
         
         if is_dragging:
             
@@ -2599,7 +2608,7 @@ class ListBox( QW.QScrollArea ):
     
     class _InnerWidget( QW.QWidget ):
         
-        def __init__( self, parent ):
+        def __init__( self, parent: "ListBox" ):
             
             super().__init__( parent )
             
@@ -2663,6 +2672,11 @@ class ListBox( QW.QScrollArea ):
     
     def MoveSelectionDown( self ):
         
+        if not self.isEnabled():
+            
+            return
+            
+        
         if len( self._ordered_terms ) > 1 and self._last_hit_logical_index is not None:
             
             logical_index = ( self._last_hit_logical_index + 1 ) % len( self._ordered_terms )
@@ -2673,6 +2687,11 @@ class ListBox( QW.QScrollArea ):
     
     def MoveSelectionUp( self ):
         
+        if not self.isEnabled():
+            
+            return
+            
+        
         if len( self._ordered_terms ) > 1 and self._last_hit_logical_index is not None:
             
             logical_index = ( self._last_hit_logical_index - 1 ) % len( self._ordered_terms )
@@ -2682,6 +2701,11 @@ class ListBox( QW.QScrollArea ):
         
     
     def SelectTopItem( self ):
+        
+        if not self.isEnabled():
+            
+            return
+            
         
         if len( self._ordered_terms ) > 0:
             
@@ -2696,6 +2720,16 @@ class ListBox( QW.QScrollArea ):
             
             self.widget().update()
             
+        
+    
+    def setEnabled( self, value ):
+        
+        if not value:
+            
+            self._DeselectAll()
+            
+        
+        super().setEnabled( value )
         
     
     def SetExtraParentRowsAllowed( self, value: bool ):
@@ -2763,6 +2797,7 @@ class ListBox( QW.QScrollArea ):
         return size_hint
         
     
+
 COPY_ALL_TAGS = 0
 COPY_ALL_TAGS_WITH_COUNTS = 1
 COPY_SELECTED_TAGS = 2
@@ -3013,7 +3048,7 @@ class ListBoxTags( ListBox ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -3031,7 +3066,7 @@ class ListBoxTags( ListBox ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -3100,7 +3135,7 @@ class ListBoxTags( ListBox ):
     
     def contextMenuEvent( self, event ):
         
-        if event.reason() == QG.QContextMenuEvent.Keyboard:
+        if event.reason() == QG.QContextMenuEvent.Reason.Keyboard:
             
             self.ShowMenu()
             
@@ -3114,9 +3149,9 @@ class ListBoxTags( ListBox ):
             
             if watched == self.widget():
                 
-                if event.type() == QC.QEvent.MouseButtonPress:
+                if event.type() == QC.QEvent.Type.MouseButtonPress:
                     
-                    if event.button() == QC.Qt.MiddleButton:
+                    if event.button() == QC.Qt.MouseButton.MiddleButton:
                         
                         self._HandleClick( event )
                         
@@ -3126,7 +3161,7 @@ class ListBoxTags( ListBox ):
                             
                             if len( predicates ) > 0:
                                 
-                                shift_down = event.modifiers() & QC.Qt.ShiftModifier
+                                shift_down = event.modifiers() & QC.Qt.KeyboardModifier.ShiftModifier
                                 
                                 if shift_down and or_predicate is not None:
                                     
@@ -3141,9 +3176,9 @@ class ListBoxTags( ListBox ):
                         return True
                         
                     
-                elif event.type() == QC.QEvent.MouseButtonRelease:
+                elif event.type() == QC.QEvent.Type.MouseButtonRelease:
                     
-                    if event.button() == QC.Qt.RightButton:
+                    if event.button() == QC.Qt.MouseButton.RightButton:
                         
                         self.ShowMenu()
                         
@@ -3185,7 +3220,7 @@ class ListBoxTags( ListBox ):
     
     def ShowMenu( self ):
         
-        if len( self._ordered_terms ) == 0:
+        if len( self._ordered_terms ) == 0 or not self.isEnabled():
             
             return
             
@@ -3812,7 +3847,7 @@ class ListBoxTags( ListBox ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -3835,7 +3870,7 @@ class ListBoxTags( ListBox ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -3913,7 +3948,7 @@ class ListBoxTags( ListBox ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Regen tags?', yes_label = 'let\'s go', no_label = 'forget it' )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     CG.client_controller.Write( 'regenerate_tag_mappings_tags', selected_actual_tags )
                     
@@ -4100,7 +4135,7 @@ class ListBoxTagsColourOptions( ListBoxTags ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Delete all selected colours?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._RemoveTerms( deletable_terms )
                 
@@ -4705,13 +4740,32 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
                 
             
         
-        sort_needed = self._tag_sort.AffectedByCount()
+        sort_needed = False
         
         if len( new_terms ) > 0:
+            
+            # TODO: see about doing an _InsertTerms that will do insort, bisect.insort_left kind of thing, assuming I can get better 'key' tech going in tag sort
             
             self._AppendTerms( new_terms )
             
             sort_needed = True
+            
+        
+        if not sort_needed and self._tag_sort.AffectedByCount():
+            
+            if len( altered_terms ) < len( self._ordered_terms ) / 20:
+                
+                # TODO: for every term we have altered or added or whatever...
+                # calc its new sort count. if the guy above or below have a higher/lower (wrong) count, immediately stop and say sort needed
+                # this gets complicated with namespace grouping and stuff, so we need to have a single key/cmp call tbh
+                
+                sort_needed = True
+                
+            else:
+                
+                # just do it, whatever
+                sort_needed = True
+                
             
         
         for term in previous_selected_terms:

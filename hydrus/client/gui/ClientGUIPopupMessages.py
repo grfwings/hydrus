@@ -1,5 +1,4 @@
 import collections
-import os
 import sys
 import threading
 import traceback
@@ -37,7 +36,7 @@ class PopupWindow( QW.QFrame ):
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Box | QW.QFrame.Plain )
+        self.setFrameStyle( QW.QFrame.Shape.Box | QW.QFrame.Shadow.Plain )
         
         self._widget_event_filter = QP.WidgetEventFilter( self )
         self._widget_event_filter.EVT_RIGHT_DOWN( self.EventDismiss )
@@ -69,7 +68,7 @@ class PopupMessage( PopupWindow ):
         vbox = QP.VBoxLayout( vbox_margin )
         
         self._title = ClientGUICommon.BetterStaticText( self )
-        self._title.setAlignment( QC.Qt.AlignHCenter | QC.Qt.AlignVCenter )
+        self._title.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
         
         font = self._title.font()
         font.setBold( True )
@@ -359,17 +358,17 @@ class PopupMessage( PopupWindow ):
     
     def ShowTB( self ):
         
-        if self._tb_text.isVisible():
-            
-            self._show_tb_button.setText( 'show traceback' )
-            
-            self._tb_text.hide()
-            
-        else:
+        if self._tb_text.isHidden():
             
             self._show_tb_button.setText( 'hide traceback' )
             
             self._tb_text.show()
+            
+        else:
+        
+            self._show_tb_button.setText( 'show traceback' )
+            
+            self._tb_text.hide()
             
         
         self.updateGeometry()
@@ -526,7 +525,7 @@ class PopupMessage( PopupWindow ):
                 self._time_network_job_disappeared = HydrusTime.GetNow()
                 
             
-            if self._network_job_ctrl.isVisible() and HydrusTime.TimeHasPassed( self._time_network_job_disappeared + 10 ):
+            if not self._network_job_ctrl.isHidden() and HydrusTime.TimeHasPassed( self._time_network_job_disappeared + 10 ):
                 
                 self._network_job_ctrl.hide()
                 
@@ -809,7 +808,7 @@ class PopupMessageManager( QW.QFrame ):
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Raised )
+        self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Raised )
         self.setLineWidth( 1 )
         
         # We need this, or else if the QSS does not define a Widget background color (the default), these 'raised' windows are transparent lmao
@@ -924,7 +923,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window = sizer_item.widget()
+            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
             
             if not message_window:
                 
@@ -944,11 +943,11 @@ class PopupMessageManager( QW.QFrame ):
     
     def _SizeAndPositionAndShow( self ):
         
-        gui_frame = self.parentWidget()
+        gui_frame = self.window()
         
         try:
             
-            gui_is_hidden = not gui_frame.isVisible()
+            gui_is_hidden = gui_frame.isHidden()
             
             going_to_bug_out_at_hide_or_show = gui_is_hidden
             
@@ -958,7 +957,7 @@ class PopupMessageManager( QW.QFrame ):
             
             if there_is_stuff_to_display:
                 
-                if not self.isVisible() and not going_to_bug_out_at_hide_or_show:
+                if self.isHidden() and not going_to_bug_out_at_hide_or_show:
                     
                     self.show()
                     
@@ -990,7 +989,7 @@ class PopupMessageManager( QW.QFrame ):
                 
             else:
                 
-                if self.isVisible() and not going_to_bug_out_at_hide_or_show:
+                if not self.isHidden() and not going_to_bug_out_at_hide_or_show:
                     
                     self.hide()
                     
@@ -1019,9 +1018,9 @@ class PopupMessageManager( QW.QFrame ):
             return False
             
         
-        main_gui = self.parentWidget()
+        main_gui = self.window()
         
-        if not main_gui.isVisible():
+        if main_gui.isHidden():
             
             return False
             
@@ -1062,7 +1061,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window = sizer_item.widget()
+            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
             
             if message_window:
                 
@@ -1116,7 +1115,7 @@ class PopupMessageManager( QW.QFrame ):
         
         for i in range( self._message_vbox.count() ):
             
-            message_window = self._message_vbox.itemAt( i ).widget()
+            message_window: typing.Optional[ PopupMessage ] = self._message_vbox.itemAt( i ).widget()
             
             if not message_window:
                 
@@ -1182,7 +1181,7 @@ class PopupMessageManager( QW.QFrame ):
             
             item = self._message_vbox.itemAt( i )
             
-            message_window = item.widget()
+            message_window: typing.Optional[ PopupMessage ] = item.widget()
             
             if not message_window:
                 
@@ -1210,14 +1209,7 @@ class PopupMessageManager( QW.QFrame ):
     
     def ExpandCollapse( self ):
         
-        if self._message_panel.isVisible():
-            
-            self._message_panel.setVisible( False )
-            
-        else:
-            
-            self._message_panel.show()
-            
+        self._message_panel.setVisible( self._message_panel.isHidden() )
         
         self.MakeSureEverythingFits()
         
@@ -1228,7 +1220,7 @@ class PopupMessageManager( QW.QFrame ):
             
             if watched == self.parentWidget():
                 
-                if event.type() in ( QC.QEvent.Resize, QC.QEvent.Move, QC.QEvent.WindowStateChange ):
+                if event.type() in ( QC.QEvent.Type.Resize, QC.QEvent.Type.Move, QC.QEvent.Type.WindowStateChange ):
                     
                     if self._OKToAlterUI():
                         
@@ -1279,6 +1271,8 @@ class PopupMessageManager( QW.QFrame ):
 
 # This was originally a reviewpanel subclass which is a scroll area subclass, but having it in a scroll area didn't work out with dynamically updating size as the widget contents change.
 class PopupMessageDialogPanel( QW.QWidget ):
+    
+    okSignal = QC.Signal()
     
     def __init__( self, parent, job_status, hide_main_gui = False ):
         
@@ -1422,7 +1416,7 @@ class PopupMessageDialogPanel( QW.QWidget ):
                 self._yesno_open = False
                 
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._job_status.Cancel()
                 
@@ -1455,7 +1449,7 @@ class PopupMessageDialogPanel( QW.QWidget ):
                     
                     if parent.isModal(): # event sometimes fires after modal done
                         
-                        parent.DoOK()
+                        self.okSignal.emit()
                         
                     
                 
@@ -1481,7 +1475,7 @@ class PopupMessageSummaryBar( QW.QFrame ):
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Box | QW.QFrame.Plain )
+        self.setFrameStyle( QW.QFrame.Shape.Box | QW.QFrame.Shadow.Plain )
         
         hbox = QP.HBoxLayout()
         

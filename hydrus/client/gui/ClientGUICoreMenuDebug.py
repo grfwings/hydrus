@@ -1,8 +1,5 @@
 from qtpy import QtCore as QC
-from qtpy import QtGui as QG
 from qtpy import QtWidgets as QW
-
-from hydrus.core import HydrusConstants as HC
 
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
@@ -50,7 +47,7 @@ def ShowMenuDialog( window: QW.QWidget, menu: QW.QMenu ):
                     
                     twi.setText( 0, action.text() )
                     
-                    twi.setData( 0, QC.Qt.UserRole, action )
+                    twi.setData( 0, QC.Qt.ItemDataRole.UserRole, action )
                     
                 
                 if isinstance( job_parent, QW.QTreeWidget ):
@@ -74,7 +71,7 @@ def ShowMenuDialog( window: QW.QWidget, menu: QW.QMenu ):
         
         dlg.SetPanel( panel )
         
-        if dlg.exec() == QW.QDialog.Accepted:
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
             selected_items = control.selectedItems()
             
@@ -82,7 +79,7 @@ def ShowMenuDialog( window: QW.QWidget, menu: QW.QMenu ):
                 
                 item = selected_items[0]
                 
-                action = item.data( 0, QC.Qt.UserRole )
+                action = item.data( 0, QC.Qt.ItemDataRole.UserRole )
                 
                 if action is not None:
                     

@@ -267,7 +267,16 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'disallow_media_drags_on_duration_media' : False,
             'show_all_my_files_on_page_chooser' : True,
             'show_local_files_on_page_chooser' : False,
-            'use_nice_resolution_strings' : True
+            'use_nice_resolution_strings' : True,
+            'use_listbook_for_tag_service_panels' : False,
+            'open_files_to_duplicate_filter_uses_all_my_files' : True,
+            'show_extended_single_file_info_in_status_bar' : False,
+            'hide_duplicates_needs_work_message_when_reasonably_caught_up' : True,
+            'file_info_line_consider_archived_interesting' : True,
+            'file_info_line_consider_archived_time_interesting' : True,
+            'file_info_line_consider_file_services_interesting' : False,
+            'file_info_line_consider_file_services_import_times_interesting' : False,
+            'set_requests_ca_bundle_env' : False
         }
         
         #
@@ -464,7 +473,11 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'deferred_table_delete_work_time_ms_normal' : 250,
             'deferred_table_delete_rest_percentage_normal' : 1000,
             'deferred_table_delete_work_time_ms_work_hard' : 5000,
-            'deferred_table_delete_rest_percentage_work_hard' : 10
+            'deferred_table_delete_rest_percentage_work_hard' : 10,
+            'gallery_page_status_update_time_minimum_ms' : 1000,
+            'gallery_page_status_update_time_ratio_denominator' : 30,
+            'watcher_page_status_update_time_minimum_ms' : 1000,
+            'watcher_page_status_update_time_ratio_denominator' : 30
         }
         
         #
@@ -499,7 +512,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'slideshow_short_duration_loop_seconds' : 10,
             'slideshow_short_duration_cutoff_percentage' : 75,
             'slideshow_long_duration_overspill_percentage' : 50,
-            'num_to_show_in_ac_dropdown_children_tab' : 40
+            'num_to_show_in_ac_dropdown_children_tab' : 40,
+            'number_of_unselected_medias_to_present_tags_for' : 4096
         }
         
         #

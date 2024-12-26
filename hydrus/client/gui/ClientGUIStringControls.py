@@ -47,7 +47,7 @@ class StringConverterButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._string_converter = panel.GetValue()
                 
@@ -109,7 +109,7 @@ class StringMatchButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._string_match = panel.GetValue()
                 
@@ -164,7 +164,7 @@ class StringProcessorButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._string_processor = panel.GetValue()
                 
@@ -310,7 +310,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_KEY_TO_STRING_MATCH.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_KEY_TO_STRING_MATCH.ID, min_height, model, use_simple_delete = True, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, min_height, model, use_simple_delete = True, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
         
         listctrl_panel.SetListCtrl( self._listctrl )
         
@@ -355,7 +355,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 key_string_match = panel.GetValue()
                 
@@ -373,7 +373,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 value_string_match = panel.GetValue()
                 
@@ -401,7 +401,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 key_string_match = panel.GetValue()
                 
@@ -417,7 +417,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 value_string_match = panel.GetValue()
                 
@@ -460,7 +460,7 @@ class StringToStringDictButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._value = control.GetValue()
                 
@@ -498,7 +498,7 @@ class StringToStringDictControl( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_KEY_TO_VALUE.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_KEY_TO_VALUE.ID, min_height, model, use_simple_delete = use_simple_delete, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, min_height, model, use_simple_delete = use_simple_delete, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
         self._listctrl.columnListContentsChanged.connect( self.columnListContentsChanged )
         
         listctrl_panel.SetListCtrl( self._listctrl )
@@ -541,7 +541,7 @@ class StringToStringDictControl( QW.QWidget ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'enter the ' + self._key_name, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 key = dlg.GetValue()
                 
@@ -554,7 +554,7 @@ class StringToStringDictControl( QW.QWidget ):
                 
                 with ClientGUIDialogs.DialogTextEntry( self, 'enter the ' + self._value_name, allow_blank = True ) as dlg_2:
                     
-                    if dlg_2.exec() == QW.QDialog.Accepted:
+                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         value = dlg_2.GetValue()
                         
@@ -582,7 +582,7 @@ class StringToStringDictControl( QW.QWidget ):
             
             with ClientGUIDialogs.DialogTextEntry( self, 'edit the ' + self._key_name, default = key, allow_blank = False ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     edited_key = dlg.GetValue()
                     
@@ -606,7 +606,7 @@ class StringToStringDictControl( QW.QWidget ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the ' + self._value_name, default = value, allow_blank = True ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_value = dlg.GetValue()
                 
@@ -635,7 +635,7 @@ class StringToStringDictControl( QW.QWidget ):
     
     def Clear( self ):
         
-        self._listctrl.clear()
+        self._listctrl.DeleteDatas( self._listctrl.GetData() )
         
     
     def GetValue( self ) -> typing.Dict[ str, str ]:
@@ -665,7 +665,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_KEY_TO_STRING_MATCH.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_KEY_TO_STRING_MATCH.ID, min_height, model, use_simple_delete = True, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, min_height, model, use_simple_delete = True, activation_callback = self._Edit, column_types_to_name_overrides = column_types_to_name_overrides )
         
         listctrl_panel.SetListCtrl( self._listctrl )
         
@@ -703,7 +703,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'enter the ' + self._key_name, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 key = dlg.GetValue()
                 
@@ -722,7 +722,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
                     
                     dlg_2.SetPanel( panel )
                     
-                    if dlg_2.exec() == QW.QDialog.Accepted:
+                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         string_match = panel.GetValue()
                         
@@ -748,7 +748,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the ' + self._key_name, default = key, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_key = dlg.GetValue()
                 
@@ -773,7 +773,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_string_match = panel.GetValue()
                 

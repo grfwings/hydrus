@@ -1,8 +1,5 @@
-import typing
-
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.media import ClientMediaManagers
@@ -160,7 +157,7 @@ class MediaResult( object ):
         return self._notes_manager.GetNumNotes() > 0
         
     
-    def IsDeleteLocked( self ):
+    def IsPhysicalDeleteLocked( self ):
         
         # TODO: ultimately replace this with metadata conditionals for whatever the user likes, 'don't delete anything rated 5 stars', whatever
         

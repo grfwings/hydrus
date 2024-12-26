@@ -218,7 +218,7 @@ class Controller( HydrusController.HydrusController ):
     
     def _InitDB( self ):
         
-        return ClientDB.DB( self, self.db_dir, 'client' )
+        self.db = ClientDB.DB( self, self.db_dir, 'client' )
         
     
     def _DestroySplash( self ):
@@ -576,7 +576,7 @@ class Controller( HydrusController.HydrusController ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self._splash, message, title = 'The client is already running.', yes_label = 'wait a bit, then try again', no_label = 'forget it' )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     raise HydrusExceptions.ShutdownException()
                     
@@ -630,6 +630,20 @@ class Controller( HydrusController.HydrusController ):
         try:
             
             self.GetClipboardImage()
+            
+            return True
+            
+        except HydrusExceptions.DataMissing:
+            
+            return False
+            
+        
+    
+    def ClipboardHasLocalPaths( self ):
+        
+        try:
+            
+            self.GetClipboardLocalPaths()
             
             return True
             
@@ -1007,6 +1021,25 @@ class Controller( HydrusController.HydrusController ):
         return clipboard_image
         
     
+    def GetClipboardLocalPaths( self ):
+        
+        mime_data = QW.QApplication.clipboard().mimeData()
+        
+        if mime_data.hasUrls():
+            
+            urls = mime_data.urls()
+            
+            local_paths = [ url.toLocalFile() for url in urls if url.isLocalFile() ]
+            
+            if len( local_paths ) > 0:
+                
+                return local_paths
+                
+            
+        
+        raise HydrusExceptions.DataMissing( 'No local paths on clipboard!' )
+        
+    
     def GetClipboardText( self ):
         
         clipboard_text = QW.QApplication.clipboard().text()
@@ -1094,7 +1127,7 @@ class Controller( HydrusController.HydrusController ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     self.client_files_manager = ClientFiles.ClientFilesManager( self )
                     
@@ -1128,6 +1161,10 @@ class Controller( HydrusController.HydrusController ):
         HydrusImageNormalisation.SetDoICCProfileNormalisation( self.new_options.GetBoolean( 'do_icc_profile_normalisation' ) )
         
         HydrusImageHandling.FORCE_PIL_ALWAYS = self.new_options.GetBoolean( 'load_images_with_pil' )
+        
+        from hydrus.core import HydrusTime
+        
+        HydrusTime.ALWAYS_SHOW_ISO_TIME_ON_DELTA_CALL = self.new_options.GetBoolean( 'always_show_iso_time' )
         
     
     def InitModel( self ):
@@ -1195,6 +1232,13 @@ class Controller( HydrusController.HydrusController ):
         #
         
         self.frame_splash_status.SetSubtext( 'network' )
+        
+        if self.new_options.GetBoolean( 'set_requests_ca_bundle_env' ):
+            
+            from hydrus.client import ClientEnvironment
+            
+            ClientEnvironment.SetRequestsCABundleEnv()
+            
         
         if self.new_options.GetBoolean( 'boot_with_network_traffic_paused' ):
             
@@ -1377,7 +1421,7 @@ class Controller( HydrusController.HydrusController ):
                     
                     with ClientGUIDialogs.DialogTextEntry( self._splash, 'Enter your password.', allow_blank = False, password_entry = True, min_char_width = 24 ) as dlg:
                         
-                        if dlg.exec() == QW.QDialog.Accepted:
+                        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                             
                             password_bytes = bytes( dlg.GetValue(), 'utf-8' )
                             
@@ -1829,7 +1873,7 @@ class Controller( HydrusController.HydrusController ):
         
         with QP.DirDialog( self.gui, 'Select backup location.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = dlg.GetPath()
                 
@@ -1841,7 +1885,7 @@ class Controller( HydrusController.HydrusController ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self.gui, text )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     self._restore_backup_path = path
                     self._doing_fast_exit = False
@@ -2054,18 +2098,18 @@ class Controller( HydrusController.HydrusController ):
                         continue
                         
                     
-                    try:
+                    if allow_non_local_connections:
                         
-                        if use_https:
-                            
-                            import twisted.internet.ssl
-                            
-                            ( ssl_cert_path, ssl_key_path ) = self.db.GetSSLPaths()
-                            
-                            sslmethod = twisted.internet.ssl.SSL.TLSv1_2_METHOD
-                            
-                            context_factory = twisted.internet.ssl.DefaultOpenSSLContextFactory( ssl_key_path, ssl_cert_path, sslmethod )
-                            
+                        ipv6_interface = '::'
+                        ipv4_interface = ''
+                        
+                    else:
+                        
+                        ipv6_interface = '::1'
+                        ipv4_interface = '127.0.0.1'
+                        
+                    
+                    try:
                         
                         from hydrus.client.networking.api import ClientLocalServer
                         
@@ -2078,26 +2122,30 @@ class Controller( HydrusController.HydrusController ):
                             raise NotImplementedError( 'Unknown service type!' )
                             
                         
+                        context_factory = None
+                        
+                        if use_https:
+                            
+                            import twisted.internet.ssl
+                            
+                            ( ssl_cert_path, ssl_key_path ) = self.db.GetSSLPaths()
+                            
+                            sslmethod = twisted.internet.ssl.SSL.TLSv1_2_METHOD
+                            
+                            context_factory = twisted.internet.ssl.DefaultOpenSSLContextFactory( ssl_key_path, ssl_cert_path, sslmethod )
+                            
+                        
                         ipv6_port = None
                         
                         try:
                             
-                            if allow_non_local_connections:
-                                
-                                interface = '::'
-                                
-                            else:
-                                
-                                interface = '::1'
-                                
-                            
                             if use_https:
                                 
-                                ipv6_port = reactor.listenSSL( port, http_factory, context_factory, interface = interface )
+                                ipv6_port = reactor.listenSSL( port, http_factory, context_factory, interface = ipv6_interface )
                                 
                             else:
                                 
-                                ipv6_port = reactor.listenTCP( port, http_factory, interface = interface )
+                                ipv6_port = reactor.listenTCP( port, http_factory, interface = ipv6_interface )
                                 
                             
                         except Exception as e:
@@ -2111,22 +2159,13 @@ class Controller( HydrusController.HydrusController ):
                         
                         try:
                             
-                            if allow_non_local_connections:
-                                
-                                interface = ''
-                                
-                            else:
-                                
-                                interface = '127.0.0.1'
-                                
-                            
                             if use_https:
                                 
-                                ipv4_port = reactor.listenSSL( port, http_factory, context_factory, interface = interface )
+                                ipv4_port = reactor.listenSSL( port, http_factory, context_factory, interface = ipv4_interface )
                                 
                             else:
                                 
-                                ipv4_port = reactor.listenTCP( port, http_factory, interface = interface )
+                                ipv4_port = reactor.listenTCP( port, http_factory, interface = ipv4_interface )
                                 
                             
                         except:

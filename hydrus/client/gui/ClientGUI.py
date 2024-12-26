@@ -19,6 +19,7 @@ from hydrus.core import HydrusCompression
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusEncryption
+from hydrus.core import HydrusEnvironment
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusMemory
@@ -73,6 +74,7 @@ from hydrus.client.gui import QLocator
 from hydrus.client.gui import ClientGUILocatorSearchProviders
 from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui.canvas import ClientGUICanvasMedia
 from hydrus.client.gui.canvas import ClientGUIMPV
 from hydrus.client.gui.exporting import ClientGUIExport
 from hydrus.client.gui.importing import ClientGUIImportFolders
@@ -484,6 +486,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self.setStatusBar( self._statusbar )
         
         self._statusbar_thread_updater = ClientGUIAsync.FastThreadToGUIUpdater( self._statusbar, self.RefreshStatusBar )
+        self._statusbar_db_thread_updater = ClientGUIAsync.FastThreadToGUIUpdater( self._statusbar, self.RefreshStatusBarDB )
         
         self._canvas_frames = [] # Keep references to canvas frames so they won't get garbage collected (canvas frames don't have a parent)
         
@@ -549,6 +552,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._controller.sub( self, 'PresentImportedFilesToPage', 'imported_files_to_page' )
         self._controller.sub( self, 'SetDBLockedStatus', 'db_locked_status' )
         self._controller.sub( self, 'SetStatusBarDirty', 'set_status_bar_dirty' )
+        self._controller.sub( self, 'SetStatusBarDirtyDB', 'set_status_bar_db_dirty' )
         self._controller.sub( self, 'TryToOpenManageServicesForAutoAccountCreation', 'open_manage_services_and_try_to_auto_create_account' )
         
         vbox = QP.VBoxLayout()
@@ -577,12 +581,12 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._ui_update_windows = set()
         
         self._animation_update_timer = QC.QTimer( self )
-        self._animation_update_timer.setTimerType( QC.Qt.PreciseTimer )
+        self._animation_update_timer.setTimerType( QC.Qt.TimerType.PreciseTimer )
         self._animation_update_timer.timeout.connect( self.TIMEREventAnimationUpdate )
         
         self._animation_update_windows = set()
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'main_gui' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'main_gui' ] )
         
         self._system_tray_hidden_tlws = []
         self._have_system_tray_icon = False
@@ -634,8 +638,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         )
         self._locator_widget.setDefaultStylingEnabled( False )
         self._locator_widget.setLocator( self._locator )
-        self._locator_widget.setAlignment( QC.Qt.AlignCenter )
-        self._locator_widget.setEscapeShortcuts( [ QG.QKeySequence( QC.Qt.Key_Escape ) ] )
+        self._locator_widget.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
+        self._locator_widget.setEscapeShortcuts( [ QG.QKeySequence( QC.Qt.Key.Key_Escape ) ] )
         # self._locator_widget.setQueryTimeout( 100 ) # how much to wait before starting a search after user edit. default 0
         
         #
@@ -748,12 +752,14 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             if QtInit.WE_ARE_PYSIDE:
                 
+                # noinspection PyUnresolvedReferences
                 import PySide2
                 
                 qt_string = 'Qt: PySide2 {}'.format( PySide2.__version__ )
                 
             elif QtInit.WE_ARE_PYQT:
                 
+                # noinspection PyUnresolvedReferences
                 from PyQt5.Qt import PYQT_VERSION_STR # pylint: disable=E0401,E0611
                 
                 qt_string = 'Qt: PyQt5 {}'.format( PYQT_VERSION_STR )
@@ -769,7 +775,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
                 
             elif QtInit.WE_ARE_PYQT:
                 
-                from PyQt6.QtCore import PYQT_VERSION_STR # pylint: disable=E0401,E0611
+                # noinspection PyUnresolvedReferences
+                from PyQt6.QtCore import PYQT_VERSION_STR
                 
                 qt_string = 'Qt: PyQt6 {}'.format( PYQT_VERSION_STR )
                 
@@ -928,23 +935,37 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         message += '\n' * 2
         message += 'A \'full\' analyze will force a run over every index in the database. This can take substantially longer. If you do not have a specific reason to select this, it is probably pointless.'
         
-        ( result, was_cancelled ) = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Choose how thorough your analyze will be.', yes_label = 'soft', no_label = 'full', check_for_cancelled = True )
+        yes_tuples = []
         
-        if was_cancelled:
+        yes_tuples.append( ( 'soft', False ) )
+        yes_tuples.append( ( 'full', True ) )
+        
+        try:
+            
+            do_full = ClientGUIDialogsQuick.GetYesYesNo( self, message, yes_tuples = yes_tuples, no_label = 'forget it' )
+            
+        except HydrusExceptions.CancelledException:
             
             return
             
         
-        if result == QW.QDialog.Accepted:
+        def do_it():
             
-            stop_time = HydrusTime.GetNow() + 120
+            if do_full:
+                
+                CG.client_controller.WriteSynchronous( 'analyze', maintenance_mode = HC.MAINTENANCE_FORCED, force_reanalyze = True )
+                
+            else:
+                
+                stop_time = HydrusTime.GetNow() + 120
+                
+                CG.client_controller.WriteSynchronous( 'analyze', maintenance_mode = HC.MAINTENANCE_FORCED, stop_time = stop_time )
+                
             
-            self._controller.Write( 'analyze', maintenance_mode = HC.MAINTENANCE_FORCED, stop_time = stop_time )
+            HydrusData.ShowText( 'Done!' )
             
-        elif result == QW.QDialog.Rejected:
-            
-            self._controller.Write( 'analyze', maintenance_mode = HC.MAINTENANCE_FORCED, force_reanalyze = True )
-            
+        
+        CG.client_controller.CallToThread( do_it )
         
     
     def _AutoRepoSetup( self ):
@@ -1013,7 +1034,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'not now' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.CallToThread( do_it )
             
@@ -1054,7 +1075,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             only_changed_page_data = True
             about_to_save = True
@@ -1114,7 +1135,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             service = self._controller.services_manager.GetService( service_key )
             
@@ -1153,7 +1174,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Run integrity check?', yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'db_integrity' )
             
@@ -1193,7 +1214,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILE_VIEWING_STATS, HC.CONTENT_UPDATE_ADVANCED, 'clear' )
             
@@ -1233,7 +1254,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             with QP.DirDialog( self, 'Select location.' ) as dlg_3:
                 
-                if dlg_3.exec() == QW.QDialog.Accepted:
+                if dlg_3.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     path = dlg_3.GetPath()
                     
@@ -1259,7 +1280,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'clear_orphan_file_records' )
             
@@ -1273,7 +1294,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             controller = self._controller
             
@@ -1307,7 +1328,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'clear_orphan_tables' )
             
@@ -1325,7 +1346,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.WriteSynchronous( 'cull_file_viewing_statistics' )
             
@@ -1367,9 +1388,9 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             if result == 'file':
                 
-                with QP.FileDialog( self, 'select where to save content', default_filename = 'result.html', acceptMode = QW.QFileDialog.AcceptSave, fileMode = QW.QFileDialog.AnyFile ) as f_dlg:
+                with QP.FileDialog( self, 'select where to save content', default_filename = 'result.html', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as f_dlg:
                     
-                    if f_dlg.exec() == QW.QDialog.Accepted:
+                    if f_dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         path = f_dlg.GetPath()
                         
@@ -1418,7 +1439,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the URL.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 url = dlg.GetValue()
                 
@@ -1705,7 +1726,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result != QW.QDialog.Accepted:
+        if result != QW.QDialog.DialogCode.Accepted:
             
             return
             
@@ -1760,7 +1781,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Delete session?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'delete_serialisable_named', HydrusSerialisable.SERIALISABLE_TYPE_GUI_SESSION_CONTAINER, name )
             
@@ -1796,7 +1817,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             services = CG.client_controller.services_manager.GetServices()
             
@@ -1883,7 +1904,7 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the file\'s hash.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 hash = bytes.fromhex( dlg.GetValue() )
                 
@@ -1931,7 +1952,7 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -1943,6 +1964,117 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
                 
             
             self._controller.Write( 'fix_logically_inconsistent_mappings', tag_service_key = tag_service_key )
+            
+        
+    
+    def _FixMissingArchiveTimes( self ):
+        
+        def do_it_scan_step( job_status ):
+            
+            we_are_missing_legacy = self._controller.Read( 'missing_archive_timestamps_legacy_test', job_status )
+            
+            if job_status.IsCancelled():
+                
+                return
+                
+            
+            we_are_missing_import = self._controller.Read( 'missing_archive_timestamps_import_test', job_status )
+            
+            if job_status.IsCancelled():
+                
+                return
+                
+            
+            CG.client_controller.CallAfterQtSafe( self, 'missing archive times reporter', qt_present_results, job_status, we_are_missing_legacy, we_are_missing_import )
+            
+        
+        def qt_present_results( job_status, we_are_missing_legacy, we_are_missing_import ):
+            
+            if we_are_missing_legacy or we_are_missing_import:
+                
+                message = 'It looks like there are some missing archive times. You have:'
+                
+                yes_tuples = []
+                
+                if we_are_missing_legacy:
+                    
+                    message += '\n\n--Missing Legacy Times--'
+                    message += '\n\nThese are files that were archived before hydrus started tracking archive time (2022-02). If you select to fill these in, hydrus will insert a synthetic time that is import time + 20% of the time to 2022-02 or any file deletion time.'
+                    
+                    yes_tuples.append( ( 'do legacy times', [ 'legacy' ] ) )
+                    
+                
+                if we_are_missing_import:
+                    
+                    message += '\n\n--Missing Import Times--'
+                    message += '\n\nThese are most likely files that were imported with "automatically archive", which for some period until 2024-12 were not recording archive times due to a bug. It may include a few other instances of missing archived files (e.g. you manually deleted one). If you select to fill these in, hydrus will insert a synthetic time that is the same as the import time.'
+                    
+                    yes_tuples.append( ( 'do import times', [ 'import' ] ) )
+                    
+                
+                if we_are_missing_legacy and we_are_missing_import:
+                    
+                    yes_tuples.append( ( 'do both', [ 'legacy', 'import' ] ) )
+                    
+                
+                try:
+                    
+                    jobs = ClientGUIDialogsQuick.GetYesYesNo( self, message, yes_tuples = yes_tuples, no_label = 'forget it' )
+                    
+                except HydrusExceptions.CancelledException:
+                    
+                    job_status.FinishAndDismiss()
+                    
+                    return
+                    
+                
+                self._controller.CallToThread( do_it_fix_step, job_status, jobs )
+                
+            else:
+                
+                job_status.SetStatusText( 'No missing archive times found!' )
+                
+                job_status.Finish()
+                
+            
+        
+        def do_it_fix_step( job_status, jobs ):
+            
+            for job in jobs:
+                
+                if job == 'legacy':
+                    
+                    self._controller.WriteSynchronous( 'missing_archive_timestamps_legacy_fillin', job_status )
+                    
+                elif job == 'import':
+                    
+                    self._controller.WriteSynchronous( 'missing_archive_timestamps_import_fillin', job_status )
+                    
+                
+                if job_status.IsCancelled():
+                    
+                    return
+                    
+                
+            
+            job_status.SetStatusText( 'Done!' )
+            job_status.Finish()
+            
+        
+        message = 'There are a couple of ways your client may be missing archive times for your files. This will scan for missing times and then present you with the results and a choice on what to do.'
+        message += '\n' * 2
+        message += 'The scan may take a while. It will have a popup showing its work, but it may lock up your client for a bit while it works.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'start the scan', no_label = 'forget it' )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            job_status = ClientThreading.JobStatus( cancellable = True )
+            
+            job_status.SetStatusTitle( 'missing archive times work' )
+            CG.client_controller.pub( 'message', job_status )
+            
+            self._controller.CallToThread( do_it_scan_step, job_status )
             
         
     
@@ -2237,7 +2369,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         with QP.DirDialog( self, 'Select location.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = dlg.GetPath()
                 
@@ -3244,6 +3376,10 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ClientGUIMenus.AppendMenuItem( file_maintenance_menu, 'clear orphan files' + HC.UNICODE_ELLIPSIS, 'Clear out surplus files that have found their way into the file structure.', self._ClearOrphanFiles )
         
+        ClientGUIMenus.AppendSeparator( file_maintenance_menu )
+        
+        ClientGUIMenus.AppendMenuItem( file_maintenance_menu, 'fix missing file archived times' + HC.UNICODE_ELLIPSIS, 'Search for and fill-in missing file archive times.', self._FixMissingArchiveTimes )
+        
         ClientGUIMenus.AppendMenu( menu, file_maintenance_menu, 'file maintenance' )
         
         #
@@ -3497,8 +3633,9 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'canvas tile borders mode', 'Draw tile borders.', HG.canvas_tile_outline_mode, self._SwitchBoolean, 'canvas_tile_outline_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'daemon report mode', 'Have the daemons report whenever they fire their jobs.', HG.daemon_report_mode, self._SwitchBoolean, 'daemon_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'db report mode', 'Have the db report query information, where supported.', HG.db_report_mode, self._SwitchBoolean, 'db_report_mode' )
-        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file import report mode', 'Have the db and file manager report file import progress.', HG.file_import_report_mode, self._SwitchBoolean, 'file_import_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file report mode', 'Have the file manager report file request information, where supported.', HG.file_report_mode, self._SwitchBoolean, 'file_report_mode' )
+        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file import report mode', 'Have the db and file manager report file import progress.', HG.file_import_report_mode, self._SwitchBoolean, 'file_import_report_mode' )
+        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file sort report mode', 'Have the file sorter spam you with sort key results.', HG.file_sort_report_mode, self._SwitchBoolean, 'file_sort_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'gui report mode', 'Have the gui report inside information, where supported.', HG.gui_report_mode, self._SwitchBoolean, 'gui_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'hover window report mode', 'Have the hover windows report their show/hide logic.', HG.hover_window_report_mode, self._SwitchBoolean, 'hover_window_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'media load report mode', 'Have the client report media load information, where supported.', HG.media_load_report_mode, self._SwitchBoolean, 'media_load_report_mode' )
@@ -3555,10 +3692,12 @@ ATTACH "client.mappings.db" as external_mappings;'''
         data_actions = ClientGUIMenus.GenerateMenu( debug_menu )
         
         ClientGUIMenus.AppendMenuCheckItem( data_actions, 'db ui-hang relief mode', 'Have UI-synchronised database jobs process pending Qt events while they wait.', HG.db_ui_hang_relief_mode, self._SwitchBoolean, 'db_ui_hang_relief_mode' )
+        ClientGUIMenus.AppendMenuItem( data_actions, 'flush log', 'Command the log to write any buffered contents to hard drive.', HydrusData.DebugPrint, 'Flushing log' )
+        ClientGUIMenus.AppendMenuItem( data_actions, 'force database commit', 'Command the database to flush all pending changes to disk.', CG.client_controller.ForceDatabaseCommit )
         ClientGUIMenus.AppendMenuItem( data_actions, 'review threads', 'Show current threads and what they are doing.', self._ReviewThreads )
+        ClientGUIMenus.AppendMenuItem( data_actions, 'show env', 'Print your current environment variables.', HydrusEnvironment.DumpEnv )
         ClientGUIMenus.AppendMenuItem( data_actions, 'show scheduled jobs', 'Print some information about the currently scheduled jobs log.', self._DebugShowScheduledJobs )
         ClientGUIMenus.AppendMenuItem( data_actions, 'subscription manager snapshot', 'Have the subscription system show what it is doing.', self._controller.subscriptions_manager.ShowSnapshot )
-        ClientGUIMenus.AppendMenuItem( data_actions, 'flush log', 'Command the log to write any buffered contents to hard drive.', HydrusData.DebugPrint, 'Flushing log' )
         ClientGUIMenus.AppendSeparator( data_actions )
         ClientGUIMenus.AppendMenuItem( data_actions, 'simulate program exit signal', 'Kill the program via a QApplication exit.', QW.QApplication.instance().exit )
         
@@ -3941,7 +4080,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Previous shutdown was bad', yes_label = 'try to load "' + default_gui_session + '"', no_label = 'just load a blank page', auto_yes_time = 15 )
                 
-                if result == QW.QDialog.Rejected:
+                if result == QW.QDialog.DialogCode.Rejected:
                     
                     load_a_blank_page = True
                     
@@ -4008,7 +4147,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -4068,7 +4207,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( account_types, deletee_account_type_keys_to_new_account_type_keys ) = panel.GetValue()
                 
@@ -4116,7 +4255,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 (
                     file_post_default_tag_import_options,
@@ -4155,7 +4294,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( gug_keys_to_display, url_class_keys_to_display, show_unmatched_urls_in_media_viewer ) = panel.GetValue()
                 
@@ -4179,7 +4318,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     export_folders = panel.GetValue()
                     
@@ -4277,7 +4416,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 gugs = panel.GetValue()
                 
@@ -4298,7 +4437,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     import_folders = panel.GetValue()
                     
@@ -4395,7 +4534,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 domains_to_login_info = panel.GetValue()
                 
@@ -4425,7 +4564,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 login_scripts = panel.GetValue()
                 
@@ -4448,7 +4587,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 network_contexts_to_custom_header_dicts = panel.GetValue()
                 
@@ -4544,7 +4683,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 parsers = panel.GetValue()
                 
@@ -4628,7 +4767,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 nullification_period = control.GetValue()
                 
@@ -4692,7 +4831,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 tag_filter = panel.GetValue()
                 
@@ -4753,7 +4892,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 update_period = control.GetValue()
                 
@@ -4817,7 +4956,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, text, title = 'Missing Query Logs!', yes_label = 'continue', no_label = 'back out' )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     from hydrus.client.importing import ClientImportSubscriptionQuery
                     
@@ -4857,7 +4996,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, text, title = 'Orphan Query Logs!', yes_label = 'continue', no_label = 'back out' )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     sub_dir = os.path.join( self._controller.GetDBDir(), 'orphaned_query_log_containers' )
                     
@@ -4892,7 +5031,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     ( subscriptions, edited_query_log_containers, deletee_query_log_container_names ) = panel.GetValue()
                     
@@ -5003,7 +5142,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 tag_display_manager = panel.GetValue()
                 
@@ -5028,7 +5167,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( edited_master_service_keys_to_sibling_applicable_service_keys, edited_master_service_keys_to_parent_applicable_service_keys ) = panel.GetValue()
                 
@@ -5075,7 +5214,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 url_classes = panel.GetValue()
                 
@@ -5103,7 +5242,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 url_class_keys_to_parser_keys = panel.GetValue()
                 
@@ -5148,7 +5287,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the account id for the account to be modified.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 try:
                     
@@ -5273,6 +5412,16 @@ ATTACH "client.mappings.db" as external_mappings;'''
             busy_tooltip = None
             
         
+        self._statusbar.SetStatusText( media_status, 0 )
+        self._statusbar.SetStatusText( idle_status, 2, tooltip = idle_tooltip )
+        self._statusbar.SetStatusText( hydrus_busy_status, 3, tooltip = hydrus_busy_tooltip )
+        self._statusbar.SetStatusText( busy_status, 4, tooltip = busy_tooltip )
+        
+        self._RefreshStatusBarDB()
+        
+    
+    def _RefreshStatusBarDB( self ):
+        
         ( db_status, job_name ) = CG.client_controller.GetDBStatus()
         
         if job_name is not None and job_name != '':
@@ -5284,12 +5433,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
             db_tooltip = None
             
         
-        self._statusbar.setToolTip( ClientGUIFunctions.WrapToolTip( job_name ) )
-        
-        self._statusbar.SetStatusText( media_status, 0 )
-        self._statusbar.SetStatusText( idle_status, 2, tooltip = idle_tooltip )
-        self._statusbar.SetStatusText( hydrus_busy_status, 3, tooltip = hydrus_busy_tooltip )
-        self._statusbar.SetStatusText( busy_status, 4, tooltip = busy_tooltip )
         self._statusbar.SetStatusText( db_status, 5, tooltip = db_tooltip )
         
     
@@ -5303,7 +5446,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5328,7 +5471,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'regenerate_local_hash_cache' )
             
@@ -5344,7 +5487,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'regenerate_local_tag_cache' )
             
@@ -5360,7 +5503,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5385,7 +5528,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5412,7 +5555,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5437,7 +5580,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5462,7 +5605,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ( result, was_cancelled ) = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it', check_for_cancelled = True )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'regenerate_similar_files' )
             
@@ -5478,7 +5621,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5503,7 +5646,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'regenerate_tag_parents_cache' )
             
@@ -5519,7 +5662,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'regenerate_tag_siblings_and_parents_cache' )
             
@@ -5571,7 +5714,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             job_status = ClientThreading.JobStatus( cancellable = True )
             
@@ -5593,7 +5736,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'I have a reason to run this, let\'s do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             job_status = ClientThreading.JobStatus( cancellable = True )
             
@@ -5624,7 +5767,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5649,7 +5792,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -5713,7 +5856,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             service = self._controller.services_manager.GetService( service_key )
             
@@ -5736,7 +5879,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'resync_combined_deleted_files', do_full_rebuild = True )
             
@@ -5752,7 +5895,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it--now choose which service', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             try:
                 
@@ -6338,31 +6481,31 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 t += 0.01
                 
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             t += SYS_PRED_REFRESH
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             t += SYS_PRED_REFRESH
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Down )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Down )
             
             t += 0.05
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             t += SYS_PRED_REFRESH
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Down )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Down )
             
             t += 0.05
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             t += SYS_PRED_REFRESH
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             for i in range( 20 ):
                 
@@ -6370,25 +6513,25 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 for j in range( i + 1 ):
                     
-                    CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Down )
+                    CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Down )
                     
                     t += 0.1
                     
                 
-                CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+                CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
                 
                 t += SYS_PRED_REFRESH
                 
-                CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, None, QC.Qt.Key_Return )
+                CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, None, QC.Qt.Key.Key_Return )
                 
             
             t += 1.0
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Down )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Down )
             
             t += 0.05
             
-            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key_Return )
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', uias.Char, ac_widget, QC.Qt.Key.Key_Return )
             
             t += 1.0
             
@@ -6508,7 +6651,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.CallToThread( do_it )
             
@@ -6559,7 +6702,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             service = self._controller.services_manager.GetService( service_key )
             
@@ -6579,7 +6722,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         with ClientGUIDialogs.DialogTextEntry( self, message, allow_blank = True, min_char_width = 24 ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 password = dlg.GetValue()
                 
@@ -6640,7 +6783,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         with QP.DirDialog( self, 'Select backup location.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = dlg.GetPath()
                 
@@ -6695,7 +6838,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, text )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     self._new_options.SetNoneableString( 'backup_path', path )
                     self._new_options.SetNoneableInteger( 'last_backup_time', None )
@@ -6704,7 +6847,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, text )
                     
-                    if result == QW.QDialog.Accepted:
+                    if result == QW.QDialog.DialogCode.Accepted:
                         
                         self._BackupDatabase()
                         
@@ -6802,7 +6945,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 result = dlg.exec()
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     multihash = dlg.GetValue()
                     
@@ -6855,6 +6998,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         elif name == 'file_report_mode':
             
             HG.file_report_mode = not HG.file_report_mode
+            
+        elif name == 'file_sort_report_mode':
+            
+            HG.file_sort_report_mode = not HG.file_sort_report_mode
             
         elif name == 'gui_report_mode':
             
@@ -7080,11 +7227,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             return
             
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'vacuum', maintenance_mode = HC.MAINTENANCE_FORCED )
             
-        elif result == QW.QDialog.Rejected:
+        elif result == QW.QDialog.DialogCode.Rejected:
             
             self._controller.Write( 'vacuum', maintenance_mode = HC.MAINTENANCE_FORCED, force_vacuum = True )
             
@@ -7123,7 +7270,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             service = self._controller.services_manager.GetService( service_key )
             
@@ -7181,7 +7328,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self.DeleteAllClosedPages()
             
@@ -7331,9 +7478,9 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             if watched == self:
                 
-                if event.type() == QC.QEvent.WindowStateChange:
+                if event.type() == QC.QEvent.Type.WindowStateChange:
                     
-                    was_minimised = event.oldState() == QC.Qt.WindowMinimized
+                    was_minimised = event.oldState() == QC.Qt.WindowState.WindowMinimized
                     is_minimised = self.isMinimized()
                     
                     if was_minimised != is_minimised:
@@ -7345,7 +7492,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                         
                         if is_minimised:
                             
-                            self._was_maximised = event.oldState() == QC.Qt.WindowMaximized
+                            self._was_maximised = event.oldState() == QC.Qt.WindowState.WindowMaximized
                             
                             if not self._currently_minimised_to_system_tray and self._controller.new_options.GetBoolean( 'minimise_client_to_system_tray' ):
                                 
@@ -7495,7 +7642,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'delete_pending', service_key )
             
@@ -8052,7 +8199,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 with ClientGUIDialogs.DialogTextEntry( self, 'Enter a name for the new session.', default = suggested_name ) as dlg:
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         name = dlg.GetValue()
                         
@@ -8074,7 +8221,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                                     
                                     return
                                     
-                                elif result == QW.QDialog.Rejected:
+                                elif result == QW.QDialog.DialogCode.Rejected:
                                     
                                     continue
                                     
@@ -8096,7 +8243,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Overwrite existing session?', yes_label = 'yes, overwrite', no_label = 'no' )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -8157,6 +8304,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._RefreshStatusBar()
         
     
+    def RefreshStatusBarDB( self ):
+        
+        self._RefreshStatusBarDB()
+        
+    
     def RegisterAnimationUpdateWindow( self, window ):
         
         self._animation_update_windows.add( window )
@@ -8193,7 +8345,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._persistent_mpv_widgets.append( mpv_widget )
         
     
-    def _UnloadAndPurgeQtMediaplayer( self, qt_media_player: QW.QWidget ):
+    def _UnloadAndPurgeQtMediaplayer( self, qt_media_player: ClientGUICanvasMedia.QtMediaPlayer ):
         
         if qt_media_player.IsCompletelyUnloaded():
             
@@ -8207,7 +8359,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
         
     
-    def ReleaseQtMediaPlayer( self, qt_media_player: QW.QWidget ):
+    def ReleaseQtMediaPlayer( self, qt_media_player: ClientGUICanvasMedia.QtMediaPlayer ):
         
         if qt_media_player.parentWidget() != self:
             
@@ -8601,6 +8753,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._statusbar_thread_updater.Update()
         
     
+    def SetStatusBarDirtyDB( self ):
+        
+        self._statusbar_db_thread_updater.Update()
+        
+    
     def ShowPage( self, page_key ):
         
         page = self._notebook.GetPageFromPageKey( page_key )
@@ -8617,9 +8774,9 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         if not self._controller.DoingFastExit():
             
-            able_to_close_statement = self._notebook.GetTestAbleToCloseStatement()
+            reasons_and_pages = self._notebook.GetTestAbleToCloseData()
             
-            if HC.options[ 'confirm_client_exit' ] or able_to_close_statement is not None:
+            if HC.options[ 'confirm_client_exit' ] or len( reasons_and_pages ) > 0:
                 
                 if restart:
                     
@@ -8630,17 +8787,37 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                     text = 'Are you sure you want to exit the client? (Will auto-yes in 15 seconds)'
                     
                 
-                if able_to_close_statement is not None:
+                if len( reasons_and_pages ) > 0:
+                    
+                    able_to_close_statement = ClientGUIPages.ConvertReasonsAndPagesToStatement( reasons_and_pages )
+                    
+                    if 'import' in able_to_close_statement:
+                        
+                        text += '\n' * 2
+                        text += 'Importers will save and continue their work on the next start.'
+                        
                     
                     text += '\n' * 2
                     text += able_to_close_statement
                     
-                
-                result = ClientGUIDialogsQuick.GetYesNo( self, text, auto_yes_time = 15 )
-                
-                if result == QW.QDialog.Rejected:
                     
-                    return
+                    try:
+                        
+                        ClientGUIPages.ShowReasonsAndPagesConfirmationDialog( self, reasons_and_pages, text, auto_yes_time = 15 )
+                        
+                    except HydrusExceptions.VetoException:
+                        
+                        return
+                        
+                    
+                else:
+                    
+                    result = ClientGUIDialogsQuick.GetYesNo( self, text, auto_yes_time = 15 )
+                    
+                    if result != QW.QDialog.DialogCode.Accepted:
+                        
+                        return
+                        
                     
                 
             
@@ -8701,7 +8878,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                                 
                                 return
                                 
-                            elif result == QW.QDialog.Accepted:
+                            elif result == QW.QDialog.DialogCode.Accepted:
                                 
                                 HG.do_idle_shutdown_work = True
                                 

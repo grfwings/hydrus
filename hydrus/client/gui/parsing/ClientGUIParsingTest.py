@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 import traceback
 import typing
@@ -9,7 +8,6 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTemp
 from hydrus.core import HydrusText
@@ -181,7 +179,7 @@ class TestPanel( QW.QWidget ):
         
         with ClientGUIDialogs.DialogTextEntry( self, message, placeholder = 'enter url', allow_blank = False) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 url = dlg.GetValue()
                 

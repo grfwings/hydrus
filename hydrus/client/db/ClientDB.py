@@ -74,6 +74,7 @@ from hydrus.client.db import ClientDBURLMap
 from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.importing import ClientImportFiles
+from hydrus.client.media import ClientMediaFileFilter # don't remove this without care, it initialises serialised object early
 from hydrus.client.media import ClientMediaManagers
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultCache
@@ -84,12 +85,16 @@ from hydrus.client.networking import ClientNetworkingBandwidth
 from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingLogin
 from hydrus.client.networking import ClientNetworkingSessions
+from hydrus.client.search import ClientNumberTest
 from hydrus.client.search import ClientSearchFavouriteSearches
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
 
+# noinspection PyUnresolvedReferences
 from hydrus.client.importing import ClientImportSubscriptionLegacy
+# noinspection PyUnresolvedReferences
 from hydrus.client.networking import ClientNetworkingSessionsLegacy
+# noinspection PyUnresolvedReferences
 from hydrus.client.networking import ClientNetworkingBandwidthLegacy
 
 #
@@ -248,6 +253,9 @@ class DB( HydrusDB.HydrusDB ):
         self._regen_tags_managers_tag_ids = set()
         
         super().__init__( controller, db_dir, db_name )
+        
+        # helps linter
+        self._controller = controller
         
     
     def _AddFiles( self, service_id, rows ):
@@ -4817,6 +4825,9 @@ class DB( HydrusDB.HydrusDB ):
     
     def _GetTrashHashes( self, limit = None, minimum_age = None ):
         
+        # TODO: rework the filedeletelock to be a thing that kicks in _during_ the search, so the LIMIT remains valid. otherwise too many locked files means this chokes
+        # TODO: also update the report mode to talk about the lock
+        
         if limit is None:
             
             limit_phrase = ''
@@ -4843,7 +4854,7 @@ class DB( HydrusDB.HydrusDB ):
         
         hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {}{}{};'.format( current_files_table_name, age_phrase, limit_phrase ) ) )
         
-        hash_ids = self.modules_file_delete_lock.FilterForFileDeleteLock( self.modules_services.trash_service_id, hash_ids )
+        hash_ids = self.modules_file_delete_lock.FilterForPhysicalFileDeleteLock( hash_ids )
         
         if HG.db_report_mode:
             
@@ -4862,7 +4873,7 @@ class DB( HydrusDB.HydrusDB ):
             
             if minimum_age is not None:
                 
-                message += ' with minimum age ' + ClientTime.TimestampToPrettyTimeDelta( timestamp_cutoff, just_now_threshold = 0 ) + ','
+                message += ' with minimum age ' + HydrusTime.TimestampToPrettyTimeDelta( timestamp_cutoff, just_now_threshold = 0 ) + ','
                 
             
             message += ' I found ' + HydrusNumbers.ToHumanInt( len( hash_ids ) ) + '.'
@@ -4936,7 +4947,7 @@ class DB( HydrusDB.HydrusDB ):
                     HydrusData.ShowText( 'File import job associating perceptual_hashes' )
                     
                 
-                self.modules_similar_files.AssociatePerceptualHashes( hash_id, perceptual_hashes )
+                self.modules_similar_files.SetPerceptualHashes( hash_id, perceptual_hashes )
                 
             
             if HG.file_import_report_mode:
@@ -4988,6 +4999,11 @@ class DB( HydrusDB.HydrusDB ):
                 if HG.file_import_report_mode:
                     
                     HydrusData.ShowText( 'File import job archiving new file' )
+                    
+                
+                if hash_id not in self.modules_files_inbox.inbox_hash_ids:
+                    
+                    self.modules_files_inbox.InboxFiles( ( hash_id, ) )
                     
                 
                 self.modules_files_inbox.ArchiveFiles( ( hash_id, ) )
@@ -5061,6 +5077,188 @@ class DB( HydrusDB.HydrusDB ):
         now_ms = HydrusTime.GetNowMS()
         
         self._AddFiles( self.modules_services.local_update_service_id, [ ( hash_id, now_ms ) ] )
+        
+    
+    def _InitCommandsToMethods( self ):
+        
+        super()._InitCommandsToMethods()
+        
+        self._read_commands_to_methods.update(
+            {
+                'boned_stats' : self._GetBonedStats,
+                'duplicate_pairs_for_filtering' : self._DuplicatesGetPotentialDuplicatePairsForFiltering,
+                'file_history' : self._GetFileHistory,
+                'file_info_managers' : self._GetFileInfoManagersFromHashes,
+                'file_info_managers_from_ids' : self._GetFileInfoManagers,
+                'file_system_predicates' : self._GetFileSystemPredicates,
+                'force_refresh_tags_managers' : self._GetForceRefreshTagsManagers,
+                'inbox_hashes' : self._FilterInboxHashes,
+                'is_an_orphan' : self._IsAnOrphan,
+                'maintenance_due' : self._GetMaintenanceDue,
+                'media_result' : self._GetMediaResultFromHash,
+                'media_results' : self._GetMediaResultsFromHashes,
+                'media_results_from_ids' : self._GetMediaResults,
+                'migration_filter_pairs_by_count' : self._MigrationFilterPairsByCount,
+                'migration_get_mappings' : self._MigrationGetMappings,
+                'migration_get_pairs' : self._MigrationGetPairs,
+                'missing_thumbnail_hashes' : self._GetRepositoryThumbnailHashesIDoNotHave,
+                'nums_pending' : self._GetNumsPending,
+                'options' : self._GetOptions,
+                'pending' : self._GetPending,
+                'potential_duplicates_count' : self._DuplicatesGetPotentialDuplicatesCount,
+                'random_potential_duplicate_hashes' : self._DuplicatesGetRandomPotentialDuplicateHashes,
+                'related_tags' : self._GetRelatedTags,
+                'service_info' : self._GetServiceInfo,
+                'tables_and_columns_using_definitions' : self._GetTablesAndColumnsUsingDefinitions,
+                'tag_display_maintenance_status' : self._CacheTagDisplayGetApplicationStatusNumbers,
+                'trash_hashes' : self._GetTrashHashes,
+            }
+        )
+        
+        self._read_commands_to_methods.update(
+            {
+                'autocomplete_predicates' : self.modules_tag_search.GetAutocompletePredicates,
+                'client_files_subfolders' : self.modules_files_physical_storage.GetClientFilesSubfolders,
+                'deferred_delete_data' : self.modules_db_maintenance.GetDeferredDeleteTableData,
+                'deferred_physical_delete' : self.modules_files_storage.GetDeferredPhysicalDelete,
+                'file_duplicate_hashes' : self.modules_files_duplicates.GetFileHashesByDuplicateType,
+                'file_duplicate_info' : self.modules_files_duplicates.GetFileDuplicateInfo,
+                'file_hashes' : self.modules_hashes.GetFileHashes,
+                'file_maintenance_get_job_counts' : self.modules_files_maintenance_queue.GetJobCounts,
+                'file_maintenance_get_jobs' : self.modules_files_maintenance_queue.GetJobs,
+                'file_query_ids' : self.modules_files_query.GetHashIdsFromQuery,
+                'file_relationships_for_api' : self.modules_files_duplicates.GetFileRelationshipsForAPI,
+                'filter_existing_tags' : self.modules_mappings_counts_update.FilterExistingTags,
+                'filter_hashes' : self.modules_files_metadata_rich.FilterHashesByService,
+                'gui_session' : self.modules_serialisable.GetGUISession,
+                'hash_ids_to_hashes' : self.modules_hashes_local_cache.GetHashIdsToHashes,
+                'hash_status' : self.modules_files_metadata_rich.GetHashStatus,
+                'have_hashed_serialised_objects' : self.modules_serialisable.HaveHashedJSONDumps,
+                'ideal_client_files_locations' : self.modules_files_physical_storage.GetIdealClientFilesLocations,
+                'last_shutdown_work_time' : self.modules_db_maintenance.GetLastShutdownWorkTime,
+                'media_predicates' : self.modules_tag_display.GetMediaPredicates,
+                'missing_archive_timestamps_import_test' : self.modules_files_inbox.WeHaveMissingImportArchiveTimestamps,
+                'missing_archive_timestamps_legacy_test' : self.modules_files_inbox.WeHaveMissingLegacyArchiveTimestamps,
+                'missing_repository_update_hashes' : self.modules_repositories.GetRepositoryUpdateHashesIDoNotHave,
+                'num_deferred_file_deletes' : self.modules_files_storage.GetDeferredPhysicalDeleteCounts,
+                'recent_tags' : self.modules_recent_tags.GetRecentTags,
+                'repository_progress' : self.modules_repositories.GetRepositoryProgress,
+                'repository_update_hashes_to_process' : self.modules_repositories.GetRepositoryUpdateHashesICanProcess,
+                'serialisable' : self.modules_serialisable.GetJSONDump,
+                'serialisable_simple' : self.modules_serialisable.GetJSONSimple,
+                'serialisable_named' : self.modules_serialisable.GetJSONDumpNamed,
+                'serialisable_names' : self.modules_serialisable.GetJSONDumpNames,
+                'serialisable_names_to_backup_timestamps_ms' : self.modules_serialisable.GetJSONDumpNamesToBackupTimestampsMS,
+                'service_directory' : self.modules_service_paths.GetServiceDirectoryHashes,
+                'service_directories' : self.modules_service_paths.GetServiceDirectoriesInfo,
+                'service_id' : self.modules_services.GetServiceId,
+                'services' : self.modules_services.GetServices,
+                'similar_files_maintenance_status' : self.modules_similar_files.GetMaintenanceStatus,
+                'tag_descendants_lookup' : self.modules_tag_display.GetDescendantsForTags,
+                'tag_display_application' : self.modules_tag_display.GetApplication,
+                'tag_parents' : self.modules_tag_parents.GetTagParents,
+                'tag_predicates' : self.modules_tag_search.GetTagPredicates,
+                'tag_siblings' : self.modules_tag_siblings.GetTagSiblings,
+                'tag_siblings_all_ideals' : self.modules_tag_siblings.GetTagSiblingsIdeals,
+                'tag_display_decorators' : self.modules_tag_display.GetUIDecorators,
+                'tag_siblings_and_parents_lookup' : self.modules_tag_display.GetSiblingsAndParentsForTags,
+                'tag_siblings_lookup' : self.modules_tag_siblings.GetTagSiblingsForTags,
+                'url_statuses' : self.modules_files_metadata_rich.GetURLStatuses,
+                'vacuum_data' : self.modules_db_maintenance.GetVacuumData
+            }
+        )
+        
+        self._write_commands_to_methods.update(
+            {
+                'backup' : self._Backup,
+                'clear_orphan_file_records' : self._ClearOrphanFileRecords,
+                'content_updates' : self._ProcessContentUpdatePackage,
+                'delete_pending' : self._DeletePending,
+                'delete_service_info' : self._DeleteServiceInfo,
+                'dirty_services' : self._SaveDirtyServices,
+                'duplicate_pair_status' : self._DuplicatesSetDuplicatePairStatus,
+                'fix_logically_inconsistent_mappings' : self._FixLogicallyInconsistentMappings,
+                'force_filetype' : self._ForceFiletypes,
+                'import_file' : self._ImportFile,
+                'import_update' : self._ImportUpdate,
+                'maintain_similar_files_search_for_potential_duplicates' : self._PerceptualHashesSearchForPotentialDuplicates,
+                'migration_clear_job' : self._MigrationClearJob,
+                'migration_start_mappings_job' : self._MigrationStartMappingsJob,
+                'migration_start_pairs_job' : self._MigrationStartPairsJob,
+                'process_repository_content' : self._ProcessRepositoryContent,
+                'regenerate_local_hash_cache' : self._RegenerateLocalHashCache,
+                'regenerate_local_tag_cache' : self._RegenerateLocalTagCache,
+                'regenerate_searchable_subtag_maps' : self._RegenerateTagCacheSearchableSubtagMaps,
+                'regenerate_tag_cache' : self._RegenerateTagCache,
+                'regenerate_tag_display_mappings_cache' : self._RegenerateTagDisplayMappingsCache,
+                'regenerate_tag_display_pending_mappings_cache' : self._RegenerateTagDisplayPendingMappingsCache,
+                'regenerate_tag_mappings_cache' : self._RegenerateTagMappingsCache,
+                'regenerate_tag_mappings_tags' : self._RegenerateTagMappingsTags,
+                'regenerate_tag_parents_cache' : self._RegenerateTagParentsCache,
+                'regenerate_tag_pending_mappings_cache' : self._RegenerateTagPendingMappingsCache,
+                'repopulate_mappings_from_cache' : self._RepopulateMappingsFromCache,
+                'repopulate_tag_cache_missing_subtags' : self._RepopulateTagCacheMissingSubtags,
+                'repopulate_tag_display_mappings_cache' : self._RepopulateTagDisplayMappingsCache,
+                'repair_invalid_tags' : self._RepairInvalidTags,
+                'reset_repository' : self._ResetRepository,
+                'reset_repository_processing' : self._ResetRepositoryProcessing,
+                'reset_potential_search_status' : self._PerceptualHashesResetSearchFromHashes,
+                'resync_combined_deleted_files' : self._ResyncCombinedDeletedFiles,
+                'resync_tag_mappings_cache_files' : self._ResyncTagMappingsCacheFiles,
+                'save_options' : self._SaveOptions,
+                'set_password' : self._SetPassword,
+                'sync_tag_display_maintenance' : self._CacheTagDisplaySync,
+                'update_server_services' : self._UpdateServerServices,
+                'update_services' : self._UpdateServices,
+                'vacuum' : self._Vacuum
+            }
+        )
+        
+        self._write_commands_to_methods.update(
+            {
+                'analyze' : self.modules_db_maintenance.AnalyzeDueTables,
+                'associate_repository_update_hashes' : self.modules_repositories.AssociateRepositoryUpdateHashes,
+                'clear_deferred_physical_delete' : self.modules_files_storage.ClearDeferredPhysicalDelete,
+                'clear_false_positive_relations' : self.modules_files_duplicates.ClearAllFalsePositiveRelationsFromHashes,
+                'clear_false_positive_relations_between_groups' : self.modules_files_duplicates.ClearFalsePositiveRelationsBetweenGroupsFromHashes,
+                'clear_orphan_tables' : self.modules_db_maintenance.ClearOrphanTables,
+                'cull_file_viewing_statistics' : self.modules_files_viewing_stats.CullFileViewingStatistics,
+                'db_integrity' : self.modules_db_maintenance.CheckDBIntegrity,
+                'delete_serialisable_named' : self.modules_serialisable.DeleteJSONDumpNamed,
+                'delete_potential_duplicate_pairs' : self.modules_files_duplicates.DeleteAllPotentialDuplicatePairs,
+                'dissolve_alternates_group' : self.modules_files_duplicates.DissolveAlternatesGroupIdFromHashes,
+                'dissolve_duplicates_group' : self.modules_files_duplicates.DissolveMediaIdFromHashes,
+                'do_deferred_table_delete_work' : self.modules_db_maintenance.DoDeferredDeleteTablesWork,
+                'duplicate_set_king' : self.modules_files_duplicates.SetKingFromHash,
+                'file_maintenance_add_jobs' : self.modules_files_maintenance_queue.AddJobs,
+                'file_maintenance_add_jobs_hashes' : self.modules_files_maintenance_queue.AddJobsHashes,
+                'file_maintenance_cancel_jobs' : self.modules_files_maintenance_queue.CancelJobs,
+                'file_maintenance_clear_jobs' : self.modules_files_maintenance.ClearJobs,
+                'ideal_client_files_locations' : self.modules_files_physical_storage.SetIdealClientFilesLocations,
+                'maintain_hashed_serialisables' : self.modules_serialisable.MaintainHashedStorage,
+                'maintain_similar_files_tree' : self.modules_similar_files.MaintainTree,
+                'missing_archive_timestamps_import_fillin' : self.modules_files_inbox.FillInMissingImportArchiveTimestamps,
+                'missing_archive_timestamps_legacy_fillin' : self.modules_files_inbox.FillInMissingLegacyArchiveTimestamps,
+                'process_repository_definitions' : self.modules_repositories.ProcessRepositoryDefinitions,
+                'push_recent_tags' : self.modules_recent_tags.PushRecentTags,
+                'regenerate_similar_files' : self.modules_similar_files.RegenerateTree,
+                'regenerate_tag_siblings_and_parents_cache' : self.modules_tag_display.RegenerateTagSiblingsAndParentsCache,
+                'register_shutdown_work' : self.modules_db_maintenance.RegisterShutdownWork,
+                'relocate_client_files' : self.modules_files_physical_storage.RelocateClientFiles,
+                'remove_alternates_member' : self.modules_files_duplicates.RemoveAlternateMemberFromHashes,
+                'remove_duplicates_member' : self.modules_files_duplicates.RemoveMediaIdMemberFromHashes,
+                'remove_potential_pairs' : self.modules_files_duplicates.RemovePotentialPairsFromHashes,
+                'repair_client_files' : self.modules_files_physical_storage.RepairClientFiles,
+                'reprocess_repository' : self.modules_repositories.ReprocessRepository,
+                'serialisable' : self.modules_serialisable.SetJSONDump,
+                'serialisable_atomic' : self.modules_serialisable.SetJSONComplex,
+                'serialisable_simple' : self.modules_serialisable.SetJSONSimple,
+                'serialisables_overwrite' : self.modules_serialisable.OverwriteJSONDumps,
+                'set_repository_update_hashes' : self.modules_repositories.SetRepositoryUpdateHashes,
+                'schedule_repository_update_file_maintenance' : self.modules_repositories.ScheduleRepositoryUpdateFileMaintenance,
+                'tag_display_application' : self.modules_tag_display.SetApplication
+            }
+        )
         
     
     def _InitExternalDatabases( self ):
@@ -5174,7 +5372,7 @@ class DB( HydrusDB.HydrusDB ):
         
         #
         
-        self.modules_files_inbox = ClientDBFilesInbox.ClientDBFilesInbox( self._c, self.modules_files_storage, self.modules_files_timestamps )
+        self.modules_files_inbox = ClientDBFilesInbox.ClientDBFilesInbox( self._c, self.modules_services, self.modules_files_storage, self.modules_files_timestamps )
         
         self._modules.append( self.modules_files_inbox )
         
@@ -5810,7 +6008,7 @@ class DB( HydrusDB.HydrusDB ):
         group_of_hash_ids = self._STL( self._Execute( 'SELECT hash_id FROM shape_search_cache WHERE searched_distance IS NULL or searched_distance < ?;', ( search_distance, ) ).fetchmany( 10 ) )
         
         while len( group_of_hash_ids ) > 0:
-        
+            
             text = 'searching potential duplicates: {}'.format( HydrusNumbers.ToHumanInt( num_done ) )
             
             CG.client_controller.frame_splash_status.SetSubtext( text )
@@ -5968,22 +6166,32 @@ class DB( HydrusDB.HydrusDB ):
                                 
                             elif action in ( HC.CONTENT_UPDATE_DELETE, HC.CONTENT_UPDATE_DELETE_FROM_SOURCE_AFTER_MIGRATE ):
                                 
-                                if action == HC.CONTENT_UPDATE_DELETE:
-                                    
-                                    actual_delete_hash_ids = self.modules_file_delete_lock.FilterForFileDeleteLock( service_id, hash_ids )
-                                    
-                                else:
-                                    
-                                    actual_delete_hash_ids = hash_ids
-                                    
+                                actual_delete_hash_ids = hash_ids
                                 
-                                if len( actual_delete_hash_ids ) < len( hash_ids ):
+                                if action == HC.CONTENT_UPDATE_DELETE and service_key in ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.TRASH_SERVICE_KEY ):
                                     
-                                    hash_ids = actual_delete_hash_ids
+                                    local_hash_ids = self.modules_files_storage.FilterHashIds( ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY ), hash_ids )
                                     
-                                    hashes = self.modules_hashes_local_cache.GetHashes( hash_ids )
+                                    actually_deletable_hash_ids = self.modules_file_delete_lock.FilterForPhysicalFileDeleteLock( local_hash_ids )
                                     
-                                    content_update.SetRow( hashes )
+                                    if len( actually_deletable_hash_ids ) < len( local_hash_ids ):
+                                        
+                                        # ok we hit the lock on some
+                                        undeletable_hash_ids = set( local_hash_ids ).difference( actually_deletable_hash_ids )
+                                        
+                                        media_results = self._GetMediaResults( undeletable_hash_ids, sorted = False )
+                                        
+                                        ClientMediaFileFilter.ReportDeleteLockFailures( media_results )
+                                        
+                                    
+                                    if len( actually_deletable_hash_ids ) < len( hash_ids ):
+                                        
+                                        hash_ids = actually_deletable_hash_ids
+                                        
+                                        hashes = self.modules_hashes_local_cache.GetHashes( hash_ids )
+                                        
+                                        content_update.SetRow( hashes )
+                                        
                                     
                                 
                                 if service_type in ( HC.LOCAL_FILE_DOMAIN, HC.COMBINED_LOCAL_MEDIA, HC.COMBINED_LOCAL_FILE ):
@@ -6009,13 +6217,6 @@ class DB( HydrusDB.HydrusDB ):
                                     # shouldn't be called anymore, but just in case someone fidgets a trash delete with client api or something
                                     
                                     self._DeleteFiles( self.modules_services.combined_local_file_service_id, hash_ids )
-                                    
-                                elif service_id == self.modules_services.combined_local_media_service_id:
-                                    
-                                    for s_id in self.modules_services.GetServiceIds( ( HC.LOCAL_FILE_DOMAIN, ) ):
-                                        
-                                        self._DeleteFiles( s_id, hash_ids, only_if_current = True )
-                                        
                                     
                                 else:
                                     
@@ -6946,86 +7147,6 @@ class DB( HydrusDB.HydrusDB ):
         self.modules_repositories.SetUpdateProcessed( service_id, content_hash, content_types_to_process )
         
         return num_rows_processed
-        
-    
-    def _Read( self, action, *args, **kwargs ):
-        
-        if action == 'autocomplete_predicates': result = self.modules_tag_search.GetAutocompletePredicates( *args, **kwargs )
-        elif action == 'boned_stats': result = self._GetBonedStats( *args, **kwargs )
-        elif action == 'client_files_subfolders': result = self.modules_files_physical_storage.GetClientFilesSubfolders( *args, **kwargs )
-        elif action == 'deferred_delete_data': result = self.modules_db_maintenance.GetDeferredDeleteTableData( *args, **kwargs )
-        elif action == 'deferred_physical_delete': result = self.modules_files_storage.GetDeferredPhysicalDelete( *args, **kwargs )
-        elif action == 'duplicate_pairs_for_filtering': result = self._DuplicatesGetPotentialDuplicatePairsForFiltering( *args, **kwargs )
-        elif action == 'file_duplicate_hashes': result = self.modules_files_duplicates.GetFileHashesByDuplicateType( *args, **kwargs )
-        elif action == 'file_duplicate_info': result = self.modules_files_duplicates.GetFileDuplicateInfo( *args, **kwargs )
-        elif action == 'file_hashes': result = self.modules_hashes.GetFileHashes( *args, **kwargs )
-        elif action == 'file_history': result = self._GetFileHistory( *args, **kwargs )
-        elif action == 'file_info_managers': result = self._GetFileInfoManagersFromHashes( *args, **kwargs )
-        elif action == 'file_info_managers_from_ids': result = self._GetFileInfoManagers( *args, **kwargs )
-        elif action == 'file_maintenance_get_job_counts': result = self.modules_files_maintenance_queue.GetJobCounts( *args, **kwargs )
-        elif action == 'file_maintenance_get_jobs': result = self.modules_files_maintenance_queue.GetJobs( *args, **kwargs )
-        elif action == 'file_query_ids': result = self.modules_files_query.GetHashIdsFromQuery( *args, **kwargs )
-        elif action == 'file_relationships_for_api': result = self.modules_files_duplicates.GetFileRelationshipsForAPI( *args, **kwargs )
-        elif action == 'file_system_predicates': result = self._GetFileSystemPredicates( *args, **kwargs )
-        elif action == 'filter_existing_tags': result = self.modules_mappings_counts_update.FilterExistingTags( *args, **kwargs )
-        elif action == 'filter_hashes': result = self.modules_files_metadata_rich.FilterHashesByService( *args, **kwargs )
-        elif action == 'force_refresh_tags_managers': result = self._GetForceRefreshTagsManagers( *args, **kwargs )
-        elif action == 'gui_session': result = self.modules_serialisable.GetGUISession( *args, **kwargs )
-        elif action == 'hash_ids_to_hashes': result = self.modules_hashes_local_cache.GetHashIdsToHashes( *args, **kwargs )
-        elif action == 'hash_status': result = self.modules_files_metadata_rich.GetHashStatus( *args, **kwargs )
-        elif action == 'have_hashed_serialised_objects': result = self.modules_serialisable.HaveHashedJSONDumps( *args, **kwargs )
-        elif action == 'ideal_client_files_locations': result = self.modules_files_physical_storage.GetIdealClientFilesLocations( *args, **kwargs )
-        elif action == 'inbox_hashes': result = self._FilterInboxHashes( *args, **kwargs )
-        elif action == 'is_an_orphan': result = self._IsAnOrphan( *args, **kwargs )
-        elif action == 'last_shutdown_work_time': result = self.modules_db_maintenance.GetLastShutdownWorkTime( *args, **kwargs )
-        elif action == 'maintenance_due': result = self._GetMaintenanceDue( *args, **kwargs )
-        elif action == 'media_predicates': result = self.modules_tag_display.GetMediaPredicates( *args, **kwargs )
-        elif action == 'media_result': result = self._GetMediaResultFromHash( *args, **kwargs )
-        elif action == 'media_results': result = self._GetMediaResultsFromHashes( *args, **kwargs )
-        elif action == 'media_results_from_ids': result = self._GetMediaResults( *args, **kwargs )
-        elif action == 'migration_filter_pairs_by_count': result = self._MigrationFilterPairsByCount( *args, **kwargs )
-        elif action == 'migration_get_mappings': result = self._MigrationGetMappings( *args, **kwargs )
-        elif action == 'migration_get_pairs': result = self._MigrationGetPairs( *args, **kwargs )
-        elif action == 'missing_repository_update_hashes': result = self.modules_repositories.GetRepositoryUpdateHashesIDoNotHave( *args, **kwargs )
-        elif action == 'missing_thumbnail_hashes': result = self._GetRepositoryThumbnailHashesIDoNotHave( *args, **kwargs )
-        elif action == 'num_deferred_file_deletes': result = self.modules_files_storage.GetDeferredPhysicalDeleteCounts()
-        elif action == 'nums_pending': result = self._GetNumsPending( *args, **kwargs )
-        elif action == 'options': result = self._GetOptions( *args, **kwargs )
-        elif action == 'pending': result = self._GetPending( *args, **kwargs )
-        elif action == 'random_potential_duplicate_hashes': result = self._DuplicatesGetRandomPotentialDuplicateHashes( *args, **kwargs )
-        elif action == 'recent_tags': result = self.modules_recent_tags.GetRecentTags( *args, **kwargs )
-        elif action == 'repository_progress': result = self.modules_repositories.GetRepositoryProgress( *args, **kwargs )
-        elif action == 'repository_update_hashes_to_process': result = self.modules_repositories.GetRepositoryUpdateHashesICanProcess( *args, **kwargs )
-        elif action == 'serialisable': result = self.modules_serialisable.GetJSONDump( *args, **kwargs )
-        elif action == 'serialisable_simple': result = self.modules_serialisable.GetJSONSimple( *args, **kwargs )
-        elif action == 'serialisable_named': result = self.modules_serialisable.GetJSONDumpNamed( *args, **kwargs )
-        elif action == 'serialisable_names': result = self.modules_serialisable.GetJSONDumpNames( *args, **kwargs )
-        elif action == 'serialisable_names_to_backup_timestamps_ms': result = self.modules_serialisable.GetJSONDumpNamesToBackupTimestampsMS( *args, **kwargs )
-        elif action == 'service_directory': result = self.modules_service_paths.GetServiceDirectoryHashes( *args, **kwargs )
-        elif action == 'service_directories': result = self.modules_service_paths.GetServiceDirectoriesInfo( *args, **kwargs )
-        elif action == 'service_info': result = self._GetServiceInfo( *args, **kwargs )
-        elif action == 'service_id': result = self.modules_services.GetServiceId( *args, **kwargs )
-        elif action == 'services': result = self.modules_services.GetServices( *args, **kwargs )
-        elif action == 'similar_files_maintenance_status': result = self.modules_similar_files.GetMaintenanceStatus( *args, **kwargs )
-        elif action == 'related_tags': result = self._GetRelatedTags( *args, **kwargs )
-        elif action == 'tables_and_columns_using_definitions': result = self._GetTablesAndColumnsUsingDefinitions( *args, **kwargs )
-        elif action == 'tag_descendants_lookup': result = self.modules_tag_display.GetDescendantsForTags( *args, **kwargs )
-        elif action == 'tag_display_application': result = self.modules_tag_display.GetApplication( *args, **kwargs )
-        elif action == 'tag_display_maintenance_status': result = self._CacheTagDisplayGetApplicationStatusNumbers( *args, **kwargs )
-        elif action == 'tag_parents': result = self.modules_tag_parents.GetTagParents( *args, **kwargs )
-        elif action == 'tag_predicates': result = self.modules_tag_search.GetTagPredicates( *args, **kwargs )
-        elif action == 'tag_siblings': result = self.modules_tag_siblings.GetTagSiblings( *args, **kwargs )
-        elif action == 'tag_siblings_all_ideals': result = self.modules_tag_siblings.GetTagSiblingsIdeals( *args, **kwargs )
-        elif action == 'tag_display_decorators': result = self.modules_tag_display.GetUIDecorators( *args, **kwargs )
-        elif action == 'tag_siblings_and_parents_lookup': result = self.modules_tag_display.GetSiblingsAndParentsForTags( *args, **kwargs )
-        elif action == 'tag_siblings_lookup': result = self.modules_tag_siblings.GetTagSiblingsForTags( *args, **kwargs )
-        elif action == 'trash_hashes': result = self._GetTrashHashes( *args, **kwargs )
-        elif action == 'potential_duplicates_count': result = self._DuplicatesGetPotentialDuplicatesCount( *args, **kwargs )
-        elif action == 'url_statuses': result = self.modules_files_metadata_rich.GetURLStatuses( *args, **kwargs )
-        elif action == 'vacuum_data': result = self.modules_db_maintenance.GetVacuumData( *args, **kwargs )
-        else: raise Exception( 'db received an unknown read command: ' + action )
-        
-        return result
         
     
     def _RecoverFromMissingDefinitions( self, content_type ):
@@ -8947,7 +9068,7 @@ class DB( HydrusDB.HydrusDB ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Scan PNGs?', yes_label = 'do it', no_label = 'do not do it' )
                 
-                return result == QW.QDialog.Accepted
+                return result == QW.QDialog.DialogCode.Accepted
                 
             
             try:
@@ -9596,7 +9717,7 @@ class DB( HydrusDB.HydrusDB ):
                         
                         result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Regen animation thumbnails?', auto_yes_time = 600 )
                         
-                        return result == QW.QDialog.Accepted
+                        return result == QW.QDialog.DialogCode.Accepted
                         
                     
                     do_thumb_regen = self._controller.CallBlockingToQt( None, ask_what_to_do_thumb_regen )
@@ -10013,7 +10134,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Fix broken URLs?', yes_label = 'do it', no_label = 'do not do it, I intentionally store whitespace-separated URLs in my URL store!', auto_yes_time = 600 )
                     
-                    return result == QW.QDialog.Accepted
+                    return result == QW.QDialog.DialogCode.Accepted
                     
                 
                 do_url_fix = self._controller.CallBlockingToQt( None, ask_what_to_do_concatenated_urls )
@@ -10059,7 +10180,7 @@ class DB( HydrusDB.HydrusDB ):
                             
                             result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Delete broken URLs?', yes_label = 'do it', no_label = 'no, that sounds like way way way too many, I will talk to hydev', auto_yes_time = 600 )
                             
-                            return result == QW.QDialog.Accepted
+                            return result == QW.QDialog.DialogCode.Accepted
                             
                         
                         do_url_delete = self._controller.CallBlockingToQt( None, ask_what_to_do_delete_urls )
@@ -10098,7 +10219,7 @@ class DB( HydrusDB.HydrusDB ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Find docx?', yes_label = 'yes, I might have imported some', no_label = 'no, I would not have imported anything like that', auto_yes_time = 600 )
                 
-                return result == QW.QDialog.Accepted
+                return result == QW.QDialog.DialogCode.Accepted
                 
             
             do_docx_scan = self._controller.CallBlockingToQt( None, ask_what_to_do_zip_docx_scan )
@@ -11034,7 +11155,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Re-do permissions update?', yes_label = 'yes, re-run the update', no_label = 'no, I checked everything in "review services" already' )
                     
-                    return result == QW.QDialog.Accepted
+                    return result == QW.QDialog.DialogCode.Accepted
                     
                 
                 client_api_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_API_MANAGER )
@@ -11189,7 +11310,7 @@ class DB( HydrusDB.HydrusDB ):
                         
                         result = ClientGUIDialogsQuick.GetYesNo( None, message, title = 'Reset modified dates?', yes_label = 'do it', no_label = 'do not do it' )
                         
-                        return result == QW.QDialog.Accepted
+                        return result == QW.QDialog.DialogCode.Accepted
                         
                     
                     do_it = self._controller.CallBlockingToQt( None, ask_what_to_do_false_positive_modified_dates )
@@ -11205,6 +11326,117 @@ class DB( HydrusDB.HydrusDB ):
                 HydrusData.PrintException( e )
                 
                 message = 'Some alternates metadata updates failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 598:
+            
+            try:
+                
+                file_search_context = ClientSearchFileSearchContext.FileSearchContext(
+                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY ),
+                    predicates = [
+                        ClientSearchPredicate.Predicate(
+                            predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE,
+                            value = ClientNumberTest.NumberTest( operator = ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT, value = 100, extra_value = 0.02 )
+                        )
+                    ]
+                )
+                
+                hash_ids = self.modules_files_query.GetHashIdsFromQuery( file_search_context = file_search_context, apply_implicit_limit = False )
+                
+                self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFiles.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Some animation-scanning failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+            try:
+                
+                from hydrus.client.gui.lists import ClientGUIListManager
+                from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
+                
+                column_list_manager: ClientGUIListManager.ColumnListManager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_COLUMN_LIST_MANAGER )
+                
+                column_list_manager.ResetToDefaults( CGLC.COLUMN_LIST_REVIEW_DUPLICATES_AUTO_RESOLUTION_RULES.ID )
+                
+                self.modules_serialisable.SetJSONDump( column_list_manager )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'A list setting failed to reset! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+            try:
+                
+                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
+                
+                domain_manager.Initialise()
+                
+                #
+                
+                domain_manager.OverwriteDefaultParsers( [
+                    'e621 gallery page parser'
+                ] )
+                
+                #
+                
+                domain_manager.TryToLinkURLClassesAndParsers()
+                
+                #
+                
+                self.modules_serialisable.SetJSONDump( domain_manager )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 601:
+            
+            try:
+                
+                self._controller.frame_splash_status.SetText( f'scanning for missing import archive timestamps' )
+                
+                we_have_missing_import_archive_timestamps = self.modules_files_inbox.WeHaveMissingImportArchiveTimestamps()
+                
+                if not we_have_missing_import_archive_timestamps:
+                    
+                    self._controller.frame_splash_status.SetText( f'scanning for missing legacy archive timestamps' )
+                    
+                    we_have_missing_legacy_archive_timestamps = self.modules_files_inbox.WeHaveMissingLegacyArchiveTimestamps()
+                    
+                else:
+                    
+                    we_have_missing_legacy_archive_timestamps = False
+                    
+                
+                if we_have_missing_import_archive_timestamps or we_have_missing_legacy_archive_timestamps:
+                    
+                    self.pub_initial_message( 'Hey, I discovered you have some missing file archived times, which we can now fill in with synthetic values. Hit up the new "database->file maintenance->fix missing file archived times" job to review your options!' )
+                    
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to check for archived time gaps failed! Please let hydrus dev know!'
                 
                 self.pub_initial_message( message )
                 
@@ -11652,13 +11884,7 @@ class DB( HydrusDB.HydrusDB ):
                     self._controller.frame_splash_status.SetText( 'vacuuming ' + name )
                     job_status.SetStatusText( 'vacuuming ' + name )
                     
-                    started = HydrusTime.GetNowPrecise()
-                    
-                    HydrusDB.VacuumDB( db_path )
-                    
-                    time_took = HydrusTime.GetNowPrecise() - started
-                    
-                    HydrusData.Print( 'Vacuumed ' + db_path + ' in ' + HydrusTime.TimeDeltaToPrettyTimeDelta( time_took ) )
+                    HydrusDB.VacuumDBInto( db_path )
                     
                     successful_names.append( name )
                     
@@ -11696,95 +11922,6 @@ class DB( HydrusDB.HydrusDB ):
             
         
     
-    def _Write( self, action, *args, **kwargs ):
-        
-        result = None
-        
-        if action == 'analyze': self.modules_db_maintenance.AnalyzeDueTables( *args, **kwargs )
-        elif action == 'associate_repository_update_hashes': self.modules_repositories.AssociateRepositoryUpdateHashes( *args, **kwargs )
-        elif action == 'backup': self._Backup( *args, **kwargs )
-        elif action == 'clear_deferred_physical_delete': self.modules_files_storage.ClearDeferredPhysicalDelete( *args, **kwargs )
-        elif action == 'clear_false_positive_relations': self.modules_files_duplicates.ClearAllFalsePositiveRelationsFromHashes( *args, **kwargs )
-        elif action == 'clear_false_positive_relations_between_groups': self.modules_files_duplicates.ClearFalsePositiveRelationsBetweenGroupsFromHashes( *args, **kwargs )
-        elif action == 'clear_orphan_file_records': self._ClearOrphanFileRecords( *args, **kwargs )
-        elif action == 'clear_orphan_tables': self.modules_db_maintenance.ClearOrphanTables( *args, **kwargs )
-        elif action == 'content_updates': self._ProcessContentUpdatePackage( *args, **kwargs )
-        elif action == 'cull_file_viewing_statistics': self.modules_files_viewing_stats.CullFileViewingStatistics( *args, **kwargs )
-        elif action == 'db_integrity': self.modules_db_maintenance.CheckDBIntegrity( *args, **kwargs )
-        elif action == 'delete_pending': self._DeletePending( *args, **kwargs )
-        elif action == 'delete_serialisable_named': self.modules_serialisable.DeleteJSONDumpNamed( *args, **kwargs )
-        elif action == 'delete_service_info': self._DeleteServiceInfo( *args, **kwargs )
-        elif action == 'delete_potential_duplicate_pairs': self.modules_files_duplicates.DeleteAllPotentialDuplicatePairs( *args, **kwargs )
-        elif action == 'dirty_services': self._SaveDirtyServices( *args, **kwargs )
-        elif action == 'dissolve_alternates_group': self.modules_files_duplicates.DissolveAlternatesGroupIdFromHashes( *args, **kwargs )
-        elif action == 'dissolve_duplicates_group': self.modules_files_duplicates.DissolveMediaIdFromHashes( *args, **kwargs )
-        elif action == 'do_deferred_table_delete_work': result = self.modules_db_maintenance.DoDeferredDeleteTablesWork( *args, **kwargs )
-        elif action == 'duplicate_pair_status': self._DuplicatesSetDuplicatePairStatus( *args, **kwargs )
-        elif action == 'duplicate_set_king': self.modules_files_duplicates.SetKingFromHash( *args, **kwargs )
-        elif action == 'file_maintenance_add_jobs': self.modules_files_maintenance_queue.AddJobs( *args, **kwargs )
-        elif action == 'file_maintenance_add_jobs_hashes': self.modules_files_maintenance_queue.AddJobsHashes( *args, **kwargs )
-        elif action == 'file_maintenance_cancel_jobs': self.modules_files_maintenance_queue.CancelJobs( *args, **kwargs )
-        elif action == 'file_maintenance_clear_jobs': self.modules_files_maintenance.ClearJobs( *args, **kwargs )
-        elif action == 'fix_logically_inconsistent_mappings': self._FixLogicallyInconsistentMappings( *args, **kwargs )
-        elif action == 'force_filetype': self._ForceFiletypes( *args, **kwargs )
-        elif action == 'ideal_client_files_locations': self.modules_files_physical_storage.SetIdealClientFilesLocations( *args, **kwargs )
-        elif action == 'import_file': result = self._ImportFile( *args, **kwargs )
-        elif action == 'import_update': self._ImportUpdate( *args, **kwargs )
-        elif action == 'maintain_hashed_serialisables': result = self.modules_serialisable.MaintainHashedStorage( *args, **kwargs )
-        elif action == 'maintain_similar_files_search_for_potential_duplicates': result = self._PerceptualHashesSearchForPotentialDuplicates( *args, **kwargs )
-        elif action == 'maintain_similar_files_tree': self.modules_similar_files.MaintainTree( *args, **kwargs )
-        elif action == 'migration_clear_job': self._MigrationClearJob( *args, **kwargs )
-        elif action == 'migration_start_mappings_job': self._MigrationStartMappingsJob( *args, **kwargs )
-        elif action == 'migration_start_pairs_job': self._MigrationStartPairsJob( *args, **kwargs )
-        elif action == 'process_repository_content': result = self._ProcessRepositoryContent( *args, **kwargs )
-        elif action == 'process_repository_definitions': result = self.modules_repositories.ProcessRepositoryDefinitions( *args, **kwargs )
-        elif action == 'push_recent_tags': self.modules_recent_tags.PushRecentTags( *args, **kwargs )
-        elif action == 'regenerate_local_hash_cache': self._RegenerateLocalHashCache( *args, **kwargs )
-        elif action == 'regenerate_local_tag_cache': self._RegenerateLocalTagCache( *args, **kwargs )
-        elif action == 'regenerate_similar_files': self.modules_similar_files.RegenerateTree( *args, **kwargs )
-        elif action == 'regenerate_searchable_subtag_maps': self._RegenerateTagCacheSearchableSubtagMaps( *args, **kwargs )
-        elif action == 'regenerate_tag_cache': self._RegenerateTagCache( *args, **kwargs )
-        elif action == 'regenerate_tag_display_mappings_cache': self._RegenerateTagDisplayMappingsCache( *args, **kwargs )
-        elif action == 'regenerate_tag_display_pending_mappings_cache': self._RegenerateTagDisplayPendingMappingsCache( *args, **kwargs )
-        elif action == 'regenerate_tag_mappings_cache': self._RegenerateTagMappingsCache( *args, **kwargs )
-        elif action == 'regenerate_tag_mappings_tags': self._RegenerateTagMappingsTags( *args, **kwargs )
-        elif action == 'regenerate_tag_parents_cache': self._RegenerateTagParentsCache( *args, **kwargs )
-        elif action == 'regenerate_tag_pending_mappings_cache': self._RegenerateTagPendingMappingsCache( *args, **kwargs )
-        elif action == 'regenerate_tag_siblings_and_parents_cache': self.modules_tag_display.RegenerateTagSiblingsAndParentsCache( *args, **kwargs )
-        elif action == 'register_shutdown_work': self.modules_db_maintenance.RegisterShutdownWork( *args, **kwargs )
-        elif action == 'repopulate_mappings_from_cache': self._RepopulateMappingsFromCache( *args, **kwargs )
-        elif action == 'repopulate_tag_cache_missing_subtags': self._RepopulateTagCacheMissingSubtags( *args, **kwargs )
-        elif action == 'repopulate_tag_display_mappings_cache': self._RepopulateTagDisplayMappingsCache( *args, **kwargs )
-        elif action == 'relocate_client_files': self.modules_files_physical_storage.RelocateClientFiles( *args, **kwargs )
-        elif action == 'remove_alternates_member': self.modules_files_duplicates.RemoveAlternateMemberFromHashes( *args, **kwargs )
-        elif action == 'remove_duplicates_member': self.modules_files_duplicates.RemoveMediaIdMemberFromHashes( *args, **kwargs )
-        elif action == 'remove_potential_pairs': self.modules_files_duplicates.RemovePotentialPairsFromHashes( *args, **kwargs )
-        elif action == 'repair_client_files': self.modules_files_physical_storage.RepairClientFiles( *args, **kwargs )
-        elif action == 'repair_invalid_tags': self._RepairInvalidTags( *args, **kwargs )
-        elif action == 'reprocess_repository': self.modules_repositories.ReprocessRepository( *args, **kwargs )
-        elif action == 'reset_repository': self._ResetRepository( *args, **kwargs )
-        elif action == 'reset_repository_processing': self._ResetRepositoryProcessing( *args, **kwargs )
-        elif action == 'reset_potential_search_status': self._PerceptualHashesResetSearchFromHashes( *args, **kwargs )
-        elif action == 'resync_combined_deleted_files': self._ResyncCombinedDeletedFiles( *args, **kwargs )
-        elif action == 'resync_tag_mappings_cache_files': self._ResyncTagMappingsCacheFiles( *args, **kwargs )
-        elif action == 'save_options': self._SaveOptions( *args, **kwargs )
-        elif action == 'serialisable': self.modules_serialisable.SetJSONDump( *args, **kwargs )
-        elif action == 'serialisable_atomic': self.modules_serialisable.SetJSONComplex( *args, **kwargs )
-        elif action == 'serialisable_simple': self.modules_serialisable.SetJSONSimple( *args, **kwargs )
-        elif action == 'serialisables_overwrite': self.modules_serialisable.OverwriteJSONDumps( *args, **kwargs )
-        elif action == 'set_password': self._SetPassword( *args, **kwargs )
-        elif action == 'set_repository_update_hashes': self.modules_repositories.SetRepositoryUpdateHashes( *args, **kwargs )
-        elif action == 'schedule_repository_update_file_maintenance': self.modules_repositories.ScheduleRepositoryUpdateFileMaintenance( *args, **kwargs )
-        elif action == 'sync_tag_display_maintenance': result = self._CacheTagDisplaySync( *args, **kwargs )
-        elif action == 'tag_display_application': self.modules_tag_display.SetApplication( *args, **kwargs )
-        elif action == 'update_server_services': self._UpdateServerServices( *args, **kwargs )
-        elif action == 'update_services': self._UpdateServices( *args, **kwargs )
-        elif action == 'vacuum': self._Vacuum( *args, **kwargs )
-        else: raise Exception( 'db received an unknown write command: ' + action )
-        
-        return result
-        
-    
     def pub_content_update_package_after_commit( self, content_update_package ):
         
         self._after_job_content_update_packages.append( content_update_package )
@@ -11803,7 +11940,7 @@ class DB( HydrusDB.HydrusDB ):
     
     def publish_status_update( self ):
         
-        self._controller.pub( 'set_status_bar_dirty' )
+        self._controller.pub( 'set_status_bar_db_dirty' )
         
     
     def GetInitialMessages( self ):

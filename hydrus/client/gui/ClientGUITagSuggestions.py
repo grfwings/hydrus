@@ -1,11 +1,9 @@
-import os
 import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
@@ -116,7 +114,7 @@ class ListBoxTagsSuggestionsFavourites( ClientGUIListBoxes.ListBoxTagsStrings ):
         
         self.SelectTopItem()
         
-        self.setFocus( QC.Qt.OtherFocusReason )
+        self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
     
 class ListBoxTagsSuggestionsRelated( ClientGUIListBoxes.ListBoxTagsPredicates ):
@@ -166,7 +164,7 @@ class ListBoxTagsSuggestionsRelated( ClientGUIListBoxes.ListBoxTagsPredicates ):
         
         self.SelectTopItem()
         
-        self.setFocus( QC.Qt.OtherFocusReason )
+        self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
     
 class FavouritesTagsPanel( QW.QWidget ):
@@ -296,7 +294,7 @@ class RecentTagsPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Clear recent tags?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             CG.client_controller.Write( 'push_recent_tags', self._service_key, None )
             
@@ -704,7 +702,7 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
             
             with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
                 
-                if dlg.exec() != QW.QDialog.Accepted:
+                if dlg.exec() != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -750,7 +748,7 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
             
         else:
             
-            self._fetch_button.setFocus( QC.Qt.OtherFocusReason )
+            self._fetch_button.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     

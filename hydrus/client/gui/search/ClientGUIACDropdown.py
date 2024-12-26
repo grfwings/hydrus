@@ -1,6 +1,5 @@
 import collections
 import itertools
-import os
 import typing
 
 from qtpy import QtCore as QC
@@ -10,7 +9,6 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTags
@@ -887,7 +885,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             self._dropdown_window = QW.QFrame( parent_to_use )
             
-            self._dropdown_window.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Raised )
+            self._dropdown_window.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Raised )
             self._dropdown_window.setLineWidth( 2 )
             
             self._dropdown_hidden = True
@@ -928,7 +926,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._schedule_results_refresh_job = None
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'tags_autocomplete' ], alternate_filter_target = self._text_ctrl )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'tags_autocomplete' ], alternate_filter_target = self._text_ctrl )
         
         if self._float_mode:
             
@@ -1063,7 +1061,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         elif self._float_mode:
             
-            self.parentWidget().setFocus( QC.Qt.OtherFocusReason )
+            self.parentWidget().setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
             return True
             
@@ -1244,7 +1242,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             if watched == self._text_ctrl:
                 
-                if event.type() == QC.QEvent.KeyPress and self._can_intercept_unusual_key_events:
+                if event.type() == QC.QEvent.Type.KeyPress and self._can_intercept_unusual_key_events:
                     
                     # ok for a while this thing was a mis-mash of logical tests and basically sending anything not explicitly caught to the list
                     # this resulted in annoying miss-cases where ctrl+c et al were being passed to the list and so you couldn't copy text from the text input
@@ -1256,24 +1254,24 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     send_input_to_current_list = False
                     
-                    ctrl = event.modifiers() & QC.Qt.ControlModifier
+                    ctrl = event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier
                     
                     # previous/next hardcoded shortcuts, should obviously be migrated to a user-customised shortcut set in future!
                     crazy_n_p_hardcodes = ctrl and key in ( ord( 'P' ), ord( 'p' ), ord( 'N' ), ord( 'n' ) )
                     
-                    we_copying = ctrl and key in( ord( 'C' ), ord( 'c' ), QC.Qt.Key_Insert )
+                    we_copying = ctrl and key in( ord( 'C' ), ord( 'c' ), QC.Qt.Key.Key_Insert )
                     
                     we_copying_the_list = we_copying and self._text_ctrl.selectedText() == ''
                     
-                    if key in ( QC.Qt.Key_Up, QC.Qt.Key_Down, QC.Qt.Key_PageDown, QC.Qt.Key_PageUp, QC.Qt.Key_Home, QC.Qt.Key_End ) or crazy_n_p_hardcodes or we_copying_the_list:
+                    if key in ( QC.Qt.Key.Key_Up, QC.Qt.Key.Key_Down, QC.Qt.Key.Key_PageDown, QC.Qt.Key.Key_PageUp, QC.Qt.Key.Key_Home, QC.Qt.Key.Key_End ) or crazy_n_p_hardcodes or we_copying_the_list:
                         
                         send_input_to_current_list = True
                         
-                    elif key in ( QC.Qt.Key_Return, QC.Qt.Key_Enter ):
+                    elif key in ( QC.Qt.Key.Key_Return, QC.Qt.Key.Key_Enter ):
                         
                         if self._ShouldBroadcastCurrentInputOnEnterKey():
                             
-                            shift_down = modifier == QC.Qt.ShiftModifier
+                            shift_down = modifier == QC.Qt.KeyboardModifier.ShiftModifier
                             
                             self._BroadcastCurrentInputFromEnterKey( shift_down )
                             
@@ -1286,7 +1284,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                             send_input_to_current_list = True
                             
                         
-                    elif key == QC.Qt.Key_Escape:
+                    elif key == QC.Qt.Key.Key_Escape:
                         
                         escape_caught = self._HandleEscape()
                         
@@ -1311,9 +1309,9 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         return event.isAccepted()
                         
                     
-                elif event.type() == QC.QEvent.Wheel:
+                elif event.type() == QC.QEvent.Type.Wheel:
                     
-                    current_results_list = self._dropdown_notebook.currentWidget()
+                    current_results_list = typing.cast( ClientGUIListBoxes.ListBoxTags, self._dropdown_notebook.currentWidget() )
                     
                     if self._text_ctrl.text() == '' and len( current_results_list ) == 0:
                         
@@ -1330,7 +1328,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         
                         return True
                         
-                    elif event.modifiers() & QC.Qt.ControlModifier:
+                    elif event.modifiers() & QC.Qt.KeyboardModifier.ControlModifier:
                         
                         if event.angleDelta().y() > 0:
                             
@@ -1358,13 +1356,13 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     # I could probably wangle this garbagewith setFocusProxy on all the children of the dropdown, assuming that wouldn't break anything, but this seems to work ok nonetheless
                     
-                    if event.type() == QC.QEvent.FocusIn:
+                    if event.type() == QC.QEvent.Type.FocusIn:
                         
                         self._DropdownHideShow()
                         
                         return False
                         
-                    elif event.type() == QC.QEvent.FocusOut:
+                    elif event.type() == QC.QEvent.Type.FocusOut:
                         
                         current_focus_widget = QW.QApplication.focusWidget()
                         
@@ -1385,7 +1383,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             elif self._temporary_focus_widget is not None and watched == self._temporary_focus_widget:
                 
-                if self._float_mode and event.type() == QC.QEvent.FocusOut:
+                if self._float_mode and event.type() == QC.QEvent.Type.FocusOut:
                     
                     self._temporary_focus_widget.removeEventFilter( self )
                     
@@ -1492,7 +1490,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             self._dropdown_notebook.setCurrentIndex( new_index )
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -2062,7 +2060,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
     searchChanged = QC.Signal( ClientSearchFileSearchContext.FileSearchContext )
     searchCancelled = QC.Signal()
     
-    def __init__( self, parent: QW.QWidget, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext, media_sort_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaSortControl ] = None, media_collect_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaCollectControl ] = None, media_callable = None, synchronised = True, include_unusual_predicate_types = True, allow_all_known_files = True, only_allow_local_file_domains = False, force_system_everything = False, hide_favourites_edit_actions = False, fixed_results_list_height = None ):
+    def __init__( self, parent: QW.QWidget, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext, media_sort_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaSortControl ] = None, media_collect_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaCollectControl ] = None, media_callable = None, synchronised = True, include_unusual_predicate_types = True, allow_all_known_files = True, only_allow_local_file_domains = False, only_allow_all_my_files_domains = False, force_system_everything = False, hide_favourites_edit_actions = False, fixed_results_list_height = None ):
         
         self._page_key = page_key
         
@@ -2092,6 +2090,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         super().__init__( parent, location_context, tag_context.service_key )
         
         self._location_context_button.SetOnlyLocalFileDomainsAllowed( only_allow_local_file_domains )
+        self._location_context_button.SetOnlyAllMyFilesDomainsAllowed( only_allow_all_my_files_domains )
         self._location_context_button.SetAllKnownFilesAllowed( allow_all_known_files, True )
         
         #
@@ -2198,7 +2197,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 predicates = panel.GetValue()
                 shift_down = False
@@ -2430,7 +2429,16 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         if self._under_construction_or_predicate is not None and self._text_ctrl.text() == '':
             
-            self._CancelORConstruction()
+            or_preds = self._under_construction_or_predicate.GetValue()
+            
+            if len( or_preds ) > 1:
+                
+                self._RewindORConstruction()
+                
+            else:
+                
+                self._CancelORConstruction()
+                
             
             return True
             
@@ -2543,7 +2551,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_favourite_searches_rows = panel.GetValue()
                 

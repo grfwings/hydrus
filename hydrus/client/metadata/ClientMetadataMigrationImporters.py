@@ -2,7 +2,6 @@ import os
 import typing
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
@@ -778,14 +777,13 @@ class SingleFileMetadataImporterTXT( SingleFileMetadataImporterSidecar, HydrusSe
         
         raw_text = HydrusText.CleanseImportText( raw_text )
         
-        rows = HydrusText.DeserialiseNewlinedTexts( raw_text )
-        
-        if self._separator != '\n':
+        if self._separator == '\n':
             
-            # don't want any newlines, so this 'undo' is correct
-            rejoined_text = ''.join( rows )
+            rows = raw_text.splitlines()
             
-            rows = rejoined_text.split( self._separator )
+        else:
+            
+            rows = raw_text.split( self._separator )
             
         
         if self._string_processor.MakesChanges():

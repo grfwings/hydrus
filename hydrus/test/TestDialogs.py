@@ -3,13 +3,10 @@ import unittest
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusGlobals as HG
-
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUISubscriptions
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 
 from hydrus.test import TestGlobals as TG
 
@@ -51,7 +48,7 @@ def OKChildDialog( window ):
     
 def PressKey( window, key ):
     
-    window.setFocus( QC.Qt.OtherFocusReason )
+    window.setFocus( QC.Qt.FocusReason.OtherFocusReason )
     
     uias = QP.UIActionSimulator()
     
@@ -79,7 +76,7 @@ class TestDBDialogs( unittest.TestCase ):
                 
                 result = dlg.exec()
                 
-                self.assertEqual( result, QW.QDialog.Rejected )
+                self.assertEqual( result, QW.QDialog.DialogCode.Rejected )
                 
             
         
@@ -98,7 +95,7 @@ class TestNonDBDialogs( unittest.TestCase ):
                 
                 result = dlg.exec()
                 
-                self.assertEqual( result, QW.QDialog.Accepted )
+                self.assertEqual( result, QW.QDialog.DialogCode.Accepted )
                 
                 register = dlg.GetRegister()
                 
@@ -111,7 +108,7 @@ class TestNonDBDialogs( unittest.TestCase ):
                 
                 result = dlg.exec()
                 
-                self.assertEqual( result, QW.QDialog.Accepted )
+                self.assertEqual( result, QW.QDialog.DialogCode.Accepted )
                 
                 register = dlg.GetRegister()
                 
@@ -124,7 +121,7 @@ class TestNonDBDialogs( unittest.TestCase ):
                 
                 result = dlg.exec()
                 
-                self.assertEqual( result, QW.QDialog.Rejected )
+                self.assertEqual( result, QW.QDialog.DialogCode.Rejected )
                 
             
         

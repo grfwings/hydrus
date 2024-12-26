@@ -1,12 +1,9 @@
-import os
 import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 
@@ -40,7 +37,7 @@ def ManageShortcuts( win: QW.QWidget ):
         
         dlg.SetPanel( panel )
         
-        if dlg.exec() == QW.QDialog.Accepted:
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
             ( call_mouse_buttons_primary_secondary, shortcuts_merge_non_number_numpad, shortcut_sets ) = panel.GetValue()
             
@@ -113,7 +110,7 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SHORTCUTS.ID, self._ConvertShortcutTupleToDisplayTuple, self._ConvertShortcutTupleToSortTuple )
         
-        self._shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( self._shortcuts_panel, CGLC.COLUMN_LIST_SHORTCUTS.ID, 20, model, delete_key_callback = self.RemoveShortcuts, activation_callback = self.EditShortcuts )
+        self._shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( self._shortcuts_panel, 20, model, delete_key_callback = self.RemoveShortcuts, activation_callback = self.EditShortcuts )
         
         self._shortcuts_panel.SetListCtrl( self._shortcuts )
         
@@ -277,7 +274,7 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( shortcut, command ) = panel.GetValue()
                 
@@ -307,7 +304,7 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( new_shortcut, new_command ) = panel.GetValue()
                 
@@ -361,7 +358,7 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._shortcuts.DeleteSelected()
             
@@ -387,7 +384,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SHORTCUT_SETS.ID, self._GetDisplayTuple, self._GetSortTuple )
         
-        self._reserved_shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( reserved_panel, CGLC.COLUMN_LIST_SHORTCUT_SETS.ID, 6, model, activation_callback = self._EditReserved )
+        self._reserved_shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( reserved_panel, 6, model, activation_callback = self._EditReserved )
         
         self._reserved_shortcuts.setMinimumSize( QC.QSize( 320, 200 ) )
         
@@ -400,7 +397,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SHORTCUT_SETS.ID, self._GetDisplayTuple, self._GetSortTuple )
         
-        self._custom_shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( custom_panel, CGLC.COLUMN_LIST_SHORTCUT_SETS.ID, 6, model, delete_key_callback = self._Delete, activation_callback = self._EditCustom )
+        self._custom_shortcuts = ClientGUIListCtrl.BetterListCtrlTreeView( custom_panel, 6, model, delete_key_callback = self._Delete, activation_callback = self._EditCustom )
         
         self._add_button = ClientGUICommon.BetterButton( custom_panel, 'add', self._Add )
         self._edit_custom_button = ClientGUICommon.BetterButton( custom_panel, 'edit', self._EditCustom )
@@ -495,7 +492,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_shortcuts = panel.GetValue()
                 
@@ -508,7 +505,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._custom_shortcuts.DeleteSelected()
             
@@ -531,7 +528,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_shortcuts = panel.GetValue()
                 
@@ -557,7 +554,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_shortcuts = panel.GetValue()
                 
@@ -647,7 +644,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._reserved_shortcuts.ReplaceData( existing_data, new_data, sort_and_scroll = True )
                 
@@ -886,7 +883,7 @@ class MouseShortcutButton( QW.QPushButton ):
     
     def _ProcessMouseEvent( self, event ):
         
-        self.setFocus( QC.Qt.OtherFocusReason )
+        self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
         shortcut = ClientGUIShortcuts.ConvertMouseEventToShortcut( event )
         

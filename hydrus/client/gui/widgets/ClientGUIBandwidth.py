@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
@@ -68,7 +66,7 @@ class BandwidthRulesCtrl( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_BANDWIDTH_RULES.ID, self._ConvertRuleToListCtrlTuples )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_BANDWIDTH_RULES.ID, 8, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
         
         listctrl_panel.SetListCtrl( self._listctrl )
         
@@ -97,7 +95,7 @@ class BandwidthRulesCtrl( ClientGUICommon.StaticBox ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_rule = panel.GetValue()
                 
@@ -145,7 +143,7 @@ class BandwidthRulesCtrl( ClientGUICommon.StaticBox ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     edited_rule = panel.GetValue()
                     

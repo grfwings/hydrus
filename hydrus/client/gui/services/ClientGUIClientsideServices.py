@@ -40,7 +40,6 @@ from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.metadata import ClientGUIMigrateTags
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
-from hydrus.client.gui.panels import ClientGUIScrolledPanelsReview
 from hydrus.client.gui.widgets import ClientGUIBandwidth
 from hydrus.client.gui.widgets import ClientGUIColourPicker
 from hydrus.client.gui.widgets import ClientGUICommon
@@ -58,7 +57,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_MANAGE_SERVICES.ID, self._ConvertServiceToListCtrlTuples )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, CGLC.COLUMN_LIST_MANAGE_SERVICES.ID, 25, model, delete_key_callback = self._Delete, activation_callback = self._Edit)
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 25, model, delete_key_callback = self._Delete, activation_callback = self._Edit)
         
         menu_items = []
         
@@ -115,7 +114,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_service = panel.GetValue()
                 
@@ -224,7 +223,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Delete the selected services?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._listctrl.DeleteDatas( deletable_services )
                 
@@ -254,7 +253,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
                     
                     dlg.SetPanel( panel )
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         self._listctrl.DeleteDatas( ( service, ) )
                         
@@ -315,7 +314,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -773,7 +772,7 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the registration token.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 registration_key_encoded = dlg.GetValue()
                 
@@ -935,9 +934,9 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
                 
                 for account_type in unavailable_account_types:
                     
-                    ( num_accounts, time_delta ) = account_type.GetAutoCreationVelocity()
+                    ( num_accounts, time_delta ) = account_type.GetAutoCreateAccountVelocity()
                     
-                    history = account_type.GetAutoCreationHistory()
+                    history = account_type.GetAutoCreateAccountHistory()
                     
                     text = '{} - {}'.format( account_type.GetTitle(), history.GetWaitingEstimate( HC.BANDWIDTH_TYPE_REQUESTS, time_delta, num_accounts ) )
                     
@@ -959,7 +958,7 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'One account type available' )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     self._STARTAutoCreateAccount( account_type )
                     
@@ -1763,16 +1762,18 @@ class ReviewServicePanel( QW.QWidget ):
     
     def EventImmediateSync( self, event ):
         
+        service = self._service
+        
         def do_it():
             
             job_status = ClientThreading.JobStatus( pausable = True, cancellable = True )
             
-            job_status.SetStatusTitle( self._service.GetName() + ': immediate sync' )
+            job_status.SetStatusTitle( service.GetName() + ': immediate sync' )
             job_status.SetStatusText( 'downloading' )
             
-            self._controller.pub( 'message', job_status )
+            CG.client_controller.pub( 'message', job_status )
             
-            content_update_package = self._service.Request( HC.GET, 'immediate_content_update_package' )
+            content_update_package = service.Request( HC.GET, 'immediate_content_update_package' )
             
             c_u_p_num_rows = content_update_package.GetNumRows()
             c_u_p_total_weight_processed = 0
@@ -1804,7 +1805,7 @@ class ReviewServicePanel( QW.QWidget ):
                 
                 precise_timestamp = HydrusTime.GetNowPrecise()
                 
-                self._controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( self._service_key, content_updates ) )
+                CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( service.GetServiceKey(), content_updates ) )
                 
                 it_took = HydrusTime.GetNowPrecise() - precise_timestamp
                 
@@ -1824,7 +1825,7 @@ class ReviewServicePanel( QW.QWidget ):
             job_status.Finish()
             
         
-        self._controller.CallToThread( do_it )
+        CG.client_controller.CallToThread( do_it )
         
     
     def GetServiceKey( self ):
@@ -1896,7 +1897,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_CLIENT_API_PERMISSIONS.ID, self._ConvertDataToListCtrlTuples )
         
-        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, CGLC.COLUMN_LIST_CLIENT_API_PERMISSIONS.ID, 10, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
+        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, 10, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
         
         permissions_list_panel.SetListCtrl( self._permissions_list )
         
@@ -2016,7 +2017,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 api_permissions = panel.GetValue()
                 
@@ -2031,7 +2032,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             access_keys = [ api_permissions.GetAccessKey() for api_permissions in self._permissions_list.GetData( only_selected = True ) ]
             
@@ -2083,7 +2084,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     api_permissions = panel.GetValue()
                     
@@ -2202,13 +2203,13 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             message = 'Hey, I am just going to ask again--are you _absolutely_ sure? This is an advanced action that may mess up your downloads/imports in future.'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'yes, I am', no_label = 'no, I am not sure' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 hashes = None
                 
@@ -2887,7 +2888,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._service.DoAFullMetadataResync()
             
@@ -2979,7 +2980,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         with QP.DirDialog( self, 'Select export location.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = dlg.GetPath()
                 
@@ -3187,7 +3188,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             CG.client_controller.CallToThread( do_it, self._service, self._my_updater )
             
@@ -3219,7 +3220,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             CG.client_controller.CallToThread( do_it, self._service, self._my_updater, content_types )
             
@@ -3233,13 +3234,13 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             message = 'Seriously, are you absolutely sure?'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._service.Reset()
                 
@@ -3272,7 +3273,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             CG.client_controller.CallToThread( do_it, self._service, self._my_updater, content_types )
             
@@ -3340,7 +3341,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             def do_it( service, my_updater ):
                 
@@ -3473,7 +3474,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_IPFS_SHARES.ID, self._ConvertDataToListCtrlTuple )
         
-        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, CGLC.COLUMN_LIST_IPFS_SHARES.ID, 6, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes )
+        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, 6, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes )
         
         self._ipfs_shares_panel.SetListCtrl( self._ipfs_shares )
         
@@ -3546,7 +3547,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
             
             with ClientGUIDialogs.DialogTextEntry( self, 'Set a note for these shares.' ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     note = dlg.GetValue()
                     
@@ -3640,7 +3641,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Unpin (remove) all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             multihashes = [ multihash for ( multihash, num_files, total_size, note ) in self._ipfs_shares.GetData( only_selected = True ) ]
             
@@ -3726,7 +3727,7 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_RATINGS, HC.CONTENT_UPDATE_ADVANCED, advanced_action )
             
@@ -3898,7 +3899,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             def do_it( service ):
                 
@@ -3935,7 +3936,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             def do_it( service ):
                 
@@ -4011,17 +4012,26 @@ class ReviewServicesPanel( ClientGUIScrolledPanels.ReviewPanel ):
     
     def _InitialiseServices( self ):
         
-        lb = self._notebook.currentWidget()
-        
-        if lb.count() == 0:
+        try:
+            
+            notebook: ClientGUICommon.BetterNotebook = self._notebook.currentWidget()
+            
+            if notebook.count() == 0:
+                
+                previous_service_key = None
+                
+            else:
+                
+                notebook_2: ClientGUICommon.BetterNotebook = notebook.currentWidget()
+                
+                page: ReviewServicePanel = notebook_2.currentWidget()
+                
+                previous_service_key = page.GetServiceKey()
+                
+            
+        except:
             
             previous_service_key = None
-            
-        else:
-            
-            page = lb.currentWidget().currentWidget()
-            
-            previous_service_key = page.GetServiceKey()
             
         
         QP.DeleteAllNotebookPages( self._local_notebook )

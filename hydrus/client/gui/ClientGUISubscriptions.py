@@ -16,7 +16,6 @@ from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientTime
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -289,7 +288,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTION_QUERIES.ID, self._ConvertQueryHeaderToDisplayTuple, self._ConvertQueryHeaderToSortTuple )
         
-        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, CGLC.COLUMN_LIST_SUBSCRIPTION_QUERIES.ID, 10, model, use_simple_delete = True, activation_callback = self._EditQuery )
+        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, 10, model, use_simple_delete = True, activation_callback = self._EditQuery )
         
         queries_panel.SetListCtrl( self._query_headers )
         
@@ -490,7 +489,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( query_header, query_log_container ) = panel.GetValue()
                 
@@ -617,7 +616,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_latest_new_file_time = ClientTime.TimestampToPrettyTimeDelta( latest_new_file_time )
+            pretty_latest_new_file_time = HydrusTime.TimestampToPrettyTimeDelta( latest_new_file_time )
             
         
         if last_check_time is None or last_check_time == 0:
@@ -626,7 +625,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_last_check_time = ClientTime.TimestampToPrettyTimeDelta( last_check_time )
+            pretty_last_check_time = HydrusTime.TimestampToPrettyTimeDelta( last_check_time )
             
         
         pretty_next_check_time = query_header.GetNextCheckStatusString()
@@ -795,7 +794,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( edited_query_header, edited_query_log_container ) = panel.GetValue()
                 
@@ -984,7 +983,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result != QW.QDialog.Accepted:
+        if result != QW.QDialog.DialogCode.Accepted:
             
             return
             
@@ -1119,7 +1118,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             selected_query_headers = self._query_headers.GetData( only_selected = True )
             
@@ -1237,7 +1236,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            status = 'delayed--retrying ' + ClientTime.TimestampToPrettyTimeDelta( self._no_work_until, just_now_threshold = 0 ) + ' because: ' + self._no_work_until_reason
+            status = 'delayed--retrying ' + HydrusTime.TimestampToPrettyTimeDelta( self._no_work_until, just_now_threshold = 0 ) + ' because: ' + self._no_work_until_reason
             
         
         self._delay_st.setText( status )
@@ -1460,7 +1459,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTIONS.ID, self._ConvertSubscriptionToDisplayTuple, self._ConvertSubscriptionToSortTuple )
         
-        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, CGLC.COLUMN_LIST_SUBSCRIPTIONS.ID, 12, model, use_simple_delete = True, activation_callback = self.Edit )
+        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, 12, model, use_simple_delete = True, activation_callback = self.Edit )
         
         self._subscriptions_panel.SetListCtrl( self._subscriptions )
         
@@ -1568,7 +1567,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'missing query log data!', yes_label = 'import it anyway', no_label = 'back out now' )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -1696,7 +1695,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_latest_new_file_time = ClientTime.TimestampToPrettyTimeDelta( latest_new_file_time )
+            pretty_latest_new_file_time = HydrusTime.TimestampToPrettyTimeDelta( latest_new_file_time )
             
         
         if last_checked is None or last_checked == 0:
@@ -1705,7 +1704,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_last_checked = ClientTime.TimestampToPrettyTimeDelta( last_checked )
+            pretty_last_checked = HydrusTime.TimestampToPrettyTimeDelta( last_checked )
             
         
         #
@@ -1784,7 +1783,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_delay = 'delayed--retrying ' + ClientTime.TimestampToPrettyTimeDelta( no_work_until, just_now_threshold = 0 ) + ' - because: ' + no_work_until_reason
+            pretty_delay = 'delayed--retrying ' + HydrusTime.TimestampToPrettyTimeDelta( no_work_until, just_now_threshold = 0 ) + ' - because: ' + no_work_until_reason
             
         
         file_seed_cache_status = ClientImportSubscriptionQuery.GenerateQueryHeadersStatus( query_headers )
@@ -1961,7 +1960,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return None
                     
@@ -2101,7 +2100,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             query_headers = []
             
@@ -2238,7 +2237,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg_edit.SetPanel( panel )
             
-            if dlg_edit.exec() == QW.QDialog.Accepted:
+            if dlg_edit.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( new_subscription, self._names_to_edited_query_log_containers ) = panel.GetValue()
                 
@@ -2346,7 +2345,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -2436,7 +2435,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -2550,7 +2549,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -2599,7 +2598,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result == QW.QDialog.Accepted:
+                    if result == QW.QDialog.DialogCode.Accepted:
                         
                         keep_going = True
                         
@@ -2637,7 +2636,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = dlg.exec()
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 ( edited_subscription, self._names_to_edited_query_log_containers ) = panel.GetValue()
                 
@@ -2684,7 +2683,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             subscriptions = self._subscriptions.GetData( only_selected = True )
             
@@ -2709,7 +2708,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             original_subs = self._subscriptions.GetData( only_selected = True )
             
@@ -2782,7 +2781,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 with ClientGUIDialogs.DialogTextEntry( self, message, default = primary_sub_name ) as dlg:
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         name = dlg.GetValue()
                         
@@ -2847,7 +2846,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 search_text = dlg.GetValue()
                 
@@ -2958,7 +2957,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             with ClientGUIDialogs.DialogTextEntry( self, message, default = subscription.GetName() ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     name = dlg.GetValue()
                     
@@ -3058,7 +3057,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 checker_options = panel.GetValue()
                 
@@ -3091,7 +3090,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 file_import_options = panel.GetValue()
                 
@@ -3123,7 +3122,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 note_import_options = panel.GetValue()
                 
@@ -3156,7 +3155,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 tag_import_options = panel.GetValue()
                 

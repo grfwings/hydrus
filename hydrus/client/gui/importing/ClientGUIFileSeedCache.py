@@ -1,4 +1,4 @@
-import os
+import typing
 
 from qtpy import QtWidgets as QW
 
@@ -6,14 +6,15 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
-from hydrus.client import ClientTime
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -39,7 +40,7 @@ def ClearFileSeeds( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.File
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         file_seed_cache.RemoveFileSeedsByStatus( statuses_to_remove )
         
@@ -73,6 +74,16 @@ def GetSourcesFromSourcesString( sources_string ):
     
     return sources
     
+
+def ExportFileSeedsToClipboard( file_seeds: typing.Collection[ ClientImportFileSeeds.FileSeed ] ):
+    
+    file_seeds = HydrusSerialisable.SerialisableList( file_seeds )
+    
+    payload = file_seeds.DumpToString()
+    
+    CG.client_controller.pub( 'clipboard', 'text', payload )
+    
+
 def ExportToClipboard( file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
     
     payload = GetExportableSourcesString( file_seed_cache )
@@ -121,7 +132,7 @@ def ImportFromPNG( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.FileS
     
     with QP.FileDialog( win, 'select the png with the sources', wildcard = 'PNG (*.png)' ) as dlg:
         
-        if dlg.exec() == QW.QDialog.Accepted:
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
             path = dlg.GetPath()
             
@@ -167,7 +178,7 @@ def RenormaliseFileSeedCache( win: QW.QWidget, file_seed_cache: ClientImportFile
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         file_seed_cache.RenormaliseURLs()
         
@@ -179,7 +190,7 @@ def RetryErrors( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.FileSee
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         file_seed_cache.RetryFailed()
         
@@ -205,7 +216,7 @@ def ReverseFileSeedCache( win: QW.QWidget, file_seed_cache: ClientImportFileSeed
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         file_seed_cache.Reverse()
         
@@ -234,7 +245,7 @@ def ShowFilesInNewPage( file_seed_cache: ClientImportFileSeeds.FileSeedCache, sh
         
     
 
-def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
+def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache: ClientImportFileSeeds.FileSeedCache, selected_file_seeds: typing.List[ ClientImportFileSeeds.FileSeed ] ):
     
     num_already_in = file_seed_cache.GetFileSeedCount( CC.STATUS_SUCCESSFUL_BUT_REDUNDANT )
     num_successful = file_seed_cache.GetFileSeedCount( CC.STATUS_SUCCESSFUL_AND_NEW ) + num_already_in
@@ -336,11 +347,19 @@ def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache:
     
     ClientGUIMenus.AppendMenu( menu, submenu, 'import new sources' )
     
-    if len( file_seed_cache ) > 0 and file_seed_cache.IsURLFileSeeds():
+    if len( selected_file_seeds ) > 0 or file_seed_cache.IsURLFileSeeds():
         
         submenu = ClientGUIMenus.GenerateMenu( menu )
         
-        ClientGUIMenus.AppendMenuItem( submenu, 're-normalise all URLs', 'Normalise all the import objects\' URLs and discard duplicates.', RenormaliseFileSeedCache, win, file_seed_cache )
+        if len( selected_file_seeds ) > 0:
+            
+            ClientGUIMenus.AppendMenuItem( submenu, 'export selected import objects to clipboard', 'Advanced JSON inspection.', ExportFileSeedsToClipboard, selected_file_seeds )
+            
+        
+        if file_seed_cache.IsURLFileSeeds():
+            
+            ClientGUIMenus.AppendMenuItem( submenu, 're-normalise all URLs', 'Normalise all the import objects\' URLs and discard duplicates.', RenormaliseFileSeedCache, win, file_seed_cache )
+            
         
         ClientGUIMenus.AppendMenu( menu, submenu, 'advanced' )
         
@@ -361,7 +380,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SEED_CACHE.ID, self._ConvertFileSeedToDisplayTuple, self._ConvertFileSeedToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, CGLC.COLUMN_LIST_FILE_SEED_CACHE.ID, 30, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 30, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
         
         #
         
@@ -416,8 +435,8 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
         
         pretty_status = CC.status_string_lookup[ status ] if status != CC.STATUS_UNKNOWN else ''
-        pretty_added = ClientTime.TimestampToPrettyTimeDelta( added )
-        pretty_modified = ClientTime.TimestampToPrettyTimeDelta( modified )
+        pretty_added = HydrusTime.TimestampToPrettyTimeDelta( added )
+        pretty_modified = HydrusTime.TimestampToPrettyTimeDelta( modified )
         
         if source_time is None:
             
@@ -425,7 +444,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
         else:
             
-            pretty_source_time = ClientTime.TimestampToPrettyTimeDelta( source_time )
+            pretty_source_time = HydrusTime.TimestampToPrettyTimeDelta( source_time )
             
         
         pretty_note = HydrusText.GetFirstLine( note )
@@ -509,7 +528,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._file_seed_cache.RemoveFileSeeds( file_seeds_to_delete )
                 
@@ -531,7 +550,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         if len( selected_file_seeds ) == 0:
             
-            PopulateFileSeedCacheMenu( self, menu, self._file_seed_cache )
+            PopulateFileSeedCacheMenu( self, menu, self._file_seed_cache, selected_file_seeds )
             
             return menu
             
@@ -730,7 +749,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         submenu = ClientGUIMenus.GenerateMenu( menu )
         
-        PopulateFileSeedCacheMenu( self, submenu, self._file_seed_cache )
+        PopulateFileSeedCacheMenu( self, submenu, self._file_seed_cache, selected_file_seeds )
         
         ClientGUIMenus.AppendMenu( menu, submenu, 'whole log' )
         
@@ -749,7 +768,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -791,11 +810,9 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     deletee_hashes = { file_seed.GetHash() for file_seed in deleted_and_clearable_file_seeds }
-                    
-                    from hydrus.client.gui.media import ClientGUIMediaModalActions
                     
                     ClientGUIMediaSimpleActions.UndeleteFiles( deletee_hashes )
                     
@@ -927,7 +944,7 @@ class FileSeedCacheButton( ClientGUICommon.ButtonWithMenuArrow ):
         
         file_seed_cache = self._file_seed_cache_get_callable()
         
-        PopulateFileSeedCacheMenu( self, menu, file_seed_cache )
+        PopulateFileSeedCacheMenu( self, menu, file_seed_cache, [] )
         
     
     def _ShowFileSeedCacheFrame( self ):
@@ -961,7 +978,7 @@ class FileSeedCacheButton( ClientGUICommon.ButtonWithMenuArrow ):
                     
                     dlg.SetPanel( panel )
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         self._file_seed_cache_set_callable( dupe_file_seed_cache )
                         
@@ -987,7 +1004,7 @@ class FileSeedCacheStatusControl( QW.QFrame ):
         
         super().__init__( parent )
         
-        self.setFrameStyle( QW.QFrame.Box | QW.QFrame.Raised )
+        self.setFrameStyle( QW.QFrame.Shape.Box | QW.QFrame.Shadow.Raised )
         
         self._controller = controller
         self._page_key = page_key

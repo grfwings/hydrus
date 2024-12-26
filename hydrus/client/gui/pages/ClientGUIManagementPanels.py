@@ -23,7 +23,6 @@ from hydrus.client import ClientParsing
 from hydrus.client import ClientPaths
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
-from hydrus.client import ClientTime
 from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICore as CGC
@@ -272,13 +271,13 @@ class ManagementPanel( QW.QScrollArea ):
         
         super().__init__( parent )
         
-        self.setFrameShape( QW.QFrame.NoFrame )
+        self.setFrameShape( QW.QFrame.Shape.NoFrame )
         self.setWidget( QW.QWidget( self ) )
         self.setWidgetResizable( True )
-        #self.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Sunken )
+        #self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         #self.setLineWidth( 2 )
         #self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
-        self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarAsNeeded )
+        self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         
         self._controller = controller
         self._management_controller = management_controller
@@ -700,7 +699,7 @@ class ManagementPanelDuplicateFilter( ManagementPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 duplicate_content_merge_options = panel.GetValue()
                 
@@ -787,7 +786,7 @@ class ManagementPanelDuplicateFilter( ManagementPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'delete_potential_duplicate_pairs' )
             
@@ -923,6 +922,8 @@ class ManagementPanelDuplicateFilter( ManagementPanel ):
         
         self._search_button.setEnabled( we_can_start_work )
         
+        page_name = 'preparation'
+        
         if not_all_files_searched:
             
             if num_searched == 0:
@@ -934,13 +935,30 @@ class ManagementPanelDuplicateFilter( ManagementPanel ):
                 self._num_searched.SetValue( 'Searched ' + HydrusNumbers.ValueRangeToPrettyString( num_searched, total_num_files ) + ' files at this distance.', num_searched, total_num_files )
                 
             
-            page_name = 'preparation (needs work)'
+            show_page_name = True
+            
+            percent_done = num_searched / total_num_files
+            
+            if CG.client_controller.new_options.GetBoolean( 'hide_duplicates_needs_work_message_when_reasonably_caught_up' ) and percent_done > 0.99:
+                
+                show_page_name = False
+                
+            
+            if show_page_name:
+                
+                percent_string = HydrusNumbers.FloatToPercentage(percent_done)
+                
+                if percent_string == '100.0%':
+                    
+                    percent_string = '99.9%'
+                    
+                
+                page_name = f'preparation ({percent_string} done)'
+                
             
         else:
             
             self._num_searched.SetValue( 'All potential duplicates found at this distance.', total_num_files, total_num_files )
-            
-            page_name = 'preparation'
             
         
         self._main_notebook.setTabText( 0, page_name )
@@ -1164,7 +1182,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
         super().__init__( parent, page, controller, management_controller )
         
         self._last_time_imports_changed = 0
-        self._next_update_time = 0
+        self._next_update_time = 0.0
         
         self._multiple_gallery_import = self._management_controller.GetVariable( 'multiple_gallery_import' )
         
@@ -1187,7 +1205,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_GALLERY_IMPORTERS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._gallery_importers_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gallery_importers_listctrl_panel, CGLC.COLUMN_LIST_GALLERY_IMPORTERS.ID, 4, model, delete_key_callback = self._RemoveGalleryImports, activation_callback = self._HighlightSelectedGalleryImport )
+        self._gallery_importers_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gallery_importers_listctrl_panel, 4, model, delete_key_callback = self._RemoveGalleryImports, activation_callback = self._HighlightSelectedGalleryImport )
         
         self._gallery_importers_listctrl_panel.SetListCtrl( self._gallery_importers_listctrl )
         
@@ -1446,7 +1464,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
         
         added = gallery_import.GetCreationTime()
         
-        pretty_added = ClientTime.TimestampToPrettyTimeDelta( added, show_seconds = False )
+        pretty_added = HydrusTime.TimestampToPrettyTimeDelta( added, show_seconds = False )
         
         return ( pretty_query_text, pretty_source, pretty_files_paused, pretty_gallery_paused, pretty_status, pretty_progress, pretty_added )
         
@@ -1565,7 +1583,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
             
             ClientGUIMenus.AppendSeparator( submenu )
             
-            ClientGUIFileSeedCache.PopulateFileSeedCacheMenu( self, submenu, file_seed_cache )
+            ClientGUIFileSeedCache.PopulateFileSeedCacheMenu( self, submenu, file_seed_cache, [] )
             
             ClientGUIMenus.AppendMenu( menu, submenu, 'file log' )
             
@@ -1577,7 +1595,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
             
             ClientGUIMenus.AppendSeparator( submenu )
             
-            ClientGUIGallerySeedLog.PopulateGallerySeedLogButton( self, submenu, gallery_seed_log, False, True, 'search' )
+            ClientGUIGallerySeedLog.PopulateGallerySeedLogButton( self, submenu, gallery_seed_log, [], False, True, 'search' )
             
             ClientGUIMenus.AppendMenu( menu, submenu, 'search log' )
             
@@ -1796,7 +1814,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             highlight_was_included = False
             
@@ -1861,7 +1879,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
             self._query_input.setPlaceholderText( new_initial_search_text )
             
         
-        self._query_input.setFocus( QC.Qt.OtherFocusReason )
+        self._query_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
     
     def _SetOptionsToGalleryImports( self ):
@@ -1877,7 +1895,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             file_limit = self._file_limit.GetValue()
             file_import_options = self._import_options_button.GetFileImportOptions()
@@ -2131,13 +2149,26 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
     
     def _UpdateImportStatus( self ):
         
-        if HydrusTime.TimeHasPassed( self._next_update_time ):
+        # TODO: Surely this can be optimised, especially with our new multi-column list tech
+        # perhaps break any sort to a ten second timer or something
+        
+        if HydrusTime.TimeHasPassedFloat( self._next_update_time ):
             
             num_items = len( self._gallery_importers_listctrl.GetData() )
             
-            update_period = max( 1, int( ( num_items / 10 ) ** 0.33 ) )
+            min_time = CG.client_controller.new_options.GetInteger( 'gallery_page_status_update_time_minimum_ms' ) / 1000
+            denominator = CG.client_controller.new_options.GetInteger( 'gallery_page_status_update_time_ratio_denominator' )
             
-            self._next_update_time = HydrusTime.GetNow() + update_period
+            try:
+                
+                update_period = max( min_time, num_items / denominator )
+                
+            except:
+                
+                update_period = 1.0
+                
+            
+            self._next_update_time = HydrusTime.GetNowFloat() + update_period
             
             #
             
@@ -2195,7 +2226,7 @@ class ManagementPanelImporterMultipleGallery( ManagementPanelImporter ):
     
     def _UpdateImportStatusNow( self ):
         
-        self._next_update_time = 0
+        self._next_update_time = 0.0
         
         self._UpdateImportStatus()
         
@@ -2252,7 +2283,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
         super().__init__( parent, page, controller, management_controller )
         
         self._last_time_watchers_changed = 0
-        self._next_update_time = 0
+        self._next_update_time = 0.0
         
         self._multiple_watcher_import = self._management_controller.GetVariable( 'multiple_watcher_import' )
         
@@ -2278,7 +2309,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_WATCHERS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._watchers_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._watchers_listctrl_panel, CGLC.COLUMN_LIST_WATCHERS.ID, 4, model, delete_key_callback = self._RemoveWatchers, activation_callback = self._HighlightSelectedWatcher )
+        self._watchers_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._watchers_listctrl_panel, 4, model, delete_key_callback = self._RemoveWatchers, activation_callback = self._HighlightSelectedWatcher )
         
         self._watchers_listctrl_panel.SetListCtrl( self._watchers_listctrl )
         
@@ -2550,7 +2581,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
         
         added = watcher.GetCreationTime()
         
-        pretty_added = ClientTime.TimestampToPrettyTimeDelta( added, show_seconds = False )
+        pretty_added = HydrusTime.TimestampToPrettyTimeDelta( added, show_seconds = False )
         
         ( status_enum, pretty_watcher_status ) = self._multiple_watcher_import.GetWatcherSimpleStatus( watcher )
         
@@ -2688,7 +2719,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
             
             ClientGUIMenus.AppendSeparator( submenu )
             
-            ClientGUIFileSeedCache.PopulateFileSeedCacheMenu( self, submenu, file_seed_cache )
+            ClientGUIFileSeedCache.PopulateFileSeedCacheMenu( self, submenu, file_seed_cache, [] )
             
             ClientGUIMenus.AppendMenu( menu, submenu, 'file log' )
             
@@ -2700,7 +2731,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
             
             ClientGUIMenus.AppendSeparator( submenu )
             
-            ClientGUIGallerySeedLog.PopulateGallerySeedLogButton( self, submenu, gallery_seed_log, True, False, 'check' )
+            ClientGUIGallerySeedLog.PopulateGallerySeedLogButton( self, submenu, gallery_seed_log, [], True, False, 'check' )
             
             ClientGUIMenus.AppendMenu( menu, submenu, 'check log' )
             
@@ -2877,7 +2908,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -2965,7 +2996,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             highlight_was_included = False
             
@@ -3026,7 +3057,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             checker_options = self._checker_options.GetValue()
             file_import_options = self._import_options_button.GetFileImportOptions()
@@ -3279,13 +3310,26 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
     
     def _UpdateImportStatus( self ):
         
-        if HydrusTime.TimeHasPassed( self._next_update_time ):
+        # TODO: Surely this can be optimised, especially with our new multi-column list tech
+        # perhaps break any sort to a ten second timer or something
+        
+        if HydrusTime.TimeHasPassedFloat( self._next_update_time ):
             
             num_items = len( self._watchers_listctrl.GetData() )
             
-            update_period = max( 1, int( ( num_items / 10 ) ** 0.33 ) )
+            min_time = CG.client_controller.new_options.GetInteger( 'watcher_page_status_update_time_minimum_ms' ) / 1000
+            denominator = CG.client_controller.new_options.GetInteger( 'watcher_page_status_update_time_ratio_denominator' )
             
-            self._next_update_time = HydrusTime.GetNow() + update_period
+            try:
+                
+                update_period = max( min_time, num_items / denominator )
+                
+            except:
+                
+                update_period = 1.0
+                
+            
+            self._next_update_time = HydrusTime.GetNowFloat() + update_period
             
             #
             
@@ -3353,7 +3397,7 @@ class ManagementPanelImporterMultipleWatcher( ManagementPanelImporter ):
     
     def _UpdateImportStatusNow( self ):
         
-        self._next_update_time = 0
+        self._next_update_time = 0.0
         
         self._UpdateImportStatus()
         
@@ -3442,7 +3486,7 @@ class ManagementPanelImporterSimpleDownloader( ManagementPanelImporter ):
         
         self._pending_jobs_listbox = ClientGUIListBoxes.BetterQListWidget( self._simple_parsing_jobs_panel )
         
-        self._pending_jobs_listbox.setSelectionMode( QW.QAbstractItemView.ExtendedSelection )
+        self._pending_jobs_listbox.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         
         self._advance_button = QW.QPushButton( '\u2191', self._simple_parsing_jobs_panel )
         self._advance_button.clicked.connect( self.EventAdvance )
@@ -3572,7 +3616,7 @@ class ManagementPanelImporterSimpleDownloader( ManagementPanelImporter ):
             
             with ClientGUIDialogs.DialogTextEntry( dlg, 'edit name', default = name ) as dlg_2:
                 
-                if dlg_2.exec() == QW.QDialog.Accepted:
+                if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     name = dlg_2.GetValue()
                     
@@ -3594,7 +3638,7 @@ class ManagementPanelImporterSimpleDownloader( ManagementPanelImporter ):
                 
                 dlg_3.SetPanel( panel )
                 
-                if dlg_3.exec() == QW.QDialog.Accepted:
+                if dlg_3.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     formula = control.GetValue()
                     
@@ -3639,7 +3683,7 @@ class ManagementPanelImporterSimpleDownloader( ManagementPanelImporter ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 formulae = control.GetData()
                 
@@ -3815,7 +3859,7 @@ class ManagementPanelImporterSimpleDownloader( ManagementPanelImporter ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result != QW.QDialog.Accepted:
+        if result != QW.QDialog.DialogCode.Accepted:
             
             return
             
@@ -4195,7 +4239,7 @@ class ManagementPanelPetitions( ManagementPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_PETITIONS_SUMMARY.ID, self._ConvertDataToListCtrlTuples )
         
-        self._petitions_summary_list = ClientGUIListCtrl.BetterListCtrlTreeView( self._petitions_summary_list_panel, CGLC.COLUMN_LIST_PETITIONS_SUMMARY.ID, 12, model, activation_callback = self._ActivateToHighlightPetition )
+        self._petitions_summary_list = ClientGUIListCtrl.BetterListCtrlTreeView( self._petitions_summary_list_panel, 12, model, activation_callback = self._ActivateToHighlightPetition )
         
         self._petitions_summary_list_panel.SetListCtrl( self._petitions_summary_list )
         
@@ -4231,7 +4275,7 @@ class ManagementPanelPetitions( ManagementPanel ):
         
         self._contents_add = ClientGUICommon.BetterCheckBoxList( self._petition_panel )
         self._contents_add.itemDoubleClicked.connect( self.ContentsAddDoubleClick )
-        self._contents_add.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
+        self._contents_add.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
         
         ( min_width, min_height ) = ClientGUIFunctions.ConvertTextToPixels( self._contents_add, ( 16, 20 ) )
         
@@ -4239,7 +4283,7 @@ class ManagementPanelPetitions( ManagementPanel ):
         
         self._contents_delete = ClientGUICommon.BetterCheckBoxList( self._petition_panel )
         self._contents_delete.itemDoubleClicked.connect( self.ContentsDeleteDoubleClick )
-        self._contents_delete.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
+        self._contents_delete.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
         
         ( min_width, min_height ) = ClientGUIFunctions.ConvertTextToPixels( self._contents_delete, ( 16, 20 ) )
         
@@ -4355,7 +4399,7 @@ class ManagementPanelPetitions( ManagementPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, text )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 for petition in viable_petitions:
                     
@@ -4527,7 +4571,7 @@ class ManagementPanelPetitions( ManagementPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, text )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 for petition in viable_petitions:
                     
@@ -5649,7 +5693,6 @@ class ManagementPanelQuery( ManagementPanel ):
         if self._search_enabled:
             
             QP.AddToLayout( vbox, self._search_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-            
         
         self._MakeCurrentSelectionTagsBox( vbox )
         
@@ -5692,7 +5735,7 @@ class ManagementPanelQuery( ManagementPanel ):
         return 'no search done yet'
         
     
-    def _MakeCurrentSelectionTagsBox( self, sizer ):
+    def _MakeCurrentSelectionTagsBox( self, sizer, **kwargs ):
         
         self._current_selection_tags_box = ClientGUIListBoxes.StaticBoxSorterForListBoxTags( self, 'selection tags', CC.TAG_PRESENTATION_SEARCH_PAGE )
         

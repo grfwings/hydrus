@@ -1,9 +1,7 @@
 import collections
 import itertools
-import os
 import random
 import re
-import threading
 import time
 import typing
 
@@ -26,7 +24,6 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client import ClientManagers
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIDialogs
@@ -39,6 +36,7 @@ from hydrus.client.gui import ClientGUITagSuggestions
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
+from hydrus.client.gui.lists import ClientGUIListBook
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.metadata import ClientGUIMigrateTags
@@ -74,7 +72,7 @@ def EditNamespaceSort( win: QW.QWidget, sort_data ):
     
     with ClientGUIDialogs.DialogTextEntry( win, message, allow_blank = False, default = edit_string ) as dlg:
         
-        if dlg.exec() == QW.QDialog.Accepted:
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
             edited_string = dlg.GetValue()
             
@@ -329,11 +327,11 @@ class EditTagDisplayApplication( ClientGUIScrolledPanels.EditPanel ):
         
         super().__init__( parent )
         
-        self._tag_services_notebook = ClientGUICommon.BetterNotebook( self )
+        self._tag_services = ClientGUICommon.BetterNotebook( self )
         
-        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag_services_notebook, 100 )
+        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag_services, 100 )
         
-        self._tag_services_notebook.setMinimumWidth( min_width )
+        self._tag_services.setMinimumWidth( min_width )
         
         #
         
@@ -349,14 +347,14 @@ class EditTagDisplayApplication( ClientGUIScrolledPanels.EditPanel ):
             sibling_applicable_service_keys = master_service_keys_to_sibling_applicable_service_keys[ master_service_key ]
             parent_applicable_service_keys = master_service_keys_to_parent_applicable_service_keys[ master_service_key ]
             
-            page = self._Panel( self._tag_services_notebook, master_service_key, sibling_applicable_service_keys, parent_applicable_service_keys )
+            page = self._Panel( self._tag_services, master_service_key, sibling_applicable_service_keys, parent_applicable_service_keys )
             
-            self._tag_services_notebook.addTab( page, name )
+            self._tag_services.addTab( page, name )
             
             if master_service_key == default_tag_service_key:
                 
                 # Py 3.11/PyQt6 6.5.0/two tabs/total tab characters > ~12/select second tab during init = first tab disappears bug
-                QP.CallAfter( self._tag_services_notebook.setCurrentWidget, page )
+                QP.CallAfter( self._tag_services.setCurrentWidget, page )
                 
             
         
@@ -407,18 +405,18 @@ class EditTagDisplayApplication( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( vbox, self._warning, CC.FLAGS_CENTER )
         QP.AddToLayout( vbox, self._message, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._sync_status, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._tag_services_notebook, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._tag_services, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( vbox )
         
-        self._tag_services_notebook.currentChanged.connect( self._ServicePageChanged )
+        self._tag_services.currentChanged.connect( self._ServicePageChanged )
         
     
     def _ServicePageChanged( self ):
         
         if CG.client_controller.new_options.GetBoolean( 'save_default_tag_service_tab_on_change' ):
             
-            current_page = self._tag_services_notebook.currentWidget()
+            current_page: EditTagDisplayApplication._Panel = self._tag_services.currentWidget()
             
             CG.client_controller.new_options.SetKey( 'default_tag_service_tab', current_page.GetServiceKey() )
             
@@ -429,7 +427,7 @@ class EditTagDisplayApplication( ClientGUIScrolledPanels.EditPanel ):
         master_service_keys_to_sibling_applicable_service_keys = collections.defaultdict( list )
         master_service_keys_to_parent_applicable_service_keys = collections.defaultdict( list )
         
-        for page in self._tag_services_notebook.GetPages():
+        for page in self._tag_services.GetPages():
             
             ( master_service_key, sibling_applicable_service_keys, parent_applicable_service_keys ) = page.GetValue()
             
@@ -548,7 +546,14 @@ class EditTagDisplayManagerPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._original_tag_display_manager = tag_display_manager
         
-        self._tag_services = ClientGUICommon.BetterNotebook( self )
+        if CG.client_controller.new_options.GetBoolean( 'use_listbook_for_tag_service_panels' ):
+            
+            self._tag_services = ClientGUIListBook.ListBook( self )
+            
+        else:
+            
+            self._tag_services = ClientGUICommon.BetterNotebook( self )
+            
         
         min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag_services, 100 )
         
@@ -712,15 +717,19 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        self._import_favourite = ClientGUICommon.BetterButton( self, 'import', self._ImportFavourite )
-        self._export_favourite = ClientGUICommon.BetterButton( self, 'export', self._ExportFavourite )
-        self._load_favourite = ClientGUICommon.BetterButton( self, 'load', self._LoadFavourite )
-        self._save_favourite = ClientGUICommon.BetterButton( self, 'save', self._SaveFavourite )
-        self._delete_favourite = ClientGUICommon.BetterButton( self, 'delete', self._DeleteFavourite )
+        self._favourites_panel = ClientGUICommon.StaticBox( self, 'favourites' )
+        
+        self._import_favourite = ClientGUICommon.BetterButton( self._favourites_panel, 'import', self._ImportFavourite )
+        self._export_favourite = ClientGUICommon.BetterButton( self._favourites_panel, 'export', self._ExportFavourite )
+        self._load_favourite = ClientGUICommon.BetterButton( self._favourites_panel, 'load', self._LoadFavourite )
+        self._save_favourite = ClientGUICommon.BetterButton( self._favourites_panel, 'save', self._SaveFavourite )
+        self._delete_favourite = ClientGUICommon.BetterButton( self._favourites_panel, 'delete', self._DeleteFavourite )
         
         #
         
-        self._show_all_panels_button = ClientGUICommon.BetterButton( self, 'show other panels', self._ShowAllPanels )
+        self._filter_panel = ClientGUICommon.StaticBox( self, 'filter' )
+        
+        self._show_all_panels_button = ClientGUICommon.BetterButton( self._filter_panel, 'show other panels', self._ShowAllPanels )
         self._show_all_panels_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'This shows the whitelist and advanced panels, in case you want to craft a clever blacklist with \'except\' rules.' ) )
         
         show_the_button = self._only_show_blacklist and CG.client_controller.new_options.GetBoolean( 'advanced_mode' )
@@ -729,7 +738,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        self._notebook = ClientGUICommon.BetterNotebook( self )
+        self._notebook = ClientGUICommon.BetterNotebook( self._filter_panel )
         
         #
         
@@ -755,17 +764,21 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        self._redundant_st = ClientGUICommon.BetterStaticText( self, '', ellipsize_end = True )
+        self._redundant_st = ClientGUICommon.BetterStaticText( self._filter_panel, '', ellipsize_end = True )
         self._redundant_st.setVisible( False )
         
-        self._current_filter_st = ClientGUICommon.BetterStaticText( self, 'current filter: ', ellipsize_end = True )
+        self._current_filter_st = ClientGUICommon.BetterStaticText( self._filter_panel, 'current filter: ', ellipsize_end = True )
         
-        self._test_result_st = ClientGUICommon.BetterStaticText( self, self.TEST_RESULT_DEFAULT )
-        self._test_result_st.setAlignment( QC.Qt.AlignVCenter | QC.Qt.AlignRight )
+        #
+        
+        self._test_panel = ClientGUICommon.StaticBox( self, 'testing', can_expand = True, start_expanded = True )
+        
+        self._test_result_st = ClientGUICommon.BetterStaticText( self._test_panel, self.TEST_RESULT_DEFAULT )
+        self._test_result_st.setAlignment( QC.Qt.AlignmentFlag.AlignVCenter | QC.Qt.AlignmentFlag.AlignRight )
         
         self._test_result_st.setWordWrap( True )
         
-        self._test_input = QW.QPlainTextEdit( self )
+        self._test_input = QW.QPlainTextEdit( self._test_panel )
         
         #
         
@@ -782,12 +795,18 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if message is not None:
             
-            st = ClientGUICommon.BetterStaticText( self, message )
+            message_panel = ClientGUICommon.StaticBox( self, 'explanation', can_expand = True, start_expanded = True )
+            
+            st = ClientGUICommon.BetterStaticText( message_panel, message )
             
             st.setWordWrap( True )
             
-            QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
+            message_panel.Add( st, CC.FLAGS_EXPAND_PERPENDICULAR )
             
+            QP.AddToLayout( vbox, message_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+            
+        
+        #
         
         hbox = QP.HBoxLayout()
         
@@ -803,18 +822,28 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( hbox, self._save_favourite, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._delete_favourite, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        QP.AddToLayout( vbox, hbox, CC.FLAGS_ON_RIGHT )
-        QP.AddToLayout( vbox, self._show_all_panels_button, CC.FLAGS_ON_RIGHT )
+        self._favourites_panel.Add( hbox, CC.FLAGS_ON_RIGHT )
+        
+        QP.AddToLayout( vbox, self._favourites_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        #
+        
+        self._filter_panel.Add( self._show_all_panels_button, CC.FLAGS_ON_RIGHT )
         
         label = 'Click the "(un)namespaced" checkboxes to allow/disallow those tags.\nType "namespace:" to manually input a namespace that is not in the list.'
         st = ClientGUICommon.BetterStaticText( self, label = label )
         st.setWordWrap( True )
+        st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
-        QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._filter_panel.Add( st, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        QP.AddToLayout( vbox, self._notebook, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( vbox, self._redundant_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._current_filter_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._filter_panel.Add( self._notebook, CC.FLAGS_EXPAND_BOTH_WAYS )
+        self._filter_panel.Add( self._redundant_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._filter_panel.Add( self._current_filter_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        QP.AddToLayout( vbox, self._filter_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        #
         
         test_text_vbox = QP.VBoxLayout()
         
@@ -822,7 +851,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             message = 'This is a fixed blacklist. It will apply rules against all test tag siblings and apply unnamespaced rules to namespaced test tags.'
             
-            st = ClientGUICommon.BetterStaticText( self, message )
+            st = ClientGUICommon.BetterStaticText( self._test_input, message )
             
             st.setWordWrap( True )
             
@@ -836,7 +865,9 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( hbox, test_text_vbox, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
         QP.AddToLayout( hbox, self._test_input, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
         
-        QP.AddToLayout( vbox, hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._test_panel.Add( hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        QP.AddToLayout( vbox, self._test_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
         
@@ -964,7 +995,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._advanced_blacklist.RemoveTagSlices( selected_tag_slices )
                 
@@ -981,7 +1012,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._advanced_whitelist.RemoveTagSlices( selected_tag_slices )
                 
@@ -1055,7 +1086,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -1160,7 +1191,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter a name for the favourite.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 names_to_tag_filters = CG.client_controller.new_options.GetFavouriteTagFilters()
                 
@@ -1172,7 +1203,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -1275,7 +1306,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
 
         ( w, h ) = ClientGUIFunctions.ConvertTextToPixels( self._simple_blacklist_global_checkboxes, ( 20, 3 ) )
         
-        self._simple_blacklist_global_checkboxes.setFixedHeight( h )
+        self._simple_blacklist_global_checkboxes.setFixedHeight( h + ( self._simple_blacklist_global_checkboxes.frameWidth() * 2 ) )
         
         self._simple_blacklist_namespace_checkboxes = ClientGUICommon.BetterCheckBoxList( self._simple_whitelist_panel )
         
@@ -1327,7 +1358,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         main_hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( main_hbox, left_vbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( main_hbox, left_vbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( main_hbox, right_vbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
         
         self._simple_blacklist_panel.Add( main_hbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
@@ -1364,7 +1395,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ( w, h ) = ClientGUIFunctions.ConvertTextToPixels( self._simple_whitelist_global_checkboxes, ( 20, 3 ) )
         
-        self._simple_whitelist_global_checkboxes.setFixedHeight( h )
+        self._simple_whitelist_global_checkboxes.setFixedHeight( h + ( self._simple_whitelist_global_checkboxes.frameWidth() * 2 ) )
         
         self._simple_whitelist_namespace_checkboxes = ClientGUICommon.BetterCheckBoxList( self._simple_whitelist_panel )
         
@@ -1414,7 +1445,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         main_hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( main_hbox, left_vbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( main_hbox, left_vbox, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( main_hbox, right_vbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
         
         self._simple_whitelist_panel.Add( main_hbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
@@ -1470,7 +1501,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter a name for the favourite.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 names_to_tag_filters = CG.client_controller.new_options.GetFavouriteTagFilters()
                 
@@ -1483,7 +1514,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -1567,7 +1598,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._simple_blacklist.RemoveTagSlices( selected_tag_slices )
                 
@@ -1586,7 +1617,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._simple_whitelist.RemoveTagSlices( selected_tag_slices )
                 
@@ -2309,7 +2340,14 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             self._hashes.update( m.GetHashes() )
             
         
-        self._tag_services = ClientGUICommon.BetterNotebook( self )
+        if CG.client_controller.new_options.GetBoolean( 'use_listbook_for_tag_service_panels' ):
+            
+            self._tag_services = ClientGUIListBook.ListBook( self )
+            
+        else:
+            
+            self._tag_services = ClientGUICommon.BetterNotebook( self )
+            
         
         #
         
@@ -2374,7 +2412,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             CG.client_controller.sub( self, 'CanvasHasNewMedia', 'canvas_new_display_media' )
             
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'media', 'main_gui' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'media', 'main_gui' ] )
         
         self._UpdatePageTabNames()
         
@@ -2395,7 +2433,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
     
     def _SetSearchFocus( self ):
         
-        page = self._tag_services.currentWidget()
+        page: ManageTagsPanel._Panel = self._tag_services.currentWidget()
         
         if page is not None:
             
@@ -2407,7 +2445,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         
         for index in range( self._tag_services.count() ):
             
-            page = self._tag_services.widget( index )
+            page: ManageTagsPanel._Panel = self._tag_services.widget( index )
             
             service_key = page.GetServiceKey()
             
@@ -2486,16 +2524,14 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             return
             
         
-        page = self._tag_services.currentWidget()
+        current_page: typing.Optional[ ManageTagsPanel._Panel ] = self._tag_services.currentWidget()
         
-        if page is not None:
+        if current_page is not None:
             
-            CG.client_controller.CallAfterQtSafe( page, 'setting page focus', page.SetTagBoxFocus )
+            CG.client_controller.CallAfterQtSafe( current_page, 'setting page focus', current_page.SetTagBoxFocus )
             
         
         if CG.client_controller.new_options.GetBoolean( 'save_default_tag_service_tab_on_change' ):
-            
-            current_page = self._tag_services.currentWidget()
             
             CG.client_controller.new_options.SetKey( 'default_tag_service_tab', current_page.GetServiceKey() )
             
@@ -2590,7 +2626,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -2738,7 +2774,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             
             #
             
-            self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'main_gui' ] )
+            self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'main_gui' ] )
             
             self.setLayout( hbox )
             
@@ -2985,7 +3021,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
                     
                     with ClientGUIDialogs.DialogTextEntry( self, message, suggestions = suggestions ) as dlg:
                         
-                        if dlg.exec() == QW.QDialog.Accepted:
+                        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                             
                             reason = dlg.GetValue()
                             
@@ -3152,7 +3188,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     content_update_package = panel.GetValue()
                     
@@ -3425,7 +3461,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -3453,7 +3489,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         
         def SetTagBoxFocus( self ):
             
-            self._add_tag_box.setFocus( QC.Qt.OtherFocusReason )
+            self._add_tag_box.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
 
@@ -3463,7 +3499,14 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
         
         super().__init__( parent )
         
-        self._tag_services = ClientGUICommon.BetterNotebook( self )
+        if CG.client_controller.new_options.GetBoolean( 'use_listbook_for_tag_service_panels' ):
+            
+            self._tag_services = ClientGUIListBook.ListBook( self )
+            
+        else:
+            
+            self._tag_services = ClientGUICommon.BetterNotebook( self )
+            
         
         #
         
@@ -3504,7 +3547,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
         
         if CG.client_controller.new_options.GetBoolean( 'save_default_tag_service_tab_on_change' ):
             
-            current_page = self._tag_services.currentWidget()
+            current_page: ManageTagParents._Panel = self._tag_services.currentWidget()
             
             CG.client_controller.new_options.SetKey( 'default_tag_service_tab', current_page.GetServiceKey() )
             
@@ -3512,7 +3555,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
     
     def _SetSearchFocus( self ):
         
-        page = self._tag_services.currentWidget()
+        page: ManageTagParents._Panel = self._tag_services.currentWidget()
         
         if page is not None:
             
@@ -3539,13 +3582,15 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
     
     def UserIsOKToOK( self ):
         
-        if self._tag_services.currentWidget().HasUncommittedPair():
+        current_page: ManageTagParents._Panel = self._tag_services.currentWidget()
+        
+        if current_page.HasUncommittedPair():
             
             message = 'Are you sure you want to OK? You have an uncommitted pair.'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -3590,7 +3635,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_TAG_PARENTS.ID, self._ConvertPairToDisplayTuple, self._ConvertPairToSortTuple )
             
-            self._tag_parents = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, CGLC.COLUMN_LIST_TAG_PARENTS.ID, 6, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
+            self._tag_parents = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, 6, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
             
             self._listctrl_panel.SetListCtrl( self._tag_parents )
             
@@ -3836,9 +3881,9 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             
             export_string = self._GetExportString()
             
-            with QP.FileDialog( self, 'Set the export path.', default_filename = 'parents.txt', acceptMode = QW.QFileDialog.AcceptSave, fileMode = QW.QFileDialog.AnyFile ) as dlg:
+            with QP.FileDialog( self, 'Set the export path.', default_filename = 'parents.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     path = dlg.GetPath()
                     
@@ -3900,9 +3945,9 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
         
         def _ImportFromTXT( self, only_add = False ):
             
-            with QP.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptOpen ) as dlg:
+            with QP.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as dlg:
                 
-                if dlg.exec() != QW.QDialog.Accepted:
+                if dlg.exec() != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -4062,11 +4107,11 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             
             if len( self._children.GetTags() ) == 0:
                 
-                self._children_input.setFocus( QC.Qt.OtherFocusReason )
+                self._children_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             else:
                 
-                self._parents_input.setFocus( QC.Qt.OtherFocusReason )
+                self._parents_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             
         
@@ -4232,7 +4277,14 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
         
         super().__init__( parent )
         
-        self._tag_services = ClientGUICommon.BetterNotebook( self )
+        if CG.client_controller.new_options.GetBoolean( 'use_listbook_for_tag_service_panels' ):
+            
+            self._tag_services = ClientGUIListBook.ListBook( self )
+            
+        else:
+            
+            self._tag_services = ClientGUICommon.BetterNotebook( self )
+            
         
         #
         
@@ -4273,7 +4325,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
         
         if CG.client_controller.new_options.GetBoolean( 'save_default_tag_service_tab_on_change' ):
             
-            current_page = self._tag_services.currentWidget()
+            current_page: ManageTagSiblings._Panel = self._tag_services.currentWidget()
             
             CG.client_controller.new_options.SetKey( 'default_tag_service_tab', current_page.GetServiceKey() )
             
@@ -4281,7 +4333,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
     
     def _SetSearchFocus( self ):
         
-        page = self._tag_services.currentWidget()
+        page: ManageTagSiblings._Panel = self._tag_services.currentWidget()
         
         if page is not None:
             
@@ -4308,13 +4360,15 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
     
     def UserIsOKToOK( self ):
         
-        if self._tag_services.currentWidget().HasUncommittedPair():
+        current_page: ManageTagSiblings._Panel = self._tag_services.currentWidget()
+        
+        if current_page.HasUncommittedPair():
             
             message = 'Are you sure you want to OK? You have an uncommitted pair.'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -4325,7 +4379,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
     
     def EventServiceChanged( self, event ):
         
-        page = self._tag_services.currentWidget()
+        page: ManageTagSiblings._Panel = self._tag_services.currentWidget()
         
         if page is not None:
             
@@ -4362,7 +4416,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_TAG_SIBLINGS.ID, self._ConvertPairToDisplayTuple, self._ConvertPairToSortTuple )
             
-            self._tag_siblings = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, CGLC.COLUMN_LIST_TAG_SIBLINGS.ID, 14, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
+            self._tag_siblings = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, 14, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
             
             self._listctrl_panel.SetListCtrl( self._tag_siblings )
             
@@ -4632,9 +4686,9 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             export_string = self._GetExportString()
             
-            with QP.FileDialog( self, 'Set the export path.', default_filename = 'siblings.txt', acceptMode = QW.QFileDialog.AcceptSave, fileMode = QW.QFileDialog.AnyFile ) as dlg:
+            with QP.FileDialog( self, 'Set the export path.', default_filename = 'siblings.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     path = dlg.GetPath()
                     
@@ -4696,9 +4750,9 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
         
         def _ImportFromTXT( self, only_add = False ):
             
-            with QP.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptOpen ) as dlg:
+            with QP.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as dlg:
                 
-                if dlg.exec() != QW.QDialog.Accepted:
+                if dlg.exec() != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -4865,11 +4919,11 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             if len( self._old_siblings.GetTags() ) == 0:
                 
-                self._old_input.setFocus( QC.Qt.OtherFocusReason )
+                self._old_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             else:
                 
-                self._new_input.setFocus( QC.Qt.OtherFocusReason )
+                self._new_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             
         
@@ -5036,11 +5090,18 @@ class ReviewTagDisplayMaintenancePanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         super().__init__( parent )
         
-        self._tag_services_notebook = ClientGUICommon.BetterNotebook( self )
+        if CG.client_controller.new_options.GetBoolean( 'use_listbook_for_tag_service_panels' ):
+            
+            self._tag_services = ClientGUIListBook.ListBook( self )
+            
+        else:
+            
+            self._tag_services = ClientGUICommon.BetterNotebook( self )
+            
         
-        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag_services_notebook, 100 )
+        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag_services, 100 )
         
-        self._tag_services_notebook.setMinimumWidth( min_width )
+        self._tag_services.setMinimumWidth( min_width )
         
         #
         
@@ -5053,13 +5114,13 @@ class ReviewTagDisplayMaintenancePanel( ClientGUIScrolledPanels.ReviewPanel ):
             service_key = service.GetServiceKey()
             name = service.GetName()
             
-            page = self._Panel( self._tag_services_notebook, service_key )
+            page = self._Panel( self._tag_services, service_key )
             
-            self._tag_services_notebook.addTab( page, name )
+            self._tag_services.addTab( page, name )
             
             if service_key == default_tag_service_key:
                 
-                QP.CallAfter( self._tag_services_notebook.setCurrentWidget, page )
+                QP.CallAfter( self._tag_services.setCurrentWidget, page )
                 
             
         
@@ -5081,20 +5142,20 @@ class ReviewTagDisplayMaintenancePanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.AddToLayout( vbox, self._message, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._sync_status, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._tag_services_notebook, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._tag_services, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( vbox )
         
         CG.client_controller.sub( self, '_UpdateStatusText', 'notify_new_menu_option' )
         
-        self._tag_services_notebook.currentChanged.connect( self._ServicePageChanged )
+        self._tag_services.currentChanged.connect( self._ServicePageChanged )
         
     
     def _ServicePageChanged( self ):
         
         if CG.client_controller.new_options.GetBoolean( 'save_default_tag_service_tab_on_change' ):
             
-            current_page = self._tag_services_notebook.currentWidget()
+            current_page: ManageTagSiblings._Panel = self._tag_services.currentWidget()
             
             CG.client_controller.new_options.SetKey( 'default_tag_service_tab', current_page.GetServiceKey() )
             
@@ -5361,7 +5422,7 @@ class TagFilterButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._tag_filter = panel.GetValue()
                 
@@ -5708,7 +5769,7 @@ class EditTagSummaryGeneratorPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, message, namespace, allow_blank = True ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 namespace = dlg.GetValue()
                 
@@ -5722,7 +5783,7 @@ class EditTagSummaryGeneratorPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, message, prefix, allow_blank = True ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 prefix = dlg.GetValue()
                 
@@ -5736,7 +5797,7 @@ class EditTagSummaryGeneratorPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, message, separator, allow_blank = True ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 separator = dlg.GetValue()
                 
@@ -5790,7 +5851,7 @@ class TagSummaryGeneratorButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._tag_summary_generator = panel.GetValue()
                 

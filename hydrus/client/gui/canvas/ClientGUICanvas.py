@@ -41,12 +41,11 @@ from hydrus.client.gui.media import ClientGUIMediaMenus
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsCommitFiltering
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.media import ClientMedia
-from hydrus.client.media import ClientMediaFileFilter
+from hydrus.client.media import ClientMediaResultPrettyInfo
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientRatings
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientTagSorting
-from hydrus.client.search import ClientSearchFileSearchContext
 
 def AddAudioVolumeMenu( menu, canvas_type ):
     
@@ -297,7 +296,7 @@ class LayoutEventSilencer( QC.QObject ):
         
         try:
             
-            if watched == self.parent() and event.type() == QC.QEvent.LayoutRequest:
+            if watched == self.parent() and event.type() == QC.QEvent.Type.LayoutRequest:
                 
                 return True
                 
@@ -331,7 +330,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self.setObjectName( 'HydrusMediaViewer' )
         
-        self.setSizePolicy( QW.QSizePolicy.Expanding, QW.QSizePolicy.Expanding )
+        self.setSizePolicy( QW.QSizePolicy.Policy.Expanding, QW.QSizePolicy.Policy.Expanding )
         
         self._location_context = location_context
         
@@ -347,14 +346,14 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._service_keys_to_services = {}
         
-        self._current_media = None
+        self._current_media: typing.Optional[ ClientMedia.MediaSingleton ] = None
         
         catch_mouse = True
         
         # once we have catch_mouse full shortcut support for canvases, swap out this out for an option to swallow activating clicks
         ignore_activating_mouse_click = catch_mouse and self.CANVAS_TYPE != CC.CANVAS_PREVIEW
         
-        self._my_shortcuts_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'media', 'media_viewer' ], catch_mouse = catch_mouse, ignore_activating_mouse_click = ignore_activating_mouse_click )
+        self._my_shortcuts_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'media', 'media_viewer' ], catch_mouse = catch_mouse, ignore_activating_mouse_click = ignore_activating_mouse_click )
         
         self._layout_silencer = LayoutEventSilencer( self )
         self.installEventFilter( self._layout_silencer )
@@ -531,7 +530,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
         # take any focus away from hover window, which will mess up window order when it hides due to the new frame
-        self.setFocus( QC.Qt.OtherFocusReason )
+        self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
         title = 'manage tags'
         frame_key = 'manage_tags_frame'
@@ -568,7 +567,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 pending_content_updates = panel.GetValue()
                 
@@ -959,7 +958,16 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     hash = self._current_media.GetHash()
                     
-                    ClientGUIMediaSimpleActions.ShowFilesInNewDuplicatesFilterPage( [ hash ], self._location_context )
+                    if CG.client_controller.new_options.GetBoolean( 'open_files_to_duplicate_filter_uses_all_my_files' ):
+                        
+                        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                        
+                    else:
+                        
+                        location_context = self._location_context
+                        
+                    
+                    ClientGUIMediaSimpleActions.ShowFilesInNewDuplicatesFilterPage( [ hash ], location_context )
                     
                     self._MediaFocusWentToExternalProgram()
                     
@@ -969,6 +977,39 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 if self._current_media is not None:
                     
                     hamming_distance = command.GetSimpleData()
+                    
+                    if hamming_distance is None:
+                        
+                        from hydrus.client.gui.panels import ClientGUIScrolledPanels
+                        from hydrus.client.gui.widgets import ClientGUICommon
+                        
+                        with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'choose distance' ) as dlg:
+                            
+                            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+                            
+                            #
+                            
+                            # make a treeview control thing from menu
+                            
+                            control = ClientGUICommon.BetterSpinBox( panel )
+                            
+                            control.setSingleStep( 2 )
+                            control.setValue( 10 )
+                            
+                            panel.SetControl( control )
+                            
+                            dlg.SetPanel( panel )
+                            
+                            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                                
+                                hamming_distance = control.value()
+                                
+                            else:
+                                
+                                return
+                                
+                            
+                        
                     
                     ClientGUIMediaSimpleActions.ShowSimilarFilesInNewPage( [ self._current_media ], self._location_context, hamming_distance )
                     
@@ -1387,11 +1428,11 @@ class MediaContainerDragClickReportingFilter( QC.QObject ):
         
         try:
             
-            if event.type() == QC.QEvent.MouseButtonPress and event.button() == QC.Qt.LeftButton:
+            if event.type() == QC.QEvent.Type.MouseButtonPress and event.button() == QC.Qt.MouseButton.LeftButton:
                 
                 self._canvas.BeginDrag()
                 
-            elif event.type() == QC.QEvent.MouseButtonRelease and event.button() == QC.Qt.LeftButton:
+            elif event.type() == QC.QEvent.Type.MouseButtonRelease and event.button() == QC.Qt.MouseButton.LeftButton:
                 
                 self._canvas.EndDrag()
                 
@@ -1428,7 +1469,7 @@ class CanvasPanel( Canvas ):
     
     def mouseReleaseEvent( self, event ):
         
-        if event.button() != QC.Qt.RightButton:
+        if event.button() != QC.Qt.MouseButton.RightButton:
             
             Canvas.mouseReleaseEvent( self, event )
             
@@ -1497,17 +1538,20 @@ class CanvasPanel( Canvas ):
             
             #
             
-            info_lines = list( self._current_media.GetPrettyInfoLines() )
-            
-            top_line = info_lines.pop( 0 )
+            info_lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult() )
             
             info_menu = ClientGUIMenus.GenerateMenu( menu )
             
-            ClientGUIMediaMenus.AddPrettyInfoLines( info_menu, info_lines )
+            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( info_menu, info_lines )
             
             ClientGUIMediaMenus.AddFileViewingStatsMenu( info_menu, (self._current_media,) )
             
-            ClientGUIMenus.AppendMenu( menu, info_menu, top_line )
+            filetype_summary = ClientMedia.GetMediasFiletypeSummaryString( [ self._current_media ] )
+            size_summary = HydrusData.ToHumanBytes( self._current_media.GetSize() )
+            
+            info_summary = f'{filetype_summary}, {size_summary}'
+            
+            ClientGUIMenus.AppendMenu( menu, info_menu, info_summary )
             
             ClientGUIMenus.AppendSeparator( menu )
             
@@ -1579,11 +1623,11 @@ class CanvasPanel( Canvas ):
             
             ClientGUIMenus.AppendMenu( menu, manage_menu, 'manage' )
             
-            ClientGUIMediaMenus.AddKnownURLsViewCopyMenu( self, menu, self._current_media, 1 )
+            ClientGUIMediaMenus.AddKnownURLsViewCopyMenu( self, self, menu, self._current_media, 1 )
             
-            ClientGUIMediaMenus.AddOpenMenu( self, menu, self._current_media, [ self._current_media ] )
+            ClientGUIMediaMenus.AddOpenMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
-            ClientGUIMediaMenus.AddShareMenu( self, menu, self._current_media, [ self._current_media ] )
+            ClientGUIMediaMenus.AddShareMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
         
         CGC.core().PopupMenu( self, menu )
@@ -1763,13 +1807,11 @@ class CanvasWithDetails( Canvas ):
         my_width = my_size.width()
         my_height = my_size.height()
         
-        max_notes_width_percentage = 20
-        
+        # TODO: this sucks and it is also wrong, we actually want like half this padding in later points.
+        # maybe we'll want to merge the details canvas with the hovers one and then we can talk to the hovers directly to get framewidth and margin/padding/whatever
         PADDING = 4
         
-        max_notes_width = int( my_width * ( max_notes_width_percentage / 100 ) ) - ( PADDING * 2 )
-        
-        notes_width = 0
+        notes_width = int( my_width * ClientGUICanvasHoverFrames.SIDE_HOVER_PROPORTIONS ) - ( PADDING * 2 )
         
         original_font = painter.font()
         
@@ -1779,6 +1821,8 @@ class CanvasWithDetails( Canvas ):
         notes_font = QG.QFont( original_font )
         notes_font.setBold( False )
         
+        # old code that tried to draw it to a smaller box
+        '''
         for ( name, note ) in names_to_notes.items():
             
             # without wrapping, let's see if we fit into a smaller box than the max possible
@@ -1800,17 +1844,18 @@ class CanvasWithDetails( Canvas ):
                 break
                 
             
+        '''
         
         left_x = my_width - ( notes_width + PADDING )
         
-        current_y += PADDING * 2
+        current_y += PADDING * 3
         
         draw_a_test_rect = False
         
         if draw_a_test_rect:
             
             painter.setPen( QG.QPen( QG.QColor( 20, 20, 20 ) ) )
-            painter.setBrush( QC.Qt.NoBrush )
+            painter.setBrush( QC.Qt.BrushStyle.NoBrush )
             
             painter.drawRect( left_x, current_y, notes_width, 100 )
             
@@ -1819,9 +1864,9 @@ class CanvasWithDetails( Canvas ):
             
             painter.setFont( name_font )
             
-            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignHCenter | QC.Qt.TextWordWrap, name )
+            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
             
-            painter.drawText( text_rect, QC.Qt.AlignHCenter | QC.Qt.TextWordWrap, name )
+            painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
             
             current_y += text_rect.height() + PADDING
             
@@ -1831,9 +1876,9 @@ class CanvasWithDetails( Canvas ):
             
             note = notes_manager.GetNote( name )
             
-            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignJustify | QC.Qt.TextWordWrap, note )
+            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
             
-            painter.drawText( text_rect, QC.Qt.AlignJustify | QC.Qt.TextWordWrap, note )
+            painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
             
             current_y += text_rect.height() + PADDING
             
@@ -1841,9 +1886,6 @@ class CanvasWithDetails( Canvas ):
                 
                 break
                 
-            
-            # draw a horizontal line
-            
             
         
         painter.setFont( original_font )
@@ -2090,11 +2132,15 @@ class CanvasWithDetails( Canvas ):
     
     def _GetInfoString( self ):
         
-        lines = [ line for line in self._current_media.GetPrettyInfoLines( only_interesting_lines = True ) if isinstance( line, str ) ]
+        lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult(), only_interesting_lines = True )
         
-        lines.insert( 1, ClientData.ConvertZoomToPercentage( self._media_container.GetCurrentZoom() ) )
+        lines = [ line for line in lines if not line.IsSubmenu() ]
         
-        info_string = ' | '.join( lines )
+        texts = [ line.text for line in lines ]
+        
+        texts.insert( 1, ClientData.ConvertZoomToPercentage( self._media_container.GetCurrentZoom() ) )
+        
+        info_string = ' | '.join( texts )
         
         return info_string
         
@@ -2230,7 +2276,7 @@ class CanvasWithHovers( CanvasWithDetails ):
         
         if can_hide:
             
-            self.setCursor( QG.QCursor( QC.Qt.BlankCursor ) )
+            self.setCursor( QG.QCursor( QC.Qt.CursorShape.BlankCursor ) )
             
         elif can_check_again:
             
@@ -2267,7 +2313,7 @@ class CanvasWithHovers( CanvasWithDetails ):
     
     def CleanBeforeDestroy( self ):
         
-        self.setCursor( QG.QCursor( QC.Qt.ArrowCursor ) )
+        self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
         
         super().CleanBeforeDestroy()
         
@@ -2306,10 +2352,10 @@ class CanvasWithHovers( CanvasWithDetails ):
         # due to the mouse setPos below, the event pos can get funky I think due to out of order coordinate setting events, so we'll poll current value directly
         event_pos = self.mapFromGlobal( QG.QCursor.pos() )
         
-        mouse_currently_shown = self.cursor().shape() == QC.Qt.ArrowCursor
+        mouse_currently_shown = self.cursor().shape() == QC.Qt.CursorShape.ArrowCursor
         show_mouse = mouse_currently_shown
         
-        is_dragging = event.buttons() & QC.Qt.LeftButton and self._last_drag_pos is not None
+        is_dragging = event.buttons() & QC.Qt.MouseButton.LeftButton and self._last_drag_pos is not None
         has_moved = event_pos != self._last_motion_pos
         
         if is_dragging:
@@ -2368,7 +2414,7 @@ class CanvasWithHovers( CanvasWithDetails ):
             
             if not mouse_currently_shown:
                 
-                self.setCursor( QG.QCursor( QC.Qt.ArrowCursor ) )
+                self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
                 
             
             self._RestartCursorHideWait()
@@ -2377,7 +2423,7 @@ class CanvasWithHovers( CanvasWithDetails ):
             
             if mouse_currently_shown:
                 
-                self.setCursor( QG.QCursor( QC.Qt.BlankCursor ) )
+                self.setCursor( QG.QCursor( QC.Qt.CursorShape.BlankCursor ) )
                 
             
         
@@ -2645,7 +2691,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
                 
                 dlg_2.SetPanel( panel )
                 
-                if dlg_2.exec() == QW.QDialog.Accepted:
+                if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     duplicate_content_merge_options = panel.GetValue()
                     
@@ -2845,7 +2891,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
             return
             
         
-        other_media = self._media_list.GetNext( self._current_media )
+        other_media: ClientMedia.MediaSingleton = self._media_list.GetNext( self._current_media )
         
         media_to_prefetch = [ other_media ]
         
@@ -2896,7 +2942,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
             
         
         first_media = self._current_media
-        second_media = self._media_list.GetNext( first_media )
+        second_media: ClientMedia.MediaSingleton = self._media_list.GetNext( first_media )
         
         was_auto_skipped = False
         
@@ -2941,7 +2987,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
             file_deletion_reason = None
             
         
-        content_update_packages = [ duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( first_media, second_media, delete_first = delete_first, delete_second = delete_second, file_deletion_reason = file_deletion_reason ) ]
+        content_update_packages = [ duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( first_media.GetMediaResult(), second_media.GetMediaResult(), delete_first = delete_first, delete_second = delete_second, file_deletion_reason = file_deletion_reason ) ]
         
         process_tuple = ( duplicate_type, first_media, second_media, content_update_packages, was_auto_skipped )
         
@@ -3131,7 +3177,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
                     
                     result = ClientGUIScrolledPanelsCommitFiltering.GetInterstitialFilteringAnswer( self, label )
                     
-                    if result == QW.QDialog.Accepted:
+                    if result == QW.QDialog.DialogCode.Accepted:
                         
                         self._CommitProcessed( blocking = True )
                         
@@ -3441,7 +3487,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
                 
                 return False
                 
-            elif result == QW.QDialog.Accepted:
+            elif result == QW.QDialog.DialogCode.Accepted:
                 
                 self._CommitProcessed( blocking = False )
                 
@@ -3733,7 +3779,7 @@ class CanvasMediaList( ClientMedia.ListeningMediaList, CanvasWithHovers ):
             
         
     
-def CommitArchiveDelete( page_key: bytes, location_context: ClientLocation.LocationContext, kept: typing.Collection[ ClientMedia.MediaSingleton ], deleted: typing.Collection[ ClientMedia.MediaSingleton ], skipped: typing.Collection[ ClientMedia.MediaSingleton ] ):
+def CommitArchiveDelete( page_key: bytes, deletee_location_context: ClientLocation.LocationContext, kept: typing.Collection[ ClientMedia.MediaSingleton ], deleted: typing.Collection[ ClientMedia.MediaSingleton ], skipped: typing.Collection[ ClientMedia.MediaSingleton ] ):
     
     kept = list( kept )
     deleted = list( deleted )
@@ -3759,13 +3805,13 @@ def CommitArchiveDelete( page_key: bytes, location_context: ClientLocation.Locat
         CG.client_controller.pub( 'remove_media', page_key, all_hashes )
         
     
-    location_context = location_context.Duplicate()
+    deletee_location_context = deletee_location_context.Duplicate()
     
-    location_context.FixMissingServices( ClientLocation.ValidLocalDomainsFilter )
+    deletee_location_context.FixMissingServices( ClientLocation.ValidLocalDomainsFilter )
     
-    if location_context.IncludesCurrent():
+    if deletee_location_context.IncludesCurrent():
         
-        deletee_file_service_keys = location_context.current_service_keys
+        deletee_file_service_keys = deletee_location_context.current_service_keys
         
     else:
         
@@ -3860,7 +3906,7 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
         
         kept = list( self._kept )
         
-        deleted = ClientMediaFileFilter.FilterAndReportDeleteLockFailures( self._deleted )
+        deleted = list( self._deleted )
         
         skipped = list( self._skipped )
         
@@ -3881,9 +3927,13 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
                 
                 location_contexts_to_present_options_for = []
                 
-                if not self._location_context.IsAllLocalFiles():
+                possible_location_context_at_top = self._location_context.Duplicate()
+                
+                possible_location_context_at_top.LimitToServiceTypes( CG.client_controller.services_manager.GetServiceType, ( HC.COMBINED_LOCAL_MEDIA, HC.LOCAL_FILE_DOMAIN ) )
+                
+                if len( possible_location_context_at_top.current_service_keys ) > 0:
                     
-                    location_contexts_to_present_options_for.append( self._location_context )
+                    location_contexts_to_present_options_for.append( possible_location_context_at_top )
                     
                 
                 current_local_service_keys = HydrusLists.MassUnion( [ m.GetLocationsManager().GetCurrent() for m in deleted ] )
@@ -3904,11 +3954,6 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
                         
                         location_contexts_to_present_options_for.remove( all_my_files_location_context )
                         
-                    
-                
-                if CC.TRASH_SERVICE_KEY in current_local_service_keys or CC.LOCAL_UPDATE_SERVICE_KEY in current_local_service_keys:
-                    
-                    location_contexts_to_present_options_for.append( ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY ) )
                     
                 
                 location_contexts_to_present_options_for = HydrusData.DedupeList( location_contexts_to_present_options_for )
@@ -3932,10 +3977,6 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
                             
                             location_label = 'all local file domains'
                             
-                        elif location_context == ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY ):
-                            
-                            location_label = 'my hard disk'
-                            
                         else:
                             
                             location_label = location_context.ToString( CG.client_controller.services_manager.GetName )
@@ -3958,7 +3999,7 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
                 
                 return False
                 
-            elif result == QW.QDialog.Accepted:
+            elif result == QW.QDialog.DialogCode.Accepted:
                 
                 self._kept = set()
                 self._deleted = set()
@@ -3976,15 +4017,6 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
     def _Delete( self, media = None, reason = None, file_service_key = None ):
         
         if self._current_media is None:
-            
-            return False
-            
-        
-        if self._current_media.HasDeleteLocked():
-            
-            message = 'This file is delete-locked! Send it back to the inbox to delete it!'
-            
-            ClientGUIDialogsMessage.ShowWarning( self, message )
             
             return False
             
@@ -4488,7 +4520,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the interval, in seconds.', default = '15', min_char_width = 12 ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 try:
                     
@@ -4517,7 +4549,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
     
     def contextMenuEvent( self, event ):
         
-        if event.reason() == QG.QContextMenuEvent.Keyboard:
+        if event.reason() == QG.QContextMenuEvent.Reason.Keyboard:
             
             self.ShowMenu()
             
@@ -4584,15 +4616,15 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             #
             
-            info_lines = self._current_media.GetPrettyInfoLines()
+            info_lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult() )
             
             info_menu = ClientGUIMenus.GenerateMenu( menu )
             
-            ClientGUIMediaMenus.AddPrettyInfoLines( info_menu, info_lines )
+            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( info_menu, info_lines )
             
             ClientGUIMenus.AppendSeparator( info_menu )
             
-            ClientGUIMediaMenus.AddFileViewingStatsMenu( info_menu, (self._current_media,) )
+            ClientGUIMediaMenus.AddFileViewingStatsMenu( info_menu, ( self._current_media, ) )
             
             filetype_summary = ClientMedia.GetMediasFiletypeSummaryString( [ self._current_media ] )
             size_summary = HydrusData.ToHumanBytes( self._current_media.GetSize() )
@@ -4753,11 +4785,11 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 ClientGUIMenus.AppendMenu( menu, locations_menu, 'locations' )
                 
             
-            ClientGUIMediaMenus.AddKnownURLsViewCopyMenu( self, menu, self._current_media, 1 )
+            ClientGUIMediaMenus.AddKnownURLsViewCopyMenu( self, self, menu, self._current_media, 1 )
             
-            ClientGUIMediaMenus.AddOpenMenu( self, menu, self._current_media, [ self._current_media ] )
+            ClientGUIMediaMenus.AddOpenMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
-            ClientGUIMediaMenus.AddShareMenu( self, menu, self._current_media, [ self._current_media ] )
+            ClientGUIMediaMenus.AddShareMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
             CGC.core().PopupMenu( self, menu )
             

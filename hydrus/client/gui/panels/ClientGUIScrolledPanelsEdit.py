@@ -39,7 +39,7 @@ from hydrus.client.gui.widgets import ClientGUIRegex
 from hydrus.client.importing.options import NoteImportOptions
 from hydrus.client.importing.options import TagImportOptions
 from hydrus.client.media import ClientMedia
-from hydrus.client.media import ClientMediaFileFilter
+from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
 
 # TODO: ok the general plan here is to move rich panels to topical gui.xxx modules
@@ -52,13 +52,13 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         parent: QW.QWidget,
         url_classes,
         parsers,
-        url_class_keys_to_parser_keys,
-        file_post_default_tag_import_options,
-        watchable_default_tag_import_options,
-        url_class_keys_to_tag_import_options,
-        file_post_default_note_import_options,
-        watchable_default_note_import_options,
-        url_class_keys_to_note_import_options
+        url_class_keys_to_parser_keys: typing.Dict[ bytes, bytes ],
+        file_post_default_tag_import_options: TagImportOptions.TagImportOptions,
+        watchable_default_tag_import_options: TagImportOptions.TagImportOptions,
+        url_class_keys_to_tag_import_options: typing.Dict[ bytes, TagImportOptions.TagImportOptions ],
+        file_post_default_note_import_options: NoteImportOptions.NoteImportOptions,
+        watchable_default_note_import_options: NoteImportOptions.NoteImportOptions,
+        url_class_keys_to_note_import_options: typing.Dict[ bytes, NoteImportOptions.NoteImportOptions ]
     ):
         
         super().__init__( parent )
@@ -90,7 +90,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DEFAULT_TAG_IMPORT_OPTIONS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, CGLC.COLUMN_LIST_DEFAULT_TAG_IMPORT_OPTIONS.ID, 15, model, activation_callback = self._Edit )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 15, model, activation_callback = self._Edit )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -195,7 +195,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Clear set note import options for all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             url_classes_to_clear = self._list_ctrl.GetData( only_selected = True )
             
@@ -217,7 +217,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Clear set tag import options for all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             url_classes_to_clear = self._list_ctrl.GetData( only_selected = True )
             
@@ -298,7 +298,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     url_class_key = url_class.GetClassKey()
                     
@@ -521,7 +521,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
             suggested_file_service_key = local_file_service_domains[0].GetServiceKey()
             
         
-        self._media = self._FilterForDeleteLock( ClientMedia.FlattenMedia( media ), suggested_file_service_key )
+        self._media = ClientMedia.FlattenMedia( media )
         
         self._question_is_already_resolved = len( self._media ) == 0
         
@@ -690,18 +690,6 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         QP.CallAfter( self._SetFocus )
         
     
-    def _FilterForDeleteLock( self, media, suggested_file_service_key: bytes ):
-        
-        service = CG.client_controller.services_manager.GetService( suggested_file_service_key )
-        
-        if service.GetServiceType() in HC.LOCAL_FILE_SERVICES:
-            
-            media = ClientMediaFileFilter.FilterAndReportDeleteLockFailures( media )
-            
-        
-        return media
-        
-    
     def _GetExistingSharedFileDeletionReason( self ):
         
         all_files_have_existing_file_deletion_reasons = True
@@ -789,7 +777,17 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         possible_file_service_keys.extend( ( ( rfs.GetServiceKey(), rfs.GetServiceKey() ) for rfs in CG.client_controller.services_manager.GetServices( ( HC.FILE_REPOSITORY, ) ) ) )
         
-        keys_to_hashes = { ( selection_file_service_key, deletee_file_service_key ) : [ m.GetHash() for m in self._media if selection_file_service_key in m.GetLocationsManager().GetCurrent() ] for ( selection_file_service_key, deletee_file_service_key ) in possible_file_service_keys }
+        def PhysicalDeleteLockOK( s_k: bytes, media_result: ClientMediaResult.MediaResult ):
+            
+            if s_k in ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.TRASH_SERVICE_KEY ):
+                
+                return not media_result.IsPhysicalDeleteLocked()
+                
+            
+            return True
+            
+        
+        keys_to_hashes = { ( selection_file_service_key, deletee_file_service_key ) : [ m.GetHash() for m in self._media if selection_file_service_key in m.GetLocationsManager().GetCurrent() if PhysicalDeleteLockOK( deletee_file_service_key, m.GetMediaResult() ) ] for ( selection_file_service_key, deletee_file_service_key ) in possible_file_service_keys }
         
         trashed_key = ( CC.TRASH_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
         combined_key = ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
@@ -808,6 +806,11 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         num_local_services_done = 0
         
         for ( fsk, hashes ) in possible_file_service_keys_and_hashes:
+            
+            if len( hashes ) == 0:
+                
+                continue
+                
             
             num_to_delete = len( hashes )
             
@@ -964,7 +967,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if CG.client_controller.new_options.GetBoolean( 'use_advanced_file_deletion_dialog' ):
             
-            hashes = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in m.GetLocationsManager().GetCurrent() ]
+            hashes = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in m.GetLocationsManager().GetCurrent() if PhysicalDeleteLockOK( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, m.GetMediaResult() ) ]
             
             num_to_delete = len( hashes )
             
@@ -1009,11 +1012,11 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if self._action_radio.isEnabled():
             
-            self._action_radio.setFocus( QC.Qt.OtherFocusReason )
+            self._action_radio.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         elif self._reason_panel.isEnabled():
             
-            self._reason_radio.setFocus( QC.Qt.OtherFocusReason )
+            self._reason_radio.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -1188,7 +1191,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_TAG_SERVICES.ID, self._ConvertTagDataToDisplayTuple, self._ConvertTagDataToSortTuple )
         
-        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_TAG_SERVICES.ID, 5, model, delete_key_callback = self._DeleteTag, activation_callback = self._EditTag )
+        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteTag, activation_callback = self._EditTag )
         
         tag_services_listctrl_panel.SetListCtrl( self._tag_service_actions )
         
@@ -1204,7 +1207,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_RATING_SERVICES.ID, self._ConvertRatingDataToDisplayTuple, self._ConvertRatingDataToSortTuple )
         
-        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_RATING_SERVICES.ID, 5, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating )
+        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating )
         
         rating_services_listctrl_panel.SetListCtrl( self._rating_service_actions )
         
@@ -1477,7 +1480,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
                 
                 dlg_3.SetPanel( panel )
                 
-                if dlg_3.exec() == QW.QDialog.Accepted:
+                if dlg_3.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     tag_filter = panel.GetValue()
                     
@@ -1554,7 +1557,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             for service_key in self._rating_service_actions.GetData( only_selected = True ):
                 
@@ -1569,7 +1572,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Remove all selected?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             for service_key in self._tag_service_actions.GetData( only_selected = True ):
                 
@@ -1590,7 +1593,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._sync_note_import_options = panel.GetValue()
                 
@@ -1686,7 +1689,7 @@ class EditDuplicateContentMergeOptionsPanel( ClientGUIScrolledPanels.EditPanel )
                 
                 dlg_3.SetPanel( panel )
                 
-                if dlg_3.exec() == QW.QDialog.Accepted:
+                if dlg_3.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     tag_filter = panel.GetValue()
                     
@@ -1922,7 +1925,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         self._notebook.setCurrentIndex( index_to_select )
         
-        first_panel = self._notebook.currentWidget()
+        first_panel = typing.cast( QW.QPlainTextEdit, self._notebook.currentWidget() )
         
         ClientGUIFunctions.SetFocusLater( first_panel )
         
@@ -1952,7 +1955,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         self.widget().setLayout( vbox )
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'media' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'media' ] )
         
         self._notebook.tabBarDoubleClicked.connect( self._TabBarDoubleClicked )
         
@@ -1965,7 +1968,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the note.', allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 name = dlg.GetValue()
                 
@@ -2085,7 +2088,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
             
             if name in existing_panel_names_to_widgets:
                 
-                control = existing_panel_names_to_widgets[ name ]
+                control = typing.cast( QW.QPlainTextEdit, existing_panel_names_to_widgets[ name ] )
                 
                 try:
                     
@@ -2109,7 +2112,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             index = self._notebook.currentIndex()
             
@@ -2140,7 +2143,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the note.', allow_blank = False, default = name ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 name = dlg.GetValue()
                 
@@ -2173,7 +2176,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
     
     def GetValue( self ) -> typing.Tuple[ typing.Dict[ str, str ], typing.Set[ str ] ]:
         
-        names_to_notes = { self._notebook.tabText( i ) : HydrusText.CleanNoteText( self._notebook.widget( i ).toPlainText() ) for i in range( self._notebook.count() ) }
+        names_to_notes = { self._notebook.tabText( i ) : HydrusText.CleanNoteText( typing.cast( QW.QPlainTextEdit, self._notebook.widget( i ) ).toPlainText() ) for i in range( self._notebook.count() ) }
         
         names_to_notes = { name : text for ( name, text ) in names_to_notes.items() if text != '' }
         
@@ -2221,7 +2224,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -2640,7 +2643,7 @@ class EditRegexFavourites( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_REGEX_FAVOURITES.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._regexes = ClientGUIListCtrl.BetterListCtrlTreeView( regex_listctrl_panel, CGLC.COLUMN_LIST_REGEX_FAVOURITES.ID, 8, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._regexes = ClientGUIListCtrl.BetterListCtrlTreeView( regex_listctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
         
         regex_listctrl_panel.SetListCtrl( self._regexes )
         
@@ -2669,13 +2672,13 @@ class EditRegexFavourites( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter regex.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 regex_phrase = dlg.GetValue()
                 
                 with ClientGUIDialogs.DialogTextEntry( self, 'Enter description.' ) as dlg_2:
                     
-                    if dlg_2.exec() == QW.QDialog.Accepted:
+                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         description = dlg_2.GetValue()
                         
@@ -2728,13 +2731,13 @@ class EditRegexFavourites( ClientGUIScrolledPanels.EditPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     regex_phrase = control.GetValue()
                     
                     with ClientGUIDialogs.DialogTextEntry( self, 'Update description.', default = description ) as dlg_2:
                         
-                        if dlg_2.exec() == QW.QDialog.Accepted:
+                        if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                             
                             description = dlg_2.GetValue()
                             
@@ -2787,7 +2790,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
         
         self._urls_listbox = ClientGUIListBoxes.BetterQListWidget( self, delete_callable = self.DeleteSelected )
-        self._urls_listbox.setSelectionMode( QW.QAbstractItemView.ExtendedSelection )
+        self._urls_listbox.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         self._urls_listbox.setSortingEnabled( False )
         self._urls_listbox.itemDoubleClicked.connect( self.ListDoubleClicked )
         
@@ -2832,7 +2835,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
         
         self.widget().setLayout( vbox )
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'media', 'main_gui' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'media', 'main_gui' ] )
         
         ClientGUIFunctions.SetFocusLater( self._url_input )
         
@@ -2880,7 +2883,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -2984,7 +2987,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
     
     def _SetSearchFocus( self ):
         
-        self._url_input.setFocus( QC.Qt.OtherFocusReason )
+        self._url_input.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
     
     def _UpdateList( self ):
@@ -3016,7 +3019,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             item = QW.QListWidgetItem()
             item.setText( label )
-            item.setData( QC.Qt.UserRole, url )
+            item.setData( QC.Qt.ItemDataRole.UserRole, url )
             
             self._urls_listbox.addItem( item )
             
@@ -3028,7 +3031,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
         
         if url == '':
             
-            self.parentWidget().DoOK()
+            self._OKParent()
             
         else:
             
@@ -3116,7 +3119,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 

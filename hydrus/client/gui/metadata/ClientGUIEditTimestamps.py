@@ -51,7 +51,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         self._file_modified_time_warning_st = ClientGUICommon.BetterStaticText( self, label = 'initialising' )
         self._file_modified_time_warning_st.setObjectName( 'HydrusWarning' )
-        self._file_modified_time_warning_st.setAlignment( QC.Qt.AlignCenter )
+        self._file_modified_time_warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._file_modified_time_warning_st.setVisible( False )
         
         domain_box = ClientGUICommon.StaticBox( self, 'web domain times' )
@@ -60,7 +60,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOMAIN_MODIFIED_TIMESTAMPS.ID, self._ConvertDomainToDomainModifiedDisplayTuple, self._ConvertDomainToDomainModifiedSortTuple )
         
-        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, CGLC.COLUMN_LIST_DOMAIN_MODIFIED_TIMESTAMPS.ID, 8, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp )
+        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp )
         
         self._domain_modified_list_ctrl_panel.SetListCtrl( self._domain_modified_list_ctrl )
         
@@ -76,7 +76,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SERVICE_TIMESTAMPS.ID, self._ConvertDataRowToFileServiceDisplayTuple, self._ConvertDataRowToFileServiceSortTuple )
         
-        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, CGLC.COLUMN_LIST_FILE_SERVICE_TIMESTAMPS.ID, 8, model, activation_callback = self._EditFileServiceTimestamp )
+        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, 8, model, activation_callback = self._EditFileServiceTimestamp )
         
         self._file_services_list_ctrl_panel.SetListCtrl( self._file_services_list_ctrl )
         
@@ -303,7 +303,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         self.widget().setLayout( vbox )
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'global', 'media' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'media' ] )
         
         self._file_modified_time.dateTimeChanged.connect( self._ShowFileModifiedWarning )
         
@@ -408,7 +408,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         with ClientGUIDialogs.DialogTextEntry( self, message, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 domain = dlg.GetValue()
                 
@@ -442,7 +442,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                     
                     dlg_2.SetPanel( panel )
                     
-                    if dlg_2.exec() == QW.QDialog.Accepted: # no 'haschanges' check here, we are ok with starting value
+                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted: # no 'haschanges' check here, we are ok with starting value
                         
                         new_datetime_value_range = control.GetValue()
                         
@@ -486,7 +486,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
             
             override_with_all_hashes = False
             
-            if dlg.exec() == QW.QDialog.Accepted and control.HasChanges():
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted and control.HasChanges():
                 
                 edited_datetime_value_range = control.GetValue()
                 
@@ -494,7 +494,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, 'Not every file this dialog was launched on has a time for this domain. Do you want to apply what you just set to everything, or just the files that started with this domain?', yes_label = 'all files', no_label = 'only edit existing values' )
                     
-                    if result == QW.QDialog.Accepted:
+                    if result == QW.QDialog.DialogCode.Accepted:
                         
                         override_with_all_hashes = True
                         
@@ -560,7 +560,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted and control.HasChanges():
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted and control.HasChanges():
                 
                 edited_datetime_value_range = control.GetValue()
                 new_user_has_edited = True
@@ -793,14 +793,14 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                 
                 if timestamp_data.location == CC.CANVAS_MEDIA_VIEWER:
                     
-                    if self._last_viewed_media_viewer_time.isVisible():
+                    if not self._last_viewed_media_viewer_time.isHidden():
                         
                         self._last_viewed_media_viewer_time.SetValue( self._last_viewed_media_viewer_time.GetValue().DuplicateWithNewTimestampMS( timestamp_data.timestamp_ms ), from_user = from_user )
                         
                     
                 elif timestamp_data.location == CC.CANVAS_PREVIEW:
                     
-                    if self._last_viewed_preview_viewer_time.isVisible():
+                    if not self._last_viewed_preview_viewer_time.isHidden():
                         
                         self._last_viewed_preview_viewer_time.SetValue( self._last_viewed_preview_viewer_time.GetValue().DuplicateWithNewTimestampMS( timestamp_data.timestamp_ms ), from_user = from_user )
                         
@@ -843,7 +843,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                                 
                                 result = ClientGUIDialogsQuick.GetYesNo( self, 'Not every file this dialog was launched on has a time for this domain. Do you want to apply what you just set to everything, or just the files that started with this domain?', yes_label = 'all files', no_label = 'only edit existing values' )
                                 
-                                if result == QW.QDialog.Accepted:
+                                if result == QW.QDialog.DialogCode.Accepted:
                                     
                                     hashes = all_hashes
                                     datetime_value_range = all_hashes_datetime_value_range
@@ -1031,7 +1031,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 

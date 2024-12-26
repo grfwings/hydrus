@@ -314,7 +314,7 @@ def WeAreExpectingToLoadThisMediaFile( media: ClientMedia.MediaSingleton, canvas
     return False
     
 
-class Animation( QW.QWidget ):
+class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     launchMediaViewer = QC.Signal()
     
@@ -362,7 +362,7 @@ class Animation( QW.QWidget ):
             shortcut_set = 'preview_media_window'
             
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ shortcut_set ], catch_mouse = True )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ shortcut_set ], catch_mouse = True )
         
     
     def _ClearCanvasBitmap( self ):
@@ -516,7 +516,7 @@ class Animation( QW.QWidget ):
                 
             
             painter.setBrush( QG.QBrush( dark_grey ) )
-            painter.setPen( QG.QPen( QC.Qt.NoPen ) )
+            painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
             
             for y_index in range( num_rows ):
                 
@@ -918,9 +918,9 @@ class AnimationBar( QW.QWidget ):
         
         self.setObjectName( 'HydrusAnimationBar' )
         
-        self.setCursor( QG.QCursor( QC.Qt.ArrowCursor ) )
+        self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
         
-        self.setSizePolicy( QW.QSizePolicy.Fixed, QW.QSizePolicy.Fixed )
+        self.setSizePolicy( QW.QSizePolicy.Policy.Fixed, QW.QSizePolicy.Policy.Fixed )
         
         self._media_window = None
         self._duration_ms = 1000
@@ -1126,7 +1126,7 @@ class AnimationBar( QW.QWidget ):
         
         #
         
-        painter.setBrush( QC.Qt.NoBrush )
+        painter.setBrush( QC.Qt.BrushStyle.NoBrush )
         
         painter.setPen( QG.QPen( self._qss_colours[ 'hab_border' ] ) )
         
@@ -1190,7 +1190,7 @@ class AnimationBar( QW.QWidget ):
         
         if self._currently_in_a_drag:
             
-            if event.buttons() == QC.Qt.NoButton:
+            if event.buttons() == QC.Qt.MouseButton.NoButton:
                 
                 self._currently_in_a_drag = False
                 
@@ -1285,10 +1285,10 @@ class AnimationBar( QW.QWidget ):
         
         if duration is None and isinstance(media_window, Animation):
             
-             duration = media_window.GetDuration()
+            duration = media_window.GetDuration()
+            
         
         self._duration_ms = max( duration, 1 )
-            
         
         self._currently_in_a_drag = False
         self._it_was_playing_before_drag = False
@@ -1388,12 +1388,12 @@ class MediaContainer( QW.QWidget ):
             # yes :^(
             # try again with more layout tech on the full canvas
             
-            self.setAttribute( QC.Qt.WA_OpaquePaintEvent, True )
+            self.setAttribute( QC.Qt.WidgetAttribute.WA_OpaquePaintEvent, True )
             
         
         self._background_colour_generator = background_colour_generator
         
-        self.setSizePolicy( QW.QSizePolicy.Fixed, QW.QSizePolicy.Fixed )
+        self.setSizePolicy( QW.QSizePolicy.Policy.Fixed, QW.QSizePolicy.Policy.Fixed )
         
         self._media = None
         self._show_action = CC.MEDIA_VIEWER_ACTION_DO_NOT_SHOW
@@ -1430,7 +1430,7 @@ class MediaContainer( QW.QWidget ):
         self._animation_bar = AnimationBar( self._controls_bar )
         self._volume_control = ClientGUIMediaControls.VolumeControl( self._controls_bar, self._canvas_type, direction = 'up' )
         
-        self._volume_control.setCursor( QC.Qt.ArrowCursor )
+        self._volume_control.setCursor( QC.Qt.CursorShape.ArrowCursor )
         
         #
         
@@ -1610,6 +1610,8 @@ class MediaContainer( QW.QWidget ):
             self._animation_bar.ClearMedia()
             
         
+        self._ShowHideControlBar()
+        
         media_window_changed = old_media_window != self._media_window
         
         # this has to go after setcanvastype on the mpv window so the filters are in the correct order
@@ -1663,6 +1665,91 @@ class MediaContainer( QW.QWidget ):
             
         
         self.zoomChanged.emit( self._current_zoom )
+        
+    
+    def _ShowHideControlBar( self ):
+        
+        is_near = False
+        show_small_instead_of_hiding = None
+        force_show = False
+        
+        if not ShouldHaveAnimationBar( self._media, self._show_action ):
+            
+            should_show_controls = False
+            
+        else:
+            
+            is_near = self.MouseIsNearAnimationBar()
+            show_small_instead_of_hiding = CG.client_controller.new_options.GetNoneableInteger( 'animated_scanbar_hide_height' ) is not None
+            force_show = self._volume_control.PopupIsVisible() or self._animation_bar.DoingADrag() or CG.client_controller.new_options.GetBoolean( 'force_animation_scanbar_show' )
+            
+            should_show_controls = is_near or show_small_instead_of_hiding or force_show
+            
+        
+        if should_show_controls:
+            
+            should_show_full = is_near or force_show
+            
+            if should_show_full != self._controls_bar_show_full:
+                
+                self._controls_bar_show_full = should_show_full
+                
+                self._animation_bar.SetShowText( self._controls_bar_show_full )
+                
+                self._volume_control.setEnabled( self._controls_bar_show_full )
+                
+                self._SizeAndPositionChildren()
+                
+                # TODO: investigate this
+                # ok we do seem to have a flicker here, most obvious when going from small to full size on a quick animation. we get a frame of where the top half was before. some bitmap memory issue I guess
+                # a forced repaint of the animation bar here does not fix it, so I suspect this is related to the disconnected layout nonsense I am doing
+                # TODO: if and when fixed, investigate if setGubbinsVisible is still a useful thing
+                
+            
+            do_layout = False
+            
+            if self._controls_bar.isHidden():
+                
+                self._controls_bar.setVisible( True )
+                self._controls_bar.raise_()
+                
+                self._animation_bar.setGubbinsVisible( True )
+                self._animation_bar.repaint() # this is probably not needed
+                
+                do_layout = True
+                
+            
+            should_show_volume = self.ShouldHaveVolumeControl()
+            
+            volume_currently_visible = not self._volume_control.isHidden()
+            
+            if volume_currently_visible != should_show_volume:
+                
+                self._volume_control.setVisible( should_show_volume )
+                
+                do_layout = True
+                
+            
+            self._controls_bar.layout()
+            
+        else:
+            
+            if not self._controls_bar.isHidden():
+                
+                # ok, repaint here forces a clear paint event NOW, before we hide.
+                # this ensures that when we show again, we won't have the nub in the wrong place for a frame before it repaints
+                # we'll have no nub, but this is less noticeable
+                
+                self._animation_bar.setGubbinsVisible( False )
+                self._animation_bar.repaint() # this is probably not needed
+                
+                self._controls_bar.setVisible( False )
+                
+                self._volume_control.setVisible( False )
+                
+                self._controls_bar.layout() # this is probably not needed
+                
+            
         
     
     def _SizeAndPositionChildren( self ):
@@ -2633,74 +2720,10 @@ class MediaContainer( QW.QWidget ):
     
     def TIMERUIUpdate( self ):
         
-        is_near = False
-        show_small_instead_of_hiding = None
-        force_show = False
-        
-        if not ShouldHaveAnimationBar( self._media, self._show_action ):
-            
-            should_show_controls = False
-            
-        else:
-            
-            is_near = self.MouseIsNearAnimationBar()
-            show_small_instead_of_hiding = CG.client_controller.new_options.GetNoneableInteger( 'animated_scanbar_hide_height' ) is not None
-            force_show = self._volume_control.PopupIsVisible() or self._animation_bar.DoingADrag() or CG.client_controller.new_options.GetBoolean( 'force_animation_scanbar_show' )
-            
-            should_show_controls = is_near or show_small_instead_of_hiding or force_show
-            
-        
-        if should_show_controls:
-            
-            should_show_full = is_near or force_show
-            
-            if should_show_full != self._controls_bar_show_full:
-                
-                self._controls_bar_show_full = should_show_full
-                
-                self._animation_bar.SetShowText( self._controls_bar_show_full )
-                
-                self._volume_control.setEnabled( self._controls_bar_show_full )
-                
-                self._SizeAndPositionChildren()
-                
-            
-            if not self._controls_bar.isVisible():
-                
-                self._controls_bar.show()
-                self._controls_bar.raise_()
-                
-                self._animation_bar.setGubbinsVisible( True )
-                self._animation_bar.repaint()
-                
-            
-            should_show_volume = self.ShouldHaveVolumeControl()
-            
-            if self._volume_control.isVisible() != should_show_volume:
-                
-                self._volume_control.setVisible( should_show_volume )
-                
-                self._controls_bar.layout()
-                
-            
-        else:
-            
-            if self._controls_bar.isVisible():
-                
-                # ok, repaint here forces a clear paint event NOW, before we hide.
-                # this ensures that when we show again, we won't have the nub in the wrong place for a frame before it repaints
-                # we'll have no nub, but this is less noticeable
-                
-                self._animation_bar.setGubbinsVisible( False )
-                self._animation_bar.repaint()
-                
-                self._controls_bar.hide()
-                
-                self._controls_bar.layout()
-                
-            
+        self._ShowHideControlBar()
         
     
+
 class EmbedButton( QW.QWidget ):
     
     def __init__( self, parent, background_colour_generator ):
@@ -2713,7 +2736,7 @@ class EmbedButton( QW.QWidget ):
         
         self._thumbnail_qt_pixmap = None
         
-        self.setCursor( QG.QCursor( QC.Qt.PointingHandCursor ) )
+        self.setCursor( QG.QCursor( QC.Qt.CursorShape.PointingHandCursor ) )
         
         CG.client_controller.sub( self, 'update', 'notify_new_colourset' )
         
@@ -2778,7 +2801,7 @@ class EmbedButton( QW.QWidget ):
         
         painter.setPen( QG.QPen( QG.QPalette().color( QG.QPalette.Shadow ) ) )
 
-        painter.setBrush( QC.Qt.NoBrush )
+        painter.setBrush( QC.Qt.BrushStyle.NoBrush )
         
         painter.drawRect( 0, 0, my_width, my_height )
         
@@ -2866,20 +2889,20 @@ class OpenExternallyPanel( QW.QWidget ):
         
         button = QW.QPushButton( 'open {} externally'.format( m_text ), self )
         
-        button.setFocusPolicy( QC.Qt.NoFocus )
+        button.setFocusPolicy( QC.Qt.FocusPolicy.NoFocus )
         
         QP.AddToLayout( vbox, button, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.setLayout( vbox )
         
-        self.setCursor( QG.QCursor( QC.Qt.PointingHandCursor ) )
+        self.setCursor( QG.QCursor( QC.Qt.CursorShape.PointingHandCursor ) )
         
         button.clicked.connect( self.LaunchFile )
         
     
     def mousePressEvent( self, event ):
         
-        if not ( event.modifiers() & ( QC.Qt.ShiftModifier | QC.Qt.ControlModifier | QC.Qt.AltModifier ) ) and event.button() == QC.Qt.LeftButton:
+        if not ( event.modifiers() & ( QC.Qt.KeyboardModifier.ShiftModifier | QC.Qt.KeyboardModifier.ControlModifier | QC.Qt.KeyboardModifier.AltModifier ) ) and event.button() == QC.Qt.MouseButton.LeftButton:
             
             self.LaunchFile()
             
@@ -2904,7 +2927,7 @@ class OpenExternallyPanel( QW.QWidget ):
         
     
 
-class QtMediaPlayer( QW.QWidget ):
+class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     launchMediaViewer = QC.Signal()
     
@@ -2952,7 +2975,7 @@ class QtMediaPlayer( QW.QWidget ):
             shortcut_set = 'preview_media_window'
             
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ shortcut_set ], catch_mouse = True )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ shortcut_set ], catch_mouse = True )
         
         CG.client_controller.sub( self, 'UpdateAudioMute', 'new_audio_mute' )
         CG.client_controller.sub( self, 'UpdateAudioVolume', 'new_audio_volume' )
@@ -3223,7 +3246,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if HC.PLATFORM_MACOS and not HG.macos_antiflicker_test:
             
-            self.setAttribute( QC.Qt.WA_OpaquePaintEvent, True )
+            self.setAttribute( QC.Qt.WidgetAttribute.WA_OpaquePaintEvent, True )
             
         
         # pass up un-button-pressed mouse moves to parent, which wants to do cursor show/hide
@@ -3255,7 +3278,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             shortcut_set = 'preview_media_window'
             
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ shortcut_set ], catch_mouse = True )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ shortcut_set ], catch_mouse = True )
         
         CG.client_controller.sub( self, '_ClearCanvasTileCache', 'clear_image_tile_cache' )
         CG.client_controller.sub( self, 'NotifyImageCacheCleared', 'clear_image_cache' )
@@ -3368,7 +3391,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             
             painter.setBrush( QG.QBrush( dark_grey ) )
-            painter.setPen( QG.QPen( QC.Qt.NoPen ) )
+            painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
             
             for y_index in range( num_rows ):
                 
@@ -3418,7 +3441,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         if HG.canvas_tile_outline_mode:
             
             painter.setPen( QG.QPen( QG.QColor( 0, 127, 255 ) ) )
-            painter.setBrush( QC.Qt.NoBrush )
+            painter.setBrush( QC.Qt.BrushStyle.NoBrush )
             
             painter.drawRect( tile_pixmap.rect() )
             
@@ -3581,7 +3604,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 raw_pos_f = QC.QPointF( raw_pos )
                 
-                device_pos_f = raw_pos_f / my_dpr
+                device_pos_f = typing.cast( QC.QPointF, raw_pos_f / my_dpr )
                 
                 tile.setDevicePixelRatio( my_dpr )
                 

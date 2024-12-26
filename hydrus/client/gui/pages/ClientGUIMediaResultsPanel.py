@@ -19,6 +19,7 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientFiles
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientServices
 from hydrus.client.gui import ClientGUIDialogs
@@ -39,6 +40,7 @@ from hydrus.client.gui.pages import ClientGUIManagementController
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaFileFilter
+from hydrus.client.media import ClientMediaResultPrettyInfo
 from hydrus.client.metadata import ClientContentUpdates
 
 MAC_QUARTZ_OK = True
@@ -92,7 +94,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         self.setObjectName( 'HydrusMediaList' )
         
-        self.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Sunken )
+        self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         self.setLineWidth( 2 )
         
         self.resize( QC.QSize( 20, 20 ) )
@@ -119,7 +121,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         self._had_changes_to_tag_presentation_while_hidden = False
         
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, [ 'media', 'thumbnails' ] )
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'media', 'thumbnails' ] )
         
         self.setWidget( self._InnerWidget( self ) )
         self.setWidgetResizable( True )
@@ -144,7 +146,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -260,7 +262,10 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             self._selected_media.update( media_to_select )
             
         
-        self._PublishSelectionChange()
+        if len( media_to_select ) + len( media_to_deselect ) > 0:
+            
+            self._PublishSelectionChange()
+            
         
     
     def _DownloadSelected( self ):
@@ -368,33 +373,33 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
         else:
             
-            s += ' - '
+            s += f' - {selected_files_string} selected, '
             
-            # if 1 selected, we show the whole mime string, so no need to specify
-            if num_selected == 1 or selected_files_string == num_files_string:
+            if len( self._selected_media ) == 1 and len( list(self._selected_media)[0].GetHashes() ) == 1 and CG.client_controller.new_options.GetBoolean( 'show_extended_single_file_info_in_status_bar' ):
                 
-                selected_files_string = HydrusNumbers.ToHumanInt( num_selected )
+                # TODO: Were I feeling clever, this guy would also emit a tooltip, which we can calculate here no prob
                 
-            
-            if num_selected == 1: # 23 files - 1 video selected, file_info
+                singleton_media = ClientMedia.FlattenMedia( self._selected_media )[0]
                 
-                ( selected_media, ) = self._selected_media
+                lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( singleton_media.GetMediaResult(), only_interesting_lines = True )
                 
-                pretty_info_lines = [ line for line in selected_media.GetPrettyInfoLines( only_interesting_lines = True ) if isinstance( line, str ) ]
+                lines = [ line for line in lines if not line.IsSubmenu() ]
                 
-                s += '{} selected, {}'.format( selected_files_string, ', '.join( pretty_info_lines ) )
+                texts = [ line.text for line in lines ]
                 
-            else: # 23 files - 5 selected, selection_info
+                s += ', '.join( texts )
+                
+            else:
                 
                 num_inbox = sum( ( media.GetNumInbox() for media in self._selected_media ) )
                 
                 if num_inbox == num_selected:
                     
-                    inbox_phrase = 'all in inbox'
+                    inbox_phrase = 'all in inbox' if num_inbox > 1 else 'in inbox'
                     
                 elif num_inbox == 0:
                     
-                    inbox_phrase = 'all archived'
+                    inbox_phrase = 'all archived' if num_selected > 1 else 'archived'
                     
                 else:
                     
@@ -403,7 +408,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 pretty_total_size = self._GetPrettyTotalSize( only_selected = True )
                 
-                s += '{} selected, {}, totalling {}'.format( selected_files_string, inbox_phrase, pretty_total_size )
+                s += '{}, totalling {}'.format( inbox_phrase, pretty_total_size )
                 
                 pretty_total_duration = self._GetPrettyTotalDuration( only_selected = True )
                 
@@ -770,7 +775,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     result = ClientGUIDialogsQuick.GetYesNo( self, message )
                     
-                    if result != QW.QDialog.Accepted:
+                    if result != QW.QDialog.DialogCode.Accepted:
                         
                         return
                         
@@ -862,7 +867,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             ClientGUIMediaModalActions.EditFileNotes( self, media )
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -879,7 +884,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     dlg.exec()
                     
                 
-                self.setFocus( QC.Qt.OtherFocusReason )
+                self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             
         
@@ -904,7 +909,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 dlg.exec()
                 
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -918,7 +923,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             ClientGUIMediaModalActions.EditFileTimestamps( self, ordered_selected_flat_media )
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -938,7 +943,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     pending_content_updates = panel.GetValue()
                     
@@ -951,7 +956,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                 
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -1060,7 +1065,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         reason = dlg.GetValue()
                         
@@ -1072,7 +1077,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                         
                     
                 
-                self.setFocus( QC.Qt.OtherFocusReason )
+                self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
             elif service_type == HC.IPFS:
                 
@@ -1091,7 +1096,16 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             if len( self._selected_media ) == 0:
                 
-                tags_media = self._sorted_media
+                number_of_unselected_medias_to_present_tags_for = CG.client_controller.new_options.GetNoneableInteger( 'number_of_unselected_medias_to_present_tags_for' )
+                
+                if number_of_unselected_medias_to_present_tags_for is None:
+                    
+                    tags_media = self._sorted_media
+                    
+                else:
+                    
+                    tags_media = self._sorted_media[ :number_of_unselected_medias_to_present_tags_for ]
+                    
                 
             else:
                 
@@ -1207,7 +1221,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result != QW.QDialog.Accepted:
+                if result != QW.QDialog.DialogCode.Accepted:
                     
                     return
                     
@@ -1318,7 +1332,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 for collection in collections:
                     
@@ -1374,23 +1388,27 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 return False
                 
             
+            media_results = [ media_singleton.GetMediaResult() for media_singleton in flat_media ]
+            
             if duplicate_type in ( HC.DUPLICATE_FALSE_POSITIVE, HC.DUPLICATE_ALTERNATE, HC.DUPLICATE_POTENTIAL ):
                 
-                media_pairs = list( itertools.combinations( flat_media, 2 ) )
+                media_result_pairs = list( itertools.combinations( media_results, 2 ) )
                 
             else:
                 
-                first_media = flat_media[0]
+                first_media_result = media_results[0]
                 
-                media_pairs = [ ( first_media, other_media ) for other_media in flat_media if other_media != first_media ]
+                media_result_pairs = [ ( first_media_result, other_media_result ) for other_media_result in media_results if other_media_result != first_media_result ]
                 
             
         else:
             
+            media_result_pairs = [ ( media_a.GetMediaResult(), media_b.GetMediaResult() ) for ( media_a, media_b ) in media_pairs ]
+            
             num_files_str = HydrusNumbers.ToHumanInt( len( self._GetSelectedFlatMedia() ) )
             
         
-        if len( media_pairs ) == 0:
+        if len( media_result_pairs ) == 0:
             
             return False
             
@@ -1400,17 +1418,17 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             yes_label = 'yes'
             no_label = 'no'
             
-            if len( media_pairs ) > 1 and duplicate_type in ( HC.DUPLICATE_FALSE_POSITIVE, HC.DUPLICATE_ALTERNATE ):
+            if len( media_result_pairs ) > 1 and duplicate_type in ( HC.DUPLICATE_FALSE_POSITIVE, HC.DUPLICATE_ALTERNATE ):
                 
-                media_pairs_str = HydrusNumbers.ToHumanInt( len( media_pairs ) )
+                media_result_pairs_str = HydrusNumbers.ToHumanInt( len( media_result_pairs ) )
                 
-                message = 'Are you sure you want to {} for the {} selected files? The relationship will be applied between every pair combination in the file selection ({} pairs).'.format( yes_no_text, num_files_str, media_pairs_str )
+                message = 'Are you sure you want to {} for the {} selected files? The relationship will be applied between every pair combination in the file selection ({} pairs).'.format( yes_no_text, num_files_str, media_result_pairs_str )
                 
-                if len( media_pairs ) > 100:
+                if len( media_result_pairs ) > 100:
                     
                     if duplicate_type == HC.DUPLICATE_FALSE_POSITIVE:
                         
-                        message = 'False positive records are complicated, and setting that relationship for {} files ({} pairs) at once is likely a mistake.'.format( num_files_str, media_pairs_str )
+                        message = 'False positive records are complicated, and setting that relationship for {} files ({} pairs) at once is likely a mistake.'.format( num_files_str, media_result_pairs_str )
                         message += '\n' * 2
                         message += 'Are you sure all of these files are all potential duplicates and that they are all false positive matches with each other? If not, I recommend you step back for now.'
                         
@@ -1435,7 +1453,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = yes_label, no_label = no_label )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -1450,29 +1468,29 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         # There's a second issue, wew, in that in order to propagate C back to B, we need to do the whole thing twice! wow!
         # some service_key_to_content_updates preservation gubbins is needed as a result
         
-        hashes_to_duplicated_media = {}
+        hashes_to_duplicated_media_results = {}
         hash_pairs_to_content_update_packages = collections.defaultdict( list )
         
         for is_first_run in ( True, False ):
             
-            for ( first_media, second_media ) in media_pairs:
+            for ( first_media_result, second_media_result ) in media_result_pairs:
                 
-                first_hash = first_media.GetHash()
-                second_hash = second_media.GetHash()
+                first_hash = first_media_result.GetHash()
+                second_hash = second_media_result.GetHash()
                 
-                if first_hash not in hashes_to_duplicated_media:
+                if first_hash not in hashes_to_duplicated_media_results:
                     
-                    hashes_to_duplicated_media[ first_hash ] = first_media.Duplicate()
-                    
-                
-                first_duplicated_media = hashes_to_duplicated_media[ first_hash ]
-                
-                if second_hash not in hashes_to_duplicated_media:
-                    
-                    hashes_to_duplicated_media[ second_hash ] = second_media.Duplicate()
+                    hashes_to_duplicated_media_results[ first_hash ] = first_media_result.Duplicate()
                     
                 
-                second_duplicated_media = hashes_to_duplicated_media[ second_hash ]
+                first_duplicated_media_result = hashes_to_duplicated_media_results[ first_hash ]
+                
+                if second_hash not in hashes_to_duplicated_media_results:
+                    
+                    hashes_to_duplicated_media_results[ second_hash ] = second_media_result.Duplicate()
+                    
+                
+                second_duplicated_media_result = hashes_to_duplicated_media_results[ second_hash ]
                 
                 content_update_packages = hash_pairs_to_content_update_packages[ ( first_hash, second_hash ) ]
                 
@@ -1482,7 +1500,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     # so the important part of this mess is here. we send the duplicated media, which is keeping up with content updates, to the method here
                     # original 'first_media' is not changed, and won't be until the database Write clears and publishes everything
-                    content_update_packages.append( duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( first_duplicated_media, second_duplicated_media, file_deletion_reason = file_deletion_reason, do_not_do_deletes = do_not_do_deletes ) )
+                    content_update_packages.append( duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( first_duplicated_media_result, second_duplicated_media_result, file_deletion_reason = file_deletion_reason, do_not_do_deletes = do_not_do_deletes ) )
                     
                 
                 for content_update_package in content_update_packages:
@@ -1495,12 +1513,12 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                             
                             if first_hash in hashes:
                                 
-                                first_duplicated_media.GetMediaResult().ProcessContentUpdate( service_key, content_update )
+                                first_duplicated_media_result.ProcessContentUpdate( service_key, content_update )
                                 
                             
                             if second_hash in hashes:
                                 
-                                second_duplicated_media.GetMediaResult().ProcessContentUpdate( service_key, content_update )
+                                second_duplicated_media_result.ProcessContentUpdate( service_key, content_update )
                                 
                             
                         
@@ -1555,7 +1573,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 duplicate_content_merge_options = panel.GetValue()
                 
@@ -1591,7 +1609,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     self._SetDuplicatesFocusedKing( silent = True )
                     
@@ -1605,7 +1623,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._SetDuplicates( HC.DUPLICATE_BETTER, media_pairs = media_pairs, silent = True, duplicate_content_merge_options = duplicate_content_merge_options )
                 
@@ -1640,7 +1658,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     do_it = True
                     
@@ -1770,7 +1788,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter a note to describe this directory.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 note = dlg.GetValue()
                 
@@ -2319,13 +2337,55 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 hashes = self._GetSelectedHashes( ordered = True )
                 
-                ClientGUIMediaSimpleActions.ShowFilesInNewDuplicatesFilterPage( hashes, self._location_context )
+                if CG.client_controller.new_options.GetBoolean( 'open_files_to_duplicate_filter_uses_all_my_files' ):
+                    
+                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                    
+                else:
+                    
+                    location_context = self._location_context
+                    
+                
+                ClientGUIMediaSimpleActions.ShowFilesInNewDuplicatesFilterPage( hashes, location_context )
                 
             elif action == CAC.SIMPLE_OPEN_SIMILAR_LOOKING_FILES:
                 
                 media = self._GetSelectedFlatMedia()
                 
                 hamming_distance = command.GetSimpleData()
+                
+                if hamming_distance is None:
+                    
+                    from hydrus.client.gui.panels import ClientGUIScrolledPanels
+                    from hydrus.client.gui.widgets import ClientGUICommon
+                    
+                    with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'choose distance' ) as dlg:
+                        
+                        panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+                        
+                        #
+                        
+                        # make a treeview control thing from menu
+                        
+                        control = ClientGUICommon.BetterSpinBox( panel )
+                        
+                        control.setSingleStep( 2 )
+                        control.setValue( 10 )
+                        
+                        panel.SetControl( control )
+                        
+                        dlg.SetPanel( panel )
+                        
+                        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                            
+                            hamming_distance = control.value()
+                            
+                        else:
+                            
+                            return
+                            
+                        
+                    
                 
                 ClientGUIMediaSimpleActions.ShowSimilarFilesInNewPage( media, self._location_context, hamming_distance )
                 
@@ -2425,7 +2485,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             self._Select( ClientMediaFileFilter.FileFilter( ClientMediaFileFilter.FILE_FILTER_TAGS, ( tag_service_key, and_or_or, tags ) ) )
             
-            self.setFocus( QC.Qt.OtherFocusReason )
+            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
             
         
     
@@ -2548,7 +2608,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     
     class _InnerWidget( QW.QWidget ):
         
-        def __init__( self, parent ):
+        def __init__( self, parent: "MediaResultsPanel" ):
             
             super().__init__( parent )
             

@@ -1,6 +1,5 @@
 import collections
 import http.cookiejar
-import os
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -148,11 +147,24 @@ class EditCookiePanel( ClientGUIScrolledPanels.EditPanel ):
     
     def GetValue( self ):
         
-        name = self._name.text()
-        value = self._value.text()
-        domain = self._domain.text()
-        path = self._path.text()
+        name = self._name.text().strip()
+        value = self._value.text().strip()
+        domain = self._domain.text().strip()
+        path = self._path.text().strip()
         expires = self._expires
+        
+        for ( var, var_name ) in [
+            ( name, 'name' ),
+            ( value, 'value' ),
+            ( domain, 'domain' ),
+            ( path, 'path' )
+        ]:
+            
+            if len( var.splitlines() ) != 1:
+                
+                raise HydrusExceptions.VetoException( f'Hey, it looks like the "{var_name}" has a newline!' )
+                
+            
         
         return ( name, value, domain, path, expires )
         
@@ -318,7 +330,7 @@ class EditNetworkContextCustomHeadersPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_NETWORK_CONTEXTS_CUSTOM_HEADERS.ID, self._ConvertDataToListCtrlTuples )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, CGLC.COLUMN_LIST_NETWORK_CONTEXTS_CUSTOM_HEADERS.ID, 15, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 15, model, use_simple_delete = True, activation_callback = self._Edit )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -364,7 +376,7 @@ class EditNetworkContextCustomHeadersPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( network_context, key, value, approved, reason ) = panel.GetValue()
                 
@@ -431,7 +443,7 @@ class EditNetworkContextCustomHeadersPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( network_context, key, value, approved, reason ) = panel.GetValue()
                 
@@ -503,10 +515,21 @@ class EditNetworkContextCustomHeadersPanel( ClientGUIScrolledPanels.EditPanel ):
         def GetValue( self ):
             
             network_context = self._network_context.GetValue()
-            key = self._key.text()
-            value = self._value.text()
+            key = self._key.text().strip()
+            value = self._value.text().strip()
             approved = self._approved.GetValue()
             reason = self._reason.text()
+            
+            for ( var, var_name ) in [
+                ( key, 'key' ),
+                ( value, 'value' )
+            ]:
+                
+                if len( var.splitlines() ) != 1:
+                    
+                    raise HydrusExceptions.VetoException( f'Hey, it looks like the "{var_name}" has a newline!' )
+                    
+                
             
             return ( network_context, key, value, approved, reason )
             
@@ -531,7 +554,7 @@ class NetworkContextButton( ClientGUICommon.BetterButton ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._network_context = panel.GetValue()
                 
@@ -573,7 +596,7 @@ class ReviewAllBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_BANDWIDTH_REVIEW.ID, self._ConvertNetworkContextsToListCtrlTuples )
         
-        self._bandwidths = ClientGUIListCtrl.BetterListCtrlTreeView( self, CGLC.COLUMN_LIST_BANDWIDTH_REVIEW.ID, 20, model, activation_callback = self.ShowNetworkContext )
+        self._bandwidths = ClientGUIListCtrl.BetterListCtrlTreeView( self, 20, model, activation_callback = self.ShowNetworkContext )
         
         self._edit_default_bandwidth_rules_button = ClientGUICommon.BetterButton( self, 'edit default bandwidth rules', self._EditDefaultBandwidthRules )
         
@@ -718,7 +741,7 @@ class ReviewAllBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, 'Are you sure? This will delete all bandwidth record for the selected network contexts.' )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 self._controller.network_engine.bandwidth_manager.DeleteHistory( selected_network_contexts )
                 
@@ -750,7 +773,7 @@ class ReviewAllBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             dlg_2.SetPanel( panel )
             
-            if dlg_2.exec() == QW.QDialog.Accepted:
+            if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 bandwidth_rules = panel.GetValue()
                 
@@ -765,7 +788,7 @@ class ReviewAllBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             ClientDefaults.SetDefaultBandwidthManagerRules( self._controller.network_engine.bandwidth_manager )
             
@@ -875,7 +898,7 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         rules_panel = ClientGUICommon.StaticBox( self, 'rules' )
         
         self._uses_default_rules_st = ClientGUICommon.BetterStaticText( rules_panel )
-        self._uses_default_rules_st.setAlignment( QC.Qt.AlignVCenter | QC.Qt.AlignHCenter )
+        self._uses_default_rules_st.setAlignment( QC.Qt.AlignmentFlag.AlignVCenter | QC.Qt.AlignmentFlag.AlignHCenter )
         
         self._rules_rows_panel = QW.QWidget( rules_panel )
         
@@ -961,9 +984,9 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         #
         
-        self._rules_job = CG.client_controller.CallRepeatingQtSafe( self, 0.5, 5.0, 'repeating bandwidth rules update', self._UpdateRules )
+        self._rules_job = CG.client_controller.CallRepeatingQtSafe( self, 0.0, 5.0, 'repeating bandwidth rules update', self._UpdateRules )
         
-        self._update_job = CG.client_controller.CallRepeatingQtSafe( self, 0.5, 1.0, 'repeating bandwidth status update', self._Update )
+        self._update_job = CG.client_controller.CallRepeatingQtSafe( self, 0.0, 1.0, 'repeating bandwidth status update', self._Update )
         
     
     def _EditRules( self ):
@@ -976,13 +999,13 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._bandwidth_rules = panel.GetValue()
                 
                 self._controller.network_engine.bandwidth_manager.SetRules( self._network_context, self._bandwidth_rules )
                 
-                self._UpdateRules()
+                self._rules_job.Wake()
                 
             
         
@@ -1020,7 +1043,7 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         if self._network_context.IsDefault() or self._network_context == ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT:
             
-            if self._use_default_rules_button.isVisible():
+            if not self._use_default_rules_button.isHidden():
                 
                 self._uses_default_rules_st.hide()
                 self._use_default_rules_button.hide()
@@ -1034,7 +1057,7 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 self._edit_rules_button.setText( 'set specific rules' )
                 
-                if self._use_default_rules_button.isVisible():
+                if not self._use_default_rules_button.isHidden():
                     
                     self._use_default_rules_button.hide()
                     
@@ -1045,7 +1068,7 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 self._edit_rules_button.setText( 'edit rules' )
                 
-                if not self._use_default_rules_button.isVisible():
+                if self._use_default_rules_button.isHidden():
                     
                     self._use_default_rules_button.show()
                     
@@ -1086,7 +1109,7 @@ class ReviewNetworkContextBandwidthPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Are you sure you want to revert to using the default rules for this context?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.network_engine.bandwidth_manager.DeleteRules( self._network_context )
             
@@ -1108,7 +1131,7 @@ class ReviewNetworkJobs( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_NETWORK_JOBS_REVIEW.ID, self._ConvertDataToListCtrlTuples )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, CGLC.COLUMN_LIST_NETWORK_JOBS_REVIEW.ID, 20, model )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 20, model )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -1226,7 +1249,7 @@ class ReviewNetworkSessionsPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_REVIEW_NETWORK_SESSIONS.ID, self._ConvertNetworkContextToListCtrlTuples )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_REVIEW_NETWORK_SESSIONS.ID, 32, model, delete_key_callback = self._Clear, activation_callback = self._Review )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 32, model, delete_key_callback = self._Clear, activation_callback = self._Review )
         
         self._listctrl.Sort()
         
@@ -1269,7 +1292,7 @@ class ReviewNetworkSessionsPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 network_context = panel.GetValue()
                 
@@ -1293,7 +1316,7 @@ class ReviewNetworkSessionsPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Clear these sessions? This will delete them completely.' )
         
-        if result != QW.QDialog.Accepted:
+        if result != QW.QDialog.DialogCode.Accepted:
             
             return
             
@@ -1353,9 +1376,9 @@ class ReviewNetworkSessionsPanel( ClientGUIScrolledPanels.ReviewPanel ):
     # this method is thanks to a user's contribution!
     def _ImportCookiesTXT( self ):
         
-        with QP.FileDialog( self, 'select cookies.txt', acceptMode = QW.QFileDialog.AcceptOpen ) as f_dlg:
+        with QP.FileDialog( self, 'select cookies.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as f_dlg:
             
-            if f_dlg.exec() == QW.QDialog.Accepted:
+            if f_dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = f_dlg.GetPath()
                 
@@ -1456,7 +1479,7 @@ class ReviewNetworkSessionPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_REVIEW_NETWORK_SESSION.ID, self._ConvertCookieToListCtrlTuples )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, CGLC.COLUMN_LIST_REVIEW_NETWORK_SESSION.ID, 8, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 8, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
         
         self._listctrl.Sort()
         
@@ -1508,7 +1531,7 @@ class ReviewNetworkSessionPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( name, value, domain, path, expires ) = panel.GetValue()
                 
@@ -1558,7 +1581,7 @@ class ReviewNetworkSessionPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, 'Delete all selected cookies?' )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             for cookie in self._listctrl.GetData( only_selected = True ):
                 
@@ -1591,7 +1614,7 @@ class ReviewNetworkSessionPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     ( name, value, domain, path, expires ) = panel.GetValue()
                     
@@ -1612,9 +1635,9 @@ class ReviewNetworkSessionPanel( ClientGUIScrolledPanels.ReviewPanel ):
     # these methods are thanks to user's contribution!
     def _ImportCookiesTXT( self ):
         
-        with QP.FileDialog( self, 'select cookies.txt', acceptMode = QW.QFileDialog.AcceptOpen ) as f_dlg:
+        with QP.FileDialog( self, 'select cookies.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as f_dlg:
             
-            if f_dlg.exec() == QW.QDialog.Accepted:
+            if f_dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = f_dlg.GetPath()
                 

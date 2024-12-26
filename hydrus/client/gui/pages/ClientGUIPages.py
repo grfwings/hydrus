@@ -1,7 +1,4 @@
 import collections
-import os
-import random
-import time
 import typing
 
 from qtpy import QtCore as QC
@@ -27,7 +24,7 @@ from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
-from hydrus.client.gui import ClientGUIShortcuts
+from hydrus.client.gui import ClientGUIReviewWindowsQuick
 from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvas
@@ -37,7 +34,10 @@ from hydrus.client.gui.pages import ClientGUINewPageChooser
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanel
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanelThumbnails
 from hydrus.client.gui.pages import ClientGUISession
+
+# noinspection PyUnresolvedReferences
 from hydrus.client.gui.pages import ClientGUISessionLegacy # to get serialisable data types loaded
+
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
 from hydrus.client.search import ClientSearchTagContext
@@ -84,17 +84,17 @@ class Page( QW.QWidget ):
         self._pretty_status = ''
         
         self._management_media_split = QW.QSplitter( self )
-        self._management_media_split.setOrientation( QC.Qt.Horizontal )
+        self._management_media_split.setOrientation( QC.Qt.Orientation.Horizontal )
         
         self._search_preview_split = QW.QSplitter( self._management_media_split )
-        self._search_preview_split.setOrientation( QC.Qt.Vertical )
+        self._search_preview_split.setOrientation( QC.Qt.Orientation.Vertical )
         
         self._done_split_setups = False
         
         self._management_panel = ClientGUIManagementPanels.CreateManagementPanel( self._search_preview_split, self, self._controller, self._management_controller )
         
         self._preview_panel = QW.QFrame( self._search_preview_split )
-        self._preview_panel.setFrameStyle( QW.QFrame.Panel | QW.QFrame.Sunken )
+        self._preview_panel.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         self._preview_panel.setLineWidth( 2 )
         
         self._preview_canvas = ClientGUICanvas.CanvasPanel( self._preview_panel, self._page_key, self._management_controller.GetLocationContext() )
@@ -661,7 +661,7 @@ class Page( QW.QWidget ):
     
     def SetMediaFocus( self ):
         
-        self._media_panel.setFocus( QC.Qt.OtherFocusReason )
+        self._media_panel.setFocus( QC.Qt.FocusReason.OtherFocusReason )
         
     
     def SetName( self, name ):
@@ -864,7 +864,7 @@ class Page( QW.QWidget ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Rejected:
+            if result == QW.QDialog.DialogCode.Rejected:
                 
                 raise HydrusExceptions.VetoException()
                 
@@ -879,10 +879,97 @@ class Page( QW.QWidget ):
 
 directions_for_notebook_tabs = {}
 
-directions_for_notebook_tabs[ CC.DIRECTION_UP ] = QW.QTabWidget.North
-directions_for_notebook_tabs[ CC.DIRECTION_LEFT ] = QW.QTabWidget.West
-directions_for_notebook_tabs[ CC.DIRECTION_RIGHT ] = QW.QTabWidget.East
-directions_for_notebook_tabs[ CC.DIRECTION_DOWN ] = QW.QTabWidget.South
+directions_for_notebook_tabs[ CC.DIRECTION_UP ] = QW.QTabWidget.TabPosition.North
+directions_for_notebook_tabs[ CC.DIRECTION_LEFT ] = QW.QTabWidget.TabPosition.West
+directions_for_notebook_tabs[ CC.DIRECTION_RIGHT ] = QW.QTabWidget.TabPosition.East
+directions_for_notebook_tabs[ CC.DIRECTION_DOWN ] = QW.QTabWidget.TabPosition.South
+
+def ConvertReasonsAndPagesToStatement( reasons_and_pages: list ) -> str:
+    
+    if len( reasons_and_pages ) > 0:
+        
+        message_blocks = []
+        
+        for ( reason, pages ) in reasons_and_pages:
+            
+            reason = typing.cast( str, reason )
+            pages = typing.cast( typing.List[ Page ], pages )
+            
+            names = [ page.GetName() for page in pages ]
+            
+            if len( pages ) == 1:
+                
+                message_block = f'page "{names[0]}" says: {reason}'
+                
+            else:
+                
+                message_block = f'pages{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary( names )}say: {reason}'
+                
+            
+            message_blocks.append( message_block )
+            
+        
+        message = '\n----\n'.join( message_blocks )
+        
+        return message
+        
+    else:
+        
+        return ''
+        
+    
+
+def ShowReasonsAndPagesConfirmationDialog( win: QW.QWidget, reasons_and_pages, message, auto_yes_time = None ):
+    
+    no_tuples = [
+        ( 'no', 'no' ),
+        ( 'no, but show me the pages', 'show' )
+    ]
+    
+    ( result_code, data ) = ClientGUIDialogsQuick.GetYesNoNo( win, message, no_tuples = no_tuples, auto_yes_time = auto_yes_time )
+    
+    if result_code == QW.QDialog.DialogCode.Accepted:
+        
+        return
+        
+    elif result_code == QW.QDialog.DialogCode.Rejected:
+        
+        if data == 'show':
+            
+            def spawn_this_guy():
+                
+                def catch_datamissing( page ):
+                    
+                    try:
+                        
+                        CG.client_controller.gui.ShowPage( page.GetPageKey() )
+                        
+                    except HydrusExceptions.DataMissing as e:
+                        
+                        raise HydrusExceptions.VetoException( str( e ) )
+                        
+                    
+                
+                choice_tuples = []
+                
+                for ( reason, pages ) in reasons_and_pages:
+                    
+                    choice_tuples.extend(
+                        ( f'{reason}: {page.GetName()}', HydrusData.Call( catch_datamissing, page ), 'Show this page.' )
+                        for page
+                        in pages
+                    )
+                    
+                
+                ClientGUIReviewWindowsQuick.OpenListButtons( win, 'Go To Page', choice_tuples )
+                
+            
+            CG.client_controller.CallAfterQtSafe( win, 'creating show pages list', spawn_this_guy )
+            
+        
+        raise HydrusExceptions.VetoException()
+        
+    
 
 class PagesNotebook( QP.TabWidgetWithDnD ):
     
@@ -917,10 +1004,14 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         self.currentChanged.connect( self.pageJustChanged )
         self.pageDragAndDropped.connect( self._RefreshPageNamesAfterDnD )
         
+        # noinspection PyUnresolvedReferences
         self.tabBar().tabDoubleLeftClicked.connect( self._RenamePage )
+        # noinspection PyUnresolvedReferences
         self.tabBar().tabMiddleClicked.connect( self._ClosePage )
         
+        # noinspection PyUnresolvedReferences
         self.tabBar().tabSpaceDoubleLeftClicked.connect( self.ChooseNewPage )
+        # noinspection PyUnresolvedReferences
         self.tabBar().tabSpaceDoubleMiddleClicked.connect( self.ChooseNewPage )
         
         self._previous_page_index = -1
@@ -952,11 +1043,11 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if CG.client_controller.new_options.GetBoolean( 'elide_page_tab_names' ):
             
-            self.tabBar().setElideMode( QC.Qt.ElideMiddle )
+            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideMiddle )
             
         else:
             
-            self.tabBar().setElideMode( QC.Qt.ElideNone )
+            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideNone )
             
         
         direction = CG.client_controller.new_options.GetInteger( 'notebook_tab_alignment' )
@@ -975,7 +1066,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         with ClientGUINewPageChooser.DialogPageChooser( self, self._controller ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 ( page_type, page_data ) = dlg.GetValue()
                 
@@ -1006,7 +1097,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             closees = [ index for index in range( self.count() ) if index < from_index ]
             
@@ -1020,7 +1111,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             closees = [ index for index in range( self.count() ) if index != except_index ]
             
@@ -1038,7 +1129,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = self.widget( index )
+        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
         
         if polite:
             
@@ -1122,7 +1213,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             closees = [ index for index in range( self.count() ) if index > from_index ]
             
@@ -1137,7 +1228,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = self.widget( index )
+        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
         
         only_changed_page_data = False
         about_to_save = False
@@ -1244,7 +1335,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self
         
     
-    def _GetPages( self ):
+    def _GetPages( self ) -> typing.List[ Page ]:
         
         return [ self.widget( i ) for i in range( self.count() ) ]
         
@@ -1344,7 +1435,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         import_page_progress_display = new_options.GetBoolean( 'import_page_progress_display' )
         
-        page = self.widget( index )
+        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
         
         if isinstance( page, Page ) and not page.IsInitialised():
             
@@ -1416,13 +1507,13 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return
             
         
-        page = self.widget( index )
+        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
         
         current_name = page.GetName()
         
         with ClientGUIDialogs.DialogTextEntry( self, 'Enter the new name.', default = current_name, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_name = dlg.GetValue()
                 
@@ -1451,7 +1542,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
-        if result == QW.QDialog.Accepted:
+        if result == QW.QDialog.DialogCode.Accepted:
             
             pages_index = self.count()
             
@@ -1528,7 +1619,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if click_over_tab:
             
-            page = self.widget( tab_index )
+            page: typing.Union[ Page, PagesNotebook ] = self.widget( tab_index )
             
             click_over_page_of_pages = isinstance( page, PagesNotebook )
             
@@ -1986,7 +2077,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         try:
             
-            if event.type() in ( QC.QEvent.MouseButtonDblClick, QC.QEvent.MouseButtonRelease ):
+            if event.type() in ( QC.QEvent.Type.MouseButtonDblClick, QC.QEvent.Type.MouseButtonRelease ):
                 
                 screen_position = QG.QCursor.pos()
                 
@@ -2020,24 +2111,24 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                         
                     
                 
-                if event.type() == QC.QEvent.MouseButtonDblClick:
+                if event.type() == QC.QEvent.Type.MouseButtonDblClick:
                     
-                    if event.button() == QC.Qt.LeftButton and over_tab_greyspace and not over_a_tab:
+                    if event.button() == QC.Qt.MouseButton.LeftButton and over_tab_greyspace and not over_a_tab:
                         
                         self.EventNewPageFromScreenPosition( screen_position )
                         
                         return True
                         
                     
-                elif event.type() == QC.QEvent.MouseButtonRelease:
+                elif event.type() == QC.QEvent.Type.MouseButtonRelease:
                     
-                    if event.button() == QC.Qt.RightButton and ( over_a_tab or over_tab_greyspace ):
+                    if event.button() == QC.Qt.MouseButton.RightButton and ( over_a_tab or over_tab_greyspace ):
                         
                         self.ShowMenuFromScreenPosition( screen_position )
                         
                         return True
                         
-                    elif event.button() == QC.Qt.MiddleButton and over_tab_greyspace and not over_a_tab:
+                    elif event.button() == QC.Qt.MouseButton.MiddleButton and over_tab_greyspace and not over_a_tab:
                         
                         self.EventNewPageFromScreenPosition( screen_position )
                         
@@ -2440,10 +2531,9 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return root
         
     
-    def GetTestAbleToCloseStatement( self ):
+    def GetTestAbleToCloseData( self ):
         
-        reasons_to_names = collections.defaultdict( list )
-        count = collections.Counter()
+        reasons_to_pages = collections.defaultdict( list )
         
         for page in self._GetMediaPages( False ):
             
@@ -2455,40 +2545,18 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 reason = str( e )
                 
-                reasons_to_names[ reason ].append( page.GetName() )
-                
-                count[ reason ] += 1
+                reasons_to_pages[ reason ].append( page )
                 
             
         
-        if len( count ) > 0:
+        for ( reason, pages ) in reasons_to_pages.items():
             
-            message_blocks = []
+            pages.sort( key = lambda p: HydrusData.HumanTextSortKey( p.GetName() ) )
             
-            for ( reason, c ) in sorted( count.items() ):
-                
-                names = sorted( reasons_to_names[ reason ], key = HydrusData.HumanTextSortKey )
-                
-                if c == 1:
-                    
-                    message_block = f'page "{names[0]}" says: {reason}'
-                    
-                else:
-                    
-                    message_block = f'pages{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary( names )}say: {reason}'
-                    
-                
-                message_blocks.append( message_block )
-                
-            
-            message = '\n----\n'.join( message_blocks )
-            
-            return message
-            
-        else:
-            
-            return None
-            
+        
+        reasons_and_pages = sorted( reasons_to_pages.items(), key = lambda a: len( a[1] ) )
+        
+        return reasons_and_pages
         
     
     def GetTotalFileSize( self ):
@@ -2718,7 +2786,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Clear and load session?' )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -2825,7 +2893,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
         # queryKBM here for instant check, not waiting for event processing to catch up u wot mate
-        ctrl_down = QW.QApplication.queryKeyboardModifiers() & QC.Qt.ControlModifier
+        ctrl_down = QW.QApplication.queryKeyboardModifiers() & QC.Qt.KeyboardModifier.ControlModifier
         
         if not ctrl_down:
             
@@ -3203,7 +3271,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageHidden( self ):
         
-        result = self.currentWidget()
+        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
         
         if result is not None:
             
@@ -3218,12 +3286,14 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if old_selection != -1 and old_selection < self.count():
             
-            self.widget( old_selection ).PageHidden()
+            old_page: typing.Union[ Page, PagesNotebook ] = self.widget( old_selection )
+            
+            old_page.PageHidden()
             
         
         if selection != -1:
             
-            new_page = self.widget( selection )
+            new_page: typing.Union[ Page, PagesNotebook ] = self.widget( selection )
             
             new_page.PageShown()
             
@@ -3237,7 +3307,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageShown( self ):
         
-        result = self.currentWidget()
+        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
         
         if result is not None:
             
@@ -3356,20 +3426,18 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def TestAbleToClose( self ):
         
-        statement = self.GetTestAbleToCloseStatement()
+        reasons_and_pages = self.GetTestAbleToCloseData()
         
-        if statement is not None:
+        if len( reasons_and_pages ) > 0:
+            
+            statement = ConvertReasonsAndPagesToStatement( reasons_and_pages )
             
             message = 'Are you sure you want to close this page of pages?'
             message += '\n' * 2
             message += statement
             
-            result = ClientGUIDialogsQuick.GetYesNo( self, message )
-            
-            if result == QW.QDialog.Rejected:
-                
-                raise HydrusExceptions.VetoException()
-                
+            # raises veto on no
+            ShowReasonsAndPagesConfirmationDialog( self, reasons_and_pages, message )
             
         
     

@@ -6,7 +6,6 @@ from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 from hydrus.core import HydrusText
 
 from hydrus.client import ClientGlobals as CG
@@ -266,7 +265,7 @@ def GetTextSizeFromPainter( painter: QG.QPainter, text: str ):
     
     try:
         
-        text_size = painter.fontMetrics().size( QC.Qt.TextSingleLine, text )
+        text_size = painter.fontMetrics().size( QC.Qt.TextFlag.TextSingleLine, text )
         
     except ValueError:
         
@@ -288,7 +287,7 @@ def GetTextSizeFromPainter( painter: QG.QPainter, text: str ):
         
         text = '*****INVALID, UNDISPLAYABLE TAG, RUN DATABASE REPAIR NOW*****'
         
-        text_size = painter.fontMetrics().size( QC.Qt.TextSingleLine, text )
+        text_size = painter.fontMetrics().size( QC.Qt.TextFlag.TextSingleLine, text )
         
     
     return ( text_size, text )
@@ -408,7 +407,7 @@ def SetBitmapButtonBitmap( button, bitmap ):
     
 def SetFocusLater( win: QW.QWidget ):
     
-    CG.client_controller.CallAfterQtSafe( win, 'set focus to a window', win.setFocus, QC.Qt.OtherFocusReason )
+    CG.client_controller.CallAfterQtSafe( win, 'set focus to a window', win.setFocus, QC.Qt.FocusReason.OtherFocusReason )
     
 def TLWIsActive( window ):
     

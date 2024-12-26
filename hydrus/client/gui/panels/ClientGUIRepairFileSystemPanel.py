@@ -49,7 +49,7 @@ class RepairFileSystemPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_REPAIR_LOCATIONS.ID, self._ConvertPrefixToListCtrlTuples )
         
-        self._locations = ClientGUIListCtrl.BetterListCtrlTreeView( self, CGLC.COLUMN_LIST_REPAIR_LOCATIONS.ID, 12, model, activation_callback = self._SetLocations )
+        self._locations = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, activation_callback = self._SetLocations )
         
         self._set_button = ClientGUICommon.BetterButton( self, 'set correct location', self._SetLocations )
         self._add_button = ClientGUICommon.BetterButton( self, 'add a possibly correct location (let the client figure out what it contains)', self._AddLocation )
@@ -76,7 +76,7 @@ class RepairFileSystemPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         with QP.DirDialog( self, 'Select the potential correct location.' ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 path = dlg.GetPath()
                 
@@ -200,7 +200,7 @@ class RepairFileSystemPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             with QP.DirDialog( self, 'Select correct location.' ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     path = dlg.GetPath()
                     
@@ -248,7 +248,7 @@ class RepairFileSystemPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 

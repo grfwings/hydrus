@@ -14,7 +14,6 @@ from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIStyle
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.widgets import ClientGUICommon
 
@@ -97,7 +96,7 @@ def EditColour( win: QW.QWidget, colour: QG.QColor ):
     
     dialog = QW.QColorDialog( colour, win )
     
-    if dialog.exec_() == QW.QDialog.Accepted:
+    if dialog.exec_() == QW.QDialog.DialogCode.Accepted:
         
         edited_colour = dialog.selectedColor()
         
@@ -234,7 +233,7 @@ class ColourPickerButton( QW.QPushButton ):
     
     def contextMenuEvent( self, event ):
         
-        if event.reason() == QG.QContextMenuEvent.Keyboard:
+        if event.reason() == QG.QContextMenuEvent.Reason.Keyboard:
             
             self.ShowMenu()
             
@@ -242,7 +241,7 @@ class ColourPickerButton( QW.QPushButton ):
     
     def mouseReleaseEvent( self, event ):
         
-        if event.button() != QC.Qt.RightButton:
+        if event.button() != QC.Qt.MouseButton.RightButton:
             
             return QW.QPushButton.mouseReleaseEvent( self, event )
             

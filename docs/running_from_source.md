@@ -101,19 +101,19 @@ There are three special external libraries. You just have to get them and put th
 
     1. mpv  
         
-        1. If you are on Windows 8.1 or older, [this](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20210228-git-d1be8bb.7z) is known safe.
-        2. If you are on Windows 10 or newer and want the very safe answer, try [this](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20220501-git-9ffaa6b.7z).
-        3. Otherwise, go for [this](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20230820-git-19384e0.7z).
-        4. I have been testing [this newer version](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20231231-git-abc2a74.7z) and [this very new version](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20240421-git-b364e4a.7z/download) and things seem to be fine too, at least on updated Windows.
+        1. If you are on Windows 8.1 or older, [2021-02-28](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20210228-git-d1be8bb.7z) is known safe.
+        2. If you are on Windows 10 or newer but need the safe answer (e.g. your Windows is under-updated), try [2023-08-20](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20230820-git-19384e0.7z).
+        3. Otherwise, if you are just normal, use [2024-10-20](https://sourceforge.net/projects/mpv-player-windows/files/libmpv/mpv-dev-x86_64-20241020-git-37159a8.7z).
         
         Then open that archive and place the 'mpv-1.dll'/'mpv-2.dll'/'libmpv-2.dll' into `install_dir`.
         
-        ??? info "mpv on older Windows"
-            I have word that that newer mpv, the API version 2.1 that you have to rename to mpv-2.dll, will work on Qt5 and Windows 7. If this applies to you, have a play around with different versions here. You'll need the newer mpv choice in the setup-venv script however, which, depending on your situation, may not be possible.
-        
     2. SQLite3  
         
-        Go to `install_dir/static/build_files/windows` and copy 'sqlite3.dll' into `install_dir`.
+        _This is optional and might feel scary, so feel free to ignore. It updates your python install to newer, faster database tech._
+        
+        Open your python install location and find the DLLs folder. Likely something like `C:\Program Files\Python311\DLLs` or `C:\Python311\DLLs`. There should be a sqlite3.dll there. Rename it to sqlite3.dll.old, and then open `install_dir/static/build_files/windows` and copy that 'sqlite3.dll' into the python `DLLs` folder.
+        
+        The absolute newest sqlite3.dll is always available [here](https://sqlite.org/download.html). You want the x64 dll.
         
     3. FFMPEG  
         
@@ -126,7 +126,9 @@ There are three special external libraries. You just have to get them and put th
 
     1. mpv  
         
-        Try running `apt-get install libmpv1` in a new terminal. You can type `apt show libmpv1` to see your current version. Or, if you use a different package manager, try searching `libmpv` or `libmpv1` on that.
+        Linux can provide what we need in a couple of different ways. It is important that we get `libmpv`, rather than just the `mpv` player. Some Linux installs of mpv do also bring libmpv, but others do not. If your package manager provides mpv and it says it comes with libmpv, you are probably good just to get that.
+        
+        Otherwise, try just running `apt-get install libmpv1` in a new terminal. You can also try `apt show libmpv1` to see any current version. Or, if you use a different package manager, try searching `libmpv`, `libmpv1`, or again, just `mpv` on that.
         
         1. If you have earlier than 0.34.1, you will be looking at running the 'advanced' setup in the next section and selecting the 'old' mpv.
         2. If you have 0.34.1 or later, you can run the normal setup script.
@@ -211,10 +213,19 @@ Then run the 'setup_help' script to build the help. This isn't necessary, but it
 
     !!! note "Qt compatibility"
         
-        If you run into trouble running newer versions of Qt6, some users have fixed it by installing the packages `libicu-dev` and `libxcb-cursor-dev`. With `apt` that will be:
+        If you run into trouble running newer versions of Qt6, some users have fixed it by installing one or more of these additional packages:
+        
+        * `libicu-dev`
+        * `libxcb-cursor-dev`
+        * `libgthread`
+        
+        With `apt` that will be:
         
         * `sudo apt-get install libicu-dev`
         * `sudo apt-get install libxcb-cursor-dev`
+        * `sudo apt-get install libgthread2.0-0`
+        
+        Or check your OS's package manager.
         
         If you still have trouble with the default Qt6 version, try running setup_venv again and choose a different version. There are several to choose from, including (w)riting a custom version. Check the advanced requirements.txts files in `install_dir/static/requirements/advanced` for more info, and you can also work off this list: [PySide6](https://pypi.org/project/PySide6/#history)
         
@@ -319,30 +330,39 @@ If you need different versions of libraries, check the cut-up requirements.txts 
 
 ### Qt { id="qt" }
 
-Qt is the UI library. You can run PySide2, PySide6, PyQt5, or PyQt6. A wrapper library called `qtpy` allows this. The default is PySide6, but if it is missing, qtpy will fall back to an available alternative. For PyQt5 or PyQt6, you need an extra Chart module, so go:
+Qt is the UI library. You can run PySide6 or PyQt6. I used to support Qt5, but no longer. A wrapper library called `qtpy` allows this. The default is PySide6, but if it is missing, qtpy will fall back to an available alternative. For PyQt6, you need an extra Chart module, so go:
 
 ```
-python -m pip install qtpy PyQtChart PyQt5
--or-
 python -m pip install qtpy PyQt6-Charts PyQt6
 ```
 
-If you have multiple Qts installed, then select which one you want to use by setting the `QT_API` environment variable to 'pyside2', 'pyside6', 'pyqt5', or 'pyqt6'. Check _help->about_ to make sure it loaded the right one.
+If you have multiple Qts installed, then select which one you want to use by setting the `QT_API` environment variable to 'pyside6' or 'pyqt6'. Check _help->about_ to make sure it loaded the right one.
 
 If you want to set QT_API in a batch file, do this:
 
 `set QT_API=pyqt6`
 
-If you run <= Windows 8.1 or Ubuntu 18.04, you cannot run Qt6. Try PySide2 or PyQt5.
-
 !!! note "Qt compatibility"
     
     If you run into trouble running newer versions of Qt6 on Linux, often with an XCB-related error such as `qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "" even though it was found.`, try installing the packages `libicu-dev` and `libxcb-cursor-dev`. With `apt` that will be:
     
+    If you run into trouble running newer versions of Qt6, some users have fixed it by installing one or more of these additional packages:
+    
+    * `libicu-dev`
+    * `libxcb-cursor-dev`
+    * `libgthread`
+    
+    With `apt` that will be:
+    
     * `sudo apt-get install libicu-dev`
     * `sudo apt-get install libxcb-cursor-dev`
+    * `sudo apt-get install libgthread2.0-0`
     
-    If you still have trouble with the default Qt6 version, check the advanced requirements.txts in `install_dir/static/requirements/advanced`. There should be several older version examples you can explore, and you can also work off these lists: [PySide6](https://pypi.org/project/PySide6/#history) [PyQt6](https://pypi.org/project/PyQt6/#history) [PySide2](https://pypi.org/project/PySide2/#history) [Pyqt5](https://pypi.org/project/PyQt5/#history)
+    Or check your OS's package manager.
+    
+    If you still have trouble with the default Qt6 version, check the advanced requirements.txts in `install_dir/static/requirements/advanced`. There should be several older version examples you can explore, and you can also work off these lists: [PySide6](https://pypi.org/project/PySide6/#history) [PyQt6](https://pypi.org/project/PyQt6/#history)
+    
+    If your OS is very old (and thus you are stuck on older python), you may only be able to run Qt5, in which case you cannot run modern hydrus, sorry! You could try v578, as above in the Windows 7 note.
     
 
 ### mpv { id="mpv" }

@@ -2,7 +2,6 @@ import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTime
 
@@ -54,7 +53,7 @@ def CreateManagementControllerDuplicateFilter(
     
     if location_context is None:
         
-        location_context = CG.client_controller.new_options.GetDefaultLocalLocationContext()
+        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
         
     
     if initial_predicates is None:

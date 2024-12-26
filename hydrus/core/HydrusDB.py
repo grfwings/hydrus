@@ -1,16 +1,17 @@
-import collections
 import os
 import queue
 import sqlite3
 import threading
 import traceback
 import time
+import typing
 
 from hydrus.core import HydrusDBBase
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusEncryption
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusExit
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusProfiling
@@ -24,6 +25,7 @@ def CheckCanVacuum( db_path, stop_time = None ):
     
     CheckCanVacuumCursor( db_path, c, stop_time = stop_time )
     
+
 def CheckCanVacuumCursor( db_path, c, stop_time = None ):
     
     ( page_size, ) = c.execute( 'PRAGMA page_size;' ).fetchone()
@@ -32,6 +34,7 @@ def CheckCanVacuumCursor( db_path, c, stop_time = None ):
     
     CheckCanVacuumData( db_path, page_size, page_count, freelist_count, stop_time = stop_time )
     
+
 def CheckCanVacuumData( db_path, page_size, page_count, freelist_count, stop_time = None ):
     
     db_size = ( page_count - freelist_count ) * page_size
@@ -53,11 +56,65 @@ def CheckCanVacuumData( db_path, page_size, page_count, freelist_count, stop_tim
     HydrusDBBase.CheckHasSpaceForDBTransaction( db_dir, db_size )
     
 
+def CheckCanVacuumInto( db_path, stop_time = None ):
+    
+    db = sqlite3.connect( db_path, isolation_level = None, detect_types = sqlite3.PARSE_DECLTYPES )
+    
+    c = db.cursor()
+    
+    CheckCanVacuumIntoCursor( db_path, c, stop_time = stop_time )
+    
+
+def CheckCanVacuumIntoCursor( db_path, c, stop_time = None ):
+    
+    ( page_size, ) = c.execute( 'PRAGMA page_size;' ).fetchone()
+    ( page_count, ) = c.execute( 'PRAGMA page_count;' ).fetchone()
+    ( freelist_count, ) = c.execute( 'PRAGMA freelist_count;' ).fetchone()
+    
+    CheckCanVacuumIntoData( db_path, page_size, page_count, freelist_count, stop_time = stop_time )
+    
+
+def CheckCanVacuumIntoData( db_path, page_size, page_count, freelist_count, stop_time = None ):
+    
+    db_size = ( page_count - freelist_count ) * page_size
+    
+    if stop_time is not None:
+        
+        approx_vacuum_duration = GetApproxVacuumIntoDuration( db_size )
+        
+        time_i_will_have_to_start = stop_time - approx_vacuum_duration
+        
+        if HydrusTime.TimeHasPassed( time_i_will_have_to_start ):
+            
+            raise Exception( 'I believe you need about ' + HydrusTime.TimeDeltaToPrettyTimeDelta( approx_vacuum_duration ) + ' to vacuum, but there is not enough time allotted.' )
+            
+        
+    
+    db_dir = os.path.dirname( db_path )
+    
+    HydrusDBBase.CheckHasSpaceForDBTransaction( db_dir, db_size, no_temp_needed = True )
+    
+
 def GetApproxVacuumDuration( db_size ):
     
     vacuum_estimate = int( db_size * 1.2 )
     
     approx_vacuum_speed_mb_per_s = 1048576 * 1
+    
+    approx_vacuum_duration = vacuum_estimate // approx_vacuum_speed_mb_per_s
+    
+    return approx_vacuum_duration
+    
+
+def GetApproxVacuumIntoDuration( db_size ):
+    
+    # I've seen 200MB/s on a 600MB file in memory
+    # I've seen 30MB/s on a 4GB file not in memory
+    # I'll presume a real 20GB file is going to trend just a bit lower, but we can adjust this if we get some IRL data
+    
+    vacuum_estimate = int( db_size * 1.2 )
+    
+    approx_vacuum_speed_mb_per_s = 1048576 * 10
     
     approx_vacuum_duration = vacuum_estimate // approx_vacuum_speed_mb_per_s
     
@@ -127,6 +184,120 @@ def VacuumDB( db_path ):
     c.execute( 'PRAGMA journal_mode = {};'.format( HG.db_journal_mode ) )
     
 
+def GetVacuumPaths( db_path: str ):
+    
+    return ( db_path + '.prevacuum', db_path + '.vacuum' )
+    
+
+def VacuumDBInto( db_path: str ):
+    
+    if os.path.exists( db_path + '-wal' ):
+        
+        raise Exception( f'Hey, I wanted to vacuum "{db_path}", but it seems like the "WAL" journal file still existed after hydrus disconnected, which suggests another program is connected to the database. It may also mean your version of SQLite does not clean up after itself, in which case I still cannot be sure we are clear. Vacuuming under these conditions can cause malformation, so the job will now be abandoned. Please disconnect your external program cleanly and then try again.' )
+        
+    
+    # I guess I should look for PRAGMA journal_mode here tbh, rather than (or in complement to) looking for the sidecar, but w/e
+    # any weird sidecars hanging around the db dir should result in NO VACUUM M8, no matter the journal_mode
+    if os.path.exists( db_path + '-journal' ):
+        
+        raise Exception( f'Hey, I wanted to vacuum "{db_path}", but I see a "TRUNCATE" journal file even after I disconnected. I do not easily know, in TRUNCATE mode, if there are other programs connected to the database. Vacuuming under these conditions can cause malformation, so the job will now be abandoned. Please run the program in WAL journalling mode before trying again. If you have not specifically told hydrus to run in TRUNCATE mode, it probably fell back to this because WAL is not supported on your machine.' )
+        
+    
+    started = HydrusTime.GetNowPrecise()
+    
+    ( deletee_path, vacuum_path ) = GetVacuumPaths( db_path )
+    
+    if os.path.exists( vacuum_path ):
+        
+        raise Exception( f'Hey, I wanted to vacuum "{db_path}", but "{vacuum_path}", which I wanted to use, already existed! Did a recent vacuum attempt fail? Please delete "{vacuum_path}" yourself before you try again.' )
+        
+    
+    if os.path.exists( deletee_path ):
+        
+        raise Exception( f'Hey, I wanted to vacuum "{db_path}", but "{deletee_path}", which I wanted to use briefly, already existed! Did a recent vacuum attempt fail? Please delete "{deletee_path}" yourself before you try again.' )
+        
+    
+    original_size = os.path.getsize( db_path )
+    
+    db = sqlite3.connect( db_path, isolation_level = None, detect_types = sqlite3.PARSE_DECLTYPES )
+    
+    c = db.cursor()
+    
+    c.execute( 'VACUUM INTO ?;', ( vacuum_path, ) )
+    
+    c.close()
+    
+    db.close()
+    
+    del c
+    
+    del db
+    
+    try:
+        
+        os.rename( db_path, deletee_path )
+        
+    except Exception as e:
+        
+        message = f'While attempting to vacuum "{db_path}", I could not rename it to "{deletee_path}"! You now have a spare vacuum file in your database directory at "{vacuum_path}", which you should manually delete.'
+        
+        raise Exception( message ) from e
+        
+    
+    try:
+        
+        os.rename( vacuum_path, db_path )
+        
+    except Exception as e:
+        
+        try:
+            
+            os.rename( deletee_path, db_path )
+            
+        except Exception as e2:
+            
+            HydrusData.PrintException( e )
+            HydrusData.PrintException( e2 )
+            
+            message = f'While attempting to vacuum "{db_path}", I could not rename "{vacuum_path}" to "{db_path}"! This is a bad situation, because now there is no database file in the desired location!'
+            message += '\n\n'
+            message += f'Also, when I attempted to recover by renaming "{deletee_path}" back to "{db_path}", that also failed, even though I only just renamed it the other way! It is like your hard drive suddenly disconnected!'
+            message += '\n\n'
+            message += f'Go into your db directory now and review the paths. I recommend renaming the "prevacuum" file back to the original name, since we do not know if this vacuum file is ok. Contact hydev if you need more help. Do not delete the "vacuum" file until you know things are good.'
+            message += '\n\n'
+            message += f'The program will exit suddenly and rudely after this message is closed.'
+            
+            HG.controller.BlockingSafeShowCriticalMessage( 'CRITICAL VACUUM ERROR', message )
+            
+            HydrusExit.CRITICALInitiateImmediateProgramHalt()
+            
+        
+        message = f'The vacuum failed, but I have successfully rolled back to where you started. While attempting to vacuum "{db_path}", I could not rename "{vacuum_path}" to "{db_path}"! This was a very bad situation, but I have recovered by renaming the original, to-be-deleted "{deletee_path}" back to "{db_path}".'
+        message += '\n\n'
+        message += f'You now have a spare "{vacuum_path}" file in your db dir that you should delete. You should investigate what is wrong with your database folder--could there be a permissions error, or something with free space? Why can I rename the main file but not the new vacuum? Hydev would be interested in anything you learn.'
+        
+        raise Exception( message ) from e
+        
+    
+    try:
+        
+        os.remove( deletee_path )
+        
+    except Exception as e:
+        
+        HydrusData.ShowText( f'Hey, the vacuum of "{db_path}" went ok, but I could not delete the leftover file "{deletee_path}"! Does hydrus not have delete permission on your db folder? In any case, please delete this file yourself.' )
+        HydrusData.ShowException( e )
+        
+    
+    vacuum_size = os.path.getsize( db_path )
+    
+    time_took = HydrusTime.GetNowPrecise() - started
+    
+    bytes_per_sec = vacuum_size / time_took
+    
+    HydrusData.ShowText( f'Vacuumed {db_path} in {HydrusTime.TimeDeltaToPrettyTimeDelta( time_took )} ({HydrusData.ToHumanBytes(bytes_per_sec)}/s). It went from {HydrusData.ToHumanBytes( original_size )} to {HydrusData.ToHumanBytes( vacuum_size )}' )
+    
+
 class HydrusDB( HydrusDBBase.DBBase ):
     
     READ_WRITE_ACTIONS = []
@@ -140,6 +311,9 @@ class HydrusDB( HydrusDBBase.DBBase ):
         self._db_dir = db_dir
         self._db_name = db_name
         
+        self._read_commands_to_methods = {}
+        self._write_commands_to_methods = {}
+        
         self._modules = []
         
         HydrusDBBase.TemporaryIntegerTableNameCache()
@@ -149,6 +323,8 @@ class HydrusDB( HydrusDBBase.DBBase ):
         
         self._ssl_cert_path = os.path.join( self._db_dir, self._ssl_cert_filename )
         self._ssl_key_path = os.path.join( self._db_dir, self._ssl_key_filename )
+        
+        self._we_have_connected_to_the_database_at_least_once = False
         
         self._finished_job_event = threading.Event()
         
@@ -207,7 +383,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
         self._db = None
         self._is_connected = False
         
-        self._cursor_transaction_wrapper = None
+        self._cursor_transaction_wrapper: typing.Optional[ HydrusDBBase.DBCursorTransactionWrapper ] = None
         
         if os.path.exists( os.path.join( self._db_dir, self._db_filenames[ 'main' ] ) ):
             
@@ -410,66 +586,151 @@ class HydrusDB( HydrusDBBase.DBBase ):
         pass
         
     
-    def _InitDB( self ):
+    def _InitCommandsToMethods( self ):
         
-        main_database_is_missing = False
+        self._read_commands_to_methods = {}
+        self._write_commands_to_methods = {
+            'null'  : lambda: None
+        }
+        
+    
+    def _InitDB( self ):
         
         main_db_path = os.path.join( self._db_dir, self._db_filenames[ 'main' ] )
         
-        external_db_paths = [ os.path.join( self._db_dir, self._db_filenames[ db_name ] ) for db_name in self._db_filenames if db_name != 'main' ]
+        main_database_is_missing = not os.path.exists( main_db_path )
         
-        existing_external_db_paths = [ external_db_path for external_db_path in external_db_paths if os.path.exists( external_db_path ) ]
+        external_db_paths = sorted( [ os.path.join( self._db_dir, self._db_filenames[ db_name ] ) for db_name in self._db_filenames if db_name != 'main' ] )
         
-        if os.path.exists( main_db_path ):
+        all_db_paths = [ main_db_path ] + external_db_paths
+        
+        missing_db_paths = [ db_path for db_path in all_db_paths if not os.path.exists( db_path ) ]
+        
+        if self._we_have_connected_to_the_database_at_least_once and len( missing_db_paths ) > 0:
             
-            if len( existing_external_db_paths ) < len( external_db_paths ):
+            missing_paths_summary = '"{}"'.format( '", "'.join( missing_db_paths ) )
+            
+            message = f'Holy hell, it looks like the database files "{missing_paths_summary}" disappeared while the program was working! Obviously something very bad has happened, and the program will now immediately quit. You will have to investigate this. hydev can help you figure it out.'
+            
+            self._controller.BlockingSafeShowCriticalMessage( 'recovering from failed vacuum!', message )
+            
+            HydrusExit.CRITICALInitiateImmediateProgramHalt()
+            
+        
+        none_of_the_database_files_exist = len( missing_db_paths ) == len( all_db_paths )
+        
+        we_have_damage_from_missing_files = len( missing_db_paths ) > 0 and not none_of_the_database_files_exist
+        
+        if we_have_damage_from_missing_files:
+            
+            # failed vacuum recovery
+            
+            for missing_db_path in missing_db_paths:
                 
-                external_paths_summary = '"{}"'.format( '", "'.join( [ path for path in external_db_paths if path not in existing_external_db_paths ] ) )
+                ( deletee_path, vacuum_path ) = GetVacuumPaths( missing_db_path )
                 
-                message = f'While the main database file, "{main_db_path}", exists, the external files {external_paths_summary} do not!\n\nIf this is a surprise to you, you have probably had a hard drive failure. You must close this process immediately and diagnose what has happened. Check the "help my db is broke.txt" document in the install_dir/db directory for additional help.\n\nIf this is not a surprise, then you may continue if you wish, and hydrus will do its best to reconstruct the missing files. You will see more error prompts.'
-                
-                self._controller.BlockingSafeShowCriticalMessage( 'missing database file!', message )
+                if os.path.exists( deletee_path ):
+                    
+                    message = f'The database file "{missing_db_path}" was missing, but I saw a file called "{deletee_path}". It appears you have just had a failed vacuum.'
+                    message += '\n\n'
+                    message += 'If you ok this message, hydrus will attempt to move this file back to where it belongs, restoring you to where you were before the failed vacuum. This is the best that hydev can do in this situation and it is almost certainly the correct thing to do.'
+                    message += '\n\n'
+                    message += 'If you do know better and want to check your hard drive for other damage before attempting repairs, kill the hydrus process now.'
+                    
+                    if os.path.exists( vacuum_path ):
+                        
+                        message += '\n\n'
+                        message += f'There is also a file called "{vacuum_path}". This is the file that should have become your new vacuumed database file. You should not delete this file yet, since we may need it for recovery purposes if "{deletee_path}" is damaged, but it is the product of a failed vacuum operation and cannot be trusted, so you should plan to delete it if everything else goes well.'
+                        
+                    
+                    self._controller.BlockingSafeShowCriticalMessage( 'recovering from failed vacuum!', message )
+                    
+                    try:
+                        
+                        os.rename( deletee_path, missing_db_path )
+                        
+                    except Exception as e:
+                        
+                        HydrusData.PrintException( e )
+                        
+                        message = 'I am sorry, the recovery attempt failed because I could not rename the file. It looks like your hard drive is damaged or somehow read-only. Hydrus will now quit; please check out what could be wrong with your drive, and ask hydev for help if you need it!'
+                        
+                        HG.controller.BlockingSafeShowCriticalMessage( 'REPAIR FAILURE', message )
+                        
+                        HydrusExit.CRITICALInitiateImmediateProgramHalt()
+                        
+                    
+                    self._InitDB()
+                    
+                    return
+                    
                 
             
-        else:
+            # missing unrecoverable file reporting
             
-            main_database_is_missing = True
+            missing_external_db_paths = [ db_path for db_path in external_db_paths if db_path in missing_db_paths ]
             
-            if len( existing_external_db_paths ) > 0:
+            existing_external_paths_summary = '"{}"'.format( '", "'.join( [ db_path for db_path in external_db_paths if db_path not in missing_external_db_paths ] ) )
+            missing_external_paths_summary = '"{}"'.format( '", "'.join( missing_external_db_paths ) )
+            
+            if main_database_is_missing:
                 
-                external_paths_summary = '"{}"'.format( '", "'.join( existing_external_db_paths ) )
-                
-                message = f'Although the external files, {external_paths_summary} do exist, the main database file, "{main_db_path}", does not!\n\nThis makes for an invalid database, and the program will now quit. Please contact hydrus_dev if you do not know how this happened or need help recovering from hard drive failure.'
+                if len( missing_external_db_paths ) > 0:
+                    
+                    message = f'Although the expected external files, {existing_external_paths_summary} do exist, {missing_external_paths_summary} and, most importantly, the main database file, "{main_db_path}", do not!\n\nThe missing main database file makes for an invalid database, and the program will now quit. Please contact hydrus_dev if you do not know how this happened or need help recovering from hard drive failure.'
+                    
+                else:
+                    
+                    message = f'Although all the expected external files, {existing_external_paths_summary} do exist, the main database file, "{main_db_path}", does not!\n\nThis makes for an invalid database, and the program will now quit. Please contact hydrus_dev if you do not know how this happened or need help recovering from hard drive failure.'
+                    
                 
                 raise HydrusExceptions.DBAccessException( message )
                 
+            else:
+                
+                if len( missing_external_db_paths ) > 0:
+                    
+                    message = f'While the main database file, "{main_db_path}", exists, the external files {missing_external_paths_summary} do not!\n\nIf this is a surprise to you, you have probably had a hard drive failure. You must close this process immediately and diagnose what has happened. Check the "help my db is broke.txt" document in the install_dir/db directory for additional help.\n\nIf this is not a surprise, then you may continue if you wish, and hydrus will do its best to reconstruct the missing files. You will see more error prompts.'
+                    
+                    self._controller.BlockingSafeShowCriticalMessage( 'missing database file!', message )
+                    
+                
             
+        
+        # ok we've dealt with pre-connection problems, let's go
         
         self._InitDBConnection()
         
-        version_is_missing = False
-        
-        result = self._Execute( 'SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?;', ( 'table', 'version' ) ).fetchone()
-        
-        if result is None:
+        if not self._we_have_connected_to_the_database_at_least_once:
             
-            if not main_database_is_missing:
+            self._we_have_connected_to_the_database_at_least_once = True
+            
+            if none_of_the_database_files_exist:
                 
-                message = f'The "version" table in your {main_db_path} database was missing.\n\nIf you have used this database many times before, then you have probably had a hard drive failure. You must close this process immediately and diagnose what has happened. Check the "help my db is broke.txt" document in the install_dir/db directory for additional help.\n\nIf this database is new, and you recently attempted to boot it for the first time, but it failed, then this is less of a worrying situation, and you can continue.'
+                self._is_first_start = True
                 
-                self._controller.BlockingSafeShowCriticalMessage( 'missing critical database table!', message )
+                self._CreateDB()
                 
-            
-            version_is_missing = True
-            
-        
-        if main_database_is_missing or version_is_missing:
-            
-            self._is_first_start = True
-            
-            self._CreateDB()
-            
-            self._cursor_transaction_wrapper.CommitAndBegin()
+                self._cursor_transaction_wrapper.CommitAndBegin()
+                
+            else:
+                
+                # I'm not sure, since it is nice to have it hardcoded, but we could migrate this stuff to the normal missing table recovery tech. "version" would indeed be marked as a critical missing table
+                # but then again, we want to catch the situation of a failed _CreateDB
+                
+                result = self._Execute( 'SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?;', ( 'table', 'version' ) ).fetchone()
+                
+                if result is None:
+                    
+                    message = f'The "version" table in your "{main_db_path}" database was missing. I cannot recover from this automatically.'
+                    message += '\n\n'
+                    message += 'If you have used this database many times before, then you have probably had a hard drive failure. Hydrus will now close. Check the "help my db is broke.txt" document in the install_dir/db directory.'
+                    message += '\n\n'
+                    message += 'If you are trying over and over to get a fresh client or server booting for the first time, I suspect your database is in an odd half-initialised condition. You should fix your hard drive permissions and delete everything and try over again. If it seems complicated, hydev can help you figure it all out, so do not be afraid of contacting him.'
+                    
+                    raise HydrusExceptions.DBAccessException( 'missing critical database table!', message )
+                    
+                
             
         
     
@@ -504,6 +765,8 @@ class HydrusDB( HydrusDBBase.DBBase ):
             self._AttachExternalDatabases()
             
             self._LoadModules()
+            
+            self._InitCommandsToMethods()
             
             self._Execute( 'ATTACH ":memory:" AS mem;' )
             
@@ -599,13 +862,13 @@ class HydrusDB( HydrusDBBase.DBBase ):
             
             if job_type in ( 'read_write', 'write' ):
                 
-                self._current_status = 'db write locked'
+                self._current_status = 'db writing'
                 
                 self._cursor_transaction_wrapper.NotifyWriteOccuring()
                 
             else:
                 
-                self._current_status = 'db read locked'
+                self._current_status = 'db reading'
                 
             
             self.publish_status_update()
@@ -687,7 +950,12 @@ class HydrusDB( HydrusDBBase.DBBase ):
     
     def _Read( self, action, *args, **kwargs ):
         
-        raise NotImplementedError()
+        if action not in self._read_commands_to_methods:
+            
+            raise Exception( 'db received an unknown read command: ' + action )
+            
+        
+        return self._read_commands_to_methods[ action ]( *args, **kwargs )
         
     
     def _RepairDB( self, version ):
@@ -733,7 +1001,12 @@ class HydrusDB( HydrusDBBase.DBBase ):
     
     def _Write( self, action, *args, **kwargs ):
         
-        raise NotImplementedError()
+        if action not in self._write_commands_to_methods:
+            
+            raise Exception( 'db received an unknown write command: ' + action )
+            
+        
+        return self._write_commands_to_methods[ action ]( *args, **kwargs )
         
     
     def publish_status_update( self ):
@@ -744,6 +1017,23 @@ class HydrusDB( HydrusDBBase.DBBase ):
     def CurrentlyDoingJob( self ):
         
         return self._currently_doing_job
+        
+    
+    def ForceACommit( self ):
+        
+        if self._cursor_transaction_wrapper is None:
+            
+            # database is closed (for a vacuum or something), so nothing to commit
+            
+            return
+            
+        
+        if self._cursor_transaction_wrapper.InTransaction():
+            
+            self._cursor_transaction_wrapper.DoACommitAsSoonAsPossible()
+            
+            self.Write( 'null', True )
+            
         
     
     def GetApproxTotalFileSize( self ):
@@ -887,24 +1177,35 @@ class HydrusDB( HydrusDBBase.DBBase ):
                     time.sleep( 5 )
                     
                 
-                self._currently_doing_job = False
                 self._current_job_name = ''
+                self._currently_doing_job = False
                 
                 self._finished_job_event.set()
-                
-                self.publish_status_update()
                 
             except queue.Empty:
                 
                 if self._cursor_transaction_wrapper.TimeToCommit():
                     
+                    self._current_status = 'db committing'
+                    
+                    self.publish_status_update()
+                    
                     self._cursor_transaction_wrapper.CommitAndBegin()
                     
+                
+            finally:
+                
+                self._current_status = ''
+                self.publish_status_update()
                 
             
             if self._pause_and_disconnect:
                 
                 self._CloseDBConnection()
+                
+                self._current_status = 'db locked'
+                
+                self.publish_status_update()
                 
                 while self._pause_and_disconnect:
                     
@@ -917,6 +1218,8 @@ class HydrusDB( HydrusDBBase.DBBase ):
                     
                 
                 self._InitDBConnection()
+                
+                self._current_status = ''
                 
             
         

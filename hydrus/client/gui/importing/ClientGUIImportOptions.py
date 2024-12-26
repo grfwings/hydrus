@@ -1,12 +1,9 @@
-import os
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
@@ -727,7 +724,7 @@ class EditNoteImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'enter the note name', placeholder = 'note name to allow', allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 whitelist_name = dlg.GetValue()
                 
@@ -742,7 +739,7 @@ class EditNoteImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the note name', default = whitelist_name, placeholder = 'note name to allow', allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_whitelist_name = dlg.GetValue()
                 
@@ -1126,7 +1123,7 @@ class EditServiceTagImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogInputTags( self, self._service_key, ClientTags.TAG_DISPLAY_STORAGE, list( self._additional_tags ), message = message ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._additional_tags = dlg.GetTags()
                 
@@ -1155,7 +1152,7 @@ class EditServiceTagImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._only_add_existing_tags_filter = panel.GetValue()
                 
@@ -1422,7 +1419,7 @@ class EditTagImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogInputTags( self, CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, list( self._tag_whitelist ), message = message ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._tag_whitelist = dlg.GetTags()
                 
@@ -1863,7 +1860,7 @@ class ImportOptionsButton( ClientGUICommon.ButtonWithMenuArrow ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 if self._file_import_options is not None:
                     

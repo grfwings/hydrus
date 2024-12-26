@@ -94,7 +94,7 @@ class VolumeControl( QW.QWidget ):
         self._global_mute = AudioMuteButton( self, AUDIO_GLOBAL )
         
         self._global_mute.setToolTip( ClientGUIFunctions.WrapToolTip( 'Global mute/unmute' ) )
-        self._global_mute.setFocusPolicy( QC.Qt.NoFocus )
+        self._global_mute.setFocusPolicy( QC.Qt.FocusPolicy.NoFocus )
         
         vbox = QP.VBoxLayout( margin = 0, spacing = 0 )
         
@@ -102,12 +102,17 @@ class VolumeControl( QW.QWidget ):
         
         self.setLayout( vbox )
         
+        # TODO: same as with much of the media controls mess, this needs to be plugged into the layout system properly
+        # we should have a custom layout here that specifies where the slider should go and do raise/show/hide while still reporting a nice small sizeHint
+        
         self._popup_window = self._PopupWindow( self, canvas_type, direction = direction )
         
     
     def enterEvent( self, event ):
         
         if not self.isVisible():
+            
+            event.ignore()
             
             return
             
@@ -121,6 +126,10 @@ class VolumeControl( QW.QWidget ):
         
         if not self.isVisible():
             
+            self._popup_window.setVisible( False )
+            
+            event.ignore()
+            
             return
             
         
@@ -129,9 +138,30 @@ class VolumeControl( QW.QWidget ):
         event.ignore()
         
     
+    def moveEvent( self, event ):
+        
+        super().moveEvent( event )
+        
+        self._popup_window.DoShowHide()
+        
+    
     def PopupIsVisible( self ):
         
-        return self._popup_window.isVisible()
+        return not self._popup_window.isHidden()
+        
+    
+    def resizeEvent( self, event ):
+        
+        super().resizeEvent( event )
+        
+        CG.client_controller.CallAfterQtSafe( self, 'volume popup resize event', self._popup_window.DoShowHide )
+        
+    
+    def setVisible( self, *args, **kwargs ):
+        
+        super().setVisible( *args, **kwargs )
+        
+        self._popup_window.DoShowHide()
         
     
     class _PopupWindow( QW.QFrame ):
@@ -144,9 +174,9 @@ class VolumeControl( QW.QWidget ):
             
             self._direction = direction
             
-            self.setWindowFlags( QC.Qt.Tool | QC.Qt.FramelessWindowHint )
+            self.setWindowFlags( QC.Qt.WindowType.Tool | QC.Qt.WindowType.FramelessWindowHint )
             
-            self.setAttribute( QC.Qt.WA_ShowWithoutActivating )
+            self.setAttribute( QC.Qt.WidgetAttribute.WA_ShowWithoutActivating )
             
             if self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
                 
@@ -187,8 +217,8 @@ class VolumeControl( QW.QWidget ):
                 QP.AddToLayout( vbox, self._specific_mute, CC.FLAGS_CENTER )
                 
             
-            #vbox.setAlignment( self._volume, QC.Qt.AlignHCenter )
-            #vbox.setAlignment( self._specific_mute, QC.Qt.AlignHCenter )
+            #vbox.setAlignment( self._volume, QC.Qt.AlignmentFlag.AlignHCenter )
+            #vbox.setAlignment( self._specific_mute, QC.Qt.AlignmentFlag.AlignHCenter )
             
             self.setLayout( vbox )
             
@@ -199,9 +229,16 @@ class VolumeControl( QW.QWidget ):
             CG.client_controller.sub( self, 'NotifyNewOptions', 'notify_new_options' )
             
         
-        def DoShowHide( self ):
+        def DoReposition( self ):
             
             parent = self.parentWidget()
+            
+            if not parent.isVisible():
+                
+                self.hide()
+                
+                return
+                
             
             horizontal_offset = ( self.width() - parent.width() ) // 2 
             
@@ -218,16 +255,31 @@ class VolumeControl( QW.QWidget ):
             
             self.move( pos )
             
-            over_parent = ClientGUIFunctions.MouseIsOverWidget( parent )
+        
+        def DoShowHide( self ):
+            
+            self.DoReposition()
+            
+            parent = self.parentWidget()
+            
+            if not parent.isVisible():
+                
+                self.hide()
+                
+                return
+                
+            
+            over_parent = ClientGUIFunctions.MouseIsOverWidget( parent ) and parent.isEnabled()
             over_me = ClientGUIFunctions.MouseIsOverWidget( self )
             
-            should_show = over_parent or over_me
+            should_show = over_parent
+            should_hide = not ( over_parent or over_me )
             
             if should_show:
                 
                 self.show()
                 
-            else:
+            elif should_hide:
                 
                 self.hide()
                 
@@ -235,12 +287,10 @@ class VolumeControl( QW.QWidget ):
         
         def leaveEvent( self, event ):
             
-            if not self.isVisible():
+            if self.isVisible():
                 
-                return
+                self.DoShowHide()
                 
-            
-            self.DoShowHide()
             
             event.ignore()
             
@@ -282,9 +332,9 @@ class VolumeSlider( QW.QSlider ):
         
         self._volume_type = volume_type
         
-        self.setOrientation( QC.Qt.Vertical )
+        self.setOrientation( QC.Qt.Orientation.Vertical )
         self.setTickInterval( 1 )
-        self.setTickPosition( QW.QSlider.TicksBothSides )
+        self.setTickPosition( QW.QSlider.TickPosition.TicksBothSides )
         self.setRange( 0, 100 )
         
         volume = self._GetCorrectValue()

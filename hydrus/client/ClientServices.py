@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import random
 import threading
 import time
@@ -26,7 +25,6 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientFiles
 from hydrus.client import ClientThreading
-from hydrus.client import ClientTime
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.importing import ClientImporting
 from hydrus.client.metadata import ClientContentUpdates
@@ -726,45 +724,12 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
     
     def ConvertRatingToStars( self, rating: float ) -> int:
         
-        if self._allow_zero:
-            
-            stars = int( round( rating * self._num_stars ) )
-            
-        else:
-            
-            stars = int( round( rating * ( self._num_stars - 1 ) ) ) + 1
-            
-        
-        return stars
+        return ClientRatings.ConvertRatingToStars( self._num_stars, self._allow_zero, rating )
         
     
-    def ConvertStarsToRating( self, stars: int ) -> float:
+    def ConvertStarsToRating( self, stars: int ):
         
-        if stars > self._num_stars:
-            
-            stars = self._num_stars
-            
-        
-        if self._allow_zero:
-            
-            if stars < 0:
-                
-                stars = 0
-                
-            
-            rating = stars / self._num_stars
-            
-        else:
-            
-            if stars < 1:
-                
-                stars = 1
-                
-            
-            rating = ( stars - 1 ) / ( self._num_stars - 1 )
-            
-        
-        return rating
+        return ClientRatings.ConvertStarsToRating( self._num_stars, self._allow_zero, stars )
         
     
     def GetNumStars( self ):
@@ -849,7 +814,7 @@ class ServiceRemote( Service ):
         
         if not HydrusTime.TimeHasPassed( self._no_requests_until ):
             
-            raise HydrusExceptions.InsufficientCredentialsException( self._no_requests_reason + ' - next request ' + ClientTime.TimestampToPrettyTimeDelta( self._no_requests_until ) )
+            raise HydrusExceptions.InsufficientCredentialsException( self._no_requests_reason + ' - next request ' + HydrusTime.TimestampToPrettyTimeDelta( self._no_requests_until ) )
             
         
         if including_bandwidth:
@@ -1124,7 +1089,7 @@ class ServiceRestricted( ServiceRemote ):
             
         else:
             
-            s = ClientTime.TimestampToPrettyTimeDelta( self._next_account_sync )
+            s = HydrusTime.TimestampToPrettyTimeDelta( self._next_account_sync )
             
         
         return 'next account sync ' + s
@@ -3014,7 +2979,7 @@ class ServiceIPFS( ServiceRemote ):
                     
                     urls_good = False
                     
-                    if dlg.exec() == QW.QDialog.Accepted:
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         urls = dlg.GetURLs()
                         

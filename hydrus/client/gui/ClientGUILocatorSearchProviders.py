@@ -1,3 +1,5 @@
+import typing
+
 from hydrus.client.gui.QLocator import QAbstractLocatorSearchProvider, QCalculatorSearchProvider, QLocatorSearchResult
 
 from html import escape
@@ -106,11 +108,22 @@ class PagesSearchProvider( QAbstractLocatorSearchProvider ):
             
             result = []
             
+            from hydrus.client.gui.pages import ClientGUIPages
+            
             for i in range( tab_widget.count() ):
                 
                 widget = tab_widget.widget(i)
                 
                 is_page_of_pages = isinstance( widget, QW.QTabWidget )
+                
+                if is_page_of_pages:
+                    
+                    widget = typing.cast( ClientGUIPages.PagesNotebook, widget )
+                    
+                else:
+                    
+                    widget = typing.cast( ClientGUIPages.Page, widget )
+                    
                 
                 if not is_page_of_pages or CG.client_controller.new_options.GetBoolean( 'command_palette_show_page_of_pages' ):
                     
@@ -182,13 +195,13 @@ class MainMenuSearchProvider( QAbstractLocatorSearchProvider ):
         super().__init__( parent )
         
         self.result_id_counter = 0
-        self.result_ids_to_actions = {}
-
+        self.result_ids_to_actions: typing.Dict[ int, QW.QAction ] = {}
+        
 
     def title( self ):
         
         return "Main Menu"
-
+        
 
     def suggestedReservedItemCount( self ):
         
@@ -199,12 +212,13 @@ class MainMenuSearchProvider( QAbstractLocatorSearchProvider ):
         
         action = self.result_ids_to_actions.get( resultID, None )
 
-        if action:
-
+        if action is not None:
+            
             action.trigger()
             
             self.result_ids_to_actions = {}
-
+            
+        
 
     def processQuery( self, query: str, context, jobID: int ):
         
@@ -303,7 +317,7 @@ class MediaMenuSearchProvider( QAbstractLocatorSearchProvider ):
         super().__init__( parent )
         
         self.result_id_counter = 0
-        self.result_ids_to_actions = {}
+        self.result_ids_to_actions: typing.Dict[ int, QW.QAction ] = {}
         self.menu = None
 
 
@@ -321,8 +335,8 @@ class MediaMenuSearchProvider( QAbstractLocatorSearchProvider ):
         
         action = self.result_ids_to_actions.get( resultID, None )
 
-        if action:
-
+        if action is not None:
+            
             action.trigger()
             
             self.result_ids_to_actions = {}

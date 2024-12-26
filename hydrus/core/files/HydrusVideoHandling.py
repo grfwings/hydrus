@@ -7,6 +7,7 @@ import subprocess
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
+from hydrus.core import HydrusEnvironment
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusProcess
 from hydrus.core import HydrusText
@@ -100,13 +101,13 @@ def GetFFMPEGVersion():
     message += '\n' * 2
     message += str( sbp_kwargs )
     message += '\n' * 2
-    message += str( os.environ )
-    message += '\n' * 2
     message += 'STDOUT Response: {}'.format( stdout )
     message += '\n' * 2
     message += 'STDERR Response: {}'.format( stderr )
     
     HydrusData.Print( message )
+    
+    HydrusEnvironment.DumpEnv()
     
     global FFMPEG_NO_CONTENT_ERROR_PUBBED
     
@@ -197,13 +198,13 @@ def GetFFMPEGInfoLines( path, count_frames_manually = False, only_first_second =
             message += '\n' * 2
             message += str( sbp_kwargs )
             message += '\n' * 2
-            message += str( os.environ )
-            message += '\n' * 2
             message += 'STDOUT Response: {}'.format( stdout )
             message += '\n' * 2
             message += 'STDERR Response: {}'.format( stderr )
             
             HydrusData.DebugPrint( message )
+            
+            HydrusEnvironment.DumpEnv()
             
             FFMPEG_NO_CONTENT_ERROR_PUBBED = True
             
@@ -259,16 +260,14 @@ def GetFFMPEGVideoProperties( path, force_count_frames_manually = False ):
         
     else:
         
-        num_frames_estimate = int( duration * fps )
-        
         # if file is big or long, don't try to force a manual count when one not explicitly asked for
         # we don't care about a dropped frame on a 10min vid tbh
-        num_frames_seems_ok_to_count = duration < 15 or num_frames_estimate < 2400
-        file_is_ok_size = os.path.getsize( path ) < 128 * 1024 * 1024
+        num_frames_seems_ok_to_count = duration < 30
+        file_is_ok_size = os.path.getsize( path ) < 256 * 1024 * 1024
         
         if num_frames_seems_ok_to_count and file_is_ok_size:
             
-            last_frame_has_unusual_duration = num_frames_estimate != duration * fps
+            last_frame_has_unusual_duration = ( duration * fps ) % 1 > 0
             
             unusual_video_start = file_duration_in_s != stream_duration_in_s
             
@@ -615,6 +614,7 @@ def ParseFFMPEGFPS( lines, png_ok = False ):
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error estimating framerate!' )
         
     
+
 def ParseFFMPEGFPSFromFirstSecond( lines_for_first_second ):
     
     try:
@@ -668,7 +668,20 @@ def ParseFFMPEGFPSFromFirstSecond( lines_for_first_second ):
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error estimating framerate!' )
         
     
+
 def ParseFFMPEGFPSPossibleResults( video_line ):
+    
+    def that_fps_string_is_likely_stupid( fps: str ) -> bool:
+        
+        if fps.endswith( 'k' ):
+            
+            return True
+            
+        
+        fps = float( fps )
+        
+        return fps <= 1 or fps == 100 or fps > 144
+        
     
     # get the frame rate
     
@@ -680,9 +693,7 @@ def ParseFFMPEGFPSPossibleResults( video_line ):
         
         tbr = video_line[match.start():match.end()].split(' ')[1]
         
-        tbr_fps_is_likely_garbage = match is None or tbr.endswith( 'k' ) or float( tbr ) > 144
-        
-        if not tbr_fps_is_likely_garbage:
+        if not that_fps_string_is_likely_stupid( tbr ):
             
             possible_results.add( float( tbr ) )
             
@@ -696,9 +707,7 @@ def ParseFFMPEGFPSPossibleResults( video_line ):
         
         fps = video_line[match.start():match.end()].split(' ')[1]
         
-        fps_is_likely_garbage = match is None or fps.endswith( 'k' ) or float( fps ) > 144
-        
-        if not fps_is_likely_garbage:
+        if not that_fps_string_is_likely_stupid( fps ):
             
             possible_results.add( float( fps ) )
             

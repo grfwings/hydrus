@@ -446,7 +446,26 @@ for sort_type in SYSTEM_SORT_TYPES:
     sort_type_string_lookup[ sort_type ] = s
     
 
-SYSTEM_SORT_TYPES_SORT_CONTROL_SORTED = sorted( SYSTEM_SORT_TYPES, key = lambda sst: sort_type_string_lookup[ sst ] )
+special_sort_sort_override = {
+    SORT_FILES_BY_WIDTH : 'dimensions 0',
+    SORT_FILES_BY_HEIGHT : 'dimensions 1'
+}
+
+def magico_sort_sort( sort_type ):
+    
+    # we just want to sort by sort_type_string_lookup values tbh, EXCEPT we want to put width above height in the dimensions list
+    
+    if sort_type in special_sort_sort_override:
+        
+        return special_sort_sort_override[ sort_type ]
+        
+    else:
+        
+        return sort_type_string_lookup[ sort_type ]
+        
+    
+
+SYSTEM_SORT_TYPES_SORT_CONTROL_SORTED = sorted( SYSTEM_SORT_TYPES, key = lambda sst: magico_sort_sort( sst ) )
 
 SORT_ASC = 0
 SORT_DESC = 1

@@ -1,8 +1,10 @@
 import functools
 import os
+import time
 import typing
 
 import re
+
 import send2trash
 import shlex
 import shutil
@@ -427,6 +429,7 @@ def GetDevice( path ) -> typing.Optional[ str ]:
         
     else:
         
+        # noinspection PyUnresolvedReferences
         return partition_info.device
         
     
@@ -441,6 +444,7 @@ def GetFileSystemType( path: str ) -> typing.Optional[ str ]:
         
     else:
         
+        # noinspection PyUnresolvedReferences
         return partition_info.fstype
         
     
@@ -644,6 +648,33 @@ def FileModifiedTimeIsOk( mtime: typing.Union[ int, float ] ):
     return True
     
 
+def retry_blocking_io_call( func, *args, **kwargs ):
+    
+    NUM_ATTEMPTS = 5
+    delay = 1.0
+    
+    for i in range( NUM_ATTEMPTS ):
+        
+        try:
+            
+            return func( *args, **kwargs )
+            
+        except BlockingIOError:
+            
+            if i < NUM_ATTEMPTS - 1:
+                
+                time.sleep( delay )
+                
+                delay *= 1.5
+                
+            else:
+                
+                raise
+                
+            
+        
+    
+
 def safe_copy2( source, dest ):
     
     mtime = os.path.getmtime( source )
@@ -653,18 +684,18 @@ def safe_copy2( source, dest ):
         try:
             
             # this overwrites on conflict without hassle
-            shutil.copy2( source, dest )
+            retry_blocking_io_call( shutil.copy2, source, dest )
             
         except PermissionError:
             
             HydrusData.Print( f'Failed to copy2 metadata from {source} to {dest}! mtime was {HydrusTime.TimestampToPrettyTime( mtime )}' )
             
-            shutil.copy( source, dest )
+            retry_blocking_io_call( shutil.copy, source, dest )
             
         
     else:
         
-        shutil.copy( source, dest )
+        retry_blocking_io_call( shutil.copy, source, dest )
         
     
 
@@ -704,7 +735,7 @@ def MergeFile( source, dest ) -> bool:
         
     
     # this overwrites on conflict without hassle
-    shutil.move( source, dest, copy_function = safe_copy2 )
+    retry_blocking_io_call( shutil.move, source, dest, copy_function = safe_copy2 )
     
     return True
     
@@ -741,7 +772,7 @@ def MergeTree( source, dest, text_update_hook = None ):
         
         try:
             
-            shutil.move( source, dest, copy_function = safe_copy2 )
+            retry_blocking_io_call( shutil.move, source, dest, copy_function = safe_copy2 )
             
         except OSError:
             
@@ -775,7 +806,7 @@ def MergeTree( source, dest, text_update_hook = None ):
                 
                 MakeSureDirectoryExists( dest_path )
                 
-                shutil.copystat( source_path, dest_path )
+                retry_blocking_io_call( shutil.copystat, source_path, dest_path )
                 
             
             for filename in filenames:
@@ -923,7 +954,7 @@ def MirrorTree( source, dest, text_update_hook = None, is_cancelled_hook = None 
             
             MakeSureDirectoryExists( dest_path )
             
-            shutil.copystat( source_path, dest_path )
+            retry_blocking_io_call( shutil.copystat, source_path, dest_path )
             
         
         for filename in filenames:

@@ -8,10 +8,8 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
-from hydrus.client.search import ClientSearchFileSearchContext
 
 class EditPotentialDuplicatesSearchContextPanel( QW.QWidget ):
     
@@ -34,8 +32,8 @@ class EditPotentialDuplicatesSearchContextPanel( QW.QWidget ):
             page_key = HydrusData.GenerateKey()
             
         
-        self._tag_autocomplete_1 = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context_1, allow_all_known_files = False, only_allow_local_file_domains = True, synchronised = synchronised, force_system_everything = True )
-        self._tag_autocomplete_2 = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context_2, allow_all_known_files = False, only_allow_local_file_domains = True, synchronised = synchronised, force_system_everything = True )
+        self._tag_autocomplete_1 = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context_1, allow_all_known_files = False, only_allow_local_file_domains = True, only_allow_all_my_files_domains = True, synchronised = synchronised, force_system_everything = True )
+        self._tag_autocomplete_2 = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context_2, allow_all_known_files = False, only_allow_local_file_domains = True, only_allow_all_my_files_domains = True, synchronised = synchronised, force_system_everything = True )
         
         self._dupe_search_type = ClientGUICommon.BetterChoice( self )
         

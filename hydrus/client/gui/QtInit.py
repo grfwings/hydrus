@@ -192,6 +192,7 @@ if qtpy.PYQT5:
     WE_ARE_QT5 = True
     WE_ARE_PYQT = True
     
+    # noinspection PyUnresolvedReferences
     from PyQt5 import sip # pylint: disable=E0401
     
     def isValid( obj ):
@@ -209,7 +210,8 @@ elif hasattr( qtpy, 'PYQT6' ) and qtpy.PYQT6:
     WE_ARE_QT6 = True
     WE_ARE_PYQT = True
     
-    from PyQt6 import sip # pylint: disable=E0401
+    # noinspection PyUnresolvedReferences
+    from PyQt6 import sip
     
     def isValid( obj ):
         
@@ -226,6 +228,7 @@ elif qtpy.PYSIDE2:
     WE_ARE_QT5 = True
     WE_ARE_PYSIDE = True
     
+    # noinspection PyUnresolvedReferences
     import shiboken2
     
     isValid = shiboken2.isValid
@@ -252,6 +255,8 @@ def DoWinDarkMode():
 def MonkeyPatchMissingMethods():
     
     if WE_ARE_QT5:
+        
+        print( 'Qt5 is no longer officially supported. It will simply break one day, sorry!' )
         
         QG.QMouseEvent.globalPosition = lambda self, *args, **kwargs: QC.QPointF( self.globalPos( *args, **kwargs ) )
         

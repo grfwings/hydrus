@@ -15,7 +15,6 @@ import json
 import re
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusNumbers
 
 re_one_or_more_whitespace = re.compile( r'\s+' ) # this does \t and friends too
@@ -234,6 +233,32 @@ def GetFirstLine( text: typing.Optional[ str ] ) -> str:
     if len( text ) > 0:
         
         return text.splitlines()[0]
+        
+    else:
+        
+        return ''
+        
+    
+
+def GetFirstLineSummary( text: typing.Optional[ str ] ) -> str:
+    
+    if text is None:
+        
+        return 'unknown'
+        
+    
+    if len( text ) > 0:
+        
+        lines = text.splitlines()
+        
+        if len( lines ) > 1:
+            
+            return lines[0] + HC.UNICODE_ELLIPSIS + f' (+{HydrusNumbers.ToHumanInt(len( lines) - 1)} lines)'
+            
+        else:
+            
+            return text
+            
         
     else:
         

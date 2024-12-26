@@ -1,8 +1,5 @@
-import os
-
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusNumbers
 
 from hydrus.client import ClientGlobals as CG
@@ -29,7 +26,7 @@ def ClearFalsePositives( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'clear_false_positive_relations', hashes )
         
@@ -55,7 +52,7 @@ def DissolveAlternateGroup( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'dissolve_alternates_group', hashes )
         
@@ -81,7 +78,7 @@ def DissolveDuplicateGroup( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'dissolve_duplicates_group', hashes )
         
@@ -107,7 +104,7 @@ def RemoveFromAlternateGroup( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'remove_alternates_member', hashes )
         
@@ -133,7 +130,7 @@ def RemoveFromDuplicateGroup( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'remove_duplicates_member', hashes )
         
@@ -155,7 +152,7 @@ def RemovePotentials( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'remove_potential_pairs', hashes )
         
@@ -177,7 +174,7 @@ def ResetPotentialSearch( win, hashes ):
     
     result = ClientGUIDialogsQuick.GetYesNo( win, message )
     
-    if result == QW.QDialog.Accepted:
+    if result == QW.QDialog.DialogCode.Accepted:
         
         CG.client_controller.Write( 'reset_potential_search_status', hashes )
         

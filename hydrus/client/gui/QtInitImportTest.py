@@ -8,6 +8,7 @@ def get_qt_library_str_status():
     
     try:
         
+        # noinspection PyUnresolvedReferences
         import PyQt5
         
         infos.append( 'PyQt5 imported ok' )
@@ -19,6 +20,7 @@ def get_qt_library_str_status():
     
     try:
         
+        # noinspection PyUnresolvedReferences
         import PySide2
         
         infos.append( 'PySide2 imported ok' )
@@ -30,6 +32,7 @@ def get_qt_library_str_status():
     
     try:
         
+        # noinspection PyUnresolvedReferences
         import PyQt6
         
         infos.append( 'PyQt6 imported ok' )

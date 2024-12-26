@@ -1,9 +1,7 @@
-import os
 import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
-from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -57,11 +55,11 @@ class EditLoginCredentialsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             if credential_definition.ShouldHide():
                 
-                echo_mode = QW.QLineEdit.Password
+                echo_mode = QW.QLineEdit.EchoMode.Password
                 
             else:
                 
-                echo_mode = QW.QLineEdit.Normal
+                echo_mode = QW.QLineEdit.EchoMode.Normal
                 
             
             control = QW.QLineEdit( self )
@@ -173,7 +171,7 @@ class EditLoginCredentialsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return False
                 
@@ -263,7 +261,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_DOMAINS_TO_LOGIN_INFO.ID, self._ConvertDomainAndLoginInfoListCtrlTuples )
         
-        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, CGLC.COLUMN_LIST_DOMAINS_TO_LOGIN_INFO.ID, 16, model, use_simple_delete = True, activation_callback = self._EditCredentials )
+        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, 16, model, use_simple_delete = True, activation_callback = self._EditCredentials )
         
         self._domains_and_login_info_panel.SetListCtrl( self._domains_and_login_info )
         
@@ -306,7 +304,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         warning += 'If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! Pixiv now requires this! If you do set up HC for an external login, I recommend you set the respective domain(s) you are logging into to "not active" here (hit "flip active" on them), so hydrus knows it is not supposed to be taking responsibility.'
         
         warning_st = ClientGUICommon.BetterStaticText( self, warning )
-        warning_st.setAlignment( QC.Qt.AlignHCenter | QC.Qt.AlignVCenter )
+        warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
         warning_st.setWordWrap( True )
         warning_st.setObjectName( 'HydrusWarning' )
         
@@ -371,7 +369,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             with ClientGUIDialogs.DialogTextEntry( self, 'enter the domain', placeholder = 'example.com', allow_blank = False ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     login_domain = dlg.GetValue()
                     
@@ -399,7 +397,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = login_access_text, allow_blank = False ) as dlg_2:
                         
-                        if dlg_2.exec() == QW.QDialog.Accepted:
+                        if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
                             
                             login_access_text = dlg_2.GetValue()
                             
@@ -428,7 +426,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     credentials = panel.GetValue()
                     
@@ -465,7 +463,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result == QW.QDialog.Accepted:
+            if result == QW.QDialog.DialogCode.Accepted:
                 
                 active = True
                 
@@ -597,7 +595,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
@@ -778,14 +776,14 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 return
                 
             
             self._domains_to_login_after_ok = domains_to_login
             
-            self.parentWidget().DoOK()
+            self._OKParent()
             
         
     
@@ -825,7 +823,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     credentials = panel.GetValue()
                     
@@ -868,7 +866,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, message )
                 
-                if result == QW.QDialog.Accepted:
+                if result == QW.QDialog.DialogCode.Accepted:
                     
                     active = True
                     
@@ -969,7 +967,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = login_access_text, allow_blank = False ) as dlg:
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     login_access_text = dlg.GetValue()
                     
@@ -1310,7 +1308,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_CREDENTIAL_DEFINITIONS.ID, self._ConvertCredentialDefinitionToListCtrlTuples )
         
-        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, CGLC.COLUMN_LIST_CREDENTIAL_DEFINITIONS.ID, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions )
+        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions )
         
         credential_definitions_panel.SetListCtrl( self._credential_definitions )
         
@@ -1338,7 +1336,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_EXAMPLE_DOMAINS_INFO.ID, self._ConvertExampleDomainInfoToListCtrlTuples )
         
-        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, CGLC.COLUMN_LIST_EXAMPLE_DOMAINS_INFO.ID, 6, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo )
+        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, 6, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo )
         
         example_domains_info_panel.SetListCtrl( self._example_domains_info )
         
@@ -1358,7 +1356,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_LOGIN_SCRIPT_TEST_RESULTS.ID, self._ConvertTestResultToListCtrlTuples )
         
-        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, CGLC.COLUMN_LIST_LOGIN_SCRIPT_TEST_RESULTS.ID, 6, model, activation_callback = self._ReviewTestResult )
+        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, 6, model, activation_callback = self._ReviewTestResult )
         
         test_listctrl_panel.SetListCtrl( self._test_listctrl )
         
@@ -1424,7 +1422,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg_edit.SetPanel( panel )
             
-            if dlg_edit.exec() == QW.QDialog.Accepted:
+            if dlg_edit.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_credential_definition = panel.GetValue()
                 
@@ -1441,7 +1439,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = domain, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 domain = dlg.GetValue()
                 
@@ -1482,7 +1480,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = access_text, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 access_text = dlg.GetValue()
                 
@@ -1579,7 +1577,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_credential_definition = panel.GetValue()
                 
@@ -1692,7 +1690,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = self._test_domain, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 self._test_domain = dlg.GetValue()
                 
@@ -1712,7 +1710,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 dlg.SetPanel( panel )
                 
-                if dlg.exec() == QW.QDialog.Accepted:
+                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
                     self._test_credentials = panel.GetValue()
                     
@@ -1753,7 +1751,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = original_domain, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 domain = dlg.GetValue()
                 
@@ -1794,7 +1792,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = access_text, allow_blank = False ) as dlg:
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 access_text = dlg.GetValue()
                 
@@ -1817,7 +1815,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 login_step = panel.GetValue()
                 
@@ -1888,7 +1886,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'ok as invalid', no_label = 'go back' )
             
-            if result != QW.QDialog.Accepted:
+            if result != QW.QDialog.DialogCode.Accepted:
                 
                 raise HydrusExceptions.VetoException( 'The ok event has been cancelled!' )
                 
@@ -1907,7 +1905,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModelBridge( self, CGLC.COLUMN_LIST_LOGIN_SCRIPTS.ID, self._ConvertLoginScriptToListCtrlTuples )
         
-        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, CGLC.COLUMN_LIST_LOGIN_SCRIPTS.ID, 20, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, 20, model, use_simple_delete = True, activation_callback = self._Edit )
         
         login_scripts_panel.SetListCtrl( self._login_scripts )
         
@@ -1944,7 +1942,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg_edit.SetPanel( panel )
             
-            if dlg_edit.exec() == QW.QDialog.Accepted:
+            if dlg_edit.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 new_login_script = panel.GetValue()
                 
@@ -1994,7 +1992,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             dlg.SetPanel( panel )
             
-            if dlg.exec() == QW.QDialog.Accepted:
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_login_script = panel.GetValue()
                 
