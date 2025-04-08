@@ -622,13 +622,13 @@ class ClientFilesManager( object ):
         return subfolder.GetFilePath( f'{hash_encoded}.thumbnail' )
         
     
-    def _GenerateThumbnailBytes( self, file_path, media ):
+    def _GenerateThumbnailBytes( self, file_path, media_result ):
         
-        hash = media.GetHash()
-        mime = media.GetMime()
-        ( width, height ) = media.GetResolution()
-        duration = media.GetDurationMS()
-        num_frames = media.GetNumFrames()
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
+        ( width, height ) = media_result.GetResolution()
+        duration_ms = media_result.GetDurationMS()
+        num_frames = media_result.GetNumFrames()
         
         bounding_dimensions = self._controller.options[ 'thumbnail_dimensions' ]
         thumbnail_scale_type = self._controller.new_options.GetInteger( 'thumbnail_scale_type' )
@@ -640,7 +640,7 @@ class ClientFilesManager( object ):
         
         try:
             
-            thumbnail_bytes = HydrusFileHandling.GenerateThumbnailBytes( file_path, target_resolution, mime, duration, num_frames, percentage_in = percentage_in )
+            thumbnail_bytes = HydrusFileHandling.GenerateThumbnailBytes( file_path, target_resolution, mime, duration_ms, num_frames, percentage_in = percentage_in )
             
         except Exception as e:
             
@@ -1557,7 +1557,7 @@ class ClientFilesManager( object ):
     
     def DoDeferredPhysicalDeletes( self ):
         
-        wait_period = self._controller.new_options.GetInteger( 'ms_to_wait_between_physical_file_deletes' ) / 1000
+        wait_period = HydrusTime.SecondiseMSFloat( self._controller.new_options.GetInteger( 'ms_to_wait_between_physical_file_deletes' ) )
         
         num_files_deleted = 0
         num_thumbnails_deleted = 0
@@ -1713,10 +1713,10 @@ class ClientFilesManager( object ):
             
         
     
-    def GetThumbnailPath( self, media ):
+    def GetThumbnailPath( self, media_result ):
         
-        hash = media.GetHash()
-        mime = media.GetMime()
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
         
         if HG.file_report_mode:
             
@@ -1735,7 +1735,7 @@ class ClientFilesManager( object ):
         
         if thumb_missing:
             
-            self.RegenerateThumbnail( media )
+            self.RegenerateThumbnail( media_result )
             
         
         return path
@@ -1822,15 +1822,15 @@ class ClientFilesManager( object ):
             
         
     
-    def RegenerateThumbnail( self, media ):
+    def RegenerateThumbnail( self, media_result ):
         
-        if not media.GetLocationsManager().IsLocal():
+        if not media_result.GetLocationsManager().IsLocal():
             
             raise HydrusExceptions.FileMissingException( 'I was called to regenerate a thumbnail from source, but the source file does not think it is in the local file store!' )
             
         
-        hash = media.GetHash()
-        mime = media.GetMime()
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
         
         if mime not in HC.MIMES_WITH_THUMBNAILS:
             
@@ -1850,7 +1850,7 @@ class ClientFilesManager( object ):
                 
             
             # in another world I do this inside the file read lock, but screw it I'd rather have the time spent outside
-            thumbnail_bytes = self._GenerateThumbnailBytes( file_path, media )
+            thumbnail_bytes = self._GenerateThumbnailBytes( file_path, media_result )
             
             with self._GetPrefixUmbrellaRWLock( hash, 't' ).write:
                 
@@ -1861,21 +1861,21 @@ class ClientFilesManager( object ):
         return True
         
     
-    def RegenerateThumbnailIfWrongSize( self, media ):
+    def RegenerateThumbnailIfWrongSize( self, media_result ):
         
         do_it = False
         
         try:
             
-            hash = media.GetHash()
-            mime = media.GetMime()
+            hash = media_result.GetHash()
+            mime = media_result.GetMime()
             
             if mime not in HC.MIMES_WITH_THUMBNAILS:
                 
                 return
                 
             
-            ( media_width, media_height ) = media.GetResolution()
+            ( media_width, media_height ) = media_result.GetResolution()
             
             path = self._GenerateExpectedThumbnailPath( hash )
             
@@ -1908,7 +1908,7 @@ class ClientFilesManager( object ):
         
         if do_it:
             
-            self.RegenerateThumbnail( media )
+            self.RegenerateThumbnail( media_result )
             
         
         return do_it
@@ -1937,7 +1937,7 @@ class ClientFilesManager( object ):
                     existing_modified_time = os.path.getmtime( path )
                     
                     # floats are ok here!
-                    modified_timestamp = modified_timestamp_ms / 1000
+                    modified_timestamp = HydrusTime.SecondiseMSFloat( modified_timestamp_ms )
                     
                     try:
                         
@@ -1988,7 +1988,7 @@ def HasHumanReadableEmbeddedMetadata( path, mime, human_file_description = None 
     return has_human_readable_embedded_metadata
     
 
-def HasTransparency( path, mime, duration = None, num_frames = None, resolution = None ):
+def HasTransparency( path, mime, duration_ms = None, num_frames = None, resolution = None ):
     
     if mime not in HC.MIMES_THAT_WE_CAN_CHECK_FOR_TRANSPARENCY:
         
@@ -2018,7 +2018,7 @@ def HasTransparency( path, mime, duration = None, num_frames = None, resolution 
                 
             else:
                 
-                renderer = HydrusVideoHandling.VideoRendererFFMPEG( path, mime, duration, num_frames, resolution )
+                renderer = HydrusVideoHandling.VideoRendererFFMPEG( path, mime, duration_ms, num_frames, resolution )
                 
             
             for i in range( num_frames ):
@@ -2082,7 +2082,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
     
     def __init__( self, controller ):
         
-        super().__init__( controller )
+        super().__init__( controller, 15 )
         
         self._pubbed_message_about_bad_file_record_delete = False
         self._pubbed_message_about_invalid_file_export = False
@@ -2558,7 +2558,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             path = self._controller.client_files_manager.GetFilePath( hash, mime )
             
-            has_transparency = HasTransparency( path, mime, duration = media_result.GetDurationMS(), num_frames = media_result.GetNumFrames(), resolution = media_result.GetResolution() )
+            has_transparency = HasTransparency( path, mime, duration_ms = media_result.GetDurationMS(), num_frames = media_result.GetNumFrames(), resolution = media_result.GetResolution() )
             
             additional_data = has_transparency
             
@@ -2579,9 +2579,9 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             path = self._controller.client_files_manager.GetFilePath( hash, original_mime )
             
-            ( size, mime, width, height, duration, num_frames, has_audio, num_words ) = HydrusFileHandling.GetFileInfo( path, ok_to_look_for_hydrus_updates = True )
+            ( size, mime, width, height, duration_ms, num_frames, has_audio, num_words ) = HydrusFileHandling.GetFileInfo( path, ok_to_look_for_hydrus_updates = True )
             
-            additional_data = ( size, mime, width, height, duration, num_frames, has_audio, num_words )
+            additional_data = ( size, mime, width, height, duration_ms, num_frames, has_audio, num_words )
             
             if mime != original_mime and not media_result.GetFileInfoManager().FiletypeIsForced():
                 
@@ -2714,9 +2714,9 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             return None
             
         
-        duration = media_result.GetDurationMS()
+        duration_ms = media_result.GetDurationMS()
         
-        if duration is not None:
+        if duration_ms is not None:
             
             return None
             
@@ -2743,16 +2743,17 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             return None
             
         
-    def _RegenBlurhash( self, media ):
+    
+    def _RegenBlurhash( self, media_result ):
         
-        if media.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
+        if media_result.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
             
             return None
             
         
         try:
             
-            thumbnail_path = self._controller.client_files_manager.GetThumbnailPath( media )
+            thumbnail_path = self._controller.client_files_manager.GetThumbnailPath( media_result )
             
         except HydrusExceptions.FileMissingException as e:
             
@@ -3174,7 +3175,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         return 'file maintenance'
         
     
-    def MainLoop( self ):
+    def _DoMainLoop( self ):
         
         # TODO: locking on CheckShutdown is lax, let's be good and smooth it all out
         
@@ -3207,96 +3208,76 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
             
         
-        try:
+        while True:
             
-            time_to_start = HydrusTime.GetNow() + 15
+            self._CheckShutdown()
             
-            while not HydrusTime.TimeHasPassed( time_to_start ):
-                
-                self._CheckShutdown()
-                
-                self._wake_event.wait( 1 )
-                
+            did_work = False
             
-            while True:
+            with self._maintenance_lock:
                 
-                self._CheckShutdown()
+                hashes_to_job_types = self._controller.Read( 'file_maintenance_get_jobs' )
                 
-                did_work = False
-                
-                with self._maintenance_lock:
+                if len( hashes_to_job_types ) > 0:
                     
-                    hashes_to_job_types = self._controller.Read( 'file_maintenance_get_jobs' )
+                    did_work = True
                     
-                    if len( hashes_to_job_types ) > 0:
+                    job_status = ClientThreading.JobStatus()
+                    
+                    i = 0
+                    
+                    try:
                         
-                        did_work = True
+                        hashes = set( hashes_to_job_types.keys() )
                         
-                        job_status = ClientThreading.JobStatus()
+                        media_results = self._controller.Read( 'media_results', hashes )
                         
-                        i = 0
+                        hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
                         
-                        try:
+                        media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                        
+                        for ( media_result, job_types ) in media_results_to_job_types.items():
                             
-                            hashes = set( hashes_to_job_types.keys() )
+                            wait_on_maintenance()
                             
-                            media_results = self._controller.Read( 'media_results', hashes )
-                            
-                            hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
-                            
-                            media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
-                            
-                            for ( media_result, job_types ) in media_results_to_job_types.items():
+                            if should_reset():
                                 
-                                wait_on_maintenance()
-                                
-                                if should_reset():
-                                    
-                                    break
-                                    
-                                
-                                with self._lock:
-                                    
-                                    self._RunJob( { media_result : job_types }, job_status )
-                                    
+                                break
                                 
                             
-                            time.sleep( 0.0001 )
-                            
-                            i += 1
-                            
-                            if i % 100 == 0:
+                            with self._lock:
                                 
-                                self._controller.pub( 'notify_files_maintenance_done' )
+                                self._RunJob( { media_result : job_types }, job_status )
                                 
                             
-                            self._CheckShutdown()
-                            
-                        finally:
+                        
+                        time.sleep( 0.0001 )
+                        
+                        i += 1
+                        
+                        if i % 100 == 0:
                             
                             self._controller.pub( 'notify_files_maintenance_done' )
                             
                         
+                        self._CheckShutdown()
+                        
+                    finally:
+                        
+                        self._controller.pub( 'notify_files_maintenance_done' )
+                        
                     
                 
-                if not did_work:
-                    
-                    self._wake_event.wait( 600 )
-                    
-                    self._wake_event.clear()
-                    
+            
+            if not did_work:
                 
-                # a small delay here is helpful for the forcemaintenance guy to have a chance to step in on reset
-                time.sleep( 1 )
+                self._wake_event.wait( 600 )
+                
+                self._wake_event.clear()
                 
             
-        except HydrusExceptions.ShutdownException:
-            
-            pass
-            
-        finally:
-            
-            self._mainloop_is_finished = True
+            # a small delay here is helpful for the forcemaintenance guy to have a chance to step in on reset
+            time.sleep( 1 )
             
         
     

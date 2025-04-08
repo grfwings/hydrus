@@ -10,6 +10,7 @@ from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
@@ -299,8 +300,6 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         QP.AddToLayout( vbox, file_services_box, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, button_hbox, CC.FLAGS_ON_RIGHT )
         
-        vbox.addStretch( 1 )
-        
         self.widget().setLayout( vbox )
         
         self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ 'global', 'media' ] )
@@ -450,9 +449,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                         
                         self._domain_modified_list_ctrl_data_dict[ domain ] = ( hashes, new_datetime_value_range, user_has_edited )
                         
-                        self._domain_modified_list_ctrl.AddDatas( ( domain, ) )
-                        
-                        self._domain_modified_list_ctrl.Sort()
+                        self._domain_modified_list_ctrl.AddData( domain, select_sort_and_scroll = True )
                         
                     
                 
@@ -460,6 +457,8 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
     
     def _EditDomainModifiedTimestamp( self ):
+        
+        # We intentionally allow multiple domains here, rather than GetTopSelectedData stuff
         
         selected_domains = self._domain_modified_list_ctrl.GetData( only_selected = True )
         
@@ -536,6 +535,8 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
     
     def _EditFileServiceTimestamp( self ):
+        
+        # We intentionally allow multiple domains here, rather than GetTopSelectedData stuff
         
         selected_file_service_keys_and_timestamp_types = self._file_services_list_ctrl.GetData( only_selected = True )
         
@@ -912,7 +913,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                 
                 self._file_modified_time_warning_st.setVisible( True )
                 
-                if HydrusPaths.FileModifiedTimeIsOk( timestamp_data.timestamp_ms / 1000 ):
+                if HydrusPaths.FileModifiedTimeIsOk( HydrusTime.SecondiseMSFloat( timestamp_data.timestamp_ms ) ):
                     
                     self._file_modified_time_warning_st.setText( 'This will also change the modified time of the file on disk!' )
                     
@@ -934,7 +935,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
             
             if timestamp_data.timestamp_type == HC.TIMESTAMP_TYPE_MODIFIED_FILE and timestamp_data.timestamp_ms is not None:
                 
-                if HydrusPaths.FileModifiedTimeIsOk( timestamp_data.timestamp_ms / 1000 ):
+                if HydrusPaths.FileModifiedTimeIsOk( HydrusTime.SecondiseMSFloat( timestamp_data.timestamp_ms ) ):
                     
                     return ( hashes, timestamp_data.timestamp_ms, step_ms )
                     

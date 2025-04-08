@@ -42,7 +42,7 @@ def ConvertTagToSortable( tag ):
     
     convert = lambda text: ( '', int( text ) ) if text.isdecimal() else ( text, 0 )
     
-    return tuple( [ convert( c ) for c in re.split( '([0-9]+)', tag.lower() ) ] )
+    return tuple( [ convert( c ) for c in re.split( '([0-9]+)', tag.casefold() ) ] )
     
     # old method
     
@@ -206,7 +206,7 @@ def CleanTags( tags ):
     return clean_tags
     
 
-def CombineTag( namespace, subtag ):
+def CombineTag( namespace, subtag ) -> str:
     
     if namespace == '':
         

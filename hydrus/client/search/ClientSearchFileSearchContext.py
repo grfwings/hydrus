@@ -10,6 +10,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientTime
+from hydrus.client.media import ClientMediaResult
 from hydrus.client.search import ClientNumberTest
 from hydrus.client.search import ClientSearchPredicate
 from hydrus.client.search import ClientSearchTagContext
@@ -19,7 +20,9 @@ SEARCH_TYPE_OR = 1
 
 class FileSystemPredicates( object ):
     
-    def __init__( self, system_predicates: typing.Collection[ ClientSearchPredicate.Predicate ] ):
+    def __init__( self, predicates: typing.Collection[ ClientSearchPredicate.Predicate ] ):
+        
+        system_predicates = [ predicate for predicate in predicates if predicate.GetType() in ClientSearchPredicate.SYSTEM_PREDICATE_TYPES ]
         
         self._has_system_everything = False
         
@@ -30,6 +33,8 @@ class FileSystemPredicates( object ):
         
         self._common_info = {}
         self._system_pred_types_to_timestamp_ranges_ms = collections.defaultdict( dict )
+        
+        self._allowed_filetypes = None
         
         self._limit = None
         self._similar_to_files = None
@@ -42,6 +47,8 @@ class FileSystemPredicates( object ):
         
         self._num_tags_predicates = []
         self._num_urls_predicates = []
+        
+        self._advanced_tag_predicates = []
         
         self._duplicate_count_predicates = []
         
@@ -144,7 +151,12 @@ class FileSystemPredicates( object ):
                 
                 ( hashes, hash_type ) = value
                 
-                self._common_info[ 'hash' ] = ( hashes, hash_type, predicate.IsInclusive() )
+                if 'hashes' not in self._common_info:
+                    
+                    self._common_info[ 'hashes' ] = []
+                    
+                
+                self._common_info[ 'hashes' ].append( ( hashes, hash_type, predicate.IsInclusive() ) )
                 
             
             if predicate_type in ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
@@ -237,7 +249,20 @@ class FileSystemPredicates( object ):
                     summary_mimes = ( summary_mimes, )
                     
                 
-                self._common_info[ 'mimes' ] = ClientSearchPredicate.ConvertSummaryFiletypesToSpecific( summary_mimes )
+                specific_mimes = ClientSearchPredicate.ConvertSummaryFiletypesToSpecific( summary_mimes )
+                
+                # this is a bit unusual, but at the DB end things are easier if we keep things inclusive so this is KISS
+                if not predicate.IsInclusive():
+                    
+                    specific_mimes = set( HC.SEARCHABLE_MIMES ).difference( specific_mimes )
+                    
+                
+                if self._allowed_filetypes is None:
+                    
+                    self._allowed_filetypes = set( HC.SEARCHABLE_MIMES )
+                    
+                
+                self._allowed_filetypes.intersection_update( specific_mimes )
                 
             
             if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_TAGS:
@@ -291,6 +316,11 @@ class FileSystemPredicates( object ):
                     self._common_info[ 'min_size' ] = int( size * 0.85 )
                     self._common_info[ 'max_size' ] = int( size * 1.15 )
                     
+                
+            
+            if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+                
+                self._advanced_tag_predicates.append( predicate )
                 
             
             if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER:
@@ -404,9 +434,27 @@ class FileSystemPredicates( object ):
                 
                 ( view_type, viewing_locations, operator, viewing_value ) = value
                 
-                self._file_viewing_stats_predicates.append( ( view_type, viewing_locations, operator, viewing_value ) )
+                stupid_lookup_dict = {
+                    'media' : CC.CANVAS_MEDIA_VIEWER,
+                    'preview' : CC.CANVAS_PREVIEW,
+                    'client api' : CC.CANVAS_CLIENT_API
+                }
+                
+                desired_canvas_types = [ stupid_lookup_dict[ viewing_location ] for viewing_location in viewing_locations ]
+                
+                self._file_viewing_stats_predicates.append( ( view_type, desired_canvas_types, operator, viewing_value ) )
                 
             
+        
+    
+    def GetAdvancedTagPredicates( self ):
+        
+        return self._advanced_tag_predicates
+        
+    
+    def GetAllowedFiletypes( self ):
+        
+        return self._allowed_filetypes
         
     
     def GetDuplicateRelationshipCountPredicates( self ):
@@ -480,6 +528,11 @@ class FileSystemPredicates( object ):
     def GetTimestampRangesMS( self ):
         
         return self._system_pred_types_to_timestamp_ranges_ms
+        
+    
+    def HasAllowedFiletypes( self ):
+        
+        return self._allowed_filetypes is not None
         
     
     def HasSimilarToData( self ):
@@ -691,6 +744,11 @@ class FileSearchContext( HydrusSerialisable.SerialisableBase ):
     
     def GetSummary( self ):
         
+        if len( self._predicates ) == 0:
+            
+            return 'allows all files'
+            
+        
         pred_strings = sorted( [ pred.ToString() for pred in self._predicates ] )
         
         if len( pred_strings ) > 3:
@@ -760,10 +818,22 @@ class FileSearchContext( HydrusSerialisable.SerialisableBase ):
         self._InitialiseTemporaryVariables()
         
     
+    def SetTagContext( self, tag_context: ClientSearchTagContext.TagContext ):
+        
+        self._tag_context = tag_context
+        
+    
     def SetTagServiceKey( self, tag_service_key ):
         
         self._tag_context.service_key = tag_service_key
         self._tag_context.display_service_key = tag_service_key
+        
+    
+    def TestMediaResult( self, media_result: ClientMediaResult.MediaResult ):
+        
+        # note that TestMediaResult may well get a file and tag context, in which case I guess the predicate will get those here
+        
+        return False not in ( predicate.TestMediaResult( media_result ) for predicate in self._predicates )
         
     
 

@@ -10,7 +10,7 @@ from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.pages import ClientGUIManagementController
+from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchTagContext
 
@@ -173,8 +173,6 @@ class DialogPageChooser( ClientGUIDialogs.Dialog ):
                     
                     page_name = 'files'
                     
-                    search_enabled = True
-                    
                     new_options = self._controller.new_options
                     
                     tag_service_key = new_options.GetKey( 'default_tag_service_search_page' )
@@ -190,11 +188,11 @@ class DialogPageChooser( ClientGUIDialogs.Dialog ):
                     
                     file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context )
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerQuery( page_name, file_search_context, search_enabled ) )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerQuery( page_name, file_search_context ) )
                     
                 elif entry_type == 'page_duplicate_filter':
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerDuplicateFilter() )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerDuplicateFilter() )
                     
                 elif entry_type == 'pages_notebook':
                     
@@ -202,25 +200,25 @@ class DialogPageChooser( ClientGUIDialogs.Dialog ):
                     
                 elif entry_type == 'page_import_gallery':
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerImportGallery() )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerImportGallery() )
                     
                 elif entry_type == 'page_import_simple_downloader':
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerImportSimpleDownloader() )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerImportSimpleDownloader() )
                     
                 elif entry_type == 'page_import_watcher':
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerImportMultipleWatcher() )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerImportMultipleWatcher() )
                     
                 elif entry_type == 'page_import_urls':
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerImportURLs() )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerImportURLs() )
                     
                 elif entry_type == 'page_petitions':
                     
                     petition_service_key = obj
                     
-                    self._result = ( 'page', ClientGUIManagementController.CreateManagementControllerPetitions( petition_service_key ) )
+                    self._result = ( 'page', ClientGUIPageManager.CreatePageManagerPetitions( petition_service_key ) )
                     
                 
                 self._action_picked = True

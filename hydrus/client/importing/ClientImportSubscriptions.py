@@ -239,8 +239,10 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
     def _ShowHitPeriodicFileLimitMessage( self, query_name: int, query_text: int, file_limit: int ):
         
         message = 'The query "{}" for subscription "{}" found {} new URLs without running into any it had seen before.'.format( query_name, self._name, file_limit )
-        message += '\n'
-        message += 'Either a user uploaded a lot of files to that query in a short period, in which case there is a gap in your subscription you may wish to fill, or the site has just changed its URL format, in which case you may see several of these messages for this site over the coming weeks, and you should ignore them.'
+        message += '\n\n'
+        message += 'It is likely that a user probably uploaded a lot of files to that query in a short period, in which case there is now a gap in your subscription that you may wish to fill.'
+        message += '\n\n'
+        message += 'If you get many of these messages, one for every subscription query for the site, and the gap downloaders find no new files, then the site has changed URL format in a subtle way and the subscription checker was unable to recognise it (in which case, if the subscription appears to be working, you can ignore any more of these messages).'
         
         call = HydrusData.Call( CG.client_controller.pub, 'make_new_subscription_gap_downloader', self._gug_key_and_name, query_text, self._file_import_options.Duplicate(), self._tag_import_options.Duplicate(), self._note_import_options, file_limit * 5 )
         
@@ -465,12 +467,34 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                 
                 def file_seeds_callable( gallery_page_of_file_seeds ):
                     
-                    num_urls_added = 0
-                    num_urls_already_in_file_seed_cache = 0
+                    num_file_seeds_in_this_page = len( gallery_page_of_file_seeds )
+                    
+                    # ok let's pause for a second to handle an unusual situation
+                    
+                    interesting_numbers = [ num_file_seeds_in_this_page ]
+                    
+                    if self._periodic_file_limit is not None:
+                        
+                        # if we are expecting to get many many files in a single sync, let's remember that!
+                        interesting_numbers.append( self._periodic_file_limit )
+                        
+                    
+                    largest_interesting_number = max( interesting_numbers )
+                    
+                    if largest_interesting_number > query_header.GetFileSeedCacheCompactionNumber():
+                        
+                        # if we are expecting to process a lot, we want to remember it for next time
+                        
+                        query_header.SetFileSeedCacheCompactionNumber( largest_interesting_number * 2 )
+                        
+                    
+                    # ok, to work
+                    
+                    num_urls_added_in_this_call = 0
+                    num_urls_already_in_file_seed_cache_in_this_call = 0
                     can_search_for_more_files = True
                     stop_reason = 'unknown stop reason'
-                    current_contiguous_num_urls_already_in_file_seed_cache = 0
-                    num_file_seeds_in_this_page = len( gallery_page_of_file_seeds )
+                    current_contiguous_num_urls_already_in_file_seed_cache_in_this_call = 0
                     
                     for file_seed in gallery_page_of_file_seeds:
                         
@@ -489,10 +513,10 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                         
                         if file_seed_cache.HasFileSeed( file_seed ):
                             
-                            num_urls_already_in_file_seed_cache += 1
-                            current_contiguous_num_urls_already_in_file_seed_cache += 1
+                            num_urls_already_in_file_seed_cache_in_this_call += 1
+                            current_contiguous_num_urls_already_in_file_seed_cache_in_this_call += 1
                             
-                            if current_contiguous_num_urls_already_in_file_seed_cache >= 100:
+                            if current_contiguous_num_urls_already_in_file_seed_cache_in_this_call >= 100:
                                 
                                 can_search_for_more_files = False
                                 stop_reason = 'saw 100 previously seen urls in a row, so assuming this is a large gallery'
@@ -502,8 +526,8 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             
                         else:
                             
-                            num_urls_added += 1
-                            current_contiguous_num_urls_already_in_file_seed_cache = 0
+                            num_urls_added_in_this_call += 1
+                            current_contiguous_num_urls_already_in_file_seed_cache_in_this_call = 0
                             
                             file_seeds_to_add_in_this_sync.add( file_seed )
                             file_seeds_to_add_in_this_sync_ordered.append( file_seed )
@@ -511,7 +535,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                         
                         if file_limit_for_this_sync is not None:
                             
-                            if total_new_urls_for_this_sync + num_urls_added >= file_limit_for_this_sync:
+                            if total_new_urls_for_this_sync + num_urls_added_in_this_call >= file_limit_for_this_sync:
                                 
                                 # we have found enough new files this sync, so should stop adding files and new gallery pages
                                 
@@ -521,7 +545,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                                     
                                 else:
                                     
-                                    if total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache > 0:
+                                    if total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache_in_this_call > 0:
                                         
                                         # this sync produced some knowns, so it is likely we have stepped through a mix of old and tagged-late new files
                                         # this is no reason to go crying to the user
@@ -538,9 +562,43 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                                             
                                         else:
                                             
-                                            self._ShowHitPeriodicFileLimitMessage( query_name, query_text, file_limit_for_this_sync )
+                                            do_periodic_message = True
                                             
-                                            stop_reason = 'hit periodic file limit without seeing any already-seen files!'
+                                            try:
+                                                
+                                                result = file_seed_cache.GetFirstFileSeed()
+                                                
+                                                if result is not None:
+                                                    
+                                                    # we check multiple url classes to better handle an NGUG that's hitting multiple sites
+                                                    old_url_class = CG.client_controller.network_engine.domain_manager.GetURLClass( result.file_seed_data )
+                                                    new_url_classes = { CG.client_controller.network_engine.domain_manager.GetURLClass( file_seed.file_seed_data ) for file_seed in file_seeds_to_add_in_this_sync_ordered }
+                                                    
+                                                    # ok looks like the downloader switched url format. this is a small issue but not a problem the user needs to be informed of
+                                                    if old_url_class not in new_url_classes:
+                                                        
+                                                        do_periodic_message = False
+                                                        
+                                                    
+                                                
+                                            except Exception as e:
+                                                
+                                                HydrusData.Print( 'While trying to compare subscription seed url classes, encountered this error:' )
+                                                HydrusData.PrintException( e, do_wait = False )
+                                                
+                                            
+                                            if do_periodic_message:
+                                                
+                                                self._ShowHitPeriodicFileLimitMessage( query_name, query_text, file_limit_for_this_sync )
+                                                
+                                                stop_reason = 'hit periodic file limit without seeing any already-seen files!'
+                                                
+                                            else:
+                                                
+                                                HydrusData.Print( f'The query "{query_name}" for subscription "{self._name}" found {file_limit_for_this_sync} new URLs without running into any it had seen before. I do not think this needs a gap downloader because the url class appears to have changed.' )
+                                                
+                                                stop_reason = 'hit periodic file limit after url class appeared to change. sub may spend some extra time catching up'
+                                                
                                             
                                         
                                     
@@ -551,34 +609,32 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                                 
                             
                         
-                        if not this_is_initial_sync:
+                        if not this_is_initial_sync and num_urls_already_in_file_seed_cache_in_this_call > 0:
                             
-                            # ok, there are a couple of situations where we don't want to go steamroll past a certain point:
+                            # ok a couple odd situations to handle but with the same fundamental cause: we have a cache smaller than one gallery page
+                            # we cannot rely on WE_HIT_OLD_GROUND_THRESHOLD in this case, since the end of the gallery page is incomparable to our cache
+                            
+                            # EXAMPLE 1: small initial file limit, which we don't want to overrun
                             
                             # if the user set 5 initial file limit but 100 periodic limit, then on the first few syncs, we'll want to notice that situation and not steamroll through that first five (or ~seven on third sync)
                             # if 'X' is new and get, 'A' is already in, and '-' is new and don't get, the page should be:
                             # XXXAAAAA----------------------------------
                             
-                            # the pixiv situation, where a single gallery page may have hundreds of results (and/or multi-file results that will pad out the file cache with more items)
-                            # super large gallery pages interfere with the compaction system, adding results that were removed again and making WE_HIT_OLD_GROUND_THRESHOLD test not work correct
-                            # similar to above:
+                            # EXAMPLE 2: the pixiv situation, where a single gallery page may have hundreds of results (and/or multi-file results that will pad out the file cache with more items)
+                            
                             # XXXXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                             # AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                             # AAAAAAAAAAAAAAAAAAAA-----------------------------------
                             # -------------------------------------------------------
                             # ----------------------
                             
-                            # I had specific logic targeting both these cases, but in making those, I make the num_master_file_seeds_at_start, which is actually the better thing to test
-                            # If the sub has seen basically everything it started with, we are by definition caught up and should stop immediately!
+                            num_already_in_urls_we_have_seen_so_far = total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache_in_this_call
+                            most_of_our_stuff = num_master_file_seeds_at_start * 0.95
                             
-                            excuse_the_odd_deleted_file_coefficient = 0.95
-                            
-                            # we found all the 'A's
-                            we_have_seen_everything_we_already_got = total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache >= num_master_file_seeds_at_start * excuse_the_odd_deleted_file_coefficient
-                            
-                            if we_have_seen_everything_we_already_got:
+                            # If the sub has seen basically everything it started with, we are by definition caught up and should stop immediately!s
+                            if num_already_in_urls_we_have_seen_so_far >= most_of_our_stuff:
                                 
-                                stop_reason = 'saw everything I had previously (probably large gallery page or small recent initial sync), so assuming I caught up'
+                                stop_reason = f'saw {HydrusNumbers.ToHumanInt(num_already_in_urls_we_have_seen_so_far)} already-seen files, which is so much of what I already knew about that I am assuming I caught up'
                                 
                                 can_search_for_more_files = False
                                 
@@ -591,29 +647,29 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     
                     if can_search_for_more_files:
                         
-                        if current_contiguous_num_urls_already_in_file_seed_cache >= WE_HIT_OLD_GROUND_THRESHOLD:
+                        if current_contiguous_num_urls_already_in_file_seed_cache_in_this_call >= WE_HIT_OLD_GROUND_THRESHOLD:
                             
                             # this gallery page has caught up to before, so it should not spawn any more gallery pages
                             
                             can_search_for_more_files = False
-                            stop_reason = 'saw {} contiguous previously seen urls at end of page, so assuming we caught up'.format( HydrusNumbers.ToHumanInt( current_contiguous_num_urls_already_in_file_seed_cache ) )
+                            stop_reason = 'saw {} contiguous previously seen urls at end of page, so assuming we caught up'.format( HydrusNumbers.ToHumanInt( current_contiguous_num_urls_already_in_file_seed_cache_in_this_call ) )
                             
                         
-                        if num_urls_added == 0:
+                        if num_urls_added_in_this_call == 0:
                             
                             can_search_for_more_files = False
                             stop_reason = 'no new urls found'
                             
                         
                     
-                    return ( num_urls_added, num_urls_already_in_file_seed_cache, can_search_for_more_files, stop_reason )
+                    return ( num_urls_added_in_this_call, num_urls_already_in_file_seed_cache_in_this_call, can_search_for_more_files, stop_reason )
                     
                 
                 job_status.SetStatusText( status_prefix + ': found ' + HydrusNumbers.ToHumanInt( total_new_urls_for_this_sync ) + ' new urls, checking next page' )
                 
                 try:
                     
-                    ( num_urls_added, num_urls_already_in_file_seed_cache, num_urls_total, result_404, added_new_gallery_pages, stop_reason ) = gallery_seed.WorkOnURL( 'subscription', gallery_seed_log, file_seeds_callable, status_hook, title_hook, query_header.GenerateNetworkJobFactory( self._name ), ClientImporting.GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ), self._file_import_options, gallery_urls_seen_before = gallery_urls_seen_this_sync )
+                    ( num_urls_added_in_this_call, num_urls_already_in_file_seed_cache_in_this_call, num_urls_total, result_404, added_new_gallery_pages, stop_reason ) = gallery_seed.WorkOnURL( 'subscription', gallery_seed_log, file_seeds_callable, status_hook, title_hook, query_header.GenerateNetworkJobFactory( self._name ), ClientImporting.GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ), self._file_import_options, gallery_urls_seen_before = gallery_urls_seen_this_sync )
                     
                 except HydrusExceptions.CancelledException as e:
                     
@@ -630,21 +686,10 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     raise
                     
                 
-                total_new_urls_for_this_sync += num_urls_added
-                total_already_in_urls_for_this_sync += num_urls_already_in_file_seed_cache
+                total_new_urls_for_this_sync += num_urls_added_in_this_call
+                total_already_in_urls_for_this_sync += num_urls_already_in_file_seed_cache_in_this_call
                 
                 if file_limit_for_this_sync is not None and total_new_urls_for_this_sync >= file_limit_for_this_sync:
-                    
-                    # we have found enough new files this sync, so stop and cancel any outstanding gallery urls
-                    
-                    if this_is_initial_sync:
-                        
-                        stop_reason = 'hit initial file limit'
-                        
-                    else:
-                        
-                        stop_reason = 'hit periodic file limit'
-                        
                     
                     break
                     
@@ -1792,7 +1837,7 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
     
     def __init__( self, controller, subscriptions: typing.List[ Subscription ] ):
         
-        super().__init__( controller )
+        super().__init__( controller, 10 )
         
         self._names_to_subscriptions = { subscription.GetName() : subscription for subscription in subscriptions }
         self._names_to_running_subscription_info = {}
@@ -1960,11 +2005,9 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
             
         
     
-    def MainLoop( self ):
+    def _DoMainLoop( self ):
         
         try:
-            
-            self._wake_event.wait( 3 )
             
             while True:
                 
@@ -1995,10 +2038,6 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
                 self._wake_event.clear()
                 
             
-        except HydrusExceptions.ShutdownException:
-            
-            pass
-            
         finally:
             
             self.PauseSubscriptionsForEditing()
@@ -2025,8 +2064,6 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
                     time.sleep( 0.1 )
                     
                 
-            
-            self._mainloop_is_finished = True
             
         
     

@@ -1,5 +1,6 @@
 import os
 import threading
+import typing
 
 from qtpy import QtGui as QG
 
@@ -245,6 +246,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'focus_preview_on_ctrl_click_only_static' : False,
             'focus_preview_on_shift_click' : False,
             'focus_preview_on_shift_click_only_static' : False,
+            'focus_media_tab_on_viewer_close_if_possible' : False,
             'fade_sibling_connector' : True,
             'use_custom_sibling_connector_colour' : False,
             'hide_uninteresting_modified_time' : True,
@@ -253,6 +255,12 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'draw_top_right_hover_in_media_viewer_background' : True,
             'draw_notes_hover_in_media_viewer_background' : True,
             'draw_bottom_right_index_in_media_viewer_background' : True,
+            'disable_tags_hover_in_media_viewer': False,
+            'disable_top_right_hover_in_media_viewer': False,
+            'media_viewer_window_always_on_top': False,
+            'media_viewer_lock_current_zoom_type': False,
+            'media_viewer_lock_current_zoom': False,
+            'media_viewer_lock_current_pan': False,
             'allow_blurhash_fallback' : True,
             'fade_thumbnails' : True,
             'slideshow_always_play_duration_media_once_through' : False,
@@ -270,13 +278,22 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'use_nice_resolution_strings' : True,
             'use_listbook_for_tag_service_panels' : False,
             'open_files_to_duplicate_filter_uses_all_my_files' : True,
-            'show_extended_single_file_info_in_status_bar' : False,
+            'show_extended_single_file_info_in_status_bar' : True,
             'hide_duplicates_needs_work_message_when_reasonably_caught_up' : True,
             'file_info_line_consider_archived_interesting' : True,
             'file_info_line_consider_archived_time_interesting' : True,
             'file_info_line_consider_file_services_interesting' : False,
             'file_info_line_consider_file_services_import_times_interesting' : False,
-            'set_requests_ca_bundle_env' : False
+            'file_info_line_consider_trash_time_interesting' : False,
+            'file_info_line_consider_trash_reason_interesting' : False,
+            'set_requests_ca_bundle_env' : False,
+            'mpv_loop_playlist_instead_of_file' : False,
+            'draw_thumbnail_rating_background' : True,
+            'show_destination_page_when_dnd_url' : True,
+            'confirm_non_empty_downloader_page_close' : True,
+            'confirm_all_page_closes' : False,
+            'refresh_search_page_on_system_limited_sort_changed' : True,
+            'do_not_setgeometry_on_an_mpv' : False,
         }
         
         #
@@ -423,13 +440,13 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'duplicate_comparison_score_nicer_ratio' : 10,
             'duplicate_comparison_score_has_audio' : 20,
             'thumbnail_cache_size' : 1024 * 1024 * 32,
-            'image_cache_size' : 1024 * 1024 * 384,
+            'image_cache_size' : 1024 * 1024 * 1024,
             'image_tile_cache_size' : 1024 * 1024 * 256,
             'thumbnail_cache_timeout' : 86400,
             'image_cache_timeout' : 600,
             'image_tile_cache_timeout' : 300,
             'image_cache_storage_limit_percentage' : 25,
-            'image_cache_prefetch_limit_percentage' : 10,
+            'image_cache_prefetch_limit_percentage' : 15,
             'media_viewer_prefetch_delay_base_ms' : 100,
             'media_viewer_prefetch_num_previous' : 2,
             'media_viewer_prefetch_num_next' : 3,
@@ -443,7 +460,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'subscription_network_error_delay' : 12 * 3600,
             'subscription_other_error_delay' : 36 * 3600,
             'downloader_network_error_delay' : 90 * 60,
-            'file_viewing_stats_menu_display' : CC.FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_AND_PREVIEW_IN_SUBMENU,
+            'file_viewing_stats_menu_display' : CC.FILE_VIEWING_STATS_MENU_DISPLAY_SUMMED_AND_THEN_SUBMENU,
             'number_of_gui_session_backups' : 10,
             'animated_scanbar_height' : 20,
             'animated_scanbar_nub_width' : 10,
@@ -477,7 +494,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'gallery_page_status_update_time_minimum_ms' : 1000,
             'gallery_page_status_update_time_ratio_denominator' : 30,
             'watcher_page_status_update_time_minimum_ms' : 1000,
-            'watcher_page_status_update_time_ratio_denominator' : 30
+            'watcher_page_status_update_time_ratio_denominator' : 30,
+            'media_viewer_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE,
+            'preview_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE
         }
         
         #
@@ -498,10 +517,10 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'duplicate_background_switch_intensity_a' : 0,
             'duplicate_background_switch_intensity_b' : 3,
             'last_review_bandwidth_search_distance' : 7 * 86400,
-            'file_viewing_statistics_media_min_time' : 2,
-            'file_viewing_statistics_media_max_time' : 600,
-            'file_viewing_statistics_preview_min_time' : 5,
-            'file_viewing_statistics_preview_max_time' : 60,
+            'file_viewing_statistics_media_min_time_ms' : 2 * 1000,
+            'file_viewing_statistics_media_max_time_ms' : 600 * 1000,
+            'file_viewing_statistics_preview_min_time_ms' : 5 * 1000,
+            'file_viewing_statistics_preview_max_time_ms' : 60 * 1000,
             'subscription_file_error_cancel_threshold' : 5,
             'media_viewer_cursor_autohide_time_ms' : 700,
             'idle_mode_client_api_timeout' : None,
@@ -564,7 +583,12 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         self._dictionary[ 'string_list' ] = {
             'default_media_viewer_custom_shortcuts' : [],
             'favourite_tags' : [],
-            'advanced_file_deletion_reasons' : [ 'I do not like it.', 'It is bad quality.', 'It is not appropriate for this client.', 'Temporary delete--I want to bring it back later.' ]
+            'advanced_file_deletion_reasons' : [ 'I do not like it.', 'It is bad quality.', 'It is not appropriate for this client.', 'Temporary delete--I want to bring it back later.' ],
+            'user_namespace_group_by_sort' : [ 'creator', 'series', 'character', 'species', '', 'meta' ]
+        }
+        
+        self._dictionary[ 'integer_list' ] = {
+            'file_viewing_stats_interesting_canvas_types' : [ CC.CANVAS_MEDIA_VIEWER, CC.CANVAS_CLIENT_API ]
         }
         
         #
@@ -795,10 +819,10 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         self._dictionary[ 'default_tag_sorts' ] = HydrusSerialisable.SerialisableDictionary()
         
-        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
-        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
-        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
-        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
+        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
+        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
+        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
+        self._dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
         
         #
         
@@ -1017,9 +1041,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
                 loaded_dictionary[ 'default_tag_sorts' ] = HydrusSerialisable.SerialisableDictionary()
                 
                 loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE ] = loaded_dictionary[ 'default_tag_sort' ]
-                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
-                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
-                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCDefault()
+                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
+                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
+                loaded_dictionary[ 'default_tag_sorts' ][ CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS ] = ClientTagSorting.TagSort.STATICGetTextASCUserGroupedDefault()
                 
                 del loaded_dictionary[ 'default_tag_sort' ]
                 
@@ -1298,7 +1322,15 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             return self._dictionary[ 'integers' ][ name ]
             
         
-
+    
+    def GetIntegerList( self, name: str ) -> typing.List[ int ]:
+        
+        with self._lock:
+            
+            return self._dictionary[ 'integer_list' ][ name ]
+            
+        
+    
     def GetAllIntegers( self):
         
         with self._lock:
@@ -1541,7 +1573,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetStringList( self, name ):
+    def GetStringList( self, name: str ) -> typing.List[ str ]:
         
         with self._lock:
             
@@ -1857,6 +1889,14 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         with self._lock:
             
             self._dictionary[ 'integers' ][ name ] = value
+            
+        
+    
+    def SetIntegerList( self, name: str, value: typing.List[ int ] ):
+        
+        with self._lock:
+            
+            self._dictionary[ 'integer_list' ][ name ] = list( value )
             
         
     

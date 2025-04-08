@@ -12,7 +12,6 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
@@ -34,6 +33,7 @@ from hydrus.client.networking import ClientNetworkingBandwidth
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingLogin
 from hydrus.client.networking import ClientNetworkingSessions
+from hydrus.client.parsing import ClientParsing
 
 class EditLoginCredentialsPanel( ClientGUIScrolledPanels.EditPanel ):
     
@@ -80,15 +80,20 @@ class EditLoginCredentialsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             hbox = QP.HBoxLayout()
             
-            QP.AddToLayout( hbox, control, CC.FLAGS_EXPAND_BOTH_WAYS )
+            QP.AddToLayout( hbox, control, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
             QP.AddToLayout( hbox, control_st, CC.FLAGS_CENTER_PERPENDICULAR )
             
             rows.append( ( credential_definition.GetName() + ': ', hbox ) )
             
         
-        gridbox = ClientGUICommon.WrapInGrid( self, rows, add_stretch_at_end = False )
+        gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
-        self.widget().setLayout( gridbox )
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        vbox.addStretch( 0 )
+        
+        self.widget().setLayout( vbox )
         
         self._UpdateSts()
         
@@ -232,7 +237,12 @@ class EditLoginCredentialDefinitionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
-        self.widget().setLayout( gridbox )
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        vbox.addStretch( 0 )
+        
+        self.widget().setLayout( vbox )
         
     
     def GetValue( self ):
@@ -476,7 +486,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         domain_and_login_info = ( login_domain, login_script_key_and_name, credentials_tuple, login_access_type, login_access_text, active, validity, validity_error_text, no_work_until, no_work_until_reason )
         
-        self._domains_and_login_info.AddDatas( ( domain_and_login_info, ), select_sort_and_scroll = True )
+        self._domains_and_login_info.AddData( domain_and_login_info, select_sort_and_scroll = True )
         
     
     def _CanDoLogin( self ):
@@ -527,7 +537,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if data is None:
             
-            return
+            return False
             
         
         domain_and_login_info = data
@@ -1263,7 +1273,12 @@ class ReviewTestResultPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
-        self.widget().setLayout( gridbox )
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        vbox.addStretch( 0 )
+        
+        self.widget().setLayout( vbox )
         
     
     def _CopyData( self ):
@@ -1428,7 +1443,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 HydrusSerialisable.SetNonDupeName( new_credential_definition, self._GetExistingCredentialDefinitionNames() )
                 
-                self._credential_definitions.AddDatas( ( new_credential_definition, ), select_sort_and_scroll = True )
+                self._credential_definitions.AddData( new_credential_definition, select_sort_and_scroll = True )
                 
             
         
@@ -1492,7 +1507,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         example_domain_info = ( domain, access_type, access_text )
         
-        self._example_domains_info.AddDatas( ( example_domain_info, ), select_sort_and_scroll = True )
+        self._example_domains_info.AddData( example_domain_info, select_sort_and_scroll = True )
         
     
     def _AddLoginStep( self ):
@@ -1601,12 +1616,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 return
                 
             
-            self._test_listctrl.AddDatas( ( test_result, ) )
-            
-        
-        def receive_result( test_result ):
-            
-            QP.CallAfter( qt_add_result, test_result )
+            self._test_listctrl.AddData( test_result )
             
         
         def clean_up( final_result ):
@@ -1957,7 +1967,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         login_script.RegenerateLoginScriptKey()
         
-        self._login_scripts.AddDatas( ( login_script, ), select_sort_and_scroll = True )
+        self._login_scripts.AddData( login_script, select_sort_and_scroll = True )
         
     
     def _ConvertLoginScriptToListCtrlTuples( self, login_script ):
@@ -2073,13 +2083,11 @@ class EditLoginStepPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        content_parsers_panel = ClientGUICommon.StaticBox( self, 'content parsers' )
-        
         test_data_callable = lambda: ClientParsing.ParsingTestData( {}, ( '', ) )
         
         permitted_content_types = [ HC.CONTENT_TYPE_VARIABLE, HC.CONTENT_TYPE_VETO ]
         
-        self._content_parsers = ClientGUIParsing.EditContentParsersPanel( content_parsers_panel, test_data_callable, permitted_content_types )
+        self._content_parsers = ClientGUIParsing.EditContentParsersPanel( self, test_data_callable, permitted_content_types )
         
         # a test panel a la pageparsers
         
@@ -2099,7 +2107,6 @@ class EditLoginStepPanel( ClientGUIScrolledPanels.EditPanel ):
         static_args_panel.Add( self._static_args, CC.FLAGS_EXPAND_BOTH_WAYS )
         temp_args_panel.Add( self._temp_args, CC.FLAGS_EXPAND_BOTH_WAYS )
         required_cookies_info_box_panel.Add( self._required_cookies_info, CC.FLAGS_EXPAND_BOTH_WAYS )
-        content_parsers_panel.Add( self._content_parsers, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         #
         
@@ -2120,7 +2127,7 @@ class EditLoginStepPanel( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( vbox, static_args_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, temp_args_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, required_cookies_info_box_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( vbox, content_parsers_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._content_parsers, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( vbox )
         

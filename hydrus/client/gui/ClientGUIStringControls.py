@@ -10,7 +10,6 @@ from hydrus.core import HydrusText
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -23,6 +22,7 @@ from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.parsing import ClientParsing
 
 class StringConverterButton( ClientGUICommon.BetterButton ):
     
@@ -379,7 +379,7 @@ class StringMatchToStringMatchDictControl( QW.QWidget ):
                 
                 data = ( key_string_match, value_string_match )
                 
-                self._listctrl.AddDatas( ( data, ), select_sort_and_scroll = True )
+                self._listctrl.AddData( data, select_sort_and_scroll = True )
                 
             
         
@@ -560,7 +560,7 @@ class StringToStringDictControl( QW.QWidget ):
                         
                         data = ( key, value )
                         
-                        self._listctrl.AddDatas( ( data, ), select_sort_and_scroll = True )
+                        self._listctrl.AddData( data, select_sort_and_scroll = True )
                         
                     
                 
@@ -728,7 +728,7 @@ class StringToStringMatchDictControl( QW.QWidget ):
                         
                         data = ( key, string_match )
                         
-                        self._listctrl.AddDatas( ( data, ), select_sort_and_scroll = True )
+                        self._listctrl.AddData( data, select_sort_and_scroll = True )
                         
                     
                 

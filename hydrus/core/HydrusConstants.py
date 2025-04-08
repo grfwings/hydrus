@@ -105,8 +105,8 @@ options = {}
 # Misc
 
 NETWORK_VERSION = 20
-SOFTWARE_VERSION = 603
-CLIENT_API_VERSION = 76
+SOFTWARE_VERSION = 616
+CLIENT_API_VERSION = 79
 
 SERVER_THUMBNAIL_DIMENSIONS = ( 200, 200 )
 
@@ -194,12 +194,12 @@ CONTENT_TYPE_DEFINITIONS = 21
 CONTENT_TYPE_HTTP_HEADERS = 22
 
 content_type_string_lookup = {
-    CONTENT_TYPE_MAPPINGS : 'mappings',
+    CONTENT_TYPE_MAPPINGS : 'tag mappings',
     CONTENT_TYPE_TAG_SIBLINGS : 'tag siblings',
     CONTENT_TYPE_TAG_PARENTS : 'tag parents',
     CONTENT_TYPE_FILES : 'files',
     CONTENT_TYPE_RATINGS : 'ratings',
-    CONTENT_TYPE_MAPPING : 'mapping',
+    CONTENT_TYPE_MAPPING : 'tag mapping',
     CONTENT_TYPE_DIRECTORIES : 'directories',
     CONTENT_TYPE_URLS : 'urls',
     CONTENT_TYPE_VETO : 'veto',
@@ -266,11 +266,12 @@ content_update_string_lookup = {
 DEFINITIONS_TYPE_HASHES = 0
 DEFINITIONS_TYPE_TAGS = 1
 
+# TODO: I should probably split this into status and action, but keeping the same enum stuff; this is confusing
 DUPLICATE_POTENTIAL = 0
 DUPLICATE_FALSE_POSITIVE = 1
 DUPLICATE_SAME_QUALITY = 2
 DUPLICATE_ALTERNATE = 3
-DUPLICATE_BETTER = 4
+DUPLICATE_BETTER = 4 # TODO: as part of this, rename BETTER/WORSE to A IS BETTER and B IS BETTER
 DUPLICATE_SMALLER_BETTER = 5
 DUPLICATE_LARGER_BETTER = 6
 DUPLICATE_WORSE = 7
@@ -283,13 +284,21 @@ duplicate_type_string_lookup = {
     DUPLICATE_FALSE_POSITIVE : 'not related/false positive',
     DUPLICATE_SAME_QUALITY : 'same quality',
     DUPLICATE_ALTERNATE : 'alternates',
-    DUPLICATE_BETTER : 'this is better',
-    DUPLICATE_SMALLER_BETTER : 'smaller hash_id is better',
-    DUPLICATE_LARGER_BETTER : 'larger hash_id is better',
-    DUPLICATE_WORSE : 'this is worse',
+    DUPLICATE_BETTER : 'this is a better duplicate',
+    DUPLICATE_SMALLER_BETTER : 'smaller hash_id is a better duplicate',
+    DUPLICATE_LARGER_BETTER : 'larger hash_id is a better duplicate',
+    DUPLICATE_WORSE : 'this is a worse duplicate',
     DUPLICATE_MEMBER : 'duplicates',
     DUPLICATE_KING : 'the best quality duplicate',
     DUPLICATE_CONFIRMED_ALTERNATE : 'confirmed alternates'
+}
+
+duplicate_type_auto_resolution_action_description_lookup = {
+    DUPLICATE_FALSE_POSITIVE : 'set as not related/false positive',
+    DUPLICATE_SAME_QUALITY : 'set as same quality',
+    DUPLICATE_ALTERNATE : 'set as alternates',
+    DUPLICATE_BETTER : 'set as duplicates--A better',
+    DUPLICATE_WORSE : 'set as duplicates--B better'
 }
 
 ENCODING_RAW = 0
@@ -751,6 +760,7 @@ APPLICATION_XLS = 81
 APPLICATION_PPT = 82
 ANIMATION_WEBP = 83
 UNDETERMINED_WEBP = 84
+IMAGE_JXL = 85
 APPLICATION_OCTET_STREAM = 100
 APPLICATION_UNKNOWN = 101
 
@@ -783,6 +793,7 @@ SEARCHABLE_MIMES = {
     IMAGE_AVIF,
     IMAGE_AVIF_SEQUENCE,
     IMAGE_BMP,
+    IMAGE_JXL,
     ANIMATION_UGOIRA,
     APPLICATION_FLASH,
     VIDEO_AVI,
@@ -843,6 +854,7 @@ IMAGES = [
     IMAGE_GIF,
     IMAGE_WEBP,
     IMAGE_AVIF,
+    IMAGE_JXL,
     IMAGE_BMP,
     IMAGE_HEIC,
     IMAGE_HEIF,
@@ -979,6 +991,7 @@ MIMES_THAT_DEFINITELY_HAVE_AUDIO = tuple( [ APPLICATION_FLASH ] + list( AUDIO ) 
 MIMES_THAT_MAY_HAVE_AUDIO = tuple( list( MIMES_THAT_DEFINITELY_HAVE_AUDIO ) + list( VIDEO ) )
 
 MIMES_THAT_WE_CAN_CHECK_FOR_TRANSPARENCY = {
+    IMAGE_JXL,
     IMAGE_PNG,
     IMAGE_GIF,
     IMAGE_WEBP,
@@ -1014,11 +1027,11 @@ MIMES_WITH_THUMBNAILS = set( IMAGES ).union( ANIMATIONS ).union( VIDEO ).union( 
 # basically a flash or a clip or a svg or whatever can normally just have some janked out resolution, so when testing such for thumbnail gen etc.., we'll ignore applications
 MIMES_THAT_ALWAYS_HAVE_GOOD_RESOLUTION = set( IMAGES ).union( ANIMATIONS ).union( VIDEO )
 
-FILES_THAT_CAN_HAVE_ICC_PROFILE = { IMAGE_BMP, IMAGE_JPEG, IMAGE_PNG, IMAGE_GIF, IMAGE_TIFF, APPLICATION_PSD }.union( PIL_HEIF_MIMES )
+FILES_THAT_CAN_HAVE_ICC_PROFILE = { IMAGE_BMP, IMAGE_JPEG, IMAGE_JXL, IMAGE_PNG, IMAGE_GIF, IMAGE_TIFF, APPLICATION_PSD }.union( PIL_HEIF_MIMES )
 
-FILES_THAT_CAN_HAVE_EXIF = { IMAGE_JPEG, IMAGE_TIFF, IMAGE_PNG, IMAGE_WEBP, ANIMATION_APNG, ANIMATION_WEBP }.union( PIL_HEIF_MIMES )
+FILES_THAT_CAN_HAVE_EXIF = { IMAGE_JPEG, IMAGE_JXL, IMAGE_TIFF, IMAGE_PNG, IMAGE_WEBP, ANIMATION_APNG, ANIMATION_WEBP }.union( PIL_HEIF_MIMES )
 # images and animations that PIL can handle
-FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA = { IMAGE_JPEG, IMAGE_PNG, IMAGE_BMP, IMAGE_WEBP, IMAGE_TIFF, IMAGE_ICON, IMAGE_GIF, ANIMATION_GIF, ANIMATION_APNG, ANIMATION_WEBP }
+FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA = { IMAGE_JPEG, IMAGE_JXL, IMAGE_PNG, IMAGE_BMP, IMAGE_WEBP, IMAGE_TIFF, IMAGE_ICON, IMAGE_GIF, ANIMATION_GIF, ANIMATION_APNG, ANIMATION_WEBP }
 FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA.update( PIL_HEIF_MIMES )
 FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA.add( APPLICATION_PDF )
 
@@ -1048,6 +1061,7 @@ mime_enum_lookup = {
     'image/heic-sequence' : IMAGE_HEIC_SEQUENCE,
     'image/avif' : IMAGE_AVIF,
     'image/avif-sequence' : IMAGE_AVIF_SEQUENCE,
+    'image/jxl' : IMAGE_JXL,
     'image/vnd.microsoft.icon' : IMAGE_ICON,
     'image' : IMAGES,
     'application/x-shockwave-flash' : APPLICATION_FLASH,
@@ -1139,6 +1153,7 @@ mime_string_lookup = {
     IMAGE_HEIC_SEQUENCE : 'heic sequence',
     IMAGE_AVIF : 'avif',
     IMAGE_AVIF_SEQUENCE : 'avif sequence',
+    IMAGE_JXL : 'jxl',
     ANIMATION_UGOIRA : 'ugoira',
     APPLICATION_CBZ : 'cbz',
     APPLICATION_FLASH : 'flash',
@@ -1230,6 +1245,7 @@ mime_mimetype_string_lookup = {
     IMAGE_HEIC_SEQUENCE: 'image/heic-sequence',
     IMAGE_AVIF: 'image/avif',
     IMAGE_AVIF_SEQUENCE: 'image/avif-sequence',
+    IMAGE_JXL: 'image/jxl',
     ANIMATION_UGOIRA : 'application/zip',
     APPLICATION_FLASH : 'application/x-shockwave-flash',
     APPLICATION_OCTET_STREAM : 'application/octet-stream',
@@ -1320,6 +1336,7 @@ mime_ext_lookup = {
     IMAGE_HEIC_SEQUENCE: '.heics',
     IMAGE_AVIF: '.avif',
     IMAGE_AVIF_SEQUENCE: '.avifs',
+    IMAGE_JXL : '.jxl',
     ANIMATION_UGOIRA : '.zip',
     APPLICATION_CBZ : '.cbz',   
     APPLICATION_FLASH : '.swf',
@@ -1466,7 +1483,7 @@ DOCUMENTATION_DOWNLOADER_URL_CLASSES = 'downloader_url_classes.html'
 DOCUMENTATION_GETTING_STARTED_SUBSCRIPTIONS = 'getting_started_subscriptions.html'
 DOCUMENTATION_DATABASE_MIGRATION = 'database_migration.html'
 DOCUMENTATION_DUPLICATES = 'duplicates.html'
-DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION = 'duplicates_auto_resolution.html'
+DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION = 'advanced_duplicates_auto_resolution.html'
 DOCUMENTATION_DOWNLOADER_SHARING = 'downloader_sharing.html'
 DOCUMENTATION_DOWNLOADER_PARSERS_PAGE_PARSERS_PAGE_PARSERS = 'downloader_parsers_page_parsers.html#page_parsers'
 DOCUMENTATION_DOWNLOADER_PARSERS_CONTENT_PARSERS_CONTENT_PARSERS = 'downloader_parsers_content_parsers.html#content_parsers'
@@ -1475,6 +1492,7 @@ DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_CONTEXT_VARIABLE_FORMULA = 'downloader
 DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_HTML_FORMULA = 'downloader_parsers_formulae.html#html_formula'
 DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_JSON_FORMULA = 'downloader_parsers_formulae.html#json_formula'
 DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_NESTED_FORMULA = 'downloader_parsers_formulae.html#nested_formula'
+DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_STATIC = 'downloader_parsers_formulae.html#static_formula'
 DOCUMENTATION_SIDECARS = 'advanced_sidecars.html'
 DOCUMENTATION_ABOUT_DOCS = "about_docs.html"
 

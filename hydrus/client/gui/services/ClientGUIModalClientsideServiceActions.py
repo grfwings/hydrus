@@ -38,6 +38,8 @@ class ReviewPurgeTagsPanel( ClientGUIScrolledPanels.ReviewPanel ):
         self._autocomplete.SetLocationContext( ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_FILE_SERVICE_KEY ) )
         self._autocomplete.SetTagServiceKey( self._service_key )
         
+        self._autocomplete.externalCopyKeyPressEvent.connect( self._tags_to_remove.keyPressEvent )
+        
         self._default_petition_reason = 'Tags purged by janitor.'
         
         self._petition_reason = QW.QLineEdit( self )
@@ -68,7 +70,7 @@ class ReviewPurgeTagsPanel( ClientGUIScrolledPanels.ReviewPanel ):
         QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._tags_to_remove, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, self._autocomplete, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( vbox, self._go_button, CC.FLAGS_ON_RIGHT )
         
         self.widget().setLayout( vbox )

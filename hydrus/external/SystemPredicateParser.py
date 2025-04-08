@@ -145,9 +145,11 @@ class Predicate( Enum ):
     MEDIA_VIEWS = auto()
     PREVIEW_VIEWS = auto()
     ALL_VIEWS = auto()
+    NEW_VIEWS = auto()
     MEDIA_VIEWTIME = auto()
     PREVIEW_VIEWTIME = auto()
     ALL_VIEWTIME = auto()
+    NEW_VIEWTIME = auto()
     URL_REGEX = auto()
     NO_URL_REGEX = auto()
     URL = auto()
@@ -167,6 +169,8 @@ class Predicate( Enum ):
     RATING_SPECIFIC_INCDEC = auto()
     HAS_RATING = auto()
     NO_RATING = auto()
+    TAG_ADVANCED_INCLUSIVE = auto()
+    TAG_ADVANCED_EXCLUSIVE = auto()
 
 
 # This enum lists the possible value formats a predicate can have (if it has a value).
@@ -191,12 +195,14 @@ class Value( Enum ):
     RATING_SERVICE_NAME_AND_LIKE_DISLIKE = auto() # my favourites like
     RATING_SERVICE_NAME_AND_INCDEC = auto() # my favourites 3/5
     NAMESPACE_AND_NUM_TAGS = auto()
+    TAG_ADVANCED_TAG = auto() # ': "tag"'
 
 
 # Possible operator formats
 # Implemented in parse_operator
 class Operators( Enum ):
     RELATIONAL = auto()  # One of '=', '<', '>', UNICODE_APPROX_EQUAL ('≈') (takes '~=' too)
+    VIEWS_RELATIONAL = auto() # media, preview, client api, and a RELATIONAL
     RELATIONAL_EXACT = auto() # Like RELATIONAL but without the approximately equal operator
     RELATIONAL_TIME = auto()  # One of '=', '<', '>', UNICODE_APPROX_EQUAL ('≈') (takes '~=' too), and the various 'since', 'before', 'the day of', 'the month of' time-based analogues
     RELATIONAL_FOR_RATING_SERVICE = auto()  # RELATIONAL, but in the middle of a 'service_name = 4/5' kind of thing
@@ -207,6 +213,7 @@ class Operators( Enum ):
     ONLY_EQUAL = auto()  # None (meaning =, since thats the only accepted operator)
     RATIO_OPERATORS = auto()  # One of '=', 'wider than','taller than', UNICODE_APPROX_EQUAL ('≈') (takes '~=' too)
     RATIO_OPERATORS_SPECIAL = auto() # 'square', 'portrait', 'landscape'
+    TAG_ADVANCED_GUBBINS = auto() # service, ignoring siblings/parents, CDPP status
 
 
 # Possible unit formats
@@ -269,7 +276,7 @@ SYSTEM_PREDICATES = {
     'similar to(?! data)( files)?': (Predicate.SIMILAR_TO_FILES, None, Value.SHA256_HASHLIST_WITH_DISTANCE, None),
     'similar to data': (Predicate.SIMILAR_TO_DATA, None, Value.SIMILAR_TO_HASHLIST_WITH_DISTANCE, None),
     'limit': (Predicate.LIMIT, Operators.ONLY_EQUAL, Value.NATURAL, None),
-    'file ?type': (Predicate.FILETYPE, Operators.ONLY_EQUAL, Value.FILETYPE_LIST, None),
+    'file ?type': (Predicate.FILETYPE, Operators.EQUAL, Value.FILETYPE_LIST, None),
     'hash': (Predicate.HASH, Operators.EQUAL_NOT_CONSUMING, Value.HASHLIST_WITH_ALGORITHM, None),
     'archived? (date|time)|(date|time) archived|archived.': (Predicate.ARCHIVED_DATE, Operators.RELATIONAL_TIME, Value.DATE_OR_TIME_INTERVAL, None),
     'modified (date|time)|(date|time) modified|modified': (Predicate.MOD_DATE, Operators.RELATIONAL_TIME, Value.DATE_OR_TIME_INTERVAL, None),
@@ -282,13 +289,15 @@ SYSTEM_PREDICATES = {
     'num(ber)?( of)? file relationships': (Predicate.NUM_FILE_RELS, Operators.RELATIONAL, Value.NATURAL, Units.FILE_RELATIONSHIP_TYPE),
     r'ratio(?=.*\d)': (Predicate.RATIO, Operators.RATIO_OPERATORS, Value.RATIO, None),
     r'ratio(?!.*\d)': (Predicate.RATIO_SPECIAL, Operators.RATIO_OPERATORS_SPECIAL, Value.RATIO_SPECIAL, None),
-    'num pixels': (Predicate.NUM_PIXELS, Operators.RELATIONAL, Value.NATURAL, Units.PIXELS),
+    'num(ber)?( of)? pixels': (Predicate.NUM_PIXELS, Operators.RELATIONAL, Value.NATURAL, Units.PIXELS),
     'media views': (Predicate.MEDIA_VIEWS, Operators.RELATIONAL, Value.NATURAL, None),
     'preview views': (Predicate.PREVIEW_VIEWS, Operators.RELATIONAL, Value.NATURAL, None),
     'all views': (Predicate.ALL_VIEWS, Operators.RELATIONAL, Value.NATURAL, None),
+    '^views (in )?': (Predicate.NEW_VIEWS, Operators.VIEWS_RELATIONAL, Value.NATURAL, None ),
     'media viewtime': (Predicate.MEDIA_VIEWTIME, Operators.RELATIONAL, Value.TIME_INTERVAL, None),
     'preview viewtime': (Predicate.PREVIEW_VIEWTIME, Operators.RELATIONAL, Value.TIME_INTERVAL, None),
     'all viewtime': (Predicate.ALL_VIEWTIME, Operators.RELATIONAL, Value.TIME_INTERVAL, None),
+    '^viewtime (in )?': (Predicate.NEW_VIEWTIME, Operators.VIEWS_RELATIONAL, Value.TIME_INTERVAL, None ),
     'has (a )?url matching regex': (Predicate.URL_REGEX, None, Value.ANY_STRING, None),
     '(does not|doesn\'t) have (a )?url matching regex': (Predicate.NO_URL_REGEX, None, Value.ANY_STRING, None),
     'has url:? (?=http)': (Predicate.URL, None, Value.ANY_STRING, None),
@@ -308,6 +317,8 @@ SYSTEM_PREDICATES = {
     r'(rating|count)( for)?(?=.+?\d+/\d+$)': (Predicate.RATING_SPECIFIC_NUMERICAL, Operators.RELATIONAL_FOR_RATING_SERVICE, Value.RATING_SERVICE_NAME_AND_NUMERICAL_VALUE, None ),
     '(rating|count)( for)?(?=.+?(like|dislike)$)': (Predicate.RATING_SPECIFIC_LIKE_DISLIKE, None, Value.RATING_SERVICE_NAME_AND_LIKE_DISLIKE, None ),
     r'(rating|count)( for)?(?=.+?[^/]\d+$)': (Predicate.RATING_SPECIFIC_INCDEC, Operators.RELATIONAL_FOR_RATING_SERVICE, Value.RATING_SERVICE_NAME_AND_INCDEC, None ),
+    r'has tag': (Predicate.TAG_ADVANCED_INCLUSIVE, Operators.TAG_ADVANCED_GUBBINS, Value.TAG_ADVANCED_TAG, None ),
+    r'does not have tag': (Predicate.TAG_ADVANCED_EXCLUSIVE, Operators.TAG_ADVANCED_GUBBINS, Value.TAG_ADVANCED_TAG, None ),
 }
 
 def string_looks_like_date( string ):
@@ -742,6 +753,38 @@ def parse_value( string: str, spec ):
             return ( '', ( namespace, operator, num ) )
             
         
+    elif spec == Value.TAG_ADVANCED_TAG:
+        
+        # ' "tag"' with quotes ideally, but let's try to handle things if not
+        
+        regex_that_groups_a_thing_inside_quotes = r'^[^"]*"(?P<tag>.+)"[^"]*$'
+        
+        if re.match( regex_that_groups_a_thing_inside_quotes, string ) is not None:
+            
+            match = re.match( regex_that_groups_a_thing_inside_quotes, string )
+            
+            raw_tag = match.group( 'tag' )
+            
+        else:
+            
+            raw_tag = string
+            
+        
+        from hydrus.core import HydrusTags
+        
+        tag = HydrusTags.CleanTag( raw_tag )
+        
+        try:
+            
+            HydrusTags.CheckTagNotEmpty( tag )
+            
+        except:
+            
+            tag = 'invalid tag'
+            
+        
+        return ( '', tag )
+        
     
     raise ValueError( "Invalid value specification" )
     
@@ -759,7 +802,29 @@ def parse_operator( string: str, spec ):
         
     
     if spec is None:
+        
         return string, None
+        
+    elif spec == Operators.VIEWS_RELATIONAL:
+        
+        desired_canvas_types = []
+        
+        for possible_canvas_type in [ 'media', 'preview', 'client api' ]:
+            
+            if possible_canvas_type in string:
+                
+                desired_canvas_types.append( possible_canvas_type )
+                
+                string = string.replace( possible_canvas_type, '' )
+                
+            
+        
+        string = re.sub( '^[, ]+', '', string )
+        
+        ( string, relational_op ) = parse_operator( string, Operators.RELATIONAL )
+        
+        return ( string, ( desired_canvas_types, relational_op ) )
+        
     elif spec in ( Operators.RELATIONAL, Operators.RELATIONAL_EXACT, Operators.RELATIONAL_TIME ):
         
         exact = spec == Operators.RELATIONAL_EXACT
@@ -936,6 +1001,92 @@ def parse_operator( string: str, spec ):
         if 'square' in string: return 'square', '='
         if 'portrait' in string: return 'portrait', 'taller than'
         if 'landscape' in string: return 'landscape', 'wider than'
+        
+    elif spec == Operators.TAG_ADVANCED_GUBBINS:
+        
+        # a combination of these optional phrases:
+        # in "service",
+        # ignoring siblings/parents,
+        # with status in [CDPP list]
+        # all separated by commas
+        
+        # 'split by all the colons that are non-capturing followed by pairs of ", allowing for non-" before, inbetween, and after'
+        regex_that_matches_a_colon_not_in_quotes = r'\:(?=(?:[^"]*"[^"]*")*[^"]*$)'
+        regex_that_matches_a_comma_not_in_quotes = r',(?=(?:[^"]*"[^"]*")*[^"]*$)'
+        
+        if re.search( regex_that_matches_a_colon_not_in_quotes, string ) is None:
+            
+            if re.search( regex_that_matches_a_comma_not_in_quotes, string ) is None:
+                
+                # unusual situation of 'system:has tag "blah"', or just 'system:has tag: "blah"' that the above parser eats the colon of
+                
+                ( gubbins, tag ) = ( '', string )
+                
+            else:
+                
+                raise Exception( 'Did not see a tag in the predicate string!' )
+                
+            
+        else:
+            
+            result = re.split( regex_that_matches_a_colon_not_in_quotes, string, 1 )
+            
+            ( gubbins, tag ) = result
+            
+        
+        components = re.split( regex_that_matches_a_comma_not_in_quotes, gubbins )
+        
+        from hydrus.client.metadata import ClientTags
+        from hydrus.core import HydrusConstants as HC
+        
+        service_key = None
+        tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL
+        statuses = []
+        
+        for component in components:
+            
+            regex_that_groups_a_thing_inside_quotes = r'^[^"]*"(?P<name>.+)"[^"]*$'
+            
+            if re.match( regex_that_groups_a_thing_inside_quotes, component ) is not None: # this one first, in order to catch the service sensibly called "current pending ignoring siblings"
+                
+                from hydrus.client import ClientGlobals as CG
+                from hydrus.core import HydrusExceptions
+                
+                match = re.match( regex_that_groups_a_thing_inside_quotes, component )
+                
+                name = match.group( 'name' )
+                
+                try:
+                    
+                    service_key = CG.client_controller.services_manager.GetServiceKeyFromName( HC.ALL_TAG_SERVICES, name )
+                    
+                except HydrusExceptions.DataMissing:
+                    
+                    raise Exception( f'Sorry, did not find a service called "{name}"!' )
+                    
+                
+            elif 'siblings' in component or 'parents' in component:
+                
+                tag_display_type = ClientTags.TAG_DISPLAY_STORAGE
+                
+            else:
+                
+                for ( status, s ) in HC.content_status_string_lookup.items():
+                    
+                    if s in component:
+                        
+                        statuses.append( status )
+                        
+                    
+                
+            
+        
+        if len( statuses ) == 0:
+            
+            statuses = [ HC.CONTENT_STATUS_CURRENT, HC.CONTENT_STATUS_PENDING ]
+            
+        
+        return ( tag, ( service_key, tag_display_type, tuple( sorted( statuses ) ) ) )
         
     
     raise ValueError( "Invalid operator specification" )

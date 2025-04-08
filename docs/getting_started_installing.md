@@ -29,16 +29,29 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
 
 === "macOS"
 
-    *   Get the .dmg App. Open it, drag it to Applications, and check the readme inside.
-    *   macOS users have no mpv support for now, so no audio, and video may be laggy.
-    *   _This release has always been a little buggy. Many macOS users are having better success [running from source](running_from_source.md)._
+    *   Get the App .zip. Double-click it, which should extract the App. Drag the App to your Applications.
+    *   Hydrus is an unsigned application, so you have to instruct macOS to trust it:
+        * Once Hydrus Network.app is installed in your Applications, control-click (or right-click) it and choose Open. By choosing Open, you are telling macOS that you want to bypass the security checks for that app only.
+        * If this fails, go to `Apple Menu -> System Preferences -> Security (or Security & Privacy)`. Change "Allow apps downloaded from:" to "Anywhere".
+    *   _This App has always been a little buggy. Many macOS users have better success [running from source](running_from_source.md). I encourage all macOS users to try it out._
+    *   _Also, for difficult technical reasons, the App is currently built for the Intel chipset. If you are on Apple Silicon, we again recommend you [run from source](running_from_source.md)!_
+  
+    !!! info "App Database Location"
+        Unlike a normal install of hydrus, the Hydrus App is **non-portable** and puts your database in `~/Library/Hydrus` (i.e. `/Users/[You]/Library/Hydrus`). You can update simply by replacing the old App with the new, but if you wish to backup your database, you should be looking at `~/Library/Hydrus`, not the App itself.
+  
+    !!! info "mpv on macOS"
+        macOS users have no mpv support for now, so no audio, and video (which has to be rendered with the software-based native viewer) may be laggy. Sorry!
 
 === "Linux"
     
     !!! warning "Wayland"
-        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will often not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. [Running from source](running_from_source.md) may improve the situation, but some of these issues seem to be intractable for now. X11 is much happier with hydrus.
+        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will often not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. [Running from source](running_from_source.md) may improve the situation, but some of these issues seem to be intractable for now.
         
-        One user notes that launching with the environment variable `QT_QPA_PLATFORM=xcb` may help!
+        User testing suggests that the best solution for now is just to launch the program in X11, and I now encourage this for all Wayland users. Launching with the environment variable `QT_QPA_PLATFORM=xcb` should do it. The 'xcb' forces X11.
+        
+        If that fails, another user says setting `WAYLAND_DISPLAY= ` (as in setting it to nothing), which forces hydrus (and its embedded mpv windows) to use Xwayland, is another solution! You might need to do `sudo apt install xwayland` first.
+        
+        I expect to revisit this question in future versions of Qt and Wayland--we'll see if the situation stabilises.
     
     !!! note "Qt compatibility"
         
@@ -96,9 +109,6 @@ By default, hydrus stores all its data—options, files, subscriptions, _everyth
     
     **Do not install to a location with filesystem-level compression enabled! (e.g. BTRFS)** It may work ok to start, but when the SQLite database grows to large size, this can cause extreme access latency and I/O errors and corruption.
 
-!!! info "For macOS users"
-    The Hydrus App is **non-portable** and puts your database in `~/Library/Hydrus` (i.e. `/Users/[You]/Library/Hydrus`). You can update simply by replacing the old App with the new, but if you wish to backup, you should be looking at `~/Library/Hydrus`, not the App itself.
-
 ## Anti-virus { id="anti_virus" }
 
 Hydrus is made by an Anon out of duct tape and string. It combines file parsing tech with lots of network and database code in unusual and powerful ways, and all through a hacked-together executable that isn't signed by any big official company.
@@ -151,8 +161,8 @@ The update process:
 * Update your install:
     1. **If you use the installer**, just download the new installer and run it. It should detect where the last install was and overwrite everything automatically.
     2. **If you use the extract**, then just extract the new version right on top of your current install and overwrite manually. *It is wise to extract it straight from the archive to your install folder.*
-    3. **If you use the macOS App**, just drag and drop from the dmg to your Applications as normal.
-    4. **If you run from source**, then run `git pull` as normal.
+    3. **If you use the macOS App**, just extract the new App from the zip and drag and drop to your Applications as normal.
+    4. **If you run from source**, then run `git pull` as normal. If it has been a few months since you made your venv, or the changelog talks about a new library version specifically, you might like to run `setup_venv` again.
 * Start your client or server. It may take a few minutes to update its database. I will say in the release post if it is likely to take longer.
 
 A user has written a longer and more formal guide to updating [here](update_guide.rtf).
@@ -197,7 +207,7 @@ As a result, if you get a failure on trying to do a big update, try cutting the 
 
 If you narrow the gap down to just one version and still get an error, please let me know. If the problem is ever quick to appear and ugly/serious-looking, and perhaps talking about a "bootloader" or "dll" issue, then try doing a clean install as above. I am very interested in these sorts of problems and will be happy to help figure out a fix with you (and everyone else who might be affected).
 
-_All that said, and while updating is complex and every client is different, various user reports over the years suggest this route works and is efficient: 204 > 238 > 246 > 291 > 328 > 335 (clean install) > 376 > 421 > 466 (clean install) > 474 > 480 > 521 (maybe clean install) > 527 (special clean install) > 535 > 558 > 571 (clean install)_ 
+_All that said, and while updating is complex and every client is different, various user reports over the years suggest this route works and is efficient: 204 > 238 > 246 > 291 > 328 > 335 (clean install) > 376 > 421 > 466 (clean install) > 474 > 480 > 521 (maybe clean install) > 527 (special clean install) > 535 > 558 > 571 (clean install) > 603_ 
 
 ??? note "334->335"
     We moved from python 2 to python 3.
@@ -314,6 +324,8 @@ Almost every OS you can name.
 
 !!! danger
     Do not put your live database in a folder that continuously syncs to a cloud backup. Many of these services will interfere with a running client and can cause database corruption. If you still want to use a system like this, either turn the sync off while the client is running, or use the above backup workflows to safely backup your client to a separate folder that syncs to the cloud.
+    
+    I am told that programs that dynamically alter the priority of processes, such as Process Lasso, can also introduce instability to hydrus.
 
 There is significantly more information about the database structure [here](database_migration.md).
 

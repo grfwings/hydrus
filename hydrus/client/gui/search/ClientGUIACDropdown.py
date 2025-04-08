@@ -819,6 +819,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     movePageRight = QC.Signal()
     showNext = QC.Signal()
     showPrevious = QC.Signal()
+    externalCopyKeyPressEvent = QC.Signal( QG.QKeyEvent )
     
     def __init__( self, parent ):
         
@@ -918,7 +919,11 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self.setLayout( self._main_vbox )
         
-        self._current_list_parsed_autocomplete_text = self._GetParsedAutocompleteText()
+        self._current_list_parsed_autocomplete_text = ClientSearchAutocomplete.ParsedAutocompleteText(
+            '',
+            tag_autocomplete_options = CG.client_controller.tag_display_manager.GetTagAutocompleteOptions( CC.COMBINED_TAG_SERVICE_KEY ),
+            collapse_search_characters = True
+        )
         
         self._results_cache: ClientSearchAutocomplete.PredicateResultsCache = ClientSearchAutocomplete.PredicateResultsCacheInit()
         
@@ -1259,11 +1264,31 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     # previous/next hardcoded shortcuts, should obviously be migrated to a user-customised shortcut set in future!
                     crazy_n_p_hardcodes = ctrl and key in ( ord( 'P' ), ord( 'p' ), ord( 'N' ), ord( 'n' ) )
                     
-                    we_copying = ctrl and key in( ord( 'C' ), ord( 'c' ), QC.Qt.Key.Key_Insert )
+                    we_copying = ClientGUIShortcuts.KeyPressEventIsACopy( event )
                     
-                    we_copying_the_list = we_copying and self._text_ctrl.selectedText() == ''
+                    we_copying_elsewhere = we_copying and self._text_ctrl.selectedText() == ''
                     
-                    if key in ( QC.Qt.Key.Key_Up, QC.Qt.Key.Key_Down, QC.Qt.Key.Key_PageDown, QC.Qt.Key.Key_PageUp, QC.Qt.Key.Key_Home, QC.Qt.Key.Key_End ) or crazy_n_p_hardcodes or we_copying_the_list:
+                    current_results_list = typing.cast( ClientGUIListBoxes.ListBoxTags, self._dropdown_notebook.currentWidget() )
+                    
+                    try:
+                        
+                        stuff_in_results_list = len( current_results_list ) > 0
+                        
+                    except:
+                        
+                        stuff_in_results_list = False
+                        
+                    
+                    we_copying_the_results_list = we_copying_elsewhere and stuff_in_results_list
+                    we_emitting_an_external_copy = we_copying_elsewhere and not stuff_in_results_list
+                    
+                    if we_emitting_an_external_copy:
+                        
+                        self.externalCopyKeyPressEvent.emit( event )
+                        
+                        return event.isAccepted()
+                        
+                    elif key in ( QC.Qt.Key.Key_Up, QC.Qt.Key.Key_Down, QC.Qt.Key.Key_PageDown, QC.Qt.Key.Key_PageUp, QC.Qt.Key.Key_Home, QC.Qt.Key.Key_End ) or crazy_n_p_hardcodes or we_copying_the_results_list:
                         
                         send_input_to_current_list = True
                         
@@ -1754,7 +1779,7 @@ class ChildrenTab( ListBoxTagsPredicatesAC ):
 class AutoCompleteDropdownTags( AutoCompleteDropdown ):
     
     locationChanged = QC.Signal( ClientLocation.LocationContext )
-    tagServiceChanged = QC.Signal( bytes )
+    tagContextChanged = QC.Signal( ClientSearchTagContext.TagContext )
     
     def __init__( self, parent, location_context: ClientLocation.LocationContext, tag_service_key ):
         
@@ -1768,27 +1793,34 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         self._last_prefetch_job_status = None
         
         self._current_context_tags = {}
-        self._tag_service_key = tag_service_key
+        
+        tag_context = ClientSearchTagContext.TagContext( service_key = tag_service_key )
         
         super().__init__( parent )
         
         self._location_context_button = ClientGUILocation.LocationSearchContextButton( self._dropdown_window, location_context, is_paired_with_tag_domain = True )
         self._location_context_button.setMinimumWidth( 20 )
         
-        tag_context = ClientSearchTagContext.TagContext( service_key = self._tag_service_key )
-        
         self._tag_context_button = ClientGUISearch.TagContextButton( self._dropdown_window, tag_context )
         self._tag_context_button.setMinimumWidth( 20 )
         
+        self._search_results_list.SetTagServiceKey( tag_context.service_key )
+        
         self._favourites_list = self._InitFavouritesList()
         
-        self.RefreshFavouriteTags()
+        if self._favourites_list is not None:
+            
+            self.RefreshFavouriteTags()
+            
+            self._dropdown_notebook.addTab( self._favourites_list, 'favourites' )
+            
         
-        self._dropdown_notebook.addTab( self._favourites_list, 'favourites' )
+        self._children_list = self._InitChildrenList()
         
-        self._children_list = ChildrenTab( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, self._location_context_button.GetValue(), self._tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = 4 )
-        
-        self._dropdown_notebook.addTab( self._children_list, 'children' )
+        if self._children_list is not None:
+            
+            self._dropdown_notebook.addTab( self._children_list, 'children' )
+            
         
         #
         
@@ -1820,16 +1852,25 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         
         collapse_search_characters = True
         
-        tag_autocomplete_options = CG.client_controller.tag_display_manager.GetTagAutocompleteOptions( self._tag_service_key )
+        tag_service_key = self._tag_context_button.GetValue().service_key
+        
+        tag_autocomplete_options = CG.client_controller.tag_display_manager.GetTagAutocompleteOptions( tag_service_key )
         
         parsed_autocomplete_text = ClientSearchAutocomplete.ParsedAutocompleteText( self._text_ctrl.text(), tag_autocomplete_options, collapse_search_characters )
         
         return parsed_autocomplete_text
         
     
-    def _InitFavouritesList( self ):
+    def _InitChildrenList( self ) -> typing.Optional[ ChildrenTab ]:
         
-        raise NotImplementedError()
+        tag_service_key = self._tag_context_button.GetValue().service_key
+        
+        return ChildrenTab( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, self._location_context_button.GetValue(), tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = 4 )
+        
+    
+    def _InitFavouritesList( self ) -> typing.Optional[ typing.Union[ ListBoxTagsPredicatesAC, ListBoxTagsStringsAC ] ]:
+        
+        return None
         
     
     def _InitSearchResultsList( self ):
@@ -1841,14 +1882,19 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         
         self._RestoreTextCtrlFocus()
         
-        if location_context.IsAllKnownFiles() and self._tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
+        tag_service_key = self._tag_context_button.GetValue().service_key
+        
+        if location_context.IsAllKnownFiles() and tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
             
             top_local_tag_service_key = CG.client_controller.services_manager.GetDefaultLocalTagService().GetServiceKey()
             
-            self._SetTagService( top_local_tag_service_key )
+            self._tag_context_button.SetTagServiceKey( top_local_tag_service_key )
             
         
-        self._children_list.SetLocationContext( location_context )
+        if self._children_list is not None:
+            
+            self._children_list.SetLocationContext( location_context )
+            
         
         self._NotifyChildrenListNeedsUpdating()
         
@@ -1859,7 +1905,10 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
     
     def _NotifyChildrenListNeedsUpdating( self ):
         
-        self._children_list.NotifyNeedsUpdating()
+        if self._children_list is not None:
+            
+            self._children_list.NotifyNeedsUpdating()
+            
         
         self._UpdateChildrenListIfNeeded()
         
@@ -1875,11 +1924,13 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
             return
             
         
-        if location_context.IsAllKnownFiles() and self._tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
+        tag_service_key = self._tag_context_button.GetValue().service_key
+        
+        if location_context.IsAllKnownFiles() and tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
             
             local_tag_services = CG.client_controller.services_manager.GetServices( ( HC.LOCAL_TAG, ) )
             
-            self._SetTagService( local_tag_services[0].GetServiceKey() )
+            self._tag_context_button.SetTagServiceKey( local_tag_services[0].GetServiceKey() )
             
         
         self._location_context_button.SetValue( location_context )
@@ -1894,28 +1945,26 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         self._current_list_parsed_autocomplete_text = parsed_autocomplete_text
         
     
-    def _SetTagService( self, tag_service_key ):
+    def _SetTagContext( self, tag_context: ClientSearchTagContext.TagContext ):
         
-        if not CG.client_controller.services_manager.ServiceExists( tag_service_key ):
+        if not CG.client_controller.services_manager.ServiceExists( tag_context.service_key ):
             
-            tag_service_key = CC.COMBINED_TAG_SERVICE_KEY
+            tag_context.service_key = CC.COMBINED_TAG_SERVICE_KEY
             
         
-        if tag_service_key == CC.COMBINED_TAG_SERVICE_KEY and self._location_context_button.GetValue().IsAllKnownFiles():
+        if tag_context.service_key == CC.COMBINED_TAG_SERVICE_KEY and self._location_context_button.GetValue().IsAllKnownFiles():
             
             default_location_context = CG.client_controller.new_options.GetDefaultLocalLocationContext()
             
             self._SetLocationContext( default_location_context )
             
         
-        if tag_service_key == self._tag_service_key:
+        existing_tag_context = self._tag_context_button.GetValue()
+        
+        if tag_context == existing_tag_context:
             
             return False
             
-        
-        tag_context = self._tag_context_button.GetValue().Duplicate()
-        
-        tag_context.service_key = tag_service_key
         
         self._tag_context_button.SetValue( tag_context )
         
@@ -1950,20 +1999,21 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
             self._SetLocationContext( default_location_context )
             
         
-        if tag_service_key == self._tag_service_key:
+        self._search_results_list.SetTagServiceKey( tag_service_key )
+        
+        if self._favourites_list is not None:
             
-            return False
+            self._favourites_list.SetTagServiceKey( tag_service_key )
             
         
-        self._tag_service_key = tag_service_key
-        
-        self._search_results_list.SetTagServiceKey( self._tag_service_key )
-        self._favourites_list.SetTagServiceKey( self._tag_service_key )
-        self._children_list.SetTagServiceKey( self._tag_service_key )
+        if self._children_list is not None:
+            
+            self._children_list.SetTagServiceKey( tag_service_key )
+            
         
         self._NotifyChildrenListNeedsUpdating()
         
-        self.tagServiceChanged.emit( self._tag_service_key )
+        self.tagContextChanged.emit( self._tag_context_button.GetValue() )
         
         self._SetListDirty()
         
@@ -1971,6 +2021,11 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         
     
     def _UpdateChildrenListIfNeeded( self ):
+        
+        if self._children_list is None:
+            
+            return
+            
         
         if self._dropdown_notebook.currentWidget() == self._children_list:
             
@@ -1986,10 +2041,15 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
     def NotifyNewServices( self ):
         
         self._SetLocationContext( self._location_context_button.GetValue() )
-        self._SetTagService( self._tag_service_key )
+        self._SetTagContext( self._tag_context_button.GetValue() )
         
     
     def RefreshFavouriteTags( self ):
+        
+        if self._favourites_list is None:
+            
+            return
+            
         
         favourite_tags = sorted( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
         
@@ -2052,15 +2112,64 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
     
     def SetTagServiceKey( self, tag_service_key ):
         
-        self._SetTagService( tag_service_key )
+        self._tag_context_button.SetTagServiceKey( tag_service_key )
         
     
-class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
+
+class AutoCompleteDropdownTagsFileSearchContext( AutoCompleteDropdownTags ):
+    
+    def __init__( self, parent: QW.QWidget, location_context: ClientLocation.LocationContext, tag_service_key: bytes, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
+        
+        self._file_search_context = file_search_context.Duplicate()
+        
+        super().__init__( parent, location_context, tag_service_key )
+        
+    
+    def _TagContextJustChanged( self, tag_context: ClientSearchTagContext.TagContext ):
+        
+        it_changed = super()._TagContextJustChanged( tag_context )
+        
+        if it_changed:
+            
+            self._file_search_context.SetTagContext( tag_context )
+            
+        
+        return it_changed
+        
+    
+    def GetFileSearchContext( self ) -> ClientSearchFileSearchContext.FileSearchContext:
+        
+        return self._file_search_context.Duplicate()
+        
+    
+    def SetFileSearchContext( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
+        
+        self._file_search_context = file_search_context.Duplicate()
+        
+    
+
+class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTagsFileSearchContext ):
     
     searchChanged = QC.Signal( ClientSearchFileSearchContext.FileSearchContext )
     searchCancelled = QC.Signal()
     
-    def __init__( self, parent: QW.QWidget, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext, media_sort_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaSortControl ] = None, media_collect_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaCollectControl ] = None, media_callable = None, synchronised = True, include_unusual_predicate_types = True, allow_all_known_files = True, only_allow_local_file_domains = False, only_allow_all_my_files_domains = False, force_system_everything = False, hide_favourites_edit_actions = False, fixed_results_list_height = None ):
+    def __init__(
+        self,
+        parent: QW.QWidget,
+        page_key,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        media_sort_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaSortControl ] = None,
+        media_collect_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaCollectControl ] = None,
+        media_callable = None,
+        synchronised = True,
+        include_unusual_predicate_types = True,
+        allow_all_known_files = True,
+        only_allow_local_file_domains = False,
+        only_allow_all_my_files_domains = False,
+        force_system_everything = False,
+        hide_favourites_edit_actions = False,
+        fixed_results_list_height = None
+    ):
         
         self._page_key = page_key
         
@@ -2085,9 +2194,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         self._media_callable = media_callable
         
-        self._file_search_context = file_search_context
-        
-        super().__init__( parent, location_context, tag_context.service_key )
+        super().__init__( parent, location_context, tag_context.service_key, file_search_context )
         
         self._location_context_button.SetOnlyLocalFileDomainsAllowed( only_allow_local_file_domains )
         self._location_context_button.SetOnlyAllMyFilesDomainsAllowed( only_allow_all_my_files_domains )
@@ -2176,8 +2283,8 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         self._predicates_listbox.listBoxChanged.connect( self._NotifyPredicatesBoxChanged )
         
-        self._include_current_tags.valueChanged.connect( self._IncludeCurrentChanged )
-        self._include_pending_tags.valueChanged.connect( self._IncludePendingChanged )
+        self._include_current_tags.valueChanged.connect( self._tag_context_button.SetIncludeCurrent )
+        self._include_pending_tags.valueChanged.connect( self._tag_context_button.SetIncludePending )
         self._search_pause_play.valueChanged.connect( self._SynchronisedChanged )
         
         predicates = self._file_search_context.GetPredicates()
@@ -2185,6 +2292,8 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         tags = [ predicate.GetValue() for predicate in predicates if predicate.GetType() == ClientSearchPredicate.PREDICATE_TYPE_TAG ]
         
         self.SetContextTags( tags )
+        
+        self.externalCopyKeyPressEvent.connect( self._predicates_listbox.keyPressEvent )
         
     
     def _AdvancedORInput( self ):
@@ -2320,7 +2429,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         self.blockSignals( False )
         
         self.locationChanged.emit( self._location_context_button.GetValue() )
-        self.tagServiceChanged.emit( self._tag_service_key )
+        self.tagContextChanged.emit( self._tag_context_button.GetValue() )
         
         self._SignalNewSearchState()
         
@@ -2448,29 +2557,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             
         
     
-    def _IncludeCurrentChanged( self, value ):
-        
-        self._file_search_context.SetIncludeCurrentTags( value )
-        
-        self._SetListDirty()
-        
-        self._SignalNewSearchState()
-        
-        self._RestoreTextCtrlFocus()
-        
-    
-    def _IncludePendingChanged( self, value ):
-        
-        self._file_search_context.SetIncludePendingTags( value )
-        
-        self._SetListDirty()
-        
-        self._SignalNewSearchState()
-        
-        self._RestoreTextCtrlFocus()
-        
-    
-    def _InitFavouritesList( self ):
+    def _InitFavouritesList( self ) -> ListBoxTagsPredicatesAC:
         
         if self._fixed_results_list_height is None:
             
@@ -2481,7 +2568,9 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             height_num_chars = self._fixed_results_list_height
             
         
-        favs_list = ListBoxTagsPredicatesAC( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, self._tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = height_num_chars )
+        tag_service_key = self._file_search_context.GetTagContext().service_key
+        
+        favs_list = ListBoxTagsPredicatesAC( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = height_num_chars )
         
         return favs_list
         
@@ -2497,12 +2586,14 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             height_num_chars = self._fixed_results_list_height
             
         
-        return ListBoxTagsPredicatesAC( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, self._tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = height_num_chars )
+        tag_service_key = self._file_search_context.GetTagContext().service_key
+        
+        return ListBoxTagsPredicatesAC( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = height_num_chars )
         
     
     def _LocationContextJustChanged( self, location_context: ClientLocation.LocationContext ):
         
-        AutoCompleteDropdownTags._LocationContextJustChanged( self, location_context )
+        super()._LocationContextJustChanged( location_context )
         
         self._file_search_context.SetLocationContext( location_context )
         
@@ -2532,7 +2623,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         self.blockSignals( False )
         
         self.locationChanged.emit( self._location_context_button.GetValue() )
-        self.tagServiceChanged.emit( self._tag_service_key )
+        self.tagContextChanged.emit( self._tag_context_button.GetValue() )
         
         self._SignalNewSearchState()
         
@@ -2583,9 +2674,11 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
                 
                 try:
                     
-                    collapse_search_characters = True
+                    tag_service_key = self._tag_context_button.GetValue().service_key
                     
-                    tag_autocomplete_options = CG.client_controller.tag_display_manager.GetTagAutocompleteOptions( self._tag_service_key )
+                    tag_autocomplete_options = CG.client_controller.tag_display_manager.GetTagAutocompleteOptions( tag_service_key )
+                    
+                    collapse_search_characters = True
                     
                     pat = ClientSearchAutocomplete.ParsedAutocompleteText( text, tag_autocomplete_options, collapse_search_characters = collapse_search_characters )
                     
@@ -2620,7 +2713,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         if current_focus_widget != self._favourite_searches_button:
             
-            AutoCompleteDropdownTags._RestoreTextCtrlFocus( self )
+            super()._RestoreTextCtrlFocus()
             
         
     
@@ -2697,6 +2790,19 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         self._SignalNewSearchState()
         
     
+    def _SetTagContext( self, tag_context: ClientSearchTagContext.TagContext ):
+        
+        it_changed = super()._SetTagContext( tag_context )
+        
+        if it_changed:
+            
+            self._include_current_tags.SetOnOff( tag_context.include_current_tags )
+            self._include_pending_tags.SetOnOff( tag_context.include_pending_tags )
+            
+        
+        return it_changed
+        
+    
     def _ShouldBroadcastCurrentInputOnEnterKey( self ):
         
         looking_at_search_results = self._dropdown_notebook.currentWidget() == self._search_results_list
@@ -2754,14 +2860,14 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
     
     def _TagContextJustChanged( self, tag_context: ClientSearchTagContext.TagContext ):
         
-        it_changed = AutoCompleteDropdownTags._TagContextJustChanged( self, tag_context )
+        it_changed = super()._TagContextJustChanged( tag_context )
         
         if it_changed:
             
-            self._file_search_context.SetTagServiceKey( self._tag_service_key )
-            
             self._SignalNewSearchState()
             
+        
+        return it_changed
         
     
     def _UpdateORButtons( self ):
@@ -2803,11 +2909,6 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             
         
     
-    def GetFileSearchContext( self ) -> ClientSearchFileSearchContext.FileSearchContext:
-        
-        return self._file_search_context.Duplicate()
-        
-    
     def GetPredicates( self ) -> typing.Set[ ClientSearchPredicate.Predicate ]:
         
         return self._file_search_context.GetPredicates()
@@ -2842,7 +2943,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         if not command_processed:
             
-            command_processed = AutoCompleteDropdownTags.ProcessApplicationCommand( self, command )
+            command_processed = super().ProcessApplicationCommand( command )
             
         
         return command_processed
@@ -2852,7 +2953,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         if self._current_fetch_job_status is not None and self._current_fetch_job_status.GetKey() == job_status.GetKey():
             
-            AutoCompleteDropdownTags.SetFetchedResults( self, job_status, parsed_autocomplete_text, results_cache, results )
+            super().SetFetchedResults( job_status, parsed_autocomplete_text, results_cache, results )
             
         
     
@@ -2862,15 +2963,12 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
         
         self._CancelORConstruction()
         
-        self._file_search_context = file_search_context.Duplicate()
+        super().SetFileSearchContext( file_search_context )
         
         self._predicates_listbox.SetFileSearchContext( self._file_search_context )
         
         self._SetLocationContext( self._file_search_context.GetLocationContext() )
-        self._SetTagService( self._file_search_context.GetTagContext().service_key )
-        
-        self._include_current_tags.SetOnOff( self._file_search_context.GetTagContext().include_current_tags )
-        self._include_pending_tags.SetOnOff( self._file_search_context.GetTagContext().include_pending_tags )
+        self._SetTagContext( self._file_search_context.GetTagContext() )
         
         self._SignalNewSearchState()
         
@@ -2905,9 +3003,10 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTags ):
             
         
     
+
 class ListBoxTagsActiveSearchPredicates( ClientGUIListBoxes.ListBoxTagsPredicates ):
     
-    def __init__( self, parent: AutoCompleteDropdownTagsRead, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
+    def __init__( self, parent: AutoCompleteDropdownTagsFileSearchContext, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
         
         super().__init__( parent, height_num_chars = 6 )
         
@@ -3227,8 +3326,16 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
     nullEntered = QC.Signal()
     tagsPasted = QC.Signal( list )
     
-    def __init__( self, parent, chosen_tag_callable, location_context, tag_service_key, show_paste_button = False ):
+    def __init__(
+        self,
+        parent,
+        chosen_tag_callable,
+        location_context,
+        tag_service_key,
+        show_paste_button = False
+    ):
         
+        # don't touch this bro, trust me
         self._display_tag_service_key = tag_service_key
         
         self._chosen_tag_callable = chosen_tag_callable
@@ -3240,6 +3347,8 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
         super().__init__( parent, location_context, tag_service_key )
         
         self._location_context_button.SetAllKnownFilesAllowed( True, False )
+        
+        self._tag_context_button.SetDisplayTagServiceKey( self._display_tag_service_key )
         
         self._paste_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste from the clipboard and quick-enter as if you had typed. This can take multiple newline-separated tags.' ) )
@@ -3313,14 +3422,14 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
     
     def _GetParsedAutocompleteText( self ) -> ClientSearchAutocomplete.ParsedAutocompleteText:
         
-        parsed_autocomplete_text = AutoCompleteDropdownTags._GetParsedAutocompleteText( self )
+        parsed_autocomplete_text = super()._GetParsedAutocompleteText()
         
         parsed_autocomplete_text.SetInclusive( True )
         
         return parsed_autocomplete_text
         
     
-    def _InitFavouritesList( self ):
+    def _InitFavouritesList( self ) -> ListBoxTagsStringsAC:
         
         height_num_chars = CG.client_controller.new_options.GetInteger( 'ac_write_list_height_num_chars' )
         
@@ -3403,14 +3512,19 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
         
         parsed_autocomplete_text = self._GetParsedAutocompleteText()
         
-        tag_context = ClientSearchTagContext.TagContext( service_key = self._tag_service_key, display_service_key = self._display_tag_service_key )
+        tag_service_key = self._tag_context_button.GetValue().service_key
         
-        file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = self._location_context_button.GetValue(), tag_context = tag_context )
+        file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = self._location_context_button.GetValue(), tag_context = self._tag_context_button.GetValue() )
         
         CG.client_controller.CallToThread( WriteFetch, self, job_status, self.SetPrefetchResults, self.SetFetchedResults, parsed_autocomplete_text, file_search_context, self._results_cache )
         
     
     def RefreshFavouriteTags( self ):
+        
+        if self._favourites_list is None:
+            
+            return
+            
         
         favourite_tags = sorted( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
         
@@ -3419,7 +3533,7 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
     
     def SetDisplayTagServiceKey( self, service_key ):
         
-        self._display_tag_service_key = service_key
+        self._tag_context_button.SetDisplayTagServiceKey( service_key )
         
     
 class EditAdvancedORPredicates( ClientGUIScrolledPanels.EditPanel ):

@@ -137,7 +137,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 export_folder.SetNonDupeName( self._GetExistingNames() )
                 
-                self._export_folders.AddDatas( ( export_folder, ), select_sort_and_scroll = True )
+                self._export_folders.AddData( export_folder, select_sort_and_scroll = True )
                 
             
         
@@ -380,6 +380,10 @@ If you select synchronise, be careful!'''
         
         self._phrase_box.Add( phrase_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
+        st = ClientGUICommon.BetterStaticText( self._metadata_routers_box, label = 'An export folder will not update pre-existing sidecar files. If you change the sidecar actions here on an export folder that has run before, delete the sidecars you want to refresh and on next run it will regenerate them.' )
+        st.setWordWrap( True )
+        
+        self._metadata_routers_box.Add( st, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._metadata_routers_box.Add( self._metadata_routers_button, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._metadata_routers_box.Add( self._update_test_context_factory_button, CC.FLAGS_ON_RIGHT )
         

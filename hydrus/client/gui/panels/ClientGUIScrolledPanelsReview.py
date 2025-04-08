@@ -29,7 +29,6 @@ from hydrus.client import ClientData
 from hydrus.client import ClientFiles
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client import ClientParsing
 from hydrus.client import ClientFilesPhysical
 from hydrus.client import ClientRendering
 from hydrus.client import ClientSerialisable
@@ -59,6 +58,7 @@ from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingGUG
 from hydrus.client.networking import ClientNetworkingLogin
 from hydrus.client.networking import ClientNetworkingURLClass
+from hydrus.client.parsing import ClientParsing
 from hydrus.client.search import ClientSearchFileSearchContext
 
 class AboutPanel( ClientGUIScrolledPanels.ReviewPanel ):
@@ -714,7 +714,7 @@ class MoveMediaFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                     
                     panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
                     
-                    control = ClientGUITime.TimeDeltaCtrl( self, min = 60, days = False, hours = True, minutes = True )
+                    control = ClientGUITime.TimeDeltaWidget( self, min = 60, days = False, hours = True, minutes = True )
                     
                     control.SetValue( 7200 )
                     
@@ -1503,7 +1503,7 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
     
     def EventLainClick( self, event ):
         
-        with QP.FileDialog( self, 'Select the pngs to add.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles ) as dlg:
+        with QP.FileDialog( self, 'Select the pngs to add.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1522,9 +1522,17 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
 
 class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
     
-    def __init__( self, parent, mime: int, exif_dict: typing.Optional[ dict ], file_text: typing.Optional[ str ], extra_rows: typing.List[ typing.Tuple[ str, str ] ] ):
+    def __init__( self, parent, mime: int, top_line_text: str, exif_dict: typing.Optional[ dict ], file_text: typing.Optional[ str ], extra_rows: typing.List[ typing.Tuple[ str, str ] ] ):
         
         super().__init__( parent )
+        
+        #
+        
+        top_line_panel = ClientGUICommon.StaticBox( self, 'basics' )
+        
+        self._top_line_str = ClientGUICommon.BetterStaticText( top_line_panel, top_line_text )
+        
+        top_line_panel.Add( self._top_line_str, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         #
         
@@ -1567,7 +1575,7 @@ class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
-        extra_rows_panel.Add( gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        extra_rows_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         #
         
@@ -1612,6 +1620,7 @@ class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
         
         vbox = QP.VBoxLayout()
         
+        QP.AddToLayout( vbox, top_line_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, exif_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, text_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, extra_rows_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -1726,14 +1735,12 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         
         hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( hbox, self._loading_text, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( hbox, self._loading_text, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
         QP.AddToLayout( hbox, self._cancel_button, CC.FLAGS_CENTER )
         QP.AddToLayout( hbox, self._refresh_button, CC.FLAGS_CENTER )
         
         QP.AddToLayout( panel_vbox, self._tag_autocomplete, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( panel_vbox, hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
-        panel_vbox.addStretch( 1 )
         
         self._search_panel.setLayout( panel_vbox )
         
@@ -1745,14 +1752,27 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._status_st = ClientGUICommon.BetterStaticText( self._file_history_chart_panel, label = f'loading{HC.UNICODE_ELLIPSIS}' )
         
-        self._flip_deleted = QW.QCheckBox( 'show deleted', self._file_history_chart_panel )
+        self._show_current = QW.QCheckBox( 'show all', self._file_history_chart_panel )
+        self._show_inbox = QW.QCheckBox( 'show inbox', self._file_history_chart_panel )
+        self._show_archive = QW.QCheckBox( 'show archive', self._file_history_chart_panel )
+        self._show_deleted = QW.QCheckBox( 'show deleted', self._file_history_chart_panel )
         
-        self._flip_deleted.setChecked( True )
+        self._show_current.setChecked( True )
+        self._show_inbox.setChecked( True )
+        self._show_archive.setChecked( True )
+        self._show_deleted.setChecked( True )
+        
+        button_hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( button_hbox, self._show_current, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._show_inbox, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._show_archive, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._show_deleted, CC.FLAGS_CENTER_PERPENDICULAR )
         
         self._file_history_chart = QW.QWidget( self._file_history_chart_panel )
         
         QP.AddToLayout( self._file_history_vbox, self._status_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( self._file_history_vbox, self._flip_deleted, CC.FLAGS_CENTER )
+        QP.AddToLayout( self._file_history_vbox, button_hbox, CC.FLAGS_CENTER )
         QP.AddToLayout( self._file_history_vbox, self._file_history_chart, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self._file_history_chart_panel.setLayout( self._file_history_vbox )
@@ -1818,19 +1838,30 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 self._file_history_vbox.removeWidget( self._file_history_chart )
                 
-                show_deleted = self._flip_deleted.isChecked()
+                self._file_history_chart.deleteLater()
+                
+                show_current = self._show_current.isChecked()
+                show_inbox = self._show_inbox.isChecked()
+                show_archive = self._show_archive.isChecked()
+                show_deleted = self._show_deleted.isChecked()
                 
                 # TODO: presumably the thing here is to have SetValue on this widget so we can simply clear/set it rather than the mickey-mouse replace
-                self._file_history_chart = ClientGUICharts.FileHistory( self._file_history_chart_panel, file_history, show_deleted )
+                self._file_history_chart = ClientGUICharts.FileHistory( self._file_history_chart_panel, file_history, show_current, show_inbox, show_archive, show_deleted )
                 
                 self._file_history_chart.setMinimumSize( 720, 480 )
                 
-                self._flip_deleted.clicked.connect( self._file_history_chart.FlipDeletedVisible )
+                self._show_current.clicked.connect( self._file_history_chart.FlipAllVisible )
+                self._show_inbox.clicked.connect( self._file_history_chart.FlipInboxVisible )
+                self._show_archive.clicked.connect( self._file_history_chart.FlipArchiveVisible )
+                self._show_deleted.clicked.connect( self._file_history_chart.FlipDeletedVisible )
                 
                 QP.AddToLayout( self._file_history_vbox, self._file_history_chart, CC.FLAGS_EXPAND_BOTH_WAYS )
                 
                 self._status_st.setVisible( False )
-                self._flip_deleted.setVisible( True )
+                self._show_current.setVisible( True )
+                self._show_inbox.setVisible( True )
+                self._show_archive.setVisible( True )
+                self._show_deleted.setVisible( True )
                 
             finally:
                 
@@ -1856,7 +1887,10 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         self._status_st.setText( 'loading' + HC.UNICODE_ELLIPSIS )
         self._status_st.setVisible( True )
         
-        self._flip_deleted.setVisible( False )
+        self._show_current.setVisible( False )
+        self._show_inbox.setVisible( False )
+        self._show_archive.setVisible( False )
+        self._show_deleted.setVisible( False )
         self._file_history_chart.setVisible( False )
         
         self._job_status.Cancel()
@@ -2353,13 +2387,15 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         panel_vbox = QP.VBoxLayout()
         
         self._media_views_st = ClientGUICommon.BetterStaticText( self._views_panel )
+        self._media_views_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
         self._preview_views_st = ClientGUICommon.BetterStaticText( self._views_panel )
+        self._preview_views_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
-        QP.AddToLayout( panel_vbox, self._media_views_st, CC.FLAGS_CENTER )
-        QP.AddToLayout( panel_vbox, self._preview_views_st, CC.FLAGS_CENTER )
+        QP.AddToLayout( panel_vbox, self._media_views_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( panel_vbox, self._preview_views_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        panel_vbox.addStretch( 1 )
+        panel_vbox.addStretch( 0 )
         
         self._views_panel.setLayout( panel_vbox )
         
@@ -2368,14 +2404,22 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         panel_vbox = QP.VBoxLayout()
         
         self._potentials_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
+        self._potentials_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._duplicates_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
+        self._duplicates_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._alternates_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
+        self._alternates_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
-        QP.AddToLayout( panel_vbox, self._potentials_st, CC.FLAGS_CENTER )
-        QP.AddToLayout( panel_vbox, self._duplicates_st, CC.FLAGS_CENTER )
-        QP.AddToLayout( panel_vbox, self._alternates_st, CC.FLAGS_CENTER )
+        st = ClientGUICommon.BetterStaticText( self._duplicates_panel, label = 'Since many duplicate files get deleted, this will not give nice "all-time" numbers unless you change the file domain to "all files ever imported or deleted".' )
+        st.setWordWrap( True )
+        st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
-        panel_vbox.addStretch( 1 )
+        QP.AddToLayout( panel_vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( panel_vbox, self._potentials_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( panel_vbox, self._duplicates_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( panel_vbox, self._alternates_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        panel_vbox.addStretch( 0 )
         
         self._duplicates_panel.setLayout( panel_vbox )
         
@@ -2412,8 +2456,6 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.AddToLayout( panel_vbox, self._tag_autocomplete, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( panel_vbox, hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
-        panel_vbox.addStretch( 1 )
         
         self._search_panel.setLayout( panel_vbox )
         
@@ -2504,13 +2546,14 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
     def _SetDuplicatesPanel( self, boned_stats: dict ):
         
         total_alternate_files = boned_stats[ 'total_alternate_files' ]
+        total_alternate_groups = boned_stats[ 'total_alternate_groups' ]
         total_duplicate_files = boned_stats[ 'total_duplicate_files' ]
         #total_potential_pairs = boned_stats[ 'total_potential_pairs' ]
         
         #potentials_label = f'Total duplicate potential pairs: {HydrusNumbers.ToHumanInt( total_potential_pairs )}'
-        potentials_label = f'Total duplicate potential pairs: disabled for now'
-        duplicates_label = f'Total files set duplicate: {HydrusNumbers.ToHumanInt( total_duplicate_files )}'
-        alternates_label = f'Total duplicate file groups set alternate: {HydrusNumbers.ToHumanInt( total_alternate_files )}'
+        potentials_label = f'Total potential duplicate pairs: disabled for now'
+        duplicates_label = f'Total files in duplicate groups: {HydrusNumbers.ToHumanInt( total_duplicate_files )}'
+        alternates_label = f'Total files in alternate groups: {HydrusNumbers.ToHumanInt( total_alternate_files )} ({HydrusNumbers.ToHumanInt( total_alternate_groups )} groups)'
         
         self._potentials_st.setText( potentials_label )
         self._duplicates_st.setText( duplicates_label )
@@ -2748,7 +2791,7 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
                 
             
         
-        panel_vbox.addStretch( 1 )
+        panel_vbox.addStretch( 0 )
         
         self._files_content_panel.setLayout( panel_vbox )
         
@@ -3379,7 +3422,7 @@ class ReviewLocalFileImports( ClientGUIScrolledPanels.ReviewPanel ):
                 
             else:
                 
-                HydrusData.Print( 'Unparsable file: ' + path )
+                HydrusData.Print( 'During file import scan, unparsable file: ' + path )
                 
                 num_unimportable_mime_files += 1
                 

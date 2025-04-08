@@ -216,8 +216,8 @@ class EditTagAutocompleteOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         st = ClientGUICommon.BetterStaticText( self, label = label )
         
         QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
-        vbox.addStretch( 1 )
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
@@ -648,7 +648,7 @@ class EditTagDisplayManagerPanel( ClientGUIScrolledPanels.EditPanel ):
             
             gridbox = ClientGUICommon.WrapInGrid( self._display_box, rows )
             
-            self._display_box.Add( gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+            self._display_box.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
             #
             
@@ -678,7 +678,7 @@ class EditTagDisplayManagerPanel( ClientGUIScrolledPanels.EditPanel ):
             
             QP.AddToLayout( vbox, self._display_box, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, self._tao_box, CC.FLAGS_EXPAND_PERPENDICULAR )
-            vbox.addStretch( 1 )
+            vbox.addStretch( 0 )
             
             self.setLayout( vbox )
             
@@ -885,95 +885,14 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         self.SetValue( tag_filter )
         
     
-    def _AdvancedAddBlacklistMultiple( self, tag_slices ):
+    def _AdvancedAddBlacklistMultiple( self, tag_slices, only_add = False, only_remove = False ):
         
-        tag_slices = [ self._CleanTagSliceInput( tag_slice ) for tag_slice in tag_slices ]
-        
-        tag_slices = HydrusData.DedupeList( tag_slices )
-        
-        current_blacklist = set( self._advanced_blacklist.GetTagSlices() )
-        
-        to_remove = set( tag_slices ).intersection( current_blacklist )
-        
-        if len( to_remove ) > 0:
-            
-            self._advanced_blacklist.RemoveTagSlices( to_remove )
-            
-        
-        to_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in to_remove ]
-        
-        if len( to_add ) > 0:
-            
-            self._advanced_whitelist.RemoveTagSlices( to_add )
-            
-            already_blocked = [ tag_slice for tag_slice in to_add if self._CurrentlyBlocked( tag_slice ) ]
-            
-            if len( already_blocked ) > 0:
-                
-                if len( already_blocked ) == 1:
-                    
-                    message = f'{HydrusTags.ConvertTagSliceToPrettyString( already_blocked[0] )} is already blocked by a broader rule!'
-                    
-                else:
-                    
-                    separator = '\n' if len( already_blocked ) < 5 else ', '
-                    
-                    message = 'The tags\n\n' + separator.join( [ HydrusTags.ConvertTagSliceToPrettyString( tag_slice ) for tag_slice in already_blocked ] ) + '\n\nare already blocked by a broader rule!'
-                    
-                
-                self._ShowRedundantError( message )
-                
-            
-            self._advanced_blacklist.AddTagSlices( to_add )
-            
-        
-        self._UpdateStatus()
+        self._AdvancedEnterBlacklistMultiple( tag_slices, only_add = True )
         
     
     def _AdvancedAddWhitelistMultiple( self, tag_slices ):
         
-        tag_slices = [ self._CleanTagSliceInput( tag_slice ) for tag_slice in tag_slices ]
-        
-        current_whitelist = set( self._advanced_whitelist.GetTagSlices() )
-        
-        to_remove = set( tag_slices ).intersection( current_whitelist )
-        
-        if len( to_remove ) > 0:
-            
-            self._advanced_whitelist.RemoveTagSlices( to_remove )
-            
-        
-        to_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in to_remove ]
-        
-        if len( to_add ) > 0:
-            
-            self._advanced_blacklist.RemoveTagSlices( to_add )
-            
-            already_permitted = [ tag_slice for tag_slice in to_add if tag_slice not in ( '', ':' ) and not self._CurrentlyBlocked( tag_slice ) ]
-            
-            if len( already_permitted ) > 0:
-                
-                if len( already_permitted ) == 1:
-                    
-                    message = f'{HydrusTags.ConvertTagSliceToPrettyString( to_add[0] )} is already permitted by a broader rule!'
-                    
-                else:
-                    
-                    separator = '\n' if len( already_permitted ) < 5 else ', '
-                    
-                    message = 'The tags\n\n' + separator.join( [ HydrusTags.ConvertTagSliceToPrettyString( tag_slice ) for tag_slice in already_permitted ] ) + '\n\nare already permitted by a broader rule!'
-                    
-                
-                self._ShowRedundantError( message )
-                
-            
-            tag_slices_to_actually_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in ( '', ':' ) ]
-            
-            # we don't say 'except for' for (un)namespaced
-            self._advanced_whitelist.AddTagSlices( tag_slices_to_actually_add )
-            
-        
-        self._UpdateStatus()
+        self._AdvancedEnterWhitelistMultiple( tag_slices, only_add = True )
         
     
     def _AdvancedBlacklistEverything( self ):
@@ -1016,6 +935,97 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 self._advanced_whitelist.RemoveTagSlices( selected_tag_slices )
                 
+            
+        
+        self._UpdateStatus()
+        
+    
+    def _AdvancedEnterBlacklistMultiple( self, tag_slices, only_add = False, only_remove = False ):
+        
+        tag_slices = [ self._CleanTagSliceInput( tag_slice ) for tag_slice in tag_slices ]
+        
+        tag_slices = HydrusData.DedupeList( tag_slices )
+        
+        current_blacklist = set( self._advanced_blacklist.GetTagSlices() )
+        
+        to_remove = set( tag_slices ).intersection( current_blacklist )
+        
+        to_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in to_remove ]
+        
+        if len( to_remove ) > 0 and not only_add:
+            
+            self._advanced_blacklist.RemoveTagSlices( to_remove )
+            
+        
+        if len( to_add ) > 0 and not only_remove:
+            
+            self._advanced_whitelist.RemoveTagSlices( to_add )
+            
+            already_blocked = [ tag_slice for tag_slice in to_add if self._CurrentlyBlocked( tag_slice ) ]
+            
+            if len( already_blocked ) > 0:
+                
+                if len( already_blocked ) == 1:
+                    
+                    message = f'{HydrusTags.ConvertTagSliceToPrettyString( already_blocked[0] )} is already blocked by a broader rule!'
+                    
+                else:
+                    
+                    separator = '\n' if len( already_blocked ) < 5 else ', '
+                    
+                    message = 'The tags\n\n' + separator.join( [ HydrusTags.ConvertTagSliceToPrettyString( tag_slice ) for tag_slice in already_blocked ] ) + '\n\nare already blocked by a broader rule!'
+                    
+                
+                self._ShowRedundantError( message )
+                
+            
+            self._advanced_blacklist.AddTagSlices( to_add )
+            
+        
+        self._UpdateStatus()
+        
+    
+    def _AdvancedEnterWhitelistMultiple( self, tag_slices, only_add = False, only_remove = False ):
+        
+        tag_slices = [ self._CleanTagSliceInput( tag_slice ) for tag_slice in tag_slices ]
+        
+        current_whitelist = set( self._advanced_whitelist.GetTagSlices() )
+        
+        to_remove = set( tag_slices ).intersection( current_whitelist )
+        
+        if len( to_remove ) > 0 and not only_add:
+            
+            self._advanced_whitelist.RemoveTagSlices( to_remove )
+            
+        
+        to_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in to_remove ]
+        
+        if len( to_add ) > 0 and not only_remove:
+            
+            self._advanced_blacklist.RemoveTagSlices( to_add )
+            
+            already_permitted = [ tag_slice for tag_slice in to_add if tag_slice not in ( '', ':' ) and not self._CurrentlyBlocked( tag_slice ) ]
+            
+            if len( already_permitted ) > 0:
+                
+                if len( already_permitted ) == 1:
+                    
+                    message = f'{HydrusTags.ConvertTagSliceToPrettyString( to_add[0] )} is already permitted by a broader rule!'
+                    
+                else:
+                    
+                    separator = '\n' if len( already_permitted ) < 5 else ', '
+                    
+                    message = 'The tags\n\n' + separator.join( [ HydrusTags.ConvertTagSliceToPrettyString( tag_slice ) for tag_slice in already_permitted ] ) + '\n\nare already permitted by a broader rule!'
+                    
+                
+                self._ShowRedundantError( message )
+                
+            
+            tag_slices_to_actually_add = [ tag_slice for tag_slice in tag_slices if tag_slice not in ( '', ':' ) ]
+            
+            # we don't say 'except for' for (un)namespaced
+            self._advanced_whitelist.AddTagSlices( tag_slices_to_actually_add )
             
         
         self._UpdateStatus()
@@ -1303,10 +1313,8 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._simple_blacklist_global_checkboxes.Append( 'unnamespaced tags', '' )
         self._simple_blacklist_global_checkboxes.Append( 'namespaced tags', ':' )
-
-        ( w, h ) = ClientGUIFunctions.ConvertTextToPixels( self._simple_blacklist_global_checkboxes, ( 20, 3 ) )
         
-        self._simple_blacklist_global_checkboxes.setFixedHeight( h + ( self._simple_blacklist_global_checkboxes.frameWidth() * 2 ) )
+        self._simple_blacklist_global_checkboxes.SetHeightBasedOnContents()
         
         self._simple_blacklist_namespace_checkboxes = ClientGUICommon.BetterCheckBoxList( self._simple_whitelist_panel )
         
@@ -1393,9 +1401,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         self._simple_whitelist_global_checkboxes.Append( 'unnamespaced tags', '' )
         self._simple_whitelist_global_checkboxes.Append( 'namespaced tags', ':' )
         
-        ( w, h ) = ClientGUIFunctions.ConvertTextToPixels( self._simple_whitelist_global_checkboxes, ( 20, 3 ) )
-        
-        self._simple_whitelist_global_checkboxes.setFixedHeight( h + ( self._simple_whitelist_global_checkboxes.frameWidth() * 2 ) )
+        self._simple_whitelist_global_checkboxes.SetHeightBasedOnContents()
         
         self._simple_whitelist_namespace_checkboxes = ClientGUICommon.BetterCheckBoxList( self._simple_whitelist_panel )
         
@@ -1573,7 +1579,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 tag_slices.discard( simple )
                 
-                self._AdvancedAddBlacklistMultiple( ( simple, ) )
+                self._AdvancedEnterBlacklistMultiple( ( simple, ) )
                 
             
         
@@ -1582,7 +1588,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def _SimpleBlacklistRemoved( self, tag_slices ):
         
-        self._AdvancedAddBlacklistMultiple( tag_slices )
+        self._AdvancedEnterBlacklistMultiple( tag_slices )
         
     
     def _SimpleBlacklistReset( self ):
@@ -1638,11 +1644,11 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 tag_slices.discard( simple )
                 
-                self._AdvancedAddBlacklistMultiple( ( simple, ) )
+                self._AdvancedEnterBlacklistMultiple( ( simple, ) )
                 
             
         
-        self._AdvancedAddWhitelistMultiple( tag_slices )
+        self._AdvancedEnterWhitelistMultiple( tag_slices )
         
     
     def _SimpleWhitelistReset( self ):
@@ -1913,7 +1919,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             tag_slice = self._simple_blacklist_namespace_checkboxes.GetData( index )
             
-            self._AdvancedAddBlacklistMultiple( ( tag_slice, ) )
+            self._AdvancedEnterBlacklistMultiple( ( tag_slice, ) )
             
         
     
@@ -1925,7 +1931,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             tag_slice = self._simple_blacklist_global_checkboxes.GetData( index )
             
-            self._AdvancedAddBlacklistMultiple( ( tag_slice, ) )
+            self._AdvancedEnterBlacklistMultiple( ( tag_slice, ) )
             
         
     
@@ -1937,7 +1943,7 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             tag_slice = self._simple_whitelist_namespace_checkboxes.GetData( index )
             
-            self._AdvancedAddWhitelistMultiple( ( tag_slice, ) )
+            self._AdvancedEnterWhitelistMultiple( ( tag_slice, ) )
             
         
     
@@ -1951,11 +1957,11 @@ class EditTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             if tag_slice in ( '', ':' ) and tag_slice in self._simple_whitelist.GetTagSlices():
                 
-                self._AdvancedAddBlacklistMultiple( ( tag_slice, ) )
+                self._AdvancedEnterBlacklistMultiple( ( tag_slice, ) )
                 
             else:
                 
-                self._AdvancedAddWhitelistMultiple( ( tag_slice, ) )
+                self._AdvancedEnterWhitelistMultiple( ( tag_slice, ) )
                 
             
         
@@ -2077,7 +2083,8 @@ class IncrementalTaggingPanel( ClientGUIScrolledPanels.EditPanel ):
         
         QP.AddToLayout( vbox, self._top_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._summary_st, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._summary_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
@@ -2737,6 +2744,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             self._add_tag_box.movePageRight.connect( self.movePageRight )
             self._add_tag_box.showPrevious.connect( self.showPrevious )
             self._add_tag_box.showNext.connect( self.showNext )
+            self._add_tag_box.externalCopyKeyPressEvent.connect( self._tags_box.keyPressEvent )
             
             self._add_tag_box.nullEntered.connect( self.OK )
             
@@ -3674,6 +3682,9 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             self._children.tagsChanged.connect( self._children_input.SetContextTags )
             self._parents.tagsChanged.connect( self._parents_input.SetContextTags )
             
+            self._children_input.externalCopyKeyPressEvent.connect( self._children.keyPressEvent )
+            self._parents_input.externalCopyKeyPressEvent.connect( self._parents.keyPressEvent )
+            
             #
             
             self._status_st = ClientGUICommon.BetterStaticText( self,'Files with any tag on the left will also be given the tags on the right.' )
@@ -4411,6 +4422,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             # leave up here since other things have updates based on them
             self._old_siblings = ClientGUIListBoxes.ListBoxTagsStringsAddRemove( self, self._service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = 4 )
             self._new_sibling = ClientGUICommon.BetterStaticText( self )
+            self._new_sibling.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
             
             self._listctrl_panel = ClientGUIListCtrl.BetterListCtrlPanel( self )
             
@@ -4452,6 +4464,8 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             self._old_siblings.tagsChanged.connect( self._old_input.SetContextTags )
             
+            self._old_input.externalCopyKeyPressEvent.connect( self._old_siblings.keyPressEvent )
+            
             #
             
             self._status_st = ClientGUICommon.BetterStaticText( self,'Tags on the left will appear as those on the right.' )
@@ -4470,9 +4484,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             new_sibling_box = QP.VBoxLayout()
             
             QP.AddToLayout( new_sibling_box, ClientGUICommon.BetterStaticText( self, label = 'set new ideal tag' ), CC.FLAGS_CENTER )
-            new_sibling_box.addStretch( 1 )
-            QP.AddToLayout( new_sibling_box, self._new_sibling, CC.FLAGS_EXPAND_PERPENDICULAR )
-            new_sibling_box.addStretch( 1 )
+            QP.AddToLayout( new_sibling_box, self._new_sibling, CC.FLAGS_EXPAND_BOTH_WAYS )
             
             text_box = QP.HBoxLayout()
             
@@ -5212,7 +5224,7 @@ class ReviewTagDisplayMaintenancePanel( ClientGUIScrolledPanels.ReviewPanel ):
             QP.AddToLayout( vbox, self._siblings_and_parents_st, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, self._progress, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, button_hbox, CC.FLAGS_ON_RIGHT )
-            vbox.addStretch( 1 )
+            vbox.addStretch( 0 )
             
             self.setLayout( vbox )
             

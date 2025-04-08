@@ -168,7 +168,13 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
         
         QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        QP.AddToLayout( vbox, ClientGUICommon.WrapInText( self._name, self, 'name: ' ), CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        rows = []
+        
+        rows.append( ( 'name: ', self._name ) )
+        
+        gridbox = ClientGUICommon.WrapInGrid( self, rows )
+        
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         if name in ClientGUIShortcuts.shortcut_names_to_descriptions:
             
@@ -280,7 +286,7 @@ class EditShortcutSetPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 data = ( shortcut, command )
                 
-                self._shortcuts.AddDatas( ( data, ), select_sort_and_scroll = True )
+                self._shortcuts.AddData( data, select_sort_and_scroll = True )
                 
             
         
@@ -416,18 +422,13 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         reserved_shortcuts = [ shortcuts for shortcuts in all_shortcuts if shortcuts.GetName() in ClientGUIShortcuts.SHORTCUTS_RESERVED_NAMES ]
         custom_shortcuts = [ shortcuts for shortcuts in all_shortcuts if shortcuts.GetName() not in ClientGUIShortcuts.SHORTCUTS_RESERVED_NAMES ]
         
-        self._reserved_shortcuts.AddDatas( reserved_shortcuts )
+        self._reserved_shortcuts.SetData( reserved_shortcuts )
         
         self._reserved_shortcuts.Sort()
         
-        self._original_custom_names = set()
+        self._original_custom_names = { shortcuts.GetName() for shortcuts in custom_shortcuts }
         
-        for shortcuts in custom_shortcuts:
-            
-            self._custom_shortcuts.AddDatas( ( shortcuts, ) )
-            
-            self._original_custom_names.add( shortcuts.GetName() )
-            
+        self._custom_shortcuts.SetData( custom_shortcuts )
         
         self._custom_shortcuts.Sort()
         
@@ -472,7 +473,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         vbox = QP.VBoxLayout()
         
         QP.AddToLayout( vbox, help_button, CC.FLAGS_ON_RIGHT )
-        QP.AddToLayout( vbox, mouse_gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, mouse_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( vbox, reserved_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, custom_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
@@ -496,7 +497,11 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 new_shortcuts = panel.GetValue()
                 
-                self._custom_shortcuts.AddDatas( ( new_shortcuts, ), select_sort_and_scroll = True )
+                existing_names = self._GetExistingCustomShortcutNames()
+                
+                new_shortcuts.SetNonDupeName( existing_names )
+                
+                self._custom_shortcuts.AddData( new_shortcuts, select_sort_and_scroll = True )
                 
             
         
@@ -531,6 +536,12 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
                 edited_shortcuts = panel.GetValue()
+                
+                existing_names = self._GetExistingCustomShortcutNames()
+                
+                existing_names.discard( shortcuts.GetName() )
+                
+                edited_shortcuts.SetNonDupeName( existing_names )
                 
                 self._custom_shortcuts.ReplaceData( shortcuts, edited_shortcuts, sort_and_scroll = True )
                 
@@ -579,6 +590,11 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
         size = len( shortcuts )
         
         return ( pretty_name, HydrusNumbers.ToHumanInt( size ) )
+        
+    
+    def _GetExistingCustomShortcutNames( self ):
+        
+        return { shortcuts.GetName() for shortcuts in self._custom_shortcuts.GetData() }
         
     
     def _GetSortTuple( self, shortcuts ):
@@ -636,7 +652,7 @@ class EditShortcutsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             ClientGUIDialogsMessage.ShowInformation( self, 'It looks like your client was missing the "{}" shortcut set! It will now be restored.'.format( name ) )
             
-            self._reserved_shortcuts.AddDatas( ( new_data, ), select_sort_and_scroll = True )
+            self._reserved_shortcuts.AddData( new_data, select_sort_and_scroll = True )
             
         else:
             
@@ -758,8 +774,11 @@ class ShortcutWidget( QW.QWidget ):
             self._keyboard_radio.setChecked( True )
             self._keyboard_shortcut.SetValue( shortcut )
             
+            ClientGUIFunctions.SetFocusLater( self._keyboard_shortcut )
+            
         
     
+
 class KeyboardShortcutWidget( QW.QLineEdit ):
     
     valueChanged = QC.Signal()
@@ -772,6 +791,10 @@ class KeyboardShortcutWidget( QW.QLineEdit ):
         
         self._SetShortcutString()
         
+        self.setReadOnly( True )
+        
+        self.installEventFilter( self )
+        
     
     def _SetShortcutString( self ):
         
@@ -780,18 +803,25 @@ class KeyboardShortcutWidget( QW.QLineEdit ):
         self.setText( display_string )
         
     
-    def keyPressEvent( self, event ):
+    def eventFilter( self, watched, event ) -> bool:
         
-        shortcut = ClientGUIShortcuts.ConvertKeyEventToShortcut( event )
+        if event.type() == QC.QEvent.Type.KeyPress:
+            
+            shortcut = ClientGUIShortcuts.ConvertKeyEventToShortcut( event )
+            
+            if shortcut is not None:
+                
+                self._shortcut = shortcut
+                
+                self._SetShortcutString()
+                
+                self.valueChanged.emit()
+                
+            
+            return True
+            
         
-        if shortcut is not None:
-            
-            self._shortcut = shortcut
-            
-            self._SetShortcutString()
-            
-            self.valueChanged.emit()
-            
+        return super().eventFilter( watched, event )
         
     
     def GetValue( self ):
@@ -806,6 +836,7 @@ class KeyboardShortcutWidget( QW.QLineEdit ):
         self._SetShortcutString()
         
     
+
 class MouseShortcutWidget( QW.QWidget ):
     
     valueChanged = QC.Signal()

@@ -7,7 +7,6 @@ from hydrus.core import HydrusText
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -20,6 +19,7 @@ from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.metadata import ClientMetadataMigrationExporters
+from hydrus.client.parsing import ClientParsing
 
 choice_tuple_label_lookup = {
     ClientMetadataMigrationExporters.SingleFileMetadataExporterMediaNotes : 'a file\'s notes',
@@ -139,8 +139,7 @@ class EditSingleFileMetadataExporterWidget( QW.QWidget ):
         QP.AddToLayout( vbox, self._nested_object_names_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, self._txt_separator_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._sidecar_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        
-        vbox.addStretch( 1 )
+        vbox.addStretch( 0 )
         
         self.setLayout( vbox )
         

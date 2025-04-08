@@ -13,7 +13,6 @@ from hydrus.core import HydrusText
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
@@ -31,6 +30,7 @@ from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingFunctions
 from hydrus.client.networking import ClientNetworkingGUG
 from hydrus.client.networking import ClientNetworkingURLClass
+from hydrus.client.parsing import ClientParsing
 
 class EditDownloaderDisplayPanel( ClientGUIScrolledPanels.EditPanel ):
     
@@ -121,7 +121,7 @@ class EditDownloaderDisplayPanel( ClientGUIScrolledPanels.EditPanel ):
         gridbox = ClientGUICommon.WrapInGrid( media_viewer_urls_panel, rows )
         
         QP.AddToLayout( vbox, self._url_display_list_ctrl_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         media_viewer_urls_panel.setLayout( vbox )
         
@@ -352,6 +352,7 @@ class EditGUGPanel( ClientGUIScrolledPanels.EditPanel ):
         vbox = QP.VBoxLayout()
         
         QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
@@ -462,7 +463,7 @@ class EditNGUGPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_NGUG_GUGS.ID, self._ConvertGUGDataToDisplayTuple, self._ConvertGUGDataToSortTuple )
         
-        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 30, model, use_simple_delete = True )
+        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 8, model, use_simple_delete = True )
         
         self._gug_list_ctrl_panel.SetListCtrl( self._gug_list_ctrl )
         
@@ -507,7 +508,7 @@ class EditNGUGPanel( ClientGUIScrolledPanels.EditPanel ):
         
         gug_key_and_name = gug.GetGUGKeyAndName()
         
-        self._gug_list_ctrl.AddDatas( ( gug_key_and_name, ), select_sort_and_scroll = True )
+        self._gug_list_ctrl.AddData( gug_key_and_name, select_sort_and_scroll = True )
         
     
     def _AddGUGButtonClick( self ):
@@ -719,7 +720,7 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         gug.RegenerateGUGKey()
         
-        self._gug_list_ctrl.AddDatas( ( gug, ), select_sort_and_scroll = select_sort_and_scroll )
+        self._gug_list_ctrl.AddData( gug, select_sort_and_scroll = select_sort_and_scroll )
         
     
     def _AddNGUG( self, ngug, select_sort_and_scroll = False ):
@@ -728,7 +729,7 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ngug.RegenerateGUGKey()
         
-        self._ngug_list_ctrl.AddDatas( ( ngug, ), select_sort_and_scroll = select_sort_and_scroll )
+        self._ngug_list_ctrl.AddData( ngug, select_sort_and_scroll = select_sort_and_scroll )
         
     
     def _ConvertGUGToDisplayTuple( self, gug ):
@@ -951,6 +952,8 @@ class EditURLClassComponentPanel( ClientGUIScrolledPanels.EditPanel ):
         
         string_match_panel = ClientGUICommon.StaticBox( self, 'value test' )
         
+        # TODO: this guy sizes crazy because he is a scrolling panel not a normal widget
+        # the layout of this panel was whack, better now but revisit it (add a vbox.addStretch( 0 )?) once this guy is a widget
         self._string_match = ClientGUIStringPanels.EditStringMatchPanel( string_match_panel, string_match )
         self._string_match.setToolTip( ClientGUIFunctions.WrapToolTip( 'If the encoded value of the component matches this, the URL Class matches!' ) )
         
@@ -974,15 +977,15 @@ class EditURLClassComponentPanel( ClientGUIScrolledPanels.EditPanel ):
         
         rows = []
         
-        rows.append( string_match_panel )
         rows.append( ( 'default value: ', self._pretty_default_value ) )
         rows.append( ( 'default value, %-encoded: ', self._default_value ) )
         
-        gridbox = ClientGUICommon.WrapInGrid( self, rows, add_stretch_at_end = False, expand_single_widgets = True )
+        gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
         vbox = QP.VBoxLayout()
         
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( vbox, string_match_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
         
@@ -1101,7 +1104,7 @@ class EditURLClassParameterFixedNamePanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._default_value_string_processor = ClientGUIStringControls.StringProcessorWidget( self, parameter.GetDefaultValueStringProcessor(), self._GetTestData )
         tt = 'WARNING WARNING: Extremely Big Brain'
-        tt += '/n' * 2
+        tt += '\n' * 2
         tt += 'You can apply the parsing system\'s normal String Processor steps to your fixed default value here. For instance, you could append/replace the default value with random hex or today\'s date. This is obviously super advanced, so be careful.'
         self._default_value_string_processor.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
@@ -1127,11 +1130,13 @@ class EditURLClassParameterFixedNamePanel( ClientGUIScrolledPanels.EditPanel ):
         rows.append( ( 'default value, %-encoded: ', self._default_value ) )
         rows.append( ( 'default value string processor: ', self._default_value_string_processor ) )
         
-        gridbox = ClientGUICommon.WrapInGrid( self, rows, add_stretch_at_end = False, expand_single_widgets = True )
+        gridbox = ClientGUICommon.WrapInGrid( self, rows, expand_single_widgets = True )
         
         vbox = QP.VBoxLayout()
         
+        # TODO: set this to perpendicular and the addstretch when stringmatch is not a panel
         QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        #vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
@@ -1428,6 +1433,8 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         tt = 'Normally, to ensure the same URLs are merged, hydrus will alphabetise GET parameters as part of the normalisation process.'
         tt += '\n' * 2
         tt += 'Almost all servers support GET params in any order. One or two do not. Uncheck this if you know there is a problem.'
+        tt += '\n\n'
+        tt += 'Be careful mixing this with an API or Referral URL Converter that converts parameter data, since now you have unordered parameter data to think about.'
         
         self._alphabetise_get_parameters.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
@@ -1448,11 +1455,9 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         self._no_more_parameters_than_this.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
         self._keep_extra_parameters_for_server = QW.QCheckBox( self._options_panel )
-        
-        tt = 'Only available if not using an API/redirect converter!'
-        tt += '\n' * 2
-        tt += 'If checked, the URL not strip out undefined parameters in the normalisation process that occurs before a URL is sent to the server. In general, you probably want to keep this on, since these extra parameters can include temporary tokens and so on. Undefined parameters are removed when URLs are compared to each other (to detect dupes) or saved to the "known urls" storage in the database.'
-        
+        tt = 'If checked, the URL not strip out undefined parameters in the normalisation process that occurs before a URL is sent to the server. In general, you probably want to keep this on, since these extra parameters can include temporary tokens and so on. Undefined parameters are removed when URLs are compared to each other (to detect dupes) or saved to the "known urls" storage in the database.'
+        tt += '\n\n'
+        tt += 'Be careful mixing this with an API or Referral URL Converter that converts parameter data, since now you have optional parameter data to think about.'
         self._keep_extra_parameters_for_server.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
         self._can_produce_multiple_files = QW.QCheckBox( self._options_panel )
@@ -1560,7 +1565,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         self._normalised_url.setReadOnly( True )
         
         tt = 'This is the fully normalised URL, which is what is saved to the database. It is used to compare to other URLs.'
-        tt += '/n' * 2
+        tt += '\n' * 2
         tt += 'We want to normalise to a single reliable URL because the same URL can be expressed in different ways. The parameters can be reordered, and descriptive \'sugar\' like "/123456/bodysuit-samus_aran" can be altered at a later date, say to "/123456/bodysuit-green_eyes-samus_aran". In order to collapse all the different expressions of a url down to a single comparable form, we remove any cruft and "normalise" things. The preferred scheme (http/https) will be switched to, and, typically, parameters will be alphabetised and non-defined elements will be removed.'
         
         self._normalised_url.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
@@ -1644,10 +1649,10 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         gridbox_2 = ClientGUICommon.WrapInGrid( self._matching_panel, rows )
         
-        self._matching_panel.Add( gridbox_1, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._matching_panel.Add( gridbox_1, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         self._matching_panel.Add( path_components_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         self._matching_panel.Add( parameters_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        self._matching_panel.Add( gridbox_2, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._matching_panel.Add( gridbox_2, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         #
         
@@ -1697,7 +1702,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         gridbox = ClientGUICommon.WrapInGrid( self._options_panel, rows )
         
-        self._options_panel.Add( gridbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        self._options_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         self._options_panel.Add( self._api_url_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._options_panel.Add( self._referral_url_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._options_panel.Add( self._next_gallery_page_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -1710,7 +1715,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         rows.append( ( 'name: ', self._name ) )
         rows.append( ( 'url type: ', self._url_type ) )
         
-        gridbox_1 = ClientGUICommon.WrapInGrid( self._matching_panel, rows )
+        gridbox_1 = ClientGUICommon.WrapInGrid( self, rows )
         
         rows = []
         
@@ -1722,10 +1727,10 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         vbox = QP.VBoxLayout()
         
-        QP.AddToLayout( vbox, gridbox_1, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, gridbox_1, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( vbox, self._notebook, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, self._example_url_classes, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, gridbox_2, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, gridbox_2, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
         
@@ -1771,7 +1776,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 parameter = panel.GetValue()
                 
-                self._parameters.AddDatas( ( parameter, ), select_sort_and_scroll = True )
+                self._parameters.AddData( parameter, select_sort_and_scroll = True )
                 
                 self._UpdateControls()
                 
@@ -1974,8 +1979,12 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         # we need to regen possible next gallery page choices before we fetch current value and update everything else
         
-        if self._update_already_in_progress: return # Could use blockSignals but this way I don't have to block signals on individual controls
-
+        if self._update_already_in_progress:
+            
+            return # Could use blockSignals but this way I don't have to block signals on individual controls
+            # 2025-03 edit: what
+            
+        
         self._update_already_in_progress = True
         
         if self._url_type.GetValue() == HC.URL_TYPE_GALLERY:
@@ -2034,7 +2043,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._single_value_parameters_string_match.setEnabled( self._has_single_value_parameters.isChecked() )
         
-        nuke_keep_extra_params = self._no_more_parameters_than_this.isChecked() or self._api_lookup_converter.GetValue().MakesChanges()
+        nuke_keep_extra_params = self._no_more_parameters_than_this.isChecked()
         
         if nuke_keep_extra_params:
             
@@ -2392,7 +2401,7 @@ class EditURLClassesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         url_class.RegenerateClassKey()
         
-        self._list_ctrl.AddDatas( ( url_class, ), select_sort_and_scroll = select_sort_and_scroll )
+        self._list_ctrl.AddData( url_class, select_sort_and_scroll = select_sort_and_scroll )
         
         self._changes_made = True
         

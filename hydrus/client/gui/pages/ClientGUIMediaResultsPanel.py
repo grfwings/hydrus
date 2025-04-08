@@ -33,10 +33,12 @@ from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvas
 from hydrus.client.gui.canvas import ClientGUICanvasFrame
 from hydrus.client.gui.duplicates import ClientGUIDuplicateActions
+from hydrus.client.gui.duplicates import ClientGUIDuplicatesContentMergeOptions
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.media import ClientGUIMediaModalActions
 from hydrus.client.gui.networking import ClientGUIHydrusNetwork
-from hydrus.client.gui.pages import ClientGUIManagementController
+from hydrus.client.gui.pages import ClientGUIPageManager
+from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaFileFilter
@@ -70,7 +72,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     
     newMediaAdded = QC.Signal()
     
-    def __init__( self, parent, page_key, management_controller: ClientGUIManagementController.ManagementController, media_results ):
+    def __init__( self, parent, page_key, page_manager: ClientGUIPageManager.PageManager, media_results ):
         
         self._qss_colours = {
             CC.COLOUR_THUMBGRID_BACKGROUND : QG.QColor( 255, 255, 255 ),
@@ -85,12 +87,17 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         }
         
         self._page_key = page_key
-        self._management_controller = management_controller
+        self._page_manager = page_manager
+        
+        # TODO: Assuming the canvas listeningmedialist refactoring went well, this guy is next
+        # take out the class inheritance, instead create a (non-listening) self._media_list, and fix all method calls to self._GetFirst and so on to instead point at that
+        # rewrite process(content/service)updates to update the list as needed
+        # delete the listeningmedialist class def
         
         # TODO: BRUH REWRITE THIS GARBAGE
         # we don't really want to be messing around with *args, **kwargs in __init__/super() gubbins, and this is highlighted as we move to super() and see this is all a mess!!
         # obviously decouple the list from the panel here so we aren't trying to do everything in one class
-        super().__init__( self._management_controller.GetLocationContext(), media_results, parent )
+        super().__init__( self._page_manager.GetLocationContext(), media_results, parent )
         
         self.setObjectName( 'HydrusMediaList' )
         
@@ -103,6 +110,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         self._UpdateBackgroundColour()
         
+        self._vertical_scrollbar_pos_on_hide = None
+        
         self.verticalScrollBar().setSingleStep( 50 )
         
         self._focused_media = None
@@ -114,10 +123,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         self._empty_page_status_override = None
         
         CG.client_controller.sub( self, 'AddMediaResults', 'add_media_results' )
-        CG.client_controller.sub( self, 'RemoveMedia', 'remove_media' )
         CG.client_controller.sub( self, '_UpdateBackgroundColour', 'notify_new_colourset' )
         CG.client_controller.sub( self, 'SelectByTags', 'select_files_with_tags' )
-        CG.client_controller.sub( self, 'LaunchMediaViewerOnFocus', 'launch_media_viewer' )
         
         self._had_changes_to_tag_presentation_while_hidden = False
         
@@ -161,11 +168,11 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         if len( self._selected_media ) == 0:
             
-            media_results = self.GenerateMediaResults( discriminant = CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH, selected_media = set( self._sorted_media ), for_media_viewer = True )
+            media_results = self.GetMediaResults( discriminant = CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH, selected_media = set( self._sorted_media ), for_media_viewer = True )
             
         else:
             
-            media_results = self.GenerateMediaResults( discriminant = CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH, selected_media = set( self._selected_media ), for_media_viewer = True )
+            media_results = self.GetMediaResults( discriminant = CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH, selected_media = set( self._selected_media ), for_media_viewer = True )
             
         
         if len( media_results ) > 0:
@@ -179,6 +186,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             canvas_frame.SetCanvas( canvas_window )
             
             canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
+            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
             
         
     
@@ -628,6 +636,27 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         return ( sorted_mime_descriptor, selected_mime_descriptor )
         
     
+    def _GetYStart( self ):
+        
+        visible_rect = QP.ScrollAreaVisibleRect( self )
+        
+        visible_rect_y = visible_rect.y()
+        
+        visible_rect_height = visible_rect.height()
+        
+        my_virtual_size = self.widget().size()
+        
+        my_virtual_height = my_virtual_size.height()
+        
+        max_y = my_virtual_height - visible_rect_height
+        
+        y_start = max( 0, visible_rect_y )
+        
+        y_start = min( y_start, max_y )
+        
+        return y_start
+        
+    
     def _HasFocusSingleton( self ) -> bool:
         
         try:
@@ -824,9 +853,21 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
             
         
-        media_results = self.GenerateMediaResults( discriminant = CC.DISCRIMINANT_LOCAL, for_media_viewer = True )
+        media_results = self.GetMediaResults( discriminant = CC.DISCRIMINANT_LOCAL, for_media_viewer = True )
         
         if len( media_results ) > 0:
+            
+            if first_media is not None:
+                
+                first_media = first_media.GetDisplayMedia()
+                
+                first_media_result = first_media.GetMediaResult()
+                
+                if first_media_result not in media_results:
+                    
+                    first_media = None
+                    
+                
             
             if first_media is None and self._focused_media is not None:
                 
@@ -855,7 +896,16 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_frame.SetCanvas( canvas_window )
             
-            canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
+            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
+
+            if CG.client_controller.new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ):
+                
+                canvas_window.exitFocusMedia.connect( self.SetFocusedMediaAndFocusTab )
+                
+            else:
+                
+                canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
+                
             
         
     
@@ -1233,7 +1283,9 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 time.sleep( 0.1 )
                 
-                CG.client_controller.CallToThread( CG.client_controller.files_maintenance_manager.RunJobImmediately, flat_media, job_type )
+                media_results = [ m.GetMediaResult() for m in flat_media ]
+                
+                CG.client_controller.CallToThread( CG.client_controller.files_maintenance_manager.RunJobImmediately, media_results, job_type )
                 
             else:
                 
@@ -1396,9 +1448,9 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
             else:
                 
-                first_media_result = media_results[0]
+                media_result_a = media_results[0]
                 
-                media_result_pairs = [ ( first_media_result, other_media_result ) for other_media_result in media_results if other_media_result != first_media_result ]
+                media_result_pairs = [ ( media_result_a, media_result_b ) for media_result_b in media_results if media_result_b != media_result_a ]
                 
             
         else:
@@ -1473,26 +1525,26 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         for is_first_run in ( True, False ):
             
-            for ( first_media_result, second_media_result ) in media_result_pairs:
+            for ( media_result_a, media_result_b ) in media_result_pairs:
                 
-                first_hash = first_media_result.GetHash()
-                second_hash = second_media_result.GetHash()
+                hash_a = media_result_a.GetHash()
+                hash_b = media_result_b.GetHash()
                 
-                if first_hash not in hashes_to_duplicated_media_results:
+                if hash_a not in hashes_to_duplicated_media_results:
                     
-                    hashes_to_duplicated_media_results[ first_hash ] = first_media_result.Duplicate()
-                    
-                
-                first_duplicated_media_result = hashes_to_duplicated_media_results[ first_hash ]
-                
-                if second_hash not in hashes_to_duplicated_media_results:
-                    
-                    hashes_to_duplicated_media_results[ second_hash ] = second_media_result.Duplicate()
+                    hashes_to_duplicated_media_results[ hash_a ] = media_result_a.Duplicate()
                     
                 
-                second_duplicated_media_result = hashes_to_duplicated_media_results[ second_hash ]
+                first_duplicated_media_result = hashes_to_duplicated_media_results[ hash_a ]
                 
-                content_update_packages = hash_pairs_to_content_update_packages[ ( first_hash, second_hash ) ]
+                if hash_b not in hashes_to_duplicated_media_results:
+                    
+                    hashes_to_duplicated_media_results[ hash_b ] = media_result_b.Duplicate()
+                    
+                
+                second_duplicated_media_result = hashes_to_duplicated_media_results[ hash_b ]
+                
+                content_update_packages = hash_pairs_to_content_update_packages[ ( hash_a, hash_b ) ]
                 
                 if duplicate_content_merge_options is not None:
                     
@@ -1511,12 +1563,12 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                             
                             hashes = content_update.GetHashes()
                             
-                            if first_hash in hashes:
+                            if hash_a in hashes:
                                 
                                 first_duplicated_media_result.ProcessContentUpdate( service_key, content_update )
                                 
                             
-                            if second_hash in hashes:
+                            if hash_b in hashes:
                                 
                                 second_duplicated_media_result.ProcessContentUpdate( service_key, content_update )
                                 
@@ -1529,7 +1581,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     continue
                     
                 
-                pair_info.append( ( duplicate_type, first_hash, second_hash, content_update_packages ) )
+                pair_info.append( ( duplicate_type, hash_a, hash_b, content_update_packages ) )
                 
             
         
@@ -1569,13 +1621,17 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit duplicate merge options' ) as dlg:
             
-            panel = ClientGUIScrolledPanelsEdit.EditDuplicateContentMergeOptionsPanel( dlg, duplicate_type, duplicate_content_merge_options, for_custom_action = True )
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+            
+            ctrl = ClientGUIDuplicatesContentMergeOptions.EditDuplicateContentMergeOptionsWidget( panel, duplicate_type, duplicate_content_merge_options, for_custom_action = True )
+            
+            panel.SetControl( ctrl )
             
             dlg.SetPanel( panel )
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
-                duplicate_content_merge_options = panel.GetValue()
+                duplicate_content_merge_options = ctrl.GetValue()
                 
                 if duplicate_type == HC.DUPLICATE_BETTER:
                     
@@ -1684,33 +1740,44 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         self._SetDuplicates( HC.DUPLICATE_POTENTIAL, media_group = media_group )
         
     
-    def _SetFocusedMedia( self, media ):
+    def _SetFocusedMedia( self, media, focus_page = False ):
         
-        if media is None and self._focused_media is not None:
+        self._next_best_media_if_focuses_removed = None
+        
+        for m in [ media, self._focused_media ]:
             
-            next_best_media = self._focused_media
-            
-            i = self._sorted_media.index( next_best_media )
-            
-            while next_best_media in self._selected_media:
+            if m is None:
                 
-                if i == 0:
+                continue
+                
+            
+            if m in self._sorted_media:
+                
+                next_best_media = m
+                
+                i = self._sorted_media.index( next_best_media )
+                
+                while next_best_media in self._selected_media:
                     
-                    next_best_media = None
+                    if i == 0:
+                        
+                        next_best_media = None
+                        
+                        break
+                        
+                    
+                    i -= 1
+                    
+                    next_best_media = self._sorted_media[ i ]
+                    
+                
+                if next_best_media is not None:
+                    
+                    self._next_best_media_if_focuses_removed = next_best_media
                     
                     break
                     
                 
-                i -= 1
-                
-                next_best_media = self._sorted_media[ i ]
-                
-            
-            self._next_best_media_if_focuses_removed = next_best_media
-            
-        else:
-            
-            self._next_best_media_if_focuses_removed = None
             
         
         publish_media = None
@@ -1721,8 +1788,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         if self._focused_media is not None:
             
             publish_media = self._focused_media.GetDisplayMedia()
-            
-        
+
         if publish_media is None:
             
             self.focusMediaCleared.emit()
@@ -1744,11 +1810,11 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         if len( hashes ) > 0:
             
-            media_sort = self._management_controller.GetVariable( 'media_sort' )
+            media_sort = self._page_manager.GetVariable( 'media_sort' )
             
-            if self._management_controller.HasVariable( 'media_collect' ):
+            if self._page_manager.HasVariable( 'media_collect' ):
                 
-                media_collect = self._management_controller.GetVariable( 'media_collect' )
+                media_collect = self._page_manager.GetVariable( 'media_collect' )
                 
             else:
                 
@@ -1863,22 +1929,24 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         return 0
         
     
-    def LaunchMediaViewerOnFocus( self, page_key ):
+    def LaunchMediaViewerOn( self, media ):
         
-        if page_key == self._page_key:
-            
-            self._LaunchMediaViewer()
-            
+        self._LaunchMediaViewer( media )
         
     
     def PageHidden( self ):
         
-        pass
+        self._vertical_scrollbar_pos_on_hide = self.verticalScrollBar().value()
         
     
     def PageShown( self ):
         
         self._PublishSelectionChange()
+        
+        if self._vertical_scrollbar_pos_on_hide is not None:
+            
+            self.verticalScrollBar().setValue( self._vertical_scrollbar_pos_on_hide )
+            
         
     
     def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
@@ -2471,12 +2539,9 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         self._PublishSelectionChange()
         
     
-    def RemoveMedia( self, page_key, hashes ):
+    def RemoveMedia( self, hashes ):
         
-        if page_key == self._page_key:
-            
-            self._RemoveMediaByHashes( hashes )
-            
+        self._RemoveMediaByHashes( hashes )
         
     
     def SelectByTags( self, page_key, tag_service_key, and_or_or, tags ):
@@ -2504,6 +2569,18 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     def SetFocusedMedia( self, media ):
         
         pass
+        
+    
+    def SetFocusedMediaAndFocusTab( self, media ):
+        
+        if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
+            
+            CG.client_controller.gui.ShowPage( self._page_key )
+
+            self.SetFocusedMedia( media )
+            
+            self._PublishSelectionChange()
+            
         
     
     def get_hmrp_background( self ):

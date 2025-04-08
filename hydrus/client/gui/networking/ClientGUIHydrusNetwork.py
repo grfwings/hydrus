@@ -127,7 +127,7 @@ class EditAccountTypePanel( ClientGUIScrolledPanels.EditPanel ):
         
         QP.AddToLayout( vbox, t_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( vbox, self._permissions_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._bandwidth_rules_control, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, self._bandwidth_rules_control, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, self._auto_creation_box, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
@@ -261,7 +261,7 @@ class EditAccountTypesPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 new_account_type = panel.GetValue()
                 
-                self._account_types_listctrl.AddDatas( ( new_account_type, ), select_sort_and_scroll = True )
+                self._account_types_listctrl.AddData( new_account_type, select_sort_and_scroll = True )
                 
             
         
@@ -512,9 +512,13 @@ class ReviewAccountsPanel( QW.QWidget ):
         self._account_list = ClientGUICommon.BetterCheckBoxList( self._accounts_box )
         self._account_list.setSelectionMode( QW.QAbstractItemView.SelectionMode.SingleSelection )
         
-        ( min_width, min_height ) = ClientGUIFunctions.ConvertTextToPixels( self._account_list, ( 74, 6 ) )
+        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._account_list, 74 )
         
-        self._account_list.setMinimumSize( min_width, min_height )
+        self._account_list.setMinimumWidth( min_width )
+        
+        height_num_rows = min( max( 6, len( account_identifiers ) ), 20 )
+        
+        self._account_list.SetHeightNumChars( height_num_rows )
         
         self._account_info_box = QW.QTextEdit( self._accounts_box )
         self._account_info_box.setReadOnly( True )

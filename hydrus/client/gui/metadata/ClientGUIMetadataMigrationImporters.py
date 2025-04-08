@@ -1,4 +1,3 @@
-import json
 import typing
 
 from qtpy import QtWidgets as QW
@@ -8,7 +7,6 @@ from hydrus.core import HydrusExceptions
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
@@ -18,6 +16,7 @@ from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.metadata import ClientGUIMetadataMigrationCommon
+from hydrus.client.gui.metadata import ClientGUIMetadataMigrationTest
 from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.parsing import ClientGUIParsingFormulae
@@ -25,6 +24,7 @@ from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.metadata import ClientMetadataMigrationImporters
 from hydrus.client.metadata import ClientTags
+from hydrus.client.parsing import ClientParsing
 
 choice_tuple_label_lookup = {
     ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaNotes : 'a file\'s notes',
@@ -57,12 +57,13 @@ def SelectClass( win: QW.QWidget, allowed_importer_classes: list ):
 
 class EditSingleFileMetadataImporterPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent: QW.QWidget, importer: ClientMetadataMigrationImporters.SingleFileMetadataImporter, allowed_importer_classes: list ):
+    def __init__( self, parent: QW.QWidget, importer: ClientMetadataMigrationImporters.SingleFileMetadataImporter, allowed_importer_classes: list, test_context_factory: ClientGUIMetadataMigrationTest.MigrationTestContextFactory ):
         
         super().__init__( parent )
         
         self._original_importer = importer
         self._allowed_importer_classes = allowed_importer_classes
+        self._test_context_factory = test_context_factory
         
         self._current_importer_class = type( importer )
         self._service_key = CC.COMBINED_TAG_SERVICE_KEY
@@ -156,8 +157,7 @@ class EditSingleFileMetadataImporterPanel( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( vbox, self._txt_separator_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._sidecar_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._string_processor_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        
-        vbox.addStretch( 1 )
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
@@ -254,11 +254,18 @@ class EditSingleFileMetadataImporterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         example_parsing_context = dict()
         
-        importer = self._GetValue()
+        try:
+            
+            importer = self._GetValue()
+            
+            texts = self._test_context_factory.GetExampleTestStrings( importer, sans_string_processing = True )
+            
+        except Exception as e:
+            
+            texts = [ str( e ) ]
+            
         
-        texts = sorted( importer.GetExampleStrings() )
-        
-        return ClientParsing.ParsingTestData( example_parsing_context, [ json.dumps( texts ) ] )
+        return ClientParsing.ParsingTestData( example_parsing_context, texts )
         
     
     def _GetValue( self ) -> ClientMetadataMigrationImporters.SingleFileMetadataImporter:
@@ -428,11 +435,12 @@ def convert_importer_to_pretty_string( importer: ClientMetadataMigrationImporter
 
 class SingleFileMetadataImportersControl( ClientGUIListBoxes.AddEditDeleteListBox ):
     
-    def __init__( self, parent: QW.QWidget, importers: typing.Collection[ ClientMetadataMigrationImporters.SingleFileMetadataImporter ], allowed_importer_classes: list ):
+    def __init__( self, parent: QW.QWidget, importers: typing.Collection[ ClientMetadataMigrationImporters.SingleFileMetadataImporter ], allowed_importer_classes: list, test_context_factory: ClientGUIMetadataMigrationTest.MigrationTestContextFactory ):
         
         super().__init__( parent, 5, convert_importer_to_pretty_string, self._AddImporter, self._EditImporter )
         
         self._allowed_importer_classes = allowed_importer_classes
+        self._test_context_factory = test_context_factory
         
         self.AddDatas( importers )
         
@@ -454,7 +462,7 @@ class SingleFileMetadataImportersControl( ClientGUIListBoxes.AddEditDeleteListBo
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit metadata migration source' ) as dlg:
             
-            panel = EditSingleFileMetadataImporterPanel( self, importer, self._allowed_importer_classes )
+            panel = EditSingleFileMetadataImporterPanel( self, importer, self._allowed_importer_classes, self._test_context_factory )
             
             dlg.SetPanel( panel )
             
@@ -473,7 +481,7 @@ class SingleFileMetadataImportersControl( ClientGUIListBoxes.AddEditDeleteListBo
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit metadata migration source' ) as dlg:
             
-            panel = EditSingleFileMetadataImporterPanel( self, importer, self._allowed_importer_classes )
+            panel = EditSingleFileMetadataImporterPanel( self, importer, self._allowed_importer_classes, self._test_context_factory )
             
             dlg.SetPanel( panel )
             

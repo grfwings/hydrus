@@ -13,12 +13,13 @@ from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client import ClientStrings
 from hydrus.client import ClientThreading
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingFunctions
 from hydrus.client.networking import ClientNetworkingJobs
+from hydrus.client.parsing import ClientParsing
+from hydrus.client.parsing import ClientParsingResults
 
 VALIDITY_VALID = 0
 VALIDITY_UNTESTED = 1
@@ -702,6 +703,19 @@ class NetworkLoginManager( HydrusSerialisable.SerialisableBase ):
                             ( old_login_script_key_and_name, credentials, old_login_access_type, old_login_access_text, active, validity, validity_error_text, no_work_until, no_work_until_reason ) = self._domains_to_login_info[ login_domain ]
                             
                             if old_login_script_key_and_name[1] == login_script_key_and_name[1]:
+                                
+                                # this is probably a newly overwritten script
+                                if auto_link or login_script.GetName() in auto_link_these_names:
+                                    
+                                    if validity == VALIDITY_INVALID:
+                                        
+                                        validity = VALIDITY_UNTESTED
+                                        validity_error_text = ''
+                                        
+                                        no_work_until = 0
+                                        no_work_until_reason = ''
+                                        
+                                    
                                 
                                 self._domains_to_login_info[ login_domain ] = ( login_script_key_and_name, credentials, login_access_type, login_access_text, active, validity, validity_error_text, no_work_until, no_work_until_reason )
                                 
@@ -1619,7 +1633,7 @@ class LoginStep( HydrusSerialisable.SerialisableBaseNamed ):
         
         required_temp_variables = set( self._temp_args.keys() )
         
-        set_temp_variables = { additional_info for [ ( name, content_type, additional_info ) ] in [ content_parser.GetParsableContent() for content_parser in self._content_parsers ] }
+        set_temp_variables = { parsable_content_description.temp_variable_name for parsable_content_description in [ content_parser.GetParsableContentDescription() for content_parser in self._content_parsers ] if isinstance( parsable_content_description, ClientParsingResults.ParsableContentDescriptionVariable ) }
         
         return ( required_temp_variables, set_temp_variables )
         
@@ -1793,16 +1807,18 @@ class LoginStep( HydrusSerialisable.SerialisableBaseNamed ):
             
             for content_parser in self._content_parsers:
                 
+                content_parser = typing.cast( ClientParsing.ContentParser, content_parser )
+                
                 try:
                     
-                    parse_results = content_parser.Parse( parsing_context, downloaded_text )
+                    parsed_post = content_parser.Parse( parsing_context, downloaded_text )
                     
                 except HydrusExceptions.VetoException as e:
                     
                     raise HydrusExceptions.ValidationException( str( e ) )
                     
                 
-                result = ClientParsing.GetVariableFromParseResults( parse_results )
+                result = parsed_post.GetVariable()
                 
                 if result is not None:
                     

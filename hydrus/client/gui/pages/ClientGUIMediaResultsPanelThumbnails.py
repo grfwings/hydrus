@@ -22,17 +22,19 @@ from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
+from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.media import ClientGUIMediaModalActions
 from hydrus.client.gui.media import ClientGUIMediaMenus
-from hydrus.client.gui.pages import ClientGUIManagementController
+from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanel
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanelMenus
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaFileFilter
 from hydrus.client.media import ClientMediaResultPrettyInfo
 from hydrus.client.metadata import ClientTags
+from hydrus.client.metadata import ClientRatings
 
 FRAME_DURATION_60FPS = 1.0 / 60
 
@@ -123,7 +125,7 @@ class ThumbnailWaitingToBeDrawnAnimated( ThumbnailWaitingToBeDrawn ):
 
 class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel ):
     
-    def __init__( self, parent, page_key, management_controller: ClientGUIManagementController.ManagementController, media_results ):
+    def __init__( self, parent, page_key, page_manager: ClientGUIPageManager.PageManager, media_results ):
         
         self._clean_canvas_pages = {}
         self._dirty_canvas_pages = []
@@ -139,7 +141,9 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         self._hashes_to_thumbnails_waiting_to_be_drawn: typing.Dict[ bytes, ThumbnailWaitingToBeDrawn ] = {}
         self._hashes_faded = set()
         
-        super().__init__( parent, page_key, management_controller, media_results )
+        super().__init__( parent, page_key, page_manager, media_results )
+        
+        self._my_current_drag_object = None
         
         self._last_device_pixel_ratio = self.devicePixelRatio()
         
@@ -162,7 +166,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         self._UpdateScrollBars()
         
         CG.client_controller.sub( self, 'MaintainPageCache', 'memory_maintenance_pulse' )
-        CG.client_controller.sub( self, 'NotifyNewFileInfo', 'new_file_info' )
+        CG.client_controller.sub( self, 'NotifyFilesNeedRedraw', 'notify_files_need_redraw' )
         CG.client_controller.sub( self, 'NewThumbnails', 'new_thumbnails' )
         CG.client_controller.sub( self, 'ThumbnailsReset', 'notify_complete_thumbnail_reset' )
         CG.client_controller.sub( self, 'RedrawAllThumbnails', 'refresh_all_tag_presentation_gui' )
@@ -188,6 +192,32 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         page_indices = list( range( first_visible_page_index, last_visible_page_index + 1 ) )
         
         return page_indices
+        
+    
+    def _CheckDnDIsOK( self, drag_object ):
+        
+        # drag.cancel is not supported on macOS
+        if HC.PLATFORM_MACOS:
+            
+            return
+            
+        
+        # QW.QApplication.mouseButtons() doesn't work unless mouse is over!
+        if not ClientGUIFunctions.MouseIsOverOneOfOurWindows():
+            
+            return
+            
+        
+        if self._my_current_drag_object == drag_object and QW.QApplication.mouseButtons() != QC.Qt.MouseButton.LeftButton:
+            
+            # awkward situation where, it seems, the DnD is spawned while the 'release left-click' event is in the queue
+            # the DnD spawns after the click release and sits there until the user clicks again
+            # I think this is because I am spawning the DnD in the move event rather than the mouse press
+            
+            self._my_current_drag_object.cancel()
+            
+            self._my_current_drag_object = None
+            
         
     
     def _CreateNewDirtyPage( self ):
@@ -252,24 +282,22 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             bg_colour = ClientGUIFunctions.GetLighterDarkerColour( bg_colour )
             
         
+        comp_mode = painter.compositionMode()
+        
+        painter.setCompositionMode( QG.QPainter.CompositionMode.CompositionMode_Source )
+        
         if new_options.GetNoneableString( 'media_background_bmp_path' ) is not None:
             
-            comp_mode = painter.compositionMode()
-            
-            painter.setCompositionMode( QG.QPainter.CompositionMode_Source )
-            
             painter.setBackground( QG.QBrush( QC.Qt.GlobalColor.transparent ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            painter.setCompositionMode( comp_mode )
             
         else: 
             
             painter.setBackground( QG.QBrush( bg_colour ) )
             
-            painter.eraseRect( painter.viewport() )
-            
+        
+        painter.eraseRect( painter.viewport() )
+        
+        painter.setCompositionMode( comp_mode )
         
         #
         
@@ -490,27 +518,6 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
         
         return thumbnails
-        
-    
-    def _GetYStart( self ):
-        
-        visible_rect = QP.ScrollAreaVisibleRect( self )
-        
-        visible_rect_y = visible_rect.y()
-        
-        visible_rect_height = visible_rect.height()
-        
-        my_virtual_size = self.widget().size()
-        
-        my_virtual_height = my_virtual_size.height()
-        
-        max_y = my_virtual_height - visible_rect_height
-        
-        y_start = max( 0, visible_rect_y )
-        
-        y_start = min( y_start, max_y )
-        
-        return y_start
         
     
     def _MediaIsInCleanPage( self, thumbnail ):
@@ -904,6 +911,72 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
         
     
+    def DoMouseMoveEvent( self, event ):
+        
+        if event.buttons() & QC.Qt.MouseButton.LeftButton:
+            
+            we_started_dragging_on_this_panel = self._drag_init_coordinates is not None
+            
+            if we_started_dragging_on_this_panel:
+                
+                old_drag_pos = self._drag_init_coordinates
+                
+                global_mouse_pos = QG.QCursor.pos()
+                
+                delta_pos = global_mouse_pos - old_drag_pos
+                
+                total_absolute_pixels_moved = delta_pos.manhattanLength()
+                
+                we_moved = total_absolute_pixels_moved > 0
+                
+                if we_moved:
+                    
+                    self._drag_prefire_event_count += 1
+                    
+                
+                # prefire deal here is mpv lags on initial click, which can cause a drag (and hence an immediate pause) event by accident when mouserelease isn't processed quick
+                # so now we'll say we can't start a drag unless we get a smooth ramp to our pixel delta threshold
+                clean_drag_started = self._drag_prefire_event_count >= 10
+                prob_not_an_accidental_click = HydrusTime.TimeHasPassedMS( self._drag_click_timestamp_ms + 100 )
+                
+                if clean_drag_started and prob_not_an_accidental_click:
+                    
+                    media = self._GetSelectedFlatMedia( discriminant = CC.DISCRIMINANT_LOCAL )
+                    
+                    if len( media ) > 0:
+                        
+                        alt_down = event.modifiers() & QC.Qt.KeyboardModifier.AltModifier
+                        
+                        self._my_current_drag_object = QG.QDrag( self )
+                        
+                        CG.client_controller.CallLaterQtSafe( self, 0.1, 'doing DnD check', self._CheckDnDIsOK, self._my_current_drag_object )
+                        
+                        result = ClientGUIDragDrop.DoFileExportDragDrop( self._my_current_drag_object, self._page_key, media, alt_down )
+                        
+                        self._my_current_drag_object = None
+                        
+                        if result not in ( QC.Qt.DropAction.IgnoreAction, ):
+                            
+                            self.focusMediaPaused.emit()
+                            
+                        
+                        event.accept()
+                        
+                        return
+                        
+                    
+                
+            
+        else:
+            
+            self._drag_init_coordinates = None
+            self._drag_prefire_event_count = 0
+            self._drag_click_timestamp_ms = 0
+            
+        
+        event.ignore()
+        
+    
     def EventMouseFullScreen( self, event ):
         
         t = self._GetThumbnailUnderMouse( event )
@@ -952,62 +1025,6 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         self._DeleteAllDirtyPages()
         
     
-    def mouseMoveEvent( self, event ):
-        
-        if event.buttons() & QC.Qt.MouseButton.LeftButton:
-            
-            we_started_dragging_on_this_panel = self._drag_init_coordinates is not None
-            
-            if we_started_dragging_on_this_panel:
-                
-                old_drag_pos = self._drag_init_coordinates
-                
-                global_mouse_pos = QG.QCursor.pos()
-                
-                delta_pos = global_mouse_pos - old_drag_pos
-                
-                total_absolute_pixels_moved = delta_pos.manhattanLength()
-                
-                we_moved = total_absolute_pixels_moved > 0
-                
-                if we_moved:
-                    
-                    self._drag_prefire_event_count += 1
-                    
-                
-                # prefire deal here is mpv lags on initial click, which can cause a drag (and hence an immediate pause) event by accident when mouserelease isn't processed quick
-                # so now we'll say we can't start a drag unless we get a smooth ramp to our pixel delta threshold
-                clean_drag_started = self._drag_prefire_event_count >= 10
-                prob_not_an_accidental_click = HydrusTime.TimeHasPassedMS( self._drag_click_timestamp_ms + 100 )
-                
-                if clean_drag_started and prob_not_an_accidental_click:
-                    
-                    media = self._GetSelectedFlatMedia( discriminant = CC.DISCRIMINANT_LOCAL )
-                    
-                    if len( media ) > 0:
-                        
-                        alt_down = event.modifiers() & QC.Qt.KeyboardModifier.AltModifier
-                        
-                        result = ClientGUIDragDrop.DoFileExportDragDrop( self, self._page_key, media, alt_down )
-                        
-                        if result not in ( QC.Qt.DropAction.IgnoreAction, ):
-                            
-                            self.focusMediaPaused.emit()
-                            
-                        
-                    
-                
-            
-        else:
-            
-            self._drag_init_coordinates = None
-            self._drag_prefire_event_count = 0
-            self._drag_click_timestamp_ms = 0
-            
-        
-        event.ignore()
-        
-    
     def mouseReleaseEvent( self, event ):
         
         if event.button() != QC.Qt.MouseButton.RightButton:
@@ -1039,32 +1056,11 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
         
     
-    def NotifyNewFileInfo( self, hashes ):
+    def NotifyFilesNeedRedraw( self, hashes ):
         
-        def qt_do_update( hashes_to_media_results ):
-            
-            affected_media = self._GetMedia( set( hashes_to_media_results.keys() ) )
-            
-            for media in affected_media:
-                
-                media.UpdateFileInfo( hashes_to_media_results )
-                
-            
-            self._RedrawMedia( affected_media )
-            
+        affected_media = self._GetMedia( hashes )
         
-        def do_it( win, callable, affected_hashes ):
-            
-            media_results = CG.client_controller.Read( 'media_results', affected_hashes )
-            
-            hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
-            
-            CG.client_controller.CallAfterQtSafe( win, 'new file info notification', qt_do_update, hashes_to_media_results )
-            
-        
-        affected_hashes = self._hashes.intersection( hashes )
-        
-        CG.client_controller.CallToThread( do_it, self, do_it, affected_hashes )
+        self._RedrawMedia( affected_media )
         
     
     def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
@@ -1960,7 +1956,14 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
             super().__init__( parent )
             
+            self.setMouseTracking( True )
+            
             self._parent = parent
+            
+        
+        def mouseMoveEvent( self, event ):
+            
+            self._parent.DoMouseMoveEvent( event )
             
         
         def mousePressEvent( self, event ):
@@ -2089,6 +2092,58 @@ class Selectable( object ):
     def Select( self ): self._selected = True
     
 
+def ShouldShowRatingInThumbnail( media: ClientMedia.Media, service_key: bytes ) -> bool:
+    
+    try:
+        
+        service = CG.client_controller.services_manager.GetService( service_key )
+        
+        show_in_thumbnail = service.GetShowInThumbnail()
+        show_in_thumbnail_even_when_null = service.GetShowInThumbnailEvenWhenNull()
+        
+        if not show_in_thumbnail:
+            
+            return False
+            
+        
+        if show_in_thumbnail_even_when_null:
+            
+            return True
+            
+        else:
+            
+            service_type = service.GetServiceType()
+            
+            if service_type == HC.LOCAL_RATING_LIKE:
+                
+                rating_state = ClientRatings.GetLikeStateFromMedia( ( media, ), service_key )
+                
+                return rating_state in ( ClientRatings.LIKE, ClientRatings.DISLIKE )
+                
+            elif service_type == HC.LOCAL_RATING_NUMERICAL:
+                
+                ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( media, ), service_key )
+                
+                return rating_state == ClientRatings.SET
+                
+            elif service_type == HC.LOCAL_RATING_INCDEC:
+                
+                ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( media, ), service_key )
+                
+                return rating_state == ClientRatings.SET and rating != 0
+                
+            else:
+                
+                raise NotImplementedError( 'Do not understand the rating service!' )
+                
+            
+        
+    except HydrusExceptions.DataMissing:
+        
+        return False
+        
+    
+
 class Thumbnail( Selectable ):
     
     def __init__( self, *args, **kwargs ):
@@ -2117,7 +2172,14 @@ class Thumbnail( Selectable ):
         # we don't really want to mess around with DPR here, we just want to draw thumbs
         # that said, this works after a medium-high headache getting it there, so let's not get ahead of ourselves
         
-        thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( self )
+        if media.GetDisplayMedia() is None:
+            
+            thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( None )
+            
+        else:
+            
+            thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( media.GetDisplayMedia().GetMediaResult() )
+            
         
         thumbnail_border = CG.client_controller.new_options.GetInteger( 'thumbnail_border' )
         
@@ -2174,9 +2236,9 @@ class Thumbnail( Selectable ):
         
         painter = QG.QPainter( qt_image )
         
-        painter.setRenderHint( QG.QPainter.TextAntialiasing, True ) # is true already in tests, is supposed to be 'the way' to fix the ugly text issue
-        painter.setRenderHint( QG.QPainter.Antialiasing, True ) # seems to do nothing, it only affects primitives?
-        painter.setRenderHint( QG.QPainter.SmoothPixmapTransform, True ) # makes the thumb QImage scale up and down prettily when we need it, either because it is too small or DPR gubbins
+        painter.setRenderHint( QG.QPainter.RenderHint.TextAntialiasing, True ) # is true already in tests, is supposed to be 'the way' to fix the ugly text issue
+        painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True ) # seems to do nothing, it only affects primitives?
+        painter.setRenderHint( QG.QPainter.RenderHint.SmoothPixmapTransform, True ) # makes the thumb QImage scale up and down prettily when we need it, either because it is too small or DPR gubbins
         
         new_options = CG.client_controller.new_options
         
@@ -2208,13 +2270,16 @@ class Thumbnail( Selectable ):
         f = QG.QFont( CG.client_controller.gui.font() )
         
         # this line magically fixes the bad text, as above
-        f.setStyleStrategy( QG.QFont.PreferAntialias )
+        f.setStyleStrategy( QG.QFont.StyleStrategy.PreferAntialias )
         
         painter.setFont( f )
         
-        bg_color = media_panel.GetColour( background_colour_type )
+        qss_window_colour = media_panel.palette().color( QG.QPalette.ColorRole.Window )
+        qss_text_colour = media_panel.palette().color( QG.QPalette.ColorRole.WindowText )
         
-        painter.fillRect( thumbnail_border, thumbnail_border, width - ( thumbnail_border * 2 ), height - ( thumbnail_border * 2 ), bg_color )
+        media_panel_background_colour = media_panel.GetColour( background_colour_type )
+        
+        painter.fillRect( thumbnail_border, thumbnail_border, width - ( thumbnail_border * 2 ), height - ( thumbnail_border * 2 ), media_panel_background_colour )
         
         raw_thumbnail_qt_image = thumbnail_hydrus_bmp.GetQtImage()
         
@@ -2241,8 +2306,6 @@ class Thumbnail( Selectable ):
         painter.drawImage( x_offset, y_offset, raw_thumbnail_qt_image )
         
         TEXT_BORDER = 1
-        
-        new_options = CG.client_controller.new_options
         
         tags = media.GetTagsManager().GetCurrentAndPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
         
@@ -2376,6 +2439,122 @@ class Thumbnail( Selectable ):
         
         locations_manager = media.GetLocationsManager()
         
+        # ratings
+        
+        draw_thumbnail_rating_background = CG.client_controller.new_options.GetBoolean( 'draw_thumbnail_rating_background' )
+        
+        current_top_right_y = thumbnail_border
+        
+        services_manager = CG.client_controller.services_manager
+        
+        like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
+        
+        like_services_to_show = [ like_service for like_service in like_services if ShouldShowRatingInThumbnail( media, like_service.GetServiceKey() ) ]
+        
+        num_to_show = len( like_services_to_show )
+        
+        if num_to_show > 0:
+            
+            rect_width = ( 16 * num_to_show ) + ( ICON_MARGIN * 2 )
+            rect_height = 16 + ( ICON_MARGIN * 2 )
+            
+            rect_x = width - thumbnail_border - rect_width
+            rect_y = current_top_right_y
+            
+            if draw_thumbnail_rating_background:
+                
+                painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
+                
+            
+            like_rating_current_x = rect_x + ICON_MARGIN
+            like_rating_current_y = rect_y + ICON_MARGIN
+            
+            for like_service in like_services_to_show:
+                
+                service_key = like_service.GetServiceKey()
+                
+                rating_state = ClientRatings.GetLikeStateFromMedia( ( media, ), service_key )
+                
+                ClientGUIRatings.DrawLike( painter, like_rating_current_x, like_rating_current_y, service_key, rating_state )
+                
+                like_rating_current_x += 16
+                
+            
+            current_top_right_y += rect_height
+            
+        
+        numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
+        
+        numerical_services_to_show = [ numerical_service for numerical_service in numerical_services if ShouldShowRatingInThumbnail( media, numerical_service.GetServiceKey() ) ]
+        
+        for numerical_service in numerical_services_to_show:
+            
+            service_key = numerical_service.GetServiceKey()
+            
+            ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( media, ), service_key )
+            
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key )
+            
+            rect_width = numerical_width + ( ICON_MARGIN * 2 )
+            rect_height = 16 + ( ICON_MARGIN * 2 )
+            
+            rect_x = width - thumbnail_border - rect_width
+            rect_y = current_top_right_y
+            
+            if draw_thumbnail_rating_background:
+                
+                painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
+                
+            
+            numerical_rating_current_x = rect_x + ICON_MARGIN
+            numerical_rating_current_y = rect_y + ICON_MARGIN
+            
+            ClientGUIRatings.DrawNumerical( painter, numerical_rating_current_x, numerical_rating_current_y, service_key, rating_state, rating )
+            
+            current_top_right_y += rect_height
+            
+        
+        incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
+        
+        incdec_services_to_show = [ incdec_service for incdec_service in incdec_services if ShouldShowRatingInThumbnail( media, incdec_service.GetServiceKey() ) ]
+        
+        num_to_show = len( incdec_services_to_show )
+        
+        if num_to_show > 0:
+            
+            control_width = ClientGUIRatings.INCDEC_SIZE.width()
+            control_height = ClientGUIRatings.INCDEC_SIZE.height()
+            
+            rect_width = ( control_width * num_to_show ) + ( ICON_MARGIN * 2 )
+            rect_height = control_height + ( ICON_MARGIN * 2 )
+            
+            rect_x = width - thumbnail_border - rect_width
+            rect_y = current_top_right_y
+            
+            if draw_thumbnail_rating_background:
+                
+                painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
+                
+            
+            incdec_rating_current_x = rect_x + ICON_MARGIN
+            incdec_rating_current_y = rect_y + ICON_MARGIN
+            
+            for incdec_service in incdec_services_to_show:
+                
+                service_key = incdec_service.GetServiceKey()
+                
+                ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( media, ), service_key )
+                
+                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, incdec_rating_current_y, service_key, rating_state, rating )
+                
+                incdec_rating_current_x += control_width
+                
+            
+            current_top_right_y += rect_height
+            
+        
+        # icons
+
         icons_to_draw = []
         
         if locations_manager.IsDownloading():
@@ -2406,7 +2585,7 @@ class Thumbnail( Selectable ):
                 
                 icon_x -= icon.width()
                 
-                painter.drawPixmap( width + icon_x, thumbnail_border, icon )
+                painter.drawPixmap( width + icon_x, current_top_right_y, icon )
                 
                 icon_x -= 2 * ICON_MARGIN
                 
@@ -2416,11 +2595,6 @@ class Thumbnail( Selectable ):
             
             icon = CC.global_pixmaps().collection
             
-            icon_x = thumbnail_border + ICON_MARGIN
-            icon_y = ( height - 1 ) - thumbnail_border - ICON_MARGIN - icon.height()
-            
-            painter.drawPixmap( icon_x, icon_y, icon )
-            
             num_files_str = HydrusNumbers.ToHumanInt( media.GetNumFiles() )
             
             ( text_size, num_files_str ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, num_files_str )
@@ -2428,16 +2602,22 @@ class Thumbnail( Selectable ):
             text_width = text_size.width()
             text_height = text_size.height()
             
-            box_width = text_width + ( ICON_MARGIN * 2 )
-            box_x = icon_x + icon.width() + ICON_MARGIN
-            box_height = text_height + ( ICON_MARGIN * 2 )
-            box_y = ( height - 1 ) - box_height
+            box_width = icon.width() + text_width + ( ICON_MARGIN * 3 )
+            box_height = max( icon.height(), text_height ) + ( ICON_MARGIN * 2 )
             
-            painter.fillRect( box_x, height - text_height - 3, box_width, box_height, CC.COLOUR_UNSELECTED )
+            box_x = thumbnail_border
+            box_y = height - thumbnail_border - box_height
             
-            painter.setPen( QG.QPen( CC.COLOUR_SELECTED_DARK ) )
+            painter.fillRect( box_x, box_y, box_width, box_height, qss_window_colour )
             
-            text_x = box_x + ICON_MARGIN
+            icon_x = box_x + ICON_MARGIN
+            icon_y = ( box_y + box_height ) - ICON_MARGIN - icon.height()
+            
+            painter.drawPixmap( icon_x, icon_y, icon )
+            
+            painter.setPen( QG.QPen( qss_text_colour ) )
+            
+            text_x = icon_x + icon.width() + ICON_MARGIN
             text_y = box_y + ICON_MARGIN
             
             ClientGUIFunctions.DrawText( painter, text_x, text_y, num_files_str )

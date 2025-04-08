@@ -360,6 +360,7 @@ class DialogInputTags( Dialog ):
         self._tag_autocomplete = ClientGUIACDropdown.AutoCompleteDropdownTagsWrite( self, self.EnterTags, default_location_context, service_key, show_paste_button = True )
         
         self._tags.tagsChanged.connect( self._tag_autocomplete.SetContextTags )
+        self._tag_autocomplete.externalCopyKeyPressEvent.connect( self._tags.keyPressEvent )
         
         self._tag_autocomplete.nullEntered.connect( self.OK )
         
@@ -491,8 +492,9 @@ class DialogInputUPnPMapping( Dialog ):
         
         vbox = QP.VBoxLayout()
         
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         QP.AddToLayout( vbox, b_box, CC.FLAGS_ON_RIGHT )
+        vbox.addStretch( 0 )
         
         self.setLayout( vbox )
         

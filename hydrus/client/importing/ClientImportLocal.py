@@ -619,17 +619,25 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                     HydrusPaths.MergeFile( path, dest_path )
                     
                 
-                txt_path = path + '.txt'
+                possible_sidecar_paths = set()
                 
-                if os.path.exists( txt_path ):
+                for router in self._metadata_routers:
                     
-                    txt_filename = os.path.basename( txt_path )
+                    possible_sidecar_paths.update( router.GetPossibleImporterSidecarPaths( path ) )
                     
-                    txt_dest_path = os.path.join( dest_dir, txt_filename )
+                
+                for possible_sidecar_path in possible_sidecar_paths:
                     
-                    txt_dest_path = HydrusPaths.AppendPathUntilNoConflicts( txt_dest_path )
-                    
-                    HydrusPaths.MergeFile( txt_path, txt_dest_path )
+                    if os.path.exists( possible_sidecar_path ):
+                        
+                        txt_filename = os.path.basename( possible_sidecar_path )
+                        
+                        txt_dest_path = os.path.join( dest_dir, txt_filename )
+                        
+                        txt_dest_path = HydrusPaths.AppendPathUntilNoConflicts( txt_dest_path )
+                        
+                        HydrusPaths.MergeFile( possible_sidecar_path, txt_dest_path )
+                        
                     
                 
                 self._file_seed_cache.RemoveFileSeeds( ( file_seed, ) )
@@ -706,13 +714,17 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
     
     def _ImportFiles( self, job_status ):
         
+        SAVE_PERIOD = 600
+        
         did_work = False
         
-        time_to_save = HydrusTime.GetNow() + 600
+        time_to_save = HydrusTime.GetNow() + SAVE_PERIOD
         
         num_files_imported = 0
         presentation_hashes = []
         presentation_hashes_fast = set()
+        
+        pauser = HydrusThreading.BigJobPauser()
         
         i = 0
         
@@ -720,7 +732,11 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         # num_to_do is num currently unknown
         num_total = self._file_seed_cache.GetFileSeedCount( CC.STATUS_UNKNOWN )
         
+        file_seed = None
+        
         while True:
+            
+            previous_file_seed = file_seed
             
             file_seed = self._file_seed_cache.GetNextFileSeed( CC.STATUS_UNKNOWN )
             
@@ -733,13 +749,18 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                 break
                 
             
+            if previous_file_seed is not None and previous_file_seed == file_seed:
+                
+                raise Exception( f'Somehow we did not process the file job: {previous_file_seed.file_seed_data}! Please let hydev know about this.' )
+                
+            
             did_work = True
             
             if HydrusTime.TimeHasPassed( time_to_save ):
                 
                 CG.client_controller.WriteSynchronous( 'serialisable', self )
                 
-                time_to_save = HydrusTime.GetNow() + 600
+                time_to_save = HydrusTime.GetNow() + SAVE_PERIOD
                 
             
             gauge_num_done = num_files_imported + 1
@@ -850,6 +871,8 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             finally:
                 
                 self._ActionSeed( file_seed )
+                
+                pauser.Pause()
                 
             
         
@@ -1276,7 +1299,7 @@ class ImportFoldersManager( ClientDaemons.ManagerWithMainLoop ):
     
     def __init__( self, controller: "CG.ClientController.Controller" ):
         
-        super().__init__( controller )
+        super().__init__( controller, 10 )
         
         self._import_folder_names_fetched = False
         self._import_folder_names_to_next_work_time_cache: typing.Dict[ str, int ] = {}
@@ -1400,72 +1423,47 @@ class ImportFoldersManager( ClientDaemons.ManagerWithMainLoop ):
         return 'import folders'
         
     
-    def MainLoop( self ):
+    def _DoMainLoop( self ):
         
-        try:
+        while True:
             
-            time_to_start = HydrusTime.GetNow() + 10
+            self._CheckShutdown()
             
-            while not HydrusTime.TimeHasPassed( time_to_start ):
-                
-                self._CheckShutdown()
-                
-                self._wake_event.wait( 1 )
-                
-                if self._wake_event.is_set():
-                    
-                    break
-                    
-                
+            self._controller.WaitUntilViewFree()
             
-            while True:
+            try:
                 
-                self._CheckShutdown()
+                HG.import_folders_running = True
                 
-                self._controller.WaitUntilViewFree()
+                self._DoWork()
                 
-                try:
-                    
-                    HG.import_folders_running = True
-                    
-                    self._DoWork()
-                    
-                except Exception as e:
-                    
-                    self._serious_error_encountered = True
-                    
-                    HydrusData.PrintException( e )
-                    
-                    message = 'There was an unexpected problem during import folders work! They will not run again this boot. A full traceback of this error should be written to the log.'
-                    message += '\n' * 2
-                    message += str( e )
-                    
-                    HydrusData.ShowText( message )
-                    
-                    return
-                    
-                finally:
-                    
-                    HG.import_folders_running = False
-                    
+            except Exception as e:
                 
-                with self._lock:
-                    
-                    wait_period = self._GetTimeUntilNextWork()
-                    
+                self._serious_error_encountered = True
                 
-                self._wake_event.wait( wait_period )
+                HydrusData.PrintException( e )
                 
-                self._wake_event.clear()
+                message = 'There was an unexpected problem during import folders work! They will not run again this boot. A full traceback of this error should be written to the log.'
+                message += '\n' * 2
+                message += str( e )
+                
+                HydrusData.ShowText( message )
+                
+                return
+                
+            finally:
+                
+                HG.import_folders_running = False
                 
             
-        except HydrusExceptions.ShutdownException:
+            with self._lock:
+                
+                wait_period = self._GetTimeUntilNextWork()
+                
             
-            pass
+            self._wake_event.wait( wait_period )
             
-        finally:
-            
-            self._mainloop_is_finished = True
+            self._wake_event.clear()
             
         
     

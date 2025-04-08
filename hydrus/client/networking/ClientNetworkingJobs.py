@@ -825,16 +825,57 @@ class NetworkJob( object ):
         
         ( connect_timeout, read_timeout ) = self._GetTimeouts()
         
+        if HG.network_report_mode:
+            
+            if len( headers ) > 0:
+                
+                message = f'Request Headers set by the network domain manager: ' + ', '.join( sorted( headers.keys() ) )
+                
+            else:
+                
+                message = 'No custom headers set by the network domain manager.'
+                
+            
+            if HG.network_report_mode_silent:
+                
+                HydrusData.Print( message )
+                
+            else:
+                
+                HydrusData.ShowText( message )
+                
+            
+        
+        # note we do verify=session.verify here since it is an implicit inheritance and can be overwritten by internal requests ENV gubbins unless explicitly stated
+        
         if self._file_body_path is not None:
             
             with open( self._file_body_path, 'rb' ) as f:
                 
-                response = session.request( method, url, data = f, headers = headers, stream = True, timeout = ( connect_timeout, read_timeout ) )
+                response = session.request( method, url, data = f, headers = headers, stream = True, timeout = ( connect_timeout, read_timeout ), verify = session.verify )
                 
             
         else:
             
-            response = session.request( method, url, data = data, files = files, headers = headers, stream = True, timeout = ( connect_timeout, read_timeout ) )
+            response = session.request( method, url, data = data, files = files, headers = headers, stream = True, timeout = ( connect_timeout, read_timeout ), verify = session.verify )
+            
+        
+        if HG.network_report_mode:
+            
+            message = 'Request Headers:\n'
+            message += '\n'.join( [ f'{key}: {value}' for ( key, value ) in sorted( response.request.headers.items() ) ] )
+            message += '\n\n'
+            message += 'Response Headers:\n'
+            message += '\n'.join( [ f'{key}: {value}' for ( key, value ) in sorted( response.headers.items() ) ] )
+            
+            if HG.network_report_mode_silent:
+                
+                HydrusData.Print( message )
+                
+            else:
+                
+                HydrusData.ShowText( message )
+                
             
         
         with self._lock:
@@ -1111,16 +1152,24 @@ class NetworkJob( object ):
             
         
     
-    def _WaitOnServersideBandwidth( self, status_text: str ):
+    def _WaitOnServersideBandwidth( self, status_text: str, num_seconds_to_wait = None ):
         
         # 429/509/529 response from server. basically means 'I'm under big load mate'
         # a future version of this could def talk to domain manager and add a temp delay so other network jobs can be informed
         
-        serverside_bandwidth_wait_time = CG.client_controller.new_options.GetInteger( 'serverside_bandwidth_wait_time' )
+        if num_seconds_to_wait is None:
+            
+            serverside_bandwidth_wait_time = CG.client_controller.new_options.GetInteger( 'serverside_bandwidth_wait_time' )
+            
+            backoff_factor = 1.25
+            problem_rating = ( self._current_connection_attempt_number + self._current_request_attempt_number ) - 1
+            
+            problem_coefficient = backoff_factor ** problem_rating
+            
+            num_seconds_to_wait = problem_coefficient * serverside_bandwidth_wait_time
+            
         
-        problem_rating = ( self._current_connection_attempt_number + self._current_request_attempt_number ) - 1
-        
-        self._serverside_bandwidth_wake_time = HydrusTime.GetNow() + ( problem_rating * serverside_bandwidth_wait_time )
+        self._serverside_bandwidth_wake_time = HydrusTime.GetNow() + num_seconds_to_wait
         
         while not HydrusTime.TimeHasPassed( self._serverside_bandwidth_wake_time ) and not self._IsCancelled():
             
@@ -1745,6 +1794,34 @@ class NetworkJob( object ):
                     
                 except HydrusExceptions.BandwidthException as e:
                     
+                    num_seconds_to_wait = None
+                    
+                    if response is not None:
+                        
+                        if 'Retry-After' in response.headers:
+                            
+                            retry_after = response.headers[ 'Retry-After' ]
+                            
+                            try:
+                                
+                                num_seconds_to_wait = int( retry_after )
+                                
+                            except:
+                                
+                                try:
+                                    
+                                    timestamp = ClientTime.ParseDate( retry_after )
+                                    
+                                    num_seconds_to_wait = min( max( 60, timestamp - HydrusTime.GetNow() ), 86400 )
+                                    
+                                except:
+                                    
+                                    HydrusData.Print( f'Was given an unparsable Retry-After of {retry_after}!' )
+                                    
+                                
+                            
+                        
+                    
                     self._ResetForAnotherAttempt()
                     
                     if self._CanReattemptRequest():
@@ -1756,7 +1833,7 @@ class NetworkJob( object ):
                         raise HydrusExceptions.BandwidthException( 'Server reported very limited bandwidth: ' + str( e ) )
                         
                     
-                    self._WaitOnServersideBandwidth( 'server reported limited bandwidth' )
+                    self._WaitOnServersideBandwidth( 'server reported limited bandwidth', num_seconds_to_wait = num_seconds_to_wait )
                     
                 except HydrusExceptions.ShouldReattemptNetworkException as e:
                     
@@ -2247,6 +2324,7 @@ class NetworkJobHydrus( NetworkJob ):
             
         
     
+
 class NetworkJobIPFS( NetworkJob ):
     
     IS_IPFS_SERVICE = True

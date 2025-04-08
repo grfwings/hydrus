@@ -8,13 +8,15 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusTags
+from hydrus.core import HydrusText
 from hydrus.core.files import HydrusFileHandling
 from hydrus.core.files.images import HydrusImageHandling
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientImageHandling
-from hydrus.client import ClientParsing
+from hydrus.client import ClientLocation
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIOptionsPanels
@@ -26,6 +28,8 @@ from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUINumberTest
 from hydrus.client.gui.widgets import ClientGUIRegex
 from hydrus.client.metadata import ClientRatings
+from hydrus.client.metadata import ClientTags
+from hydrus.client.parsing import ClientParsing
 from hydrus.client.search import ClientNumberTest
 from hydrus.client.search import ClientSearchPredicate
 
@@ -213,7 +217,7 @@ class PanelPredicateSimpleTagTypes( QW.QWidget ):
             raise Exception( 'Launched a SimpleTextPredicateControl without a Tag, Namespace, or Wildcard Pred!' )
             
         
-        self._simple_tag_text = QW.QLineEdit()
+        self._simple_tag_text = QW.QLineEdit( self )
         
         inclusive = predicate.IsInclusive()
         
@@ -395,8 +399,7 @@ class PanelPredicateSystemDate( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._date, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._time, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -563,7 +566,7 @@ class PanelPredicateSystemAgeDelta( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._hours, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'hours ago'), CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -625,7 +628,7 @@ class PanelPredicateSystemLastViewedDelta( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._hours, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'hours ago'), CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -684,7 +687,7 @@ class PanelPredicateSystemArchivedDelta( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._hours, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'hours ago'), CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -743,7 +746,7 @@ class PanelPredicateSystemModifiedDelta( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._hours, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'hours ago'), CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -795,7 +798,7 @@ class PanelPredicateSystemDuplicateRelationships( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._num, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._dupe_type, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -848,7 +851,7 @@ class PanelPredicateSystemDuration( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:duration'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -914,7 +917,7 @@ class PanelPredicateSystemFileService( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._status, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._file_service_key, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -947,6 +950,7 @@ class PanelPredicateSystemFileViewingStatsViews( PanelPredicateSystemSingle ):
         
         self._viewing_locations.Append( 'media views', 'media' )
         self._viewing_locations.Append( 'preview views', 'preview' )
+        self._viewing_locations.Append( 'client api views', 'client api' )
         
         choices = ['<',HC.UNICODE_APPROX_EQUAL,'=','>']
         
@@ -962,9 +966,7 @@ class PanelPredicateSystemFileViewingStatsViews( PanelPredicateSystemSingle ):
         
         self._viewing_locations.SetValue( viewing_locations )
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._viewing_locations, ( 10, 3 ) )
-        
-        self._viewing_locations.setMaximumHeight( height )
+        self._viewing_locations.SetHeightBasedOnContents()
         
         self._sign.SetValue( sign )
         
@@ -979,7 +981,7 @@ class PanelPredicateSystemFileViewingStatsViews( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._num, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1023,12 +1025,13 @@ class PanelPredicateSystemFileViewingStatsViewtime( PanelPredicateSystemSingle )
         
         self._viewing_locations.Append( 'media viewtime', 'media' )
         self._viewing_locations.Append( 'preview viewtime', 'preview' )
+        self._viewing_locations.Append( 'client api viewtime', 'client api' )
         
         choices = ['<',HC.UNICODE_APPROX_EQUAL,'=','>']
         
         self._sign = ClientGUICommon.BetterRadioBox( self, [ ( c, c ) for c in choices ] )
         
-        self._time_delta = ClientGUITime.TimeDeltaCtrl( self, min = 0, days = True, hours = True, minutes = True, seconds = True )
+        self._time_delta = ClientGUITime.TimeDeltaWidget( self, min = 0, days = True, hours = True, minutes = True, seconds = True, milliseconds = True )
         
         #
         
@@ -1038,9 +1041,7 @@ class PanelPredicateSystemFileViewingStatsViewtime( PanelPredicateSystemSingle )
         
         self._viewing_locations.SetValue( viewing_locations )
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._viewing_locations, ( 10, 3 ) )
-        
-        self._viewing_locations.setMaximumHeight( height )
+        self._viewing_locations.SetHeightBasedOnContents()
         
         self._sign.SetValue( sign )
         
@@ -1055,7 +1056,7 @@ class PanelPredicateSystemFileViewingStatsViewtime( PanelPredicateSystemSingle )
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._time_delta, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1066,7 +1067,7 @@ class PanelPredicateSystemFileViewingStatsViewtime( PanelPredicateSystemSingle )
         
         viewing_locations = ( 'media', )
         sign = '>'
-        time_delta = 600
+        time_delta = 600.0
         
         return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS, ( 'viewtime', tuple( viewing_locations ), sign, time_delta ) )
         
@@ -1119,7 +1120,7 @@ class PanelPredicateSystemFramerate( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self, 'system:framerate' ), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1142,6 +1143,7 @@ class PanelPredicateSystemFramerate( PanelPredicateSystemSingle ):
         return predicates
         
     
+
 class PanelPredicateSystemHash( PanelPredicateSystemSingle ):
     
     def __init__( self, parent, predicate ):
@@ -1185,11 +1187,68 @@ class PanelPredicateSystemHash( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._hashes, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( hbox, self._hash_type, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
         self.setFocusProxy( self._sign )
+        
+        self._hashes.textChanged.connect( self._StripOffPrefixes )
+        
+    
+    def _StripOffPrefixes( self ):
+        
+        # it would be nice to generalise this into a 'hashes' widget that had the hash type and provided an ongoing (red text) commentary into the validity of the hashes entered
+        
+        hashes_text = self._hashes.toPlainText()
+        
+        hashes_lines = HydrusText.DeserialiseNewlinedTexts( hashes_text )
+        
+        seen_prefixes = set()
+        stripped_hashes = []
+        
+        we_split_some = False
+        
+        for line in hashes_lines:
+            
+            if ':' in line:
+                
+                ( prefix, hash ) = line.split( ':', 1 )
+                
+                if prefix in [ 'sha256', 'md5', 'sha1', 'sha512' ]:
+                    
+                    seen_prefixes.add( prefix )
+                    
+                    if len( seen_prefixes ) == 2:
+                        
+                        return
+                        
+                    
+                else:
+                    
+                    return
+                    
+                
+                stripped_hashes.append( hash )
+                
+                we_split_some = True
+                
+            
+        
+        if we_split_some and len( seen_prefixes ) == 1:
+            
+            self._hashes.setPlainText( '\n'.join( stripped_hashes ) )
+            
+            if len( seen_prefixes ) == 1:
+                
+                prefix = list( seen_prefixes )[0]
+                
+                if prefix in [ 'sha256', 'md5', 'sha1', 'sha512' ]:
+                    
+                    self._hash_type.SetValue( prefix )
+                    
+                
+            
         
     
     def GetDefaultPredicate( self ):
@@ -1215,6 +1274,7 @@ class PanelPredicateSystemHash( PanelPredicateSystemSingle ):
         return predicates
         
     
+
 class PanelPredicateSystemHasNoteName( PanelPredicateSystemSingle ):
     
     def __init__( self, parent, predicate ):
@@ -1245,7 +1305,7 @@ class PanelPredicateSystemHasNoteName( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._operator, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._name, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1306,7 +1366,7 @@ class PanelPredicateSystemHeight( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:height'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1661,7 +1721,7 @@ class PanelPredicateSystemLimit( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:limit='), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._limit, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1694,6 +1754,13 @@ class PanelPredicateSystemMime( PanelPredicateSystemSingle ):
         
         predicate = self._GetPredicateToInitialisePanelWith( predicate )
         
+        choice_tuples = [
+            ( 'is', True ),
+            ( 'is not', False )
+        ]
+        
+        self._inclusive = ClientGUICommon.BetterRadioBox( self, choice_tuples, vertical = True )
+        
         summary_mimes = predicate.GetValue()
         
         if isinstance( summary_mimes, int ):
@@ -1705,11 +1772,14 @@ class PanelPredicateSystemMime( PanelPredicateSystemSingle ):
         
         self._mimes.SetValue( specific_mimes )
         
+        self._inclusive.SetValue( predicate.IsInclusive() )
+        
         #
         
         hbox = QP.HBoxLayout()
         
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self, 'system:filetype' ), CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._inclusive, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._mimes, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.setLayout( hbox )
@@ -1728,7 +1798,7 @@ class PanelPredicateSystemMime( PanelPredicateSystemSingle ):
         
         specific_mimes = self._mimes.GetValue()
         
-        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, specific_mimes ), )
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, specific_mimes, inclusive = self._inclusive.GetValue() ), )
         
         return predicates
         
@@ -1765,12 +1835,12 @@ class PanelPredicateSystemNumPixels( PanelPredicateSystemSingle ):
         
         hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:num_pixels'), CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:number of pixels'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._num_pixels, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._unit, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1825,7 +1895,7 @@ class PanelPredicateSystemNumFrames( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self, 'system:number of frames' ), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1890,7 +1960,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._num_tags, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -1967,7 +2037,7 @@ class PanelPredicateSystemNumNotes( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self,'system:number of notes' ), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -2021,7 +2091,7 @@ class PanelPredicateSystemNumURLs( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self,'system:number of urls' ), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -2077,7 +2147,7 @@ class PanelPredicateSystemNumWords( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:number of words'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -2565,7 +2635,7 @@ class PanelPredicateSystemRatio( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,':'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._height, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -2666,7 +2736,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         QP.AddToLayout( big_vbox, button_hbox, CC.FLAGS_CENTER )
         QP.AddToLayout( big_vbox, hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
-        big_vbox.addStretch( 1 )
+        big_vbox.addStretch( 0 )
         
         self.setLayout( big_vbox )
         
@@ -2817,6 +2887,8 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         
         super().__init__( parent )
         
+        # TODO: it would be nice if this guy supported any hash type, like system:hash, and then it would be nice to generalise a 'hashes' widget that has the hash_type selector and prefix stripping stuff
+        
         self._hashes = QW.QPlainTextEdit( self )
         
         ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._hashes, ( 66, 6 ) )
@@ -2849,7 +2921,7 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, QW.QLabel( HC.UNICODE_APPROX_EQUAL, self ), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._max_hamming, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         st = ClientGUICommon.BetterStaticText( self, label = 'This searches for files that look like each other within your database, just like in the duplicates system. It uses the SHA256 hash. Paste the files\' hash(es) here, and the results will look like any of them.' )
         
@@ -2859,9 +2931,7 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         vbox = QP.VBoxLayout()
         
         QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
-        vbox.addStretch( 1 )
+        QP.AddToLayout( vbox, hbox, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.setLayout( vbox )
         
@@ -2918,7 +2988,7 @@ class PanelPredicateSystemSize( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, self._sign, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._bytes, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         
@@ -2939,6 +3009,163 @@ class PanelPredicateSystemSize( PanelPredicateSystemSingle ):
         ( size, unit ) = self._bytes.GetSeparatedValue()
         
         predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIZE, ( self._sign.GetValue(), size, unit ) ), )
+        
+        return predicates
+        
+    
+
+class PanelPredicateSystemTagAdvanced( PanelPredicateSystemSingle ):
+    
+    def __init__( self, parent, predicate ):
+        
+        super().__init__( parent )
+        
+        self._inclusive = ClientGUICommon.BetterRadioBox( self, [ ( 'has tag', True ), ( 'does not have tag', False ) ], vertical = True )
+        
+        self._service_key_or_none = ClientGUICommon.BetterChoice( self )
+        
+        self._service_key_or_none.addItem( 'current tag domain', None )
+        
+        for service in CG.client_controller.services_manager.GetServices( HC.ALL_TAG_SERVICES ):
+            
+            self._service_key_or_none.addItem( service.GetName(), service.GetServiceKey() )
+            
+        
+        self._tag_display_type = ClientGUICommon.BetterRadioBox(
+            self,
+            [
+                ( 'including siblings/parents', ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ),
+                ( 'ignoring siblings/parents', ClientTags.TAG_DISPLAY_STORAGE )
+            ],
+            vertical = True
+        )
+        
+        tt = 'Including siblings/parents will search on the "display" tag domain, which is what you see when normally searching for and browsing files. In "display", all siblings are merged to the ideal tag, and missing parents are filled in. Ignoring siblings/parents will search on the "storage" tag domain, which is what is actually recorded on disk (and what you see when editing tags).'
+        
+        self._tag_display_type.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
+        self._statuses = ClientGUICommon.BetterCheckBoxList( self )
+        
+        for status in (
+            HC.CONTENT_STATUS_CURRENT,
+            HC.CONTENT_STATUS_PENDING,
+            HC.CONTENT_STATUS_DELETED,
+            HC.CONTENT_STATUS_PETITIONED
+        ):
+            
+            self._statuses.Append( HC.content_status_string_lookup[ status ], status )
+            
+        
+        tt = 'Note that "deleted" and "petitioned" do not exist in the domain that computes siblings, so if you set to search these while "including siblings", you will get (slow!) results that have any deletion/petitioned record for any of the tags in the sibling group.'
+        
+        self._statuses.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
+        self._tag = QW.QLineEdit( self )
+        
+        self._tag.setPlaceholderText( 'tag' )
+        
+        from hydrus.client.gui.search import ClientGUIACDropdown
+        
+        self._tag_autocomplete = ClientGUIACDropdown.AutoCompleteDropdownTagsWrite(
+            self,
+            self._AutoCompleteEntersTags,
+            ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ),
+            CC.COMBINED_TAG_SERVICE_KEY
+        )
+        
+        #
+        
+        predicate = self._GetPredicateToInitialisePanelWith( predicate )
+        
+        ( service_key_or_none, tag_display_type, statuses, tag ) = predicate.GetValue()
+        
+        self._inclusive.SetValue( predicate.IsInclusive() )
+        
+        self._service_key_or_none.SetValue( service_key_or_none )
+        
+        self._tag_display_type.SetValue( tag_display_type )
+        
+        self._statuses.SetValue( statuses )
+        
+        self._statuses.SetHeightBasedOnContents()
+        
+        self._tag.setText( tag )
+        
+        width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag, 48 )
+        
+        self._tag.setMinimumWidth( width )
+        
+        tag_vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( tag_vbox, self._tag, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( tag_vbox, self._tag_autocomplete, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        #
+        
+        hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self,'system:' ), CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._inclusive, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._service_key_or_none, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._tag_display_type, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._statuses, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, tag_vbox, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
+        
+        hbox.addStretch( 0 )
+        
+        self.setLayout( hbox )
+        
+        self.setFocusProxy( self._inclusive )
+        
+    
+    def _AutoCompleteEntersTags( self, tags ):
+        
+        tags = list( tags )
+        
+        if len( tags ) > 0:
+            
+            tag = tags[0]
+            
+            self._tag.setText( tag )
+            
+        
+    
+    def GetDefaultPredicate( self ):
+        
+        service_key_or_none = None
+        tag_display_type = ClientTags.TAG_DISPLAY_STORAGE
+        statuses = ( HC.CONTENT_STATUS_CURRENT, HC.CONTENT_STATUS_PENDING )
+        tag = ''
+        
+        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_ADVANCED, ( service_key_or_none, tag_display_type, statuses, tag ) )
+        
+    
+    def GetPredicates( self ):
+        
+        inclusive = self._inclusive.GetValue()
+        
+        service_key_or_none = self._service_key_or_none.GetValue()
+        tag_display_type = self._tag_display_type.GetValue()
+        statuses = tuple( self._statuses.GetValue() )
+        tag = self._tag.text()
+        
+        if len( statuses ) == 0:
+            
+            statuses = ( HC.CONTENT_STATUS_CURRENT, HC.CONTENT_STATUS_PENDING )
+            
+        
+        try:
+            
+            tag = HydrusTags.CleanTag( tag )
+            
+            HydrusTags.CheckTagNotEmpty( tag )
+            
+        except:
+            
+            tag = 'invalid tag'
+            
+        
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_ADVANCED, ( service_key_or_none, tag_display_type, statuses, tag ), inclusive = inclusive ), )
         
         return predicates
         
@@ -3034,7 +3261,7 @@ class PanelPredicateSystemWidth( PanelPredicateSystemSingle ):
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText(self,'system:width'), CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( hbox, self._number_test, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox.addStretch( 1 )
+        hbox.addStretch( 0 )
         
         self.setLayout( hbox )
         

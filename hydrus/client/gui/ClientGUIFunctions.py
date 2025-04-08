@@ -91,16 +91,16 @@ def ConvertQtImageToNumPy( qt_image: QG.QImage, strip_useless_alpha = True ):
     
     if qt_image.hasAlphaChannel():
         
-        if qt_image.format() != QG.QImage.Format_RGBA8888:
+        if qt_image.format() != QG.QImage.Format.Format_RGBA8888:
             
-            qt_image.convertTo( QG.QImage.Format_RGBA8888 )
+            qt_image.convertTo( QG.QImage.Format.Format_RGBA8888 )
             
         
     else:
         
-        if qt_image.format() != QG.QImage.Format_RGB888:
+        if qt_image.format() != QG.QImage.Format.Format_RGB888:
             
-            qt_image.convertTo( QG.QImage.Format_RGB888 )
+            qt_image.convertTo( QG.QImage.Format.Format_RGB888 )
             
         
     
@@ -179,6 +179,21 @@ def DialogIsOpen():
     for tlw in tlws:
         
         if isinstance( tlw, QP.Dialog ) and tlw.isModal():
+            
+            return True
+            
+        
+    
+    return False
+    
+
+def DialogIsOpenAndIAmNotItsChild( win: QW.QWidget ):
+    
+    tlws = QW.QApplication.topLevelWidgets()
+    
+    for tlw in tlws:
+        
+        if isinstance( tlw, QP.Dialog ) and tlw.isModal() and not IsQtAncestor( win, tlw, through_tlws = True):
             
             return True
             
@@ -366,6 +381,20 @@ def MouseIsOnMyDisplay( window ):
     
     return mouse_screen is window_screen
     
+
+def MouseIsOverOneOfOurWindows():
+    
+    for window in QW.QApplication.topLevelWidgets():
+        
+        if MouseIsOverWidget( window ):
+            
+            return True
+            
+        
+    
+    return False
+    
+
 def MouseIsOverWidget( win: QW.QWidget ):
     
     # note this is different from win.underMouse(), which in different situations seems to be more complicated than just a rect test

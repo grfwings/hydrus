@@ -11,7 +11,6 @@ from hydrus.core import HydrusText
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientParsing
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIStringControls
@@ -28,6 +27,7 @@ from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.metadata import ClientMetadataMigration
 from hydrus.client.metadata import ClientMetadataMigrationExporters
+from hydrus.client.parsing import ClientParsing
 
 class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
     
@@ -61,7 +61,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._importers_panel = ClientGUICommon.StaticBox( self, 'sources' )
         
-        self._importers_list = ClientGUIMetadataMigrationImporters.SingleFileMetadataImportersControl( self._importers_panel, importers, self._allowed_importer_classes )
+        self._importers_list = ClientGUIMetadataMigrationImporters.SingleFileMetadataImportersControl( self._importers_panel, importers, self._allowed_importer_classes, self._test_context_factory )
         
         self._importers_panel.Add( self._importers_list, CC.FLAGS_EXPAND_BOTH_WAYS )
         
@@ -123,7 +123,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         string_processor = self._string_processor_button.GetValue()
         
         test_object_pretty = self._test_context_factory.GetTestObjectString( test_object )
-        importer_strings_output = sorted( self._test_context_factory.GetExampleTestStrings( importer, test_object ) )
+        importer_strings_output = sorted( self._test_context_factory.GetExampleTestStringsForTestObject( importer, test_object ) )
         
         if string_processor.MakesChanges():
             
@@ -149,7 +149,7 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         string_processor = self._string_processor_button.GetValue()
         
         test_object_pretty = self._test_context_factory.GetTestObjectString( test_object )
-        importer_strings_output = sorted( self._test_context_factory.GetExampleTestStrings( importer, test_object ) )
+        importer_strings_output = sorted( self._test_context_factory.GetExampleTestStringsForTestObject( importer, test_object ) )
         
         if string_processor.MakesChanges():
             
@@ -171,18 +171,14 @@ class EditSingleFileMetadataRouterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         importers = self._importers_list.GetData()
         
-        exporter = self._exporter_widget.GetValue()
+        test_objects = self._test_context_factory.GetTestObjects()
         
-        texts = set()
+        texts = []
         
         for importer in importers:
             
-            texts.update( importer.GetExampleStrings() )
+            texts.extend( self._test_context_factory.GetExampleTestStrings( importer ) )
             
-        
-        texts.update( exporter.GetExampleStrings() )
-        
-        texts = sorted( texts )
         
         return ClientParsing.ParsingTestData( example_parsing_context, texts )
         

@@ -42,7 +42,6 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client import ClientParsing
 from hydrus.client import ClientPaths
 from hydrus.client import ClientPDFHandling
 from hydrus.client import ClientServices
@@ -84,8 +83,9 @@ from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.networking import ClientGUIHydrusNetwork
 from hydrus.client.gui.networking import ClientGUILogin
 from hydrus.client.gui.networking import ClientGUINetwork
-from hydrus.client.gui.pages import ClientGUIManagementController
+from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.pages import ClientGUIPages
+from hydrus.client.gui.pages import ClientGUIPagesCore
 from hydrus.client.gui.pages import ClientGUISession
 from hydrus.client.gui.panels import ClientGUIManageOptionsPanel
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
@@ -102,6 +102,7 @@ from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.networking import ClientNetworkingFunctions
+from hydrus.client.parsing import ClientParsing
 
 MENU_ORDER = [ 'file', 'undo', 'pages', 'database', 'network', 'services', 'tags', 'pending', 'help' ]
 
@@ -507,7 +508,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         self._did_a_backup_this_session = False
         
-        self._notebook = ClientGUIPages.PagesNotebook( self, self._controller, 'top page notebook' )
+        self._notebook = ClientGUIPages.PagesNotebook( self, 'top page notebook' )
         
         self._currently_uploading_pending = set()
         
@@ -830,6 +831,19 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         #
         
+        if not HydrusImageHandling.JXL_OK:
+            
+            message = 'Hey, you do not seem to have Jpeg-XL support for our image library Pillow. The error follows:'
+            
+            if HC.PLATFORM_MACOS:
+                
+                message += '\n\nAlso, since you are on macOS, you should know that a common reason for Jpeg-XL not loading is that it is not bundled with their python package on macOS. Your error below probably talks about a missing .dylib or .so file. If you run from source or run the App on an intel machine, you can resolve this by opening a terminal and running "brew install jpeg-xl", and then restarting hydrus. If you run the App from a Silicon machine, I understand this will not fix you, and you should consider running from source anyway.'
+                
+            
+            HydrusData.ShowText( message )
+            HydrusData.ShowText( HydrusImageHandling.JXL_ERROR_TEXT )
+            
+        
         availability_lines = []
         
         availability_lines.append( 'QtCharts: {}'.format( ClientGUICharts.QT_CHARTS_OK ) )
@@ -849,8 +863,6 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
                 HydrusData.ShowText( ClientPDFHandling.pdf_failed_reason )
                 
             
-        
-        availability_lines.append( 'Pillow-HEIF: {}'.format( HydrusImageHandling.HEIF_OK ) )
         
         CBOR_AVAILABLE = False
         
@@ -893,6 +905,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         availability_lines.append( 'lxml present: {}'.format( ClientParsing.LXML_IS_OK ) )
         availability_lines.append( 'lz4 present: {}'.format( HydrusCompression.LZ4_OK ) )
         availability_lines.append( 'olefile present: {}'.format( HydrusOLEHandling.OLEFILE_OK ) )
+        availability_lines.append( 'Pillow HEIF/AVIF: {}'.format( HydrusImageHandling.HEIF_OK ) )
+        availability_lines.append( 'Pillow JXL: {}'.format( HydrusImageHandling.JXL_OK ) )
         availability_lines.append( 'psutil present: {}'.format( HydrusPSUtil.PSUTIL_OK ) )
         availability_lines.append( 'pympler present: {}'.format( HydrusMemory.PYMPLER_OK ) )
         availability_lines.append( 'pyopenssl present: {}'.format( HydrusEncryption.OPENSSL_OK ) )
@@ -1971,48 +1985,48 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
         
         def do_it_scan_step( job_status ):
             
-            we_are_missing_legacy = self._controller.Read( 'missing_archive_timestamps_legacy_test', job_status )
+            num_missing_legacy = self._controller.Read( 'missing_archive_timestamps_legacy_count', job_status )
             
             if job_status.IsCancelled():
                 
                 return
                 
             
-            we_are_missing_import = self._controller.Read( 'missing_archive_timestamps_import_test', job_status )
+            num_missing_import = self._controller.Read( 'missing_archive_timestamps_import_count', job_status )
             
             if job_status.IsCancelled():
                 
                 return
                 
             
-            CG.client_controller.CallAfterQtSafe( self, 'missing archive times reporter', qt_present_results, job_status, we_are_missing_legacy, we_are_missing_import )
+            CG.client_controller.CallAfterQtSafe( self, 'missing archive times reporter', qt_present_results, job_status, num_missing_legacy, num_missing_import )
             
         
-        def qt_present_results( job_status, we_are_missing_legacy, we_are_missing_import ):
+        def qt_present_results( job_status, num_missing_legacy, num_missing_import ):
             
-            if we_are_missing_legacy or we_are_missing_import:
+            if num_missing_legacy > 0 or num_missing_import > 0:
                 
                 message = 'It looks like there are some missing archive times. You have:'
                 
                 yes_tuples = []
                 
-                if we_are_missing_legacy:
+                if num_missing_legacy > 0:
                     
-                    message += '\n\n--Missing Legacy Times--'
+                    message += f'\n\n--{HydrusNumbers.ToHumanInt( num_missing_legacy )} Missing Legacy Times--'
                     message += '\n\nThese are files that were archived before hydrus started tracking archive time (2022-02). If you select to fill these in, hydrus will insert a synthetic time that is import time + 20% of the time to 2022-02 or any file deletion time.'
                     
                     yes_tuples.append( ( 'do legacy times', [ 'legacy' ] ) )
                     
                 
-                if we_are_missing_import:
+                if num_missing_import > 0:
                     
-                    message += '\n\n--Missing Import Times--'
+                    message += f'\n\n--{HydrusNumbers.ToHumanInt( num_missing_import )} Missing Import Times--'
                     message += '\n\nThese are most likely files that were imported with "automatically archive", which for some period until 2024-12 were not recording archive times due to a bug. It may include a few other instances of missing archived files (e.g. you manually deleted one). If you select to fill these in, hydrus will insert a synthetic time that is the same as the import time.'
                     
                     yes_tuples.append( ( 'do import times', [ 'import' ] ) )
                     
                 
-                if we_are_missing_legacy and we_are_missing_import:
+                if num_missing_legacy > 0 and num_missing_import > 0:
                     
                     yes_tuples.append( ( 'do both', [ 'legacy', 'import' ] ) )
                     
@@ -2432,9 +2446,9 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     self._notebook.ShowPage( page )
                     
                 
-                management_panel = page.GetManagementPanel()
+                sidebar = page.GetSidebar()
                 
-                management_panel.PendURL( url, filterable_tags = filterable_tags, additional_service_keys_to_tags = additional_service_keys_to_tags )
+                sidebar.PendURL( url, filterable_tags = filterable_tags, additional_service_keys_to_tags = additional_service_keys_to_tags )
                 
                 return ( url, '"{}" URL added successfully.'.format( match_name ) )
                 
@@ -2452,9 +2466,9 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     self._notebook.ShowPage( page )
                     
                 
-                management_panel = page.GetManagementPanel()
+                sidebar = page.GetSidebar()
                 
-                management_panel.PendURL( url, filterable_tags = filterable_tags, additional_service_keys_to_tags = additional_service_keys_to_tags )
+                sidebar.PendURL( url, filterable_tags = filterable_tags, additional_service_keys_to_tags = additional_service_keys_to_tags )
                 
                 return ( url, '"{}" URL added successfully.'.format( match_name ) )
                 
@@ -3570,7 +3584,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
         site = ClientGUIMenus.AppendMenuIconItem( links, 'latest build', 'Open the latest build on the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/releases/latest' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'issue tracker', 'Open the github issue tracker, which is run by users.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/issues' )
         site = ClientGUIMenus.AppendMenuBitmapItem( links, '8chan.moe /t/ (Hydrus Network General)', 'Open the 8chan.moe /t/ board, where a Hydrus Network General should exist with release posts and other status updates.', CC.global_pixmaps().eight_chan, ClientPaths.LaunchURLInWebBrowser, 'https://8chan.moe/t/catalog.html' )
-        site = ClientGUIMenus.AppendMenuItem( links, 'Endchan board bunker', 'Open hydrus dev\'s Endchan board, the bunker for the case when 8chan.moe is unavailable. Try .org if .net is unavailable.', ClientPaths.LaunchURLInWebBrowser, 'https://endchan.net/hydrus/index.html' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'x', 'Open hydrus dev\'s X account, where he makes general progress updates and emergency notifications.', CC.global_icons().x, ClientPaths.LaunchURLInWebBrowser, 'https://x.com/hydrusnetwork' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'tumblr', 'Open hydrus dev\'s tumblr, where he makes release posts and other status updates.', CC.global_icons().tumblr, ClientPaths.LaunchURLInWebBrowser, 'https://hydrus.tumblr.com/' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'discord', 'Open a discord channel where many hydrus users congregate. Hydrus dev visits regularly.', CC.global_icons().discord, ClientPaths.LaunchURLInWebBrowser, 'https://discord.gg/wPHPCUZ' )
@@ -3604,8 +3617,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
         debug_modes = ClientGUIMenus.GenerateMenu( debug_menu )
         
         ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'force idle mode', 'Make the client consider itself idle and fire all maintenance routines right now. This may hang the gui for a while.', HG.force_idle_mode, self._SwitchBoolean, 'force_idle_mode' )
-        ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'thumbnail debug mode', 'Show some thumbnail debug info.', HG.thumbnail_debug_mode, self._SwitchBoolean, 'thumbnail_debug_mode' )
         ClientGUIMenus.AppendMenuItem( debug_modes, 'simulate a wake from sleep', 'Tell the controller to pretend that it just woke up from sleep.', self._controller.SimulateWakeFromSleepEvent )
+        ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'thumbnail debug mode', 'Show some thumbnail debug info.', HG.thumbnail_debug_mode, self._SwitchBoolean, 'thumbnail_debug_mode' )
         
         ClientGUIMenus.AppendMenu( debug_menu, debug_modes, 'debug modes' )
         
@@ -3732,6 +3745,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuItem( tests, 'run the ui test', 'Run hydrus_dev\'s weekly UI Test. Guaranteed to work and not mess up your session, ha ha.', self._RunUITest )
         ClientGUIMenus.AppendMenuItem( tests, 'run the client api test', 'Run hydrus_dev\'s weekly Client API Test. Guaranteed to work and not mess up your session, ha ha.', self._RunClientAPITest )
         ClientGUIMenus.AppendMenuItem( tests, 'run the server test on fresh server', 'This will try to initialise an already running server.', self._RunServerTest )
+        ClientGUIMenus.AppendSeparator( tests )
+        ClientGUIMenus.AppendMenuCheckItem( tests, 'fake petition mode', 'Fill the petition panels with fake local data for testing.', HG.fake_petition_mode, self._SwitchBoolean, 'fake_petition_mode' )
         ClientGUIMenus.AppendSeparator( tests )
         ClientGUIMenus.AppendMenuItem( tests, 'do self-sigterm', 'Test a sigterm call for fast, non-ui-originating shutdown.', CG.client_controller.DoSelfSigterm )
         ClientGUIMenus.AppendMenuItem( tests, 'do self-sigterm (fake)', 'Test a sigterm call for fast, non-ui-originating shutdown.', CG.client_controller.DoSelfSigtermFake )
@@ -4759,7 +4774,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             height_num_chars = 20
             
-            control = ClientGUITime.TimeDeltaCtrl( panel, min = HydrusNetwork.MIN_NULLIFICATION_PERIOD, days = True, hours = True, minutes = True, seconds = True )
+            control = ClientGUITime.TimeDeltaWidget( panel, min = HydrusNetwork.MIN_NULLIFICATION_PERIOD, days = True, hours = True, minutes = True, seconds = True )
             
             control.SetValue( nullification_period )
             
@@ -4884,7 +4899,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             height_num_chars = 20
             
-            control = ClientGUITime.TimeDeltaCtrl( panel, min = HydrusNetwork.MIN_UPDATE_PERIOD, days = True, hours = True, minutes = True, seconds = True )
+            control = ClientGUITime.TimeDeltaWidget( panel, min = HydrusNetwork.MIN_UPDATE_PERIOD, days = True, hours = True, minutes = True, seconds = True )
             
             control.SetValue( update_period )
             
@@ -6217,7 +6232,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                         
                         page_to_process = pages_to_process.pop()
                         
-                        if page_to_process[ 'page_type' ] == ClientGUIManagementController.MANAGEMENT_TYPE_PAGE_OF_PAGES:
+                        if page_to_process[ 'page_type' ] == ClientGUIPagesCore.PAGE_TYPE_PAGE_OF_PAGES:
                             
                             pages_to_process.extend( page_to_process[ 'pages' ] )
                             
@@ -6460,7 +6475,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             CG.client_controller.CallLaterQtSafe( self, t, 'test job', page.SetSearchFocus )
             
-            ac_widget = page.GetManagementPanel()._tag_autocomplete._text_ctrl
+            ac_widget = page.GetSidebar()._tag_autocomplete._text_ctrl
             
             t += 0.5
             
@@ -6991,6 +7006,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             HG.db_ui_hang_relief_mode = not HG.db_ui_hang_relief_mode
             
+        elif name == 'fake_petition_mode':
+            
+            HG.fake_petition_mode = not HG.fake_petition_mode
+            
         elif name == 'file_import_report_mode':
             
             HG.file_import_report_mode = not HG.file_import_report_mode
@@ -7399,7 +7418,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             HydrusData.ShowText( 'Sorry, could not create the downloader page! Is your session super full atm?' )
             
         
-        panel = page.GetManagementPanel()
+        panel = page.GetSidebar()
         
         panel.PendSubscriptionGapDownloader( gug_key_and_name, query_text, file_import_options, tag_import_options, note_import_options, file_limit )
         
@@ -7698,7 +7717,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     
     def GetTotalPageCounts( self ):
         
-        total_active_page_count = self._notebook.GetNumPages()
+        total_active_page_count = self._notebook.GetNumPagesHeld()
         
         total_closed_page_count = len( self._closed_pages )
         
@@ -7798,7 +7817,9 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         try:
             
-            self._ImportURL( url )
+            show_destination_page = CG.client_controller.new_options.GetBoolean( 'show_destination_page_when_dnd_url' )
+            
+            self._ImportURL( url, show_destination_page = show_destination_page )
             
         except Exception as e:
             
@@ -7872,9 +7893,9 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     
     def NewPageImportHDD( self, paths, file_import_options, metadata_routers, paths_to_additional_service_keys_to_tags, delete_after_success ):
         
-        management_controller = ClientGUIManagementController.CreateManagementControllerImportHDD( paths, file_import_options, metadata_routers, paths_to_additional_service_keys_to_tags, delete_after_success )
+        page_manager = ClientGUIPageManager.CreatePageManagerImportHDD( paths, file_import_options, metadata_routers, paths_to_additional_service_keys_to_tags, delete_after_success )
         
-        self._notebook.NewPage( management_controller, on_deepest_notebook = True )
+        self._notebook.NewPage( page_manager, on_deepest_notebook = True )
         
     
     def NewPageQuery(
@@ -8279,11 +8300,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         page = self._notebook.GetOrMakeURLImportPage( desired_page_name = 'forced urls downloader', destination_tag_import_options = tag_import_options )
         
-        management_panel = page.GetManagementPanel()
+        sidebar = page.GetSidebar()
         
         for url in urls:
             
-            management_panel.PendURL( url )
+            sidebar.PendURL( url )
             
         
     
@@ -8774,7 +8795,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         if not self._controller.DoingFastExit():
             
-            reasons_and_pages = self._notebook.GetTestAbleToCloseData()
+            reasons_and_pages = self._notebook.GetAbleToCloseData( for_session_close = True )
             
             if HC.options[ 'confirm_client_exit' ] or len( reasons_and_pages ) > 0:
                 

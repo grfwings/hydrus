@@ -551,7 +551,35 @@ class TabWidgetWithDnD( QW.QTabWidget ):
         
         self._tab_bar = self.tabBar()
         
+        self._my_current_drag_object = None
+        
         self._supplementary_drop_target = None
+        
+    
+    def _CheckDnDIsOK( self, drag_object ):
+        
+        # drag.cancel is not supported on macOS
+        if HC.PLATFORM_MACOS:
+            
+            return
+            
+        
+        # QW.QApplication.mouseButtons() doesn't work unless mouse is over!
+        if not ClientGUIFunctions.MouseIsOverOneOfOurWindows():
+            
+            return
+            
+        
+        if self._my_current_drag_object == drag_object and QW.QApplication.mouseButtons() != QC.Qt.MouseButton.LeftButton:
+            
+            # awkward situation where, it seems, the DnD is spawned while the 'release left-click' event is in the queue
+            # the DnD spawns after the click release and sits there until the user clicks again
+            # I think this is because I am spawning the DnD in the move event rather than the mouse press
+            
+            self._my_current_drag_object.cancel()
+            
+            self._my_current_drag_object = None
+            
         
     
     def _LayoutPagesHelper( self ):
@@ -668,24 +696,28 @@ class TabWidgetWithDnD( QW.QTabWidget ):
         
         mimeData.setData( 'application/hydrus-tab', b'' )
         
-        drag = QG.QDrag( self._tab_bar )
+        self._my_current_drag_object = QG.QDrag( self._tab_bar )
         
-        drag.setMimeData( mimeData )
+        self._my_current_drag_object.setMimeData( mimeData )
         
-        drag.setPixmap( pixmap )
+        self._my_current_drag_object.setPixmap( pixmap )
         
-        cursor = QG.QCursor( QC.Qt.CursorShape.OpenHandCursor )
-        
-        drag.setHotSpot( QC.QPoint( 0, 0 ) )
+        self._my_current_drag_object.setHotSpot( QC.QPoint( 0, 0 ) )
         
         # this puts the tab pixmap exactly where we picked it up, but it looks bad
-        # drag.setHotSpot( tab_bar_mouse_pos - tab_rect.topLeft() )
+        # self._my_current_drag_object.setHotSpot( tab_bar_mouse_pos - tab_rect.topLeft() )
         
-        drag.setDragCursor( cursor.pixmap(), QC.Qt.DropAction.MoveAction )
+        cursor = QG.QCursor( QC.Qt.CursorShape.ClosedHandCursor )
         
-        drag.exec_( QC.Qt.DropAction.MoveAction )
+        self._my_current_drag_object.setDragCursor( cursor.pixmap(), QC.Qt.DropAction.MoveAction )
         
-
+        CG.client_controller.CallLaterQtSafe( self, 0.1, 'checking DnD is ok', self._CheckDnDIsOK, self._my_current_drag_object )
+        
+        self._my_current_drag_object.exec_( QC.Qt.DropAction.MoveAction )
+        
+        self._my_current_drag_object = None
+        
+    
     def dragEnterEvent( self, e: QG.QDragEnterEvent ):
         
         if self.currentWidget() and self.currentWidget().rect().contains( self.currentWidget().mapFromGlobal( self.mapToGlobal( e.position().toPoint() ) ) ):
@@ -1024,6 +1056,9 @@ class GridLayout( QW.QGridLayout ):
 def AddToLayout( layout, item, flag = None, alignment = None ):
     
     # TODO: yo, this whole thing could do with a pass to clear out stuff that isn't doing what I expect and cut down to essentials
+    # I think replace the whole thing with a new call and migrate everything over. separate our flags into separate enums for expand, alignment, spacing/whatever
+    # figure out a better way to navigate layouts and expand gubbins and anything else with spotty support
+    # another thing to think about is (as Qt wants) having widgets saying how they want to size on their own and just simplifying the 'addWidget' stuff a whole lot
     
     if isinstance( layout, GridLayout ):
         
@@ -1113,7 +1148,7 @@ def AddToLayout( layout, item, flag = None, alignment = None ):
             
         elif flag in ( CC.FLAGS_CENTER_PERPENDICULAR, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH ):
             
-            if isinstance( layout, QW.QHBoxLayout ):
+            if isinstance( layout, ( QW.QHBoxLayout, QW.QGridLayout ) ):
                 
                 alignment = QC.Qt.AlignmentFlag.AlignVCenter
                 
@@ -1138,7 +1173,7 @@ def AddToLayout( layout, item, flag = None, alignment = None ):
             zero_border = True
             
         
-    elif flag in ( CC.FLAGS_EXPAND_PERPENDICULAR, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR ):
+    elif flag in ( CC.FLAGS_EXPAND_PERPENDICULAR, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR, CC.FLAGS_ON_RIGHT ):
         
         if flag == CC.FLAGS_EXPAND_SIZER_PERPENDICULAR:
             
@@ -1227,7 +1262,7 @@ def ScrollAreaVisibleRect( scroll_area ):
 
 def AdjustOpacity( image: QG.QImage, opacity_factor ):
     
-    new_image = QG.QImage( image.width(), image.height(), QG.QImage.Format_RGBA8888 )
+    new_image = QG.QImage( image.width(), image.height(), QG.QImage.Format.Format_RGBA8888 )
     
     new_image.setDevicePixelRatio( image.devicePixelRatio() )
     
@@ -1284,8 +1319,8 @@ def AddShortcut( widget, modifier, key, func: typing.Callable, *args ):
 
 def GetBackgroundColour( widget ):
     
-    return widget.palette().color( QG.QPalette.Window )
-
+    return widget.palette().color( QG.QPalette.ColorRole.Window )
+    
 
 CallAfterEventType = registerEventType()
 
@@ -1902,7 +1937,7 @@ class FileDialog( QW.QFileDialog ):
         
         if wildcard:
             
-            self.setNameFilter( wildcard )
+            self.setNameFilters( [ wildcard, 'Any files (*)' ] )
             
         
         if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):

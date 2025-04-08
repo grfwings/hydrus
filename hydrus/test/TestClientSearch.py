@@ -20,7 +20,7 @@ class TestPredicates( unittest.TestCase ):
         # presumably this will not be false one day
         system_predicate = ClientSearchPredicate.SYSTEM_PREDICATE_INBOX
         
-        self.assertFalse( system_predicate.CanTestMediaResult() )
+        self.assertTrue( system_predicate.CanTestMediaResult() )
         
         # filetypes
         
@@ -34,6 +34,13 @@ class TestPredicates( unittest.TestCase ):
         fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
         
         self.assertTrue( system_predicate.TestMediaResult( fake_media_result ) )
+        
+        #
+        
+        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG }, inclusive = False )
+        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
+        
+        self.assertFalse( system_predicate.TestMediaResult( fake_media_result ) )
         
         #
         
@@ -1748,6 +1755,7 @@ class TestAutocompletePredGubbins( unittest.TestCase ):
             ( 'system:limit is 5,000', "system:limit is 5000" ),
             ( 'system:limit is 100', "system:limit = 100" ),
             ( 'system:filetype is jpeg', "system:filetype is jpeg" ),
+            ( 'system:filetype is not jpeg', "system:filetype is not jpeg" ),
             ( 'system:filetype is apng, jpeg, png', "system:filetype =   image/jpg, image/png, apng" ),
             ( 'system:filetype is image', "system:filetype is image" ),
             ( 'system:filetype is animated gif, static gif, jpeg', "system:filetype =   static gif, animated gif, jpeg" ),
@@ -1823,12 +1831,19 @@ class TestAutocompletePredGubbins( unittest.TestCase ):
             ( 'system:number of pixels > 50 pixels', "system:num pixels > 50 px" ),
             ( 'system:number of pixels < 1 megapixels', "system:num pixels < 1 megapixels " ),
             ( f'system:number of pixels {HC.UNICODE_APPROX_EQUAL} 5 kilopixels', "system:num pixels ~= 5 kilopixel" ),
-            ( f'system:media views {HC.UNICODE_APPROX_EQUAL} 10', "system:media views ~= 10" ),
-            ( 'system:all views > 0', "system:all views > 0" ),
-            ( 'system:preview views < 10', "system:preview views < 10  " ),
-            ( 'system:media viewtime < 1 day 1 hour', "system:media viewtime < 1 days 1 hour 0 minutes" ),
-            ( 'system:all viewtime > 1 hour 1 minute', "system:all viewtime > 1 hours 100 seconds" ),
-            ( f'system:preview viewtime {HC.UNICODE_APPROX_EQUAL} 2 days 7 hours', "system:preview viewtime ~= 1 day 30 hours 100 minutes 90s" ),
+            ( 'system:number of pixels > 50 pixels', "system:number pixels > 50 px" ),
+            ( 'system:number of pixels < 1 megapixels', "system:num of pixels < 1 megapixels " ),
+            ( f'system:number of pixels {HC.UNICODE_APPROX_EQUAL} 5 kilopixels', "system:number of pixels ~= 5 kilopixel" ),
+            ( f'system:views in media {HC.UNICODE_APPROX_EQUAL} 10', "system:media views ~= 10" ),
+            ( "system:views in media, preview > 0", 'system:all views > 0' ),
+            ( 'system:views in preview < 10', "system:preview views < 10  " ),
+            ( 'system:viewtime in media < 1 day 1 hour', "system:media viewtime < 1 days 1 hour 0 minutes" ),
+            ( 'system:viewtime in media, preview > 1 hour 1 minute', "system:all viewtime > 1 hours 100 seconds" ),
+            ( f'system:viewtime in preview {HC.UNICODE_APPROX_EQUAL} 2 days 7 hours', "system:preview viewtime ~= 1 day 30 hours 100 minutes 90s" ),
+            ( 'system:views in media, preview > 0', 'system:views in media, preview > 0' ),
+            ( 'system:views in client api = 5', 'system:views in client api = 5' ),
+            ( 'system:viewtime in media, preview > 1 hour', 'system:viewtime in media, preview > 1 hour' ),
+            ( 'system:viewtime in client api > 1 second', 'system:viewtime in client api > 1 second' ),
             ( 'system:has url matching regex index\\.php', " system:has url matching regex index\\.php" ),
             ( 'system:does not have url matching regex index\\.php', "system:does not have a url matching regex index\\.php" ),
             ( 'system:has url https://safebooru.donmai.us/posts/4695284', "system:has_url https://safebooru.donmai.us/posts/4695284" ),
@@ -1878,6 +1893,11 @@ class TestAutocompletePredGubbins( unittest.TestCase ):
             ( 'system:count for example local rating inc/dec service less than 123', 'system:rating for example local rating inc/dec service less than 123' ),
             ( f'system:count for example local rating inc/dec service is about 123', f'system:rating for example local rating inc/dec service {HC.UNICODE_APPROX_EQUAL} 123' ),
             ( f'system:count for example local rating inc/dec service is about 123', 'system:rating for example local rating inc/dec service is about 123' ),
+            ( 'system:has tag: "skirt"', 'system:has tag: "skirt"' ),
+            ( 'system:does not have tag: "skirt"', 'system:does not have tag: "skirt"' ),
+            ( 'system:has tag in "my tags", ignoring siblings/parents: "skirt"', 'system:has tag in "my tags", ignoring siblings/parents, status current, pending: "skirt"' ),
+            ( 'system:has tag in "all known tags", with status deleted: "filename:blarg"', 'system:has tag "all known tags", status deleted: "filename:blarg"' ),
+            ( 'system:has tag in "all known tags", with status in current, pending, deleted, petitioned: "filename:blarg"', 'system:has tag "all known tags", deleted, current, pending, petitioned: "filename:blarg"' ),
         ]:
             
             ( sys_pred, ) = ClientSearchParseSystemPredicates.ParseSystemPredicateStringsToPredicates( ( sys_pred_text, ) )

@@ -14,23 +14,17 @@ CANVAS_MEDIA_VIEWER = 0
 CANVAS_PREVIEW = 1
 CANVAS_MEDIA_VIEWER_DUPLICATES = 2
 CANVAS_MEDIA_VIEWER_ARCHIVE_DELETE = 3
+CANVAS_CLIENT_API = 4
 
 CANVAS_MEDIA_VIEWER_TYPES = { CANVAS_MEDIA_VIEWER, CANVAS_MEDIA_VIEWER_DUPLICATES, CANVAS_MEDIA_VIEWER_ARCHIVE_DELETE }
 
 canvas_type_str_lookup = {
     CANVAS_MEDIA_VIEWER : 'media viewer',
-    CANVAS_PREVIEW : 'preview',
+    CANVAS_PREVIEW : 'preview viewer',
     CANVAS_MEDIA_VIEWER_DUPLICATES : 'duplicates filter',
-    CANVAS_MEDIA_VIEWER_ARCHIVE_DELETE : 'archive/delete filter'
+    CANVAS_MEDIA_VIEWER_ARCHIVE_DELETE : 'archive/delete filter',
+    CANVAS_CLIENT_API : 'client api viewer'
 }
-
-# Hue is generally 200, Sat and Lum changes based on need
-COLOUR_LIGHT_SELECTED = QG.QColor( 235, 248, 255 )
-COLOUR_SELECTED = QG.QColor( 217, 242, 255 )
-COLOUR_SELECTED_DARK = QG.QColor( 1, 17, 26 )
-COLOUR_UNSELECTED = QG.QColor( 223, 227, 230 )
-
-COLOUR_MESSAGE = QG.QColor( 230, 246, 255 )
 
 COLOUR_THUMB_BACKGROUND = 0
 COLOUR_THUMB_BACKGROUND_SELECTED = 1
@@ -95,11 +89,11 @@ field_string_lookup = {
     FIELD_PASSWORD : 'password'
 }
 
-FILE_VIEWING_STATS_MENU_DISPLAY_NONE = 0
-FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_ONLY = 1
-FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_AND_PREVIEW_IN_SUBMENU = 2
-FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_AND_PREVIEW_STACKED = 3
-FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_AND_PREVIEW_SUMMED = 4
+FILE_VIEWING_STATS_MENU_DISPLAY_NONE = 0 # deprecated
+FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_ONLY = 1 # deprecated
+FILE_VIEWING_STATS_MENU_DISPLAY_SUMMED_AND_THEN_SUBMENU = 2
+FILE_VIEWING_STATS_MENU_DISPLAY_STACKED = 3
+FILE_VIEWING_STATS_MENU_DISPLAY_MEDIA_AND_PREVIEW_SUMMED = 4 # deprecated
 
 FLAGS_NONE = 0
 
@@ -117,7 +111,7 @@ FLAGS_EXPAND_SIZER_BOTH_WAYS = 11
 FLAGS_ON_LEFT = 12
 FLAGS_ON_RIGHT = 13
 
-FLAGS_CENTER_PERPENDICULAR = 15
+FLAGS_CENTER_PERPENDICULAR = 15 # TODO: Collapse all this into something meaningful. We use this guy like 260+ times and it is basically a useless stub let's go
 FLAGS_SIZER_CENTER = 16
 FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH = 17
 
@@ -352,6 +346,19 @@ SORT_FILES_BY_ARCHIVED_TIMESTAMP = 19
 SORT_FILES_BY_HASH = 20
 SORT_FILES_BY_PIXEL_HASH = 21
 SORT_FILES_BY_BLURHASH = 22
+SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS = 23
+SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE = 24
+SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED = 25
+SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW = 26
+SORT_FILES_BY_AVERAGE_COLOUR_HUE = 27
+
+AVERAGE_COLOUR_FILE_SORTS = {
+    SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW,
+    SORT_FILES_BY_AVERAGE_COLOUR_HUE
+}
 
 SYSTEM_SORT_TYPES = {
     SORT_FILES_BY_NUM_COLLECTION_FILES,
@@ -376,7 +383,12 @@ SYSTEM_SORT_TYPES = {
     SORT_FILES_BY_ARCHIVED_TIMESTAMP,
     SORT_FILES_BY_HASH,
     SORT_FILES_BY_PIXEL_HASH,
-    SORT_FILES_BY_BLURHASH
+    SORT_FILES_BY_BLURHASH,
+    SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED,
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW,
+    SORT_FILES_BY_AVERAGE_COLOUR_HUE
 }
 
 system_sort_type_submetatype_string_lookup = {
@@ -393,6 +405,11 @@ system_sort_type_submetatype_string_lookup = {
     SORT_FILES_BY_HASH : 'file',
     SORT_FILES_BY_PIXEL_HASH : 'file',
     SORT_FILES_BY_BLURHASH : 'file',
+    SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS : 'average colour',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE : 'average colour',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED : 'average colour',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW : 'average colour',
+    SORT_FILES_BY_AVERAGE_COLOUR_HUE : 'average colour',
     SORT_FILES_BY_MIME : 'file',
     SORT_FILES_BY_HAS_AUDIO : 'file',
     SORT_FILES_BY_RANDOM : None,
@@ -412,6 +429,11 @@ sort_type_basic_string_lookup = {
     SORT_FILES_BY_HEIGHT : 'height',
     SORT_FILES_BY_NUM_COLLECTION_FILES : 'number of files in collection',
     SORT_FILES_BY_NUM_PIXELS : 'number of pixels',
+    SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS : 'lightness',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE : 'chromatic magnitude',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED : 'balance - green-red',
+    SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW : 'balance - blue-yellow',
+    SORT_FILES_BY_AVERAGE_COLOUR_HUE : 'hue',
     SORT_FILES_BY_RATIO : 'resolution ratio',
     SORT_FILES_BY_WIDTH : 'width',
     SORT_FILES_BY_APPROX_BITRATE : 'approximate bitrate',
@@ -427,8 +449,8 @@ sort_type_basic_string_lookup = {
     SORT_FILES_BY_PIXEL_HASH : 'hash - pixel hash',
     SORT_FILES_BY_BLURHASH : 'hash - blurhash',
     SORT_FILES_BY_NUM_TAGS : 'number of tags',
-    SORT_FILES_BY_MEDIA_VIEWS : 'media views',
-    SORT_FILES_BY_MEDIA_VIEWTIME : 'media viewtime'
+    SORT_FILES_BY_MEDIA_VIEWS : 'views',
+    SORT_FILES_BY_MEDIA_VIEWTIME : 'viewtime'
 }
 
 sort_type_string_lookup = {}
@@ -583,6 +605,7 @@ class GlobalPixmaps( object ):
         self.zoom_in = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_in.png' ) )
         self.zoom_out = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_out.png' ) )
         self.zoom_switch = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_switch.png' ) )
+        self.zoom_cog = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_cog.png' ) )
         self.eye = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'eye.png' ) )
         self.fullscreen_switch = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'fullscreen_switch.png' ) )
         self.open_externally = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'open_externally.png' ) )
@@ -616,7 +639,9 @@ class GlobalPixmaps( object ):
         
         self.star = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'star.png' ) )
         
-        self.listctrl = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'listctrl.png' ) )
+        #self.listctrl = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'listctrl.png' ) )
+        
+        self.page_with_text = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'page_with_text.png' ) )
         
         self.copy = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'copy.png' ) )
         self.paste = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'paste.png' ) )

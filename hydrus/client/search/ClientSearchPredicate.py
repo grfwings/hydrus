@@ -69,6 +69,7 @@ PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY = 50
 PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE = 51
 PREDICATE_TYPE_SYSTEM_NUM_URLS = 52
 PREDICATE_TYPE_SYSTEM_URLS = 53
+PREDICATE_TYPE_SYSTEM_TAG_ADVANCED = 54
 
 SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_EVERYTHING,
@@ -109,6 +110,7 @@ SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_NUM_PIXELS,
     PREDICATE_TYPE_SYSTEM_DIMENSIONS,
     PREDICATE_TYPE_SYSTEM_NOTES,
+    PREDICATE_TYPE_SYSTEM_TAG_ADVANCED,
     PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER,
     PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS,
     PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_COUNT,
@@ -346,6 +348,7 @@ EDIT_PRED_TYPES = {
     PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES,
     PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA,
     PREDICATE_TYPE_SYSTEM_SIZE,
+    PREDICATE_TYPE_SYSTEM_TAG_ADVANCED,
     PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER,
     PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_COUNT,
     PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS,
@@ -354,6 +357,10 @@ EDIT_PRED_TYPES = {
     PREDICATE_TYPE_WILDCARD,
     PREDICATE_TYPE_TAG
 }
+
+# this has useful order
+# bro any time you add to this, add a new unit test!
+PREDICATE_TYPES_WE_CAN_TEST_ON_MEDIA_RESULTS = [ PREDICATE_TYPE_SYSTEM_INBOX, PREDICATE_TYPE_SYSTEM_ARCHIVE, PREDICATE_TYPE_SYSTEM_MIME, PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT ]
 
 class Predicate( HydrusSerialisable.SerialisableBase ):
     
@@ -503,6 +510,15 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             serialisable_value = ( [ hash.hex() for hash in hashes ], hash_type )
             
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+            
+            ( service_key_or_none, tag_display_type, statuses, tag ) = self._value
+            
+            serialisable_service_key_or_none = HydrusData.BytesToNoneOrHex( service_key_or_none )
+            serialisable_statuses = tuple( statuses )
+            
+            serialisable_value = ( serialisable_service_key_or_none, tag_display_type, serialisable_statuses, tag )
+            
         elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
             
             or_predicates = self._value
@@ -569,6 +585,15 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             ( serialisable_hashes, hash_type ) = serialisable_value
             
             self._value = ( tuple( [ bytes.fromhex( serialisable_hash ) for serialisable_hash in serialisable_hashes ] ), hash_type )
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+            
+            ( serialisable_key_or_none, tag_display_type, serialisable_statuses, tag ) = serialisable_value
+            
+            service_key_or_none = HydrusData.HexToNoneOrBytes( serialisable_key_or_none )
+            statuses = tuple( serialisable_statuses )
+            
+            self._value = ( service_key_or_none, tag_display_type, statuses, tag )
             
         elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_AGE, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
             
@@ -786,7 +811,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def CanTestMediaResult( self ) -> bool:
         
-        return self._predicate_type in { PREDICATE_TYPE_SYSTEM_MIME, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_WIDTH }
+        return self._predicate_type in PREDICATE_TYPES_WE_CAN_TEST_ON_MEDIA_RESULTS
         
     
     def GetCopy( self ):
@@ -1077,7 +1102,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
         
         if my_type == other_type:
             
-            if my_type in ( PREDICATE_TYPE_SYSTEM_LIMIT, PREDICATE_TYPE_SYSTEM_HASH ):
+            if my_type in ( PREDICATE_TYPE_SYSTEM_LIMIT, ):
                 
                 return True
                 
@@ -1174,11 +1199,26 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def TestMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> bool:
         
+        if self._predicate_type == PREDICATE_TYPE_SYSTEM_INBOX:
+            
+            return media_result.GetLocationsManager().inbox
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_ARCHIVE:
+            
+            return not media_result.GetLocationsManager().inbox
+            
         if self._predicate_type == PREDICATE_TYPE_SYSTEM_MIME:
             
             mimes = ConvertSummaryFiletypesToSpecific( self._value )
             
-            return media_result.GetMime() in mimes
+            if self._inclusive:
+                
+                return media_result.GetMime() in mimes
+                
+            else:
+                
+                return media_result.GetMime() not in mimes
+                
             
         elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HEIGHT:
             
@@ -1192,8 +1232,10 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             return number_test.Test( media_result.GetFileInfoManager().width )
             
-        
-        return False
+        else:
+            
+            raise NotImplementedError( f'The given predicate, "{self.ToString()}", cannot test a media result! You should not be able to get into this situation, so please contact hydev with details.' )
+            
         
     
     def ToString( self, with_count: bool = True, render_for_user: bool = False, or_under_construction: bool = False, for_parsable_export: bool = False ) -> str:
@@ -1671,6 +1713,76 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                         
                     
                 
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+                
+                if self._value is None:
+                    
+                    base = 'tag (advanced)'
+                    
+                else:
+                    
+                    if self._inclusive:
+                        
+                        base = 'has tag'
+                        
+                    else:
+                        
+                        base = 'does not have tag'
+                        
+                    
+                    ( service_key_or_none, tag_display_type, statuses, tag ) = self._value
+                    
+                    do_more = True
+                    
+                    if service_key_or_none is None:
+                        
+                        pass
+                        
+                    else:
+                        
+                        try:
+                            
+                            service = CG.client_controller.services_manager.GetService( service_key_or_none )
+                            
+                            name = service.GetName()
+                            
+                            base += f' in "{name}"'
+                            
+                        except HydrusExceptions.DataMissing:
+                            
+                            base = 'unknown tag service advanced tag predicate'
+                            
+                            do_more = False
+                            
+                        
+                    
+                    if do_more:
+                        
+                        if tag_display_type == ClientTags.TAG_DISPLAY_STORAGE:
+                            
+                            base += ', ignoring siblings/parents'
+                            
+                        
+                        if set( statuses ) != { HC.CONTENT_STATUS_CURRENT, HC.CONTENT_STATUS_PENDING }:
+                            
+                            if len( statuses ) == 1:
+                                
+                                ( status, ) = statuses
+                                
+                                base += f', with status {HC.content_status_string_lookup[ status ]}'
+                                
+                            else:
+                                
+                                status_string = ', '.join( [ HC.content_status_string_lookup[ status ] for status in sorted( statuses ) ] )
+                                
+                                base += f', with status in {status_string}'
+                                
+                            
+                        
+                        base += f': "{tag}"'
+                        
+                    
+                
             elif self._predicate_type == PREDICATE_TYPE_SYSTEM_MIME:
                 
                 base = 'filetype'
@@ -1681,7 +1793,9 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                     
                     mime_text = ConvertSummaryFiletypesToString( summary_mimes )
                     
-                    base += ' is ' + mime_text
+                    connector = ' is ' if self._inclusive else ' is not '
+                    
+                    base += connector + mime_text
                     
                 
             elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING:
@@ -1942,24 +2056,13 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                     
                     ( view_type, viewing_locations, operator, viewing_value ) = self._value
                     
-                    include_media = 'media' in viewing_locations
-                    include_previews = 'preview' in viewing_locations
-                    
-                    if include_media and include_previews:
+                    if len( viewing_locations ) == 0:
                         
-                        domain = 'all'
-                        
-                    elif include_media:
-                        
-                        domain = 'media'
-                        
-                    elif include_previews:
-                        
-                        domain = 'preview'
+                        domain = 'unknown'
                         
                     else:
                         
-                        domain = 'unknown'
+                        domain = ', '.join( viewing_locations )
                         
                     
                     if view_type == 'views':
@@ -1970,8 +2073,12 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                         
                         value_string = HydrusTime.TimeDeltaToPrettyTimeDelta( viewing_value )
                         
+                    else:
+                        
+                        value_string = 'Unknown view type!'
+                        
                     
-                    base = '{} {} {} {}'.format( domain, view_type, operator, value_string )
+                    base = '{} in {} {} {}'.format( view_type, domain, operator, value_string )
                     
                 
             

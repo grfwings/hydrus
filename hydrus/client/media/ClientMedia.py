@@ -10,6 +10,7 @@ from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core.files import HydrusPSDHandling
+from hydrus.core.files.images import HydrusBlurhash
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
@@ -42,7 +43,7 @@ def CanDisplayMedia( media: "MediaSingleton" ) -> bool:
         return False
         
     
-    # note width/height is None for audio etc..
+    # note width/height is None for audio etc.., so it isn't immediately disqualifying
     
     ( width, height ) = media.GetResolution()
     
@@ -51,7 +52,7 @@ def CanDisplayMedia( media: "MediaSingleton" ) -> bool:
         return False
         
     
-    if media.IsStaticImage() and ( width is None or height is None ):
+    if media.IsStaticImage() and not media.HasUsefulResolution():
         
         return False
         
@@ -76,6 +77,19 @@ def FlattenMedia( medias ) -> typing.List[ "MediaSingleton" ]:
         
     
     return flat_media
+    
+
+sort_data_to_blurhash_to_sortable_calls = {
+    CC.SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS : HydrusBlurhash.ConvertBlurhashToSortableLightness,
+    CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE : HydrusBlurhash.ConvertBlurhashToSortableChromaticMagnitude,
+    CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED : HydrusBlurhash.ConvertBlurhashToSortableGreenRed,
+    CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW : HydrusBlurhash.ConvertBlurhashToSortableBlueYellow,
+    CC.SORT_FILES_BY_AVERAGE_COLOUR_HUE : HydrusBlurhash.ConvertBlurhashToSortableHue
+}
+
+def GetBlurhashToSortableCall( sort_data: int ):
+    
+    return sort_data_to_blurhash_to_sortable_calls.get( sort_data, HydrusBlurhash.ConvertBlurhashToSortableLightness )
     
 
 def GetMediasTags( pool, tag_service_key, tag_display_type, content_statuses ):
@@ -167,7 +181,7 @@ def GetMediasFiletypeSummaryString( medias: typing.Collection[ "Media" ] ):
         
         num_files = sum( [ media.GetNumFiles() for media in medias ] )
         
-        if num_files > 1000:
+        if num_files > 100000:
             
             filetype_summary = 'files'
             
@@ -433,11 +447,7 @@ class Media( object ):
         raise NotImplementedError()
         
     
-    def UpdateFileInfo( self, hashes_to_media_results ):
-        
-        raise NotImplementedError()
-        
-    
+
 class MediaCollect( HydrusSerialisable.SerialisableBase ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_MEDIA_COLLECT
@@ -554,6 +564,7 @@ class MediaList( object ):
         media_results = media_results_dedupe
         
         self._location_context = location_context
+        self._tag_context = ClientSearchTagContext.TagContext()
         
         self._hashes = set()
         self._hashes_ordered = []
@@ -647,6 +658,11 @@ class MediaList( object ):
         
     
     def _GetMedia( self, hashes, discriminator = None ):
+        
+        if not isinstance( hashes, set ):
+            
+            hashes = set( hashes )
+            
         
         if hashes.isdisjoint( self._hashes ):
             
@@ -876,7 +892,7 @@ class MediaList( object ):
         
         for media in self._collected_media:
             
-            flat_media.extend( [ self._GenerateMediaSingleton( media_result ) for media_result in media.GenerateMediaResults() ] )
+            flat_media.extend( [ self._GenerateMediaSingleton( media_result ) for media_result in media.GetMediaResults() ] )
             
         
         if self._media_collect.DoesACollect():
@@ -921,95 +937,6 @@ class MediaList( object ):
             
             media.DeletePending( service_key )
             
-        
-    
-    def GenerateMediaResults( self, is_in_file_service_key = None, discriminant = None, selected_media = None, unrated = None, for_media_viewer = False ):
-        
-        media_results = []
-        
-        for media in self._sorted_media:
-            
-            if is_in_file_service_key is not None:
-                
-                locations_manager = media.GetLocationsManager()
-                
-                if is_in_file_service_key not in locations_manager.GetCurrent():
-                    
-                    continue
-                    
-                
-            
-            if selected_media is not None and media not in selected_media:
-                
-                continue
-                
-            
-            if media.IsCollection():
-                
-                # don't include selected_media here as it is not valid at the deeper collection level
-                
-                media_results.extend( media.GenerateMediaResults( is_in_file_service_key = is_in_file_service_key, discriminant = discriminant, unrated = unrated, for_media_viewer = True ) )
-                
-            else:
-                
-                if discriminant is not None:
-                    
-                    locations_manager = media.GetLocationsManager()
-                    
-                    if discriminant == CC.DISCRIMINANT_INBOX:
-                        
-                        p = media.HasInbox()
-                        
-                    elif discriminant == CC.DISCRIMINANT_ARCHIVE:
-                        
-                        p = not media.HasInbox()
-                        
-                    elif discriminant == CC.DISCRIMINANT_LOCAL:
-                        
-                        p = locations_manager.IsLocal()
-                        
-                    elif discriminant == CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH:
-                        
-                        p = locations_manager.IsLocal() and not locations_manager.IsTrashed()
-                        
-                    elif discriminant == CC.DISCRIMINANT_NOT_LOCAL:
-                        
-                        p = not locations_manager.IsLocal()
-                        
-                    elif discriminant == CC.DISCRIMINANT_DOWNLOADING:
-                        
-                        p = locations_manager.IsDownloading()
-                        
-                    
-                    if not p:
-                        
-                        continue
-                        
-                    
-                
-                if unrated is not None:
-                    
-                    ratings_manager = media.GetRatingsManager()
-                    
-                    if ratings_manager.GetRating( unrated ) is not None:
-                        
-                        continue
-                        
-                    
-                
-                if for_media_viewer:
-                    
-                    if not UserWantsUsToDisplayMedia( media, CC.CANVAS_MEDIA_VIEWER ) or not CanDisplayMedia( media ):
-                        
-                        continue
-                        
-                    
-                
-                media_results.append( media.GetMediaResult() )
-                
-            
-        
-        return media_results
         
     
     def GetAPIInfoDict( self, simple ):
@@ -1099,9 +1026,98 @@ class MediaList( object ):
         return self._GetLast()
         
     
-    def GetMediaIndex( self, media ):
+    def GetMediaByHashes( self, hashes ):
         
-        return self._sorted_media.index( media )
+        return self._GetMedia( hashes )
+        
+    
+    def GetMediaResults( self, is_in_file_service_key = None, discriminant = None, selected_media = None, unrated = None, for_media_viewer = False ) -> typing.List[ ClientMediaResult.MediaResult ]:
+        
+        media_results = []
+        
+        for media in self._sorted_media:
+            
+            if is_in_file_service_key is not None:
+                
+                locations_manager = media.GetLocationsManager()
+                
+                if is_in_file_service_key not in locations_manager.GetCurrent():
+                    
+                    continue
+                    
+                
+            
+            if selected_media is not None and media not in selected_media:
+                
+                continue
+                
+            
+            if media.IsCollection():
+                
+                # don't include selected_media here as it is not valid at the deeper collection level
+                
+                media_results.extend( media.GetMediaResults( is_in_file_service_key = is_in_file_service_key, discriminant = discriminant, unrated = unrated, for_media_viewer = True ) )
+                
+            else:
+                
+                if discriminant is not None:
+                    
+                    locations_manager = media.GetLocationsManager()
+                    
+                    if discriminant == CC.DISCRIMINANT_INBOX:
+                        
+                        p = media.HasInbox()
+                        
+                    elif discriminant == CC.DISCRIMINANT_ARCHIVE:
+                        
+                        p = not media.HasInbox()
+                        
+                    elif discriminant == CC.DISCRIMINANT_LOCAL:
+                        
+                        p = locations_manager.IsLocal()
+                        
+                    elif discriminant == CC.DISCRIMINANT_LOCAL_BUT_NOT_IN_TRASH:
+                        
+                        p = locations_manager.IsLocal() and not locations_manager.IsTrashed()
+                        
+                    elif discriminant == CC.DISCRIMINANT_NOT_LOCAL:
+                        
+                        p = not locations_manager.IsLocal()
+                        
+                    elif discriminant == CC.DISCRIMINANT_DOWNLOADING:
+                        
+                        p = locations_manager.IsDownloading()
+                        
+                    
+                    if not p:
+                        
+                        continue
+                        
+                    
+                
+                if unrated is not None:
+                    
+                    ratings_manager = media.GetRatingsManager()
+                    
+                    if ratings_manager.GetRating( unrated ) is not None:
+                        
+                        continue
+                        
+                    
+                
+                if for_media_viewer:
+                    
+                    if not UserWantsUsToDisplayMedia( media, CC.CANVAS_MEDIA_VIEWER ) or not CanDisplayMedia( media ):
+                        
+                        continue
+                        
+                    
+                
+                media_results.append( media.GetMediaResult() )
+                
+            
+        
+        return media_results
         
     
     def GetNext( self, media ) -> Media:
@@ -1180,6 +1196,11 @@ class MediaList( object ):
     def HasNoMedia( self ):
         
         return len( self._sorted_media ) == 0
+        
+    
+    def IndexOf( self, media: Media ):
+        
+        return self._sorted_media.index( media )
         
     
     def MoveMedia( self, medias: typing.List[ Media ], insertion_index: int ):
@@ -1306,6 +1327,11 @@ class MediaList( object ):
             
         
     
+    def RemoveMediaDirectly( self, singleton_media, collected_media ):
+        
+        self._RemoveMediaDirectly( singleton_media, collected_media )
+        
+    
     def ResetService( self, service_key ):
         
         if self._location_context.IsOneDomain() and service_key in self._location_context.current_service_keys:
@@ -1316,6 +1342,11 @@ class MediaList( object ):
             
             for media in self._collected_media: media.ResetService( service_key )
             
+        
+    
+    def SetTagContext( self, tag_context: ClientSearchTagContext.TagContext ):
+        
+        self._tag_context = tag_context
         
     
     def Sort( self, media_sort = None ):
@@ -1334,11 +1365,11 @@ class MediaList( object ):
         
         media_sort_fallback = CG.client_controller.new_options.GetFallbackSort()
         
-        media_sort_fallback.Sort( self._location_context, self._sorted_media )
+        media_sort_fallback.Sort( self._location_context, self._tag_context, self._sorted_media )
         
         # this is a stable sort, so the fallback order above will remain for equal items
         
-        self._media_sort.Sort( self._location_context, self._sorted_media )
+        self._media_sort.Sort( self._location_context, self._tag_context, self._sorted_media )
         
         self._RecalcHashes()
         
@@ -1634,7 +1665,7 @@ class MediaCollection( MediaList, Media ):
         self._RecalcInternals()
         
     
-    def GetDisplayMedia( self ):
+    def GetDisplayMedia( self ) -> typing.Optional[ "MediaSingleton" ]:
         
         first = self._GetFirst()
         
@@ -1777,6 +1808,13 @@ class MediaCollection( MediaList, Media ):
         return True
         
     
+    def HasUsefulResolution( self ):
+        
+        ( width, height ) = self.GetResolution()
+        
+        return width is not None and width != 0 and height is not None and height != 0
+        
+    
     def IsStaticImage( self ):
         
         return False
@@ -1799,16 +1837,7 @@ class MediaCollection( MediaList, Media ):
         self._RecalcInternals()
         
     
-    def UpdateFileInfo( self, hashes_to_media_results ):
-        
-        for media in self._sorted_media:
-            
-            media.UpdateFileInfo( hashes_to_media_results )
-            
-        
-        self._RecalcInternals()
-        
-    
+
 class MediaSingleton( Media ):
     
     def __init__( self, media_result: ClientMediaResult.MediaResult ):
@@ -1889,9 +1918,15 @@ class MediaSingleton( Media ):
         return self._media_result.GetLocationsManager()
         
     
-    def GetMediaResult( self ): return self._media_result
+    def GetMediaResult( self ):
+        
+        return self._media_result
+        
     
-    def GetMime( self ): return self._media_result.GetMime()
+    def GetMime( self ):
+        
+        return self._media_result.GetMime()
+        
     
     def GetNotesManager( self ) -> ClientMediaManagers.NotesManager:
         
@@ -1975,9 +2010,7 @@ class MediaSingleton( Media ):
     
     def HasDuration( self ):
         
-        duration = self._media_result.GetDurationMS()
-        
-        return duration is not None and duration > 0
+        return self._media_result.HasDuration()
         
     
     def HasStaticImages( self ):
@@ -1993,6 +2026,11 @@ class MediaSingleton( Media ):
     def HasNotes( self ):
         
         return self._media_result.HasNotes()
+        
+    
+    def HasUsefulResolution( self ):
+        
+        return self._media_result.HasUsefulResolution()
         
     
     def IsCollection( self ):
@@ -2072,18 +2110,7 @@ class MediaSingleton( Media ):
         return True
         
     
-    def UpdateFileInfo( self, hashes_to_media_results ):
-        
-        hash = self.GetHash()
-        
-        if hash in hashes_to_media_results:
-            
-            media_result = hashes_to_media_results[ hash ]
-            
-            self._media_result = media_result
-            
-        
-    
+
 class MediaSort( HydrusSerialisable.SerialisableBase ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_MEDIA_SORT
@@ -2232,6 +2259,48 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
         return True
         
     
+    def CanSortAtDBLevel( self, location_context: ClientLocation.LocationContext ) -> bool:
+        
+        if location_context.IsAllKnownFiles():
+            
+            return False
+            
+        
+        ( sort_metadata, sort_data ) = self.sort_type
+        
+        if sort_metadata == 'system':
+            
+            return sort_data in {
+                CC.SORT_FILES_BY_IMPORT_TIME,
+                CC.SORT_FILES_BY_FILESIZE,
+                CC.SORT_FILES_BY_DURATION,
+                CC.SORT_FILES_BY_FRAMERATE,
+                CC.SORT_FILES_BY_NUM_FRAMES,
+                CC.SORT_FILES_BY_WIDTH,
+                CC.SORT_FILES_BY_HEIGHT,
+                CC.SORT_FILES_BY_RATIO,
+                CC.SORT_FILES_BY_NUM_PIXELS,
+                CC.SORT_FILES_BY_MEDIA_VIEWS,
+                CC.SORT_FILES_BY_MEDIA_VIEWTIME,
+                CC.SORT_FILES_BY_APPROX_BITRATE,
+                CC.SORT_FILES_BY_FILE_MODIFIED_TIMESTAMP,
+                CC.SORT_FILES_BY_LAST_VIEWED_TIME,
+                CC.SORT_FILES_BY_ARCHIVED_TIMESTAMP,
+                CC.SORT_FILES_BY_RANDOM,
+                CC.SORT_FILES_BY_HASH,
+                CC.SORT_FILES_BY_PIXEL_HASH,
+                CC.SORT_FILES_BY_BLURHASH,
+                CC.SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS,
+                CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE,
+                CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED,
+                CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW,
+                CC.SORT_FILES_BY_AVERAGE_COLOUR_HUE
+            }
+            
+        
+        return False
+        
+    
     def GetNamespaces( self ):
         
         ( sort_metadata, sort_data ) = self.sort_type
@@ -2248,7 +2317,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext ):
+    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext ):
         
         ( sort_metadata, sort_data ) = self.sort_type
         
@@ -2308,6 +2377,24 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                         
                     
                 
+            elif sort_data in CC.AVERAGE_COLOUR_FILE_SORTS:
+                
+                blurhash_converter = GetBlurhashToSortableCall( sort_data )
+                
+                def sort_key( x ):
+                    
+                    blurhash = x.GetDisplayMedia().GetMediaResult().GetFileInfoManager().blurhash
+                    
+                    if blurhash is None:
+                        
+                        return ( 0 if reverse else 1, '' )
+                        
+                    else:
+                        
+                        return ( 1 if reverse else 0, blurhash_converter( blurhash, reverse ) )
+                        
+                    
+                
             elif sort_data == CC.SORT_FILES_BY_APPROX_BITRATE:
                 
                 def sort_key( x ):
@@ -2315,12 +2402,12 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     # videos > images > pdfs
                     # heavy vids first, heavy images first
                     
-                    duration = x.GetDurationMS()
+                    duration_ms = x.GetDurationMS()
                     num_frames = x.GetNumFrames()
                     size = x.GetSize()
                     resolution = x.GetResolution()
                     
-                    if duration is None or duration == 0:
+                    if duration_ms is None or duration_ms == 0:
                         
                         if size is None or size == 0:
                             
@@ -2339,7 +2426,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                                 
                                 ( width, height ) = x.GetResolution()
                                 
-                                if size is None or size == 0 or width is None or width == 0 or height is None or height == 0:
+                                if size is None or size == 0 or not x.HasUsefulResolution():
                                     
                                     frame_bitrate = -1
                                     
@@ -2361,7 +2448,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                             
                         else:
                             
-                            duration_bitrate = size / duration
+                            duration_bitrate = size / duration_ms
                             
                             if num_frames is None or num_frames == 0:
                                 
@@ -2402,14 +2489,14 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                         return -1
                         
                     
-                    duration = x.GetDurationMS()
+                    duration_ms = x.GetDurationMS()
                     
-                    if duration is None or duration == 0:
+                    if duration_ms is None or duration_ms == 0:
                         
                         return -1
                         
                     
-                    return num_frames / duration
+                    return num_frames / duration_ms
                     
                 
             elif sort_data == CC.SORT_FILES_BY_NUM_COLLECTION_FILES:
@@ -2489,7 +2576,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     
                     ( width, height ) = x.GetResolution()
                     
-                    if width is None or height is None or width == 0 or height == 0:
+                    if not x.HasUsefulResolution():
                         
                         return -1
                         
@@ -2521,7 +2608,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     
                     tags_manager = x.GetTagsManager()
                     
-                    return len( tags_manager.GetCurrentAndPending( self.tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
+                    return len( tags_manager.GetCurrentAndPending( tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
                     
                 
             elif sort_data == CC.SORT_FILES_BY_MIME:
@@ -2531,26 +2618,31 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     return x.GetMime()
                     
                 
-            elif sort_data == CC.SORT_FILES_BY_MEDIA_VIEWS:
+            elif sort_data in ( CC.SORT_FILES_BY_MEDIA_VIEWS, CC.SORT_FILES_BY_MEDIA_VIEWTIME ):
                 
-                def sort_key( x ):
-                    
-                    fvsm = x.GetFileViewingStatsManager()
-                    
-                    # do not do viewtime as a secondary sort here, to allow for user secondary sort to help out
-                    
-                    return fvsm.GetViews( CC.CANVAS_MEDIA_VIEWER )
-                    
+                desired_canvas_types = CG.client_controller.new_options.GetIntegerList( 'file_viewing_stats_interesting_canvas_types' )
                 
-            elif sort_data == CC.SORT_FILES_BY_MEDIA_VIEWTIME:
-                
-                def sort_key( x ):
+                if sort_data == CC.SORT_FILES_BY_MEDIA_VIEWS:
                     
-                    fvsm = x.GetFileViewingStatsManager()
+                    def sort_key( x ):
+                        
+                        fvsm = x.GetFileViewingStatsManager()
+                        
+                        # do not do viewtime as a secondary sort here, to allow for user secondary sort to help out
+                        
+                        return sum( fvsm.GetViews( canvas_type ) for canvas_type in desired_canvas_types )
+                        
                     
-                    # do not do views as a secondary sort here, to allow for user secondary sort to help out
+                else:
                     
-                    return fvsm.GetViewtime( CC.CANVAS_MEDIA_VIEWER )
+                    def sort_key( x ):
+                        
+                        fvsm = x.GetFileViewingStatsManager()
+                        
+                        # do not do views as a secondary sort here, to allow for user secondary sort to help out
+                        
+                        return sum( fvsm.GetViewtimeMS( canvas_type ) for canvas_type in desired_canvas_types )
+                        
                     
                 
             
@@ -2606,6 +2698,11 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             sort_string_lookup[ CC.SORT_FILES_BY_PIXEL_HASH ] = ( 'lexicographic', 'reverse lexicographic', CC.SORT_ASC )
             sort_string_lookup[ CC.SORT_FILES_BY_HASH ] = ( 'lexicographic', 'reverse lexicographic', CC.SORT_ASC )
             sort_string_lookup[ CC.SORT_FILES_BY_BLURHASH ] = ( 'lexicographic', 'reverse lexicographic', CC.SORT_ASC )
+            sort_string_lookup[ CC.SORT_FILES_BY_AVERAGE_COLOUR_LIGHTNESS ] = ( 'darkest first', 'lightest first', CC.SORT_DESC )
+            sort_string_lookup[ CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATIC_MAGNITUDE ] = ( 'greys first', 'colours first', CC.SORT_DESC )
+            sort_string_lookup[ CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_GREEN_RED ] = ( 'greens first', 'reds first', CC.SORT_ASC )
+            sort_string_lookup[ CC.SORT_FILES_BY_AVERAGE_COLOUR_CHROMATICITY_BLUE_YELLOW ] = ( 'blues first', 'yellows first', CC.SORT_ASC )
+            sort_string_lookup[ CC.SORT_FILES_BY_AVERAGE_COLOUR_HUE ] = ( 'rainbow - red first', 'rainbow - purple first', CC.SORT_ASC )
             sort_string_lookup[ CC.SORT_FILES_BY_WIDTH ] = ( 'slimmest first', 'widest first', CC.SORT_ASC )
             sort_string_lookup[ CC.SORT_FILES_BY_HEIGHT ] = ( 'shortest first', 'tallest first', CC.SORT_ASC )
             sort_string_lookup[ CC.SORT_FILES_BY_RATIO ] = ( 'tallest first', 'widest first', CC.SORT_ASC )
@@ -2663,7 +2760,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
         return sort_string
         
     
-    def Sort( self, location_context: ClientLocation.LocationContext, media_results_list: HydrusLists.FastIndexUniqueList ):
+    def Sort( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext, media_results_list: HydrusLists.FastIndexUniqueList ):
         
         ( sort_metadata, sort_data ) = self.sort_type
         
@@ -2673,7 +2770,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         else:
             
-            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context )
+            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context, tag_context )
             
             media_results_list.sort( key = sort_key, reverse = reverse )
             

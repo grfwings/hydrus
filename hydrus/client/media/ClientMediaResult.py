@@ -1,5 +1,6 @@
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.media import ClientMediaManagers
@@ -62,14 +63,14 @@ class MediaResult( object ):
         return MediaResult( file_info_manager, tags_manager, times_manager, locations_manager, ratings_manager, notes_manager, file_viewing_stats_manager )
         
     
-    def GetDuration( self ):
+    def GetDurationS( self ):
         
-        return self._file_info_manager.duration / 1000
+        return HydrusTime.SecondiseMSFloat( self._file_info_manager.duration_ms )
         
     
     def GetDurationMS( self ):
         
-        return self._file_info_manager.duration
+        return self._file_info_manager.duration_ms
         
     
     def GetFileInfoManager( self ):
@@ -152,9 +153,23 @@ class MediaResult( object ):
         return self._file_info_manager.has_audio is True
         
     
+    def HasDuration( self ):
+        
+        duration_ms = self._file_info_manager.duration_ms
+        
+        return duration_ms is not None and duration_ms > 0
+        
+    
     def HasNotes( self ):
         
         return self._notes_manager.GetNumNotes() > 0
+        
+    
+    def HasUsefulResolution( self ):
+        
+        ( width, height ) = self.GetResolution()
+        
+        return width is not None and height is not None and width > 0 and height > 0
         
     
     def IsPhysicalDeleteLocked( self ):
@@ -230,6 +245,11 @@ class MediaResult( object ):
         
         self._tags_manager.ResetService( service_key )
         self._locations_manager.ResetService( service_key )
+        
+    
+    def SetFileInfoManager( self, file_info_manager ):
+        
+        self._file_info_manager = file_info_manager
         
     
     def SetTagsManager( self, tags_manager ):
