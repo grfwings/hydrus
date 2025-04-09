@@ -3,26 +3,18 @@ FROM alpine:3.22
 ARG UID
 ARG GID
 
-HEALTHCHECK --interval=20s --timeout=10s --retries=3 --start-period=30s CMD ! supervisorctl status | grep -v RUNNING
+#HEALTHCHECK --interval=20s --timeout=10s --retries=3 --start-period=30s CMD ! supervisorctl status | grep -v RUNNING
 ENTRYPOINT ["/bin/sh", "/opt/hydrus/static/build_files/docker/client/entrypoint.sh"]
 LABEL git="https://github.com/hydrusnetwork/hydrus"
 
-RUN apk --no-cache add fvwm xvfb supervisor opencv mpv mpv-libs ffmpeg jq libheif \
+RUN apk --no-cache add fvwm xvfb pencv mpv mpv-libs ffmpeg jq libheif \
  openssl nodejs patch font-noto font-noto-emoji font-noto-cjk \
- py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet py3-send2trash py3-cbor2 \
- py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity py3-parsing py3-olefile \
- build-base libavif-dev libheif-dev libjxl-dev python3-dev freetype-dev fribidi-dev lcms2-dev libimagequant-dev libjpeg-turbo-dev libpng-dev libwebp-dev libxcb-dev openjpeg-dev py3-gpep517 py3-setuptools py3-wheel python3-dev tiff-dev zlib-dev \
-RUN python3 -m venv /opt/venv --system-site-packages
-RUN /opt/venv/bin/pip install dateparser Pympler pillow-avif-plugin pillow-heif pillow-jxl-plugin
+ py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet \
+ py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity
+RUN apk --no-cache add build-base python3-dev fribidi-dev harfbuzz-dev jpeg-dev lcms2-dev openjpeg-dev libjpeg-turbo-dev libheif-dev
+RUN pip install --break-system-packages Send2Trash cloudscraper pyparsing cbor2 Pympler pillow-heif dateparser
 
 RUN apk --no-cache add xpra openssh-server dbus-x11
-
-# sshd configuration - allow root login with no password
-RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-RUN ssh-keygen -q -t rsa -N '' -f /etc/ssh/ssh_host_rsa_key
-RUN sed -i 's/#HostKey/HostKey/' /etc/ssh/sshd_config
-RUN sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
-RUN passwd -d root
 
 RUN set -xe \
     && mkdir -p /opt/hydrus \
@@ -30,8 +22,6 @@ RUN set -xe \
     && adduser -h /opt/hydrus -u 1000 -H -S -G hydrus hydrus
 
 COPY --chown=hydrus . /opt/hydrus
-
-RUN mv /opt/hydrus/static/build_files/docker/client/supervisord.conf /etc/supervisord.conf
 
 RUN ln -fs /usr/bin/python3 /usr/bin/python && ln -fs /usr/bin/pip3 /usr/bin/pip
 
