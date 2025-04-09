@@ -45,4 +45,11 @@ cd /opt/hydrus/
 #  find /opt/hydrus/ -not -path "/opt/hydrus/db/*" -exec chown hydrus:hydrus "{}" \;
 #fi
 
-exec supervisord -c /etc/supervisord.conf
+ENV_DB_DIR=${DB_DIR}
+ENV_HYDRUS_EXTRA=${HYDRUS_EXTRA}
+
+START_HYDRUS_CMD="python3 /opt/hydrus/hydrus_client.py --db_dir $ENV_DB_DIR $ENV_HYDRUS_EXTRA"
+
+echo "Hydrus command is:\n$START_HYDRUS_CMD"
+
+exec xpra start --start-child="$START_HYDRUS_CMD" --bind-tcp=0.0.0.0:2222 --no-daemon --exit-with-children
