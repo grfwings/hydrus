@@ -2,7 +2,6 @@ import os
 import unittest
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client.metadata import ClientTagsHandling
@@ -10,74 +9,6 @@ from hydrus.client.search import ClientNumberTest
 from hydrus.client.search import ClientSearchAutocomplete
 from hydrus.client.search import ClientSearchParseSystemPredicates
 from hydrus.client.search import ClientSearchPredicate
-
-from hydrus.test import HelperFunctions
-
-class TestPredicates( unittest.TestCase ):
-    
-    def test_metadata_conditional( self ):
-        
-        # presumably this will not be false one day
-        system_predicate = ClientSearchPredicate.SYSTEM_PREDICATE_INBOX
-        
-        self.assertTrue( system_predicate.CanTestMediaResult() )
-        
-        # filetypes
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG } )
-        
-        self.assertTrue( system_predicate.CanTestMediaResult() )
-        
-        #
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
-        
-        self.assertTrue( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        #
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG }, inclusive = False )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
-        
-        self.assertFalse( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        #
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_PNG )
-        
-        self.assertFalse( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        # 
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG, HC.APPLICATION_PDF } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
-        
-        self.assertTrue( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        #
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.IMAGE_JPEG, HC.APPLICATION_PDF } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_PNG )
-        
-        self.assertFalse( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        # 
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.GENERAL_IMAGE, HC.GENERAL_VIDEO } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.IMAGE_JPEG )
-        
-        self.assertTrue( system_predicate.TestMediaResult( fake_media_result ) )
-        
-        # 
-        
-        system_predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = { HC.GENERAL_IMAGE, HC.GENERAL_VIDEO } )
-        fake_media_result = HelperFunctions.GetFakeMediaResult( HydrusData.GenerateKey(), mime = HC.ANIMATION_GIF )
-        
-        self.assertFalse( system_predicate.TestMediaResult( fake_media_result ) )
-        
-    
 
 class TestAutocompletePredGubbins( unittest.TestCase ):
     

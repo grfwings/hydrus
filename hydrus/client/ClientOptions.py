@@ -132,7 +132,6 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         self._dictionary[ 'booleans' ] = {
             'advanced_mode' : False,
             'remove_filtered_files_even_when_skipped' : False,
-            'filter_inbox_and_archive_predicates' : False,
             'discord_dnd_fix' : False,
             'secret_discord_dnd_fix' : False,
             'show_unmatched_urls_in_media_viewer' : False,
@@ -145,6 +144,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'use_native_menubar' : HC.PLATFORM_MACOS,
             'shortcuts_merge_non_number_numpad' : True,
             'disable_get_safe_position_test' : False,
+            'save_window_size_and_position_on_close' : False,
             'freeze_message_manager_when_mouse_on_other_monitor' : False,
             'freeze_message_manager_when_main_gui_minimised' : False,
             'load_images_with_pil' : True,
@@ -207,7 +207,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'file_viewing_statistics_active_on_dupe_filter' : False,
             'prefix_hash_when_copying' : False,
             'file_system_waits_on_wakeup' : False,
-            'always_show_system_everything' : False,
+            'show_system_everything' : True,
             'watch_clipboard_for_watcher_urls' : False,
             'watch_clipboard_for_other_recognised_urls' : False,
             'default_search_synchronised' : True,
@@ -232,6 +232,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'show_sibling_decorators_on_storage_autocomplete_taglists' : True,
             'show_session_size_warnings' : True,
             'delete_lock_for_archived_files' : False,
+            'delete_lock_reinbox_deletees_after_archive_delete' : False,
+            'delete_lock_reinbox_deletees_after_duplicate_filter' : False,
             'remember_last_advanced_file_deletion_reason' : True,
             'remember_last_advanced_file_deletion_special_action' : False,
             'do_macos_debug_dialog_menus' : False,
@@ -242,6 +244,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'draw_transparency_checkerboard_media_canvas' : False,
             'draw_transparency_checkerboard_media_canvas_duplicates' : True,
             'menu_choice_buttons_can_mouse_scroll' : True,
+            'remember_options_window_panel' : True,
             'focus_preview_on_ctrl_click' : False,
             'focus_preview_on_ctrl_click_only_static' : False,
             'focus_preview_on_shift_click' : False,
@@ -274,7 +277,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'command_palette_show_media_menu' : False,
             'disallow_media_drags_on_duration_media' : False,
             'show_all_my_files_on_page_chooser' : True,
+            'show_all_my_files_on_page_chooser_at_top' : False,
             'show_local_files_on_page_chooser' : False,
+            'show_local_files_on_page_chooser_at_top' : False,
             'use_nice_resolution_strings' : True,
             'use_listbook_for_tag_service_panels' : False,
             'open_files_to_duplicate_filter_uses_all_my_files' : True,
@@ -294,6 +299,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'confirm_all_page_closes' : False,
             'refresh_search_page_on_system_limited_sort_changed' : True,
             'do_not_setgeometry_on_an_mpv' : False,
+            'focus_media_thumb_on_viewer_close' : True,
+            'skip_yesno_on_write_autocomplete_multiline_paste' : False,
         }
         
         #
@@ -389,6 +396,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         #
         
         from hydrus.client.gui.canvas import ClientGUICanvasMedia
+        from hydrus.client.gui.widgets import ClientGUIPainterShapes
         from hydrus.core.files.images import HydrusImageHandling
         
         self._dictionary[ 'integers' ] = {
@@ -450,6 +458,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'media_viewer_prefetch_delay_base_ms' : 100,
             'media_viewer_prefetch_num_previous' : 2,
             'media_viewer_prefetch_num_next' : 3,
+            'duplicate_filter_prefetch_num_pairs' : 5,
             'thumbnail_border' : 1,
             'thumbnail_margin' : 2,
             'thumbnail_dpr_percent' : 100,
@@ -470,7 +479,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'ac_write_list_height_num_chars' : 11,
             'system_busy_cpu_percent' : 50,
             'human_bytes_sig_figs' : 3,
-            'ms_to_wait_between_physical_file_deletes' : 250,
+            'ms_to_wait_between_physical_file_deletes' : 600,
             'potential_duplicates_search_work_time_ms' : 500,
             'potential_duplicates_search_rest_percentage' : 100,
             'repository_processing_work_time_ms_very_idle' : 30000,
@@ -497,6 +506,11 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'watcher_page_status_update_time_ratio_denominator' : 30,
             'media_viewer_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE,
             'preview_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE
+        }
+        
+        self._dictionary[ 'floats' ] = {
+            'draw_thumbnail_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
+            'media_viewer_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width()
         }
         
         #
@@ -577,7 +591,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'default_suggested_tags_notebook_page' : 'related',
             'last_incremental_tagging_namespace' : 'page',
             'last_incremental_tagging_prefix' : '',
-            'last_incremental_tagging_suffix' : ''
+            'last_incremental_tagging_suffix' : '',
+            'last_options_window_panel' : 'gui'
         }
         
         self._dictionary[ 'string_list' ] = {
@@ -1288,6 +1303,14 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
+    def GetFloat( self, name: str ):
+        
+        with self._lock:
+            
+            return self._dictionary[ 'floats' ][ name ]
+            
+        
+    
     def GetFrameLocation( self, frame_key ):
         
         with self._lock:
@@ -1873,6 +1896,14 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         with self._lock:
             
             self._dictionary[ 'favourite_tag_filters' ] = HydrusSerialisable.SerialisableDictionary( names_to_tag_filters )
+            
+        
+    
+    def SetFloat( self, name: str, value: float ):
+        
+        with self._lock:
+            
+            self._dictionary[ 'floats' ][ name ] = value
             
         
     

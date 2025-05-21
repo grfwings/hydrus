@@ -186,6 +186,13 @@ SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER = 1
 SIMPLE_ZOOM_DEFAULT_VIEWER_CENTER = 174
 SIMPLE_RESET_PAN_TO_CENTER = 175
 SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB = 176
+SIMPLE_ZOOM_TO_PERCENTAGE = 177
+SIMPLE_ZOOM_TO_PERCENTAGE_CENTER = 178
+SIMPLE_RESIZE_WINDOW_TO_MEDIA = 179
+SIMPLE_RESIZE_WINDOW_TO_MEDIA_VIEWER_CENTER = 180
+SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED = 181
+SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER = 182
+SIMPLE_OPEN_OPTIONS = 183
 
 REARRANGE_THUMBNAILS_TYPE_FIXED = 0
 REARRANGE_THUMBNAILS_TYPE_COMMAND = 1
@@ -358,6 +365,10 @@ simple_enum_to_str_lookup = {
     SIMPLE_ZOOM_DEFAULT : 'zoom: default',
     SIMPLE_ZOOM_DEFAULT_VIEWER_CENTER : 'zoom: default with forced media viewer center',
     SIMPLE_RESET_PAN_TO_CENTER : 'recenter media',
+    SIMPLE_RESIZE_WINDOW_TO_MEDIA : 'resize window to fit current media perfectly',
+    SIMPLE_RESIZE_WINDOW_TO_MEDIA_VIEWER_CENTER : 'resize window to fit current media perfectly and recenter it in the viewer',
+    SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED : 'resize window to fit current media zoomed to a specific percent',
+    SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER : 'resize window to fit media at specified zoom and recenter it in the viewer',
     SIMPLE_ZOOM_MAX : 'zoom: max',
     SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW : 'switch between fullscreen borderless and regular framed window',
     SIMPLE_SYNCHRONISED_WAIT_SWITCH : 'switch between searching a page immediately on new tags and waiting',
@@ -370,6 +381,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_VIEW_PREVIOUS : 'media navigation: previous',
     SIMPLE_ZOOM_IN : 'zoom: in',
     SIMPLE_ZOOM_OUT : 'zoom: out',
+    SIMPLE_ZOOM_TO_PERCENTAGE : 'zoom: set to percentage',
+    SIMPLE_ZOOM_TO_PERCENTAGE_CENTER : 'zoom: set to percentage with forced media viewer center',
     SIMPLE_ZOOM_100_CENTER : 'zoom to 100% with forced media viewer center',
     SIMPLE_ZOOM_CANVAS_FILL_X : 'fill canvas horizontally',
     SIMPLE_ZOOM_CANVAS_FILL_X_VIEWER_CENTER : 'fill canvas horizontally with forced media viewer center',
@@ -417,7 +430,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_NATIVE_OPEN_FILE_PROPERTIES : 'open file properties',
     SIMPLE_NATIVE_OPEN_FILE_WITH_DIALOG : 'open in another program',
     SIMPLE_RELOAD_CURRENT_STYLESHEET : 'reload current qss stylesheet',
-    SIMPLE_FLIP_ICC_PROFILE_APPLICATION : 'flip apply image ICC Profile colour adjustments' 
+    SIMPLE_FLIP_ICC_PROFILE_APPLICATION : 'flip apply image ICC Profile colour adjustments',
+    SIMPLE_OPEN_OPTIONS : 'open the options dialog'
 }
 
 legacy_simple_str_to_enum_lookup = {

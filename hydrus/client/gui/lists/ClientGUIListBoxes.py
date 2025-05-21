@@ -856,6 +856,9 @@ class AddEditDeleteListBoxUniqueNamedObjects( AddEditDeleteListBox ):
 # failing that, we must be able to merge a bunch of this to a base superclass
 class QueueListBox( QW.QWidget ):
     
+    listBoxContentsChanged = QC.Signal()
+    listBoxContentsDeleted = QC.Signal()
+    listBoxOrderChanged = QC.Signal()
     listBoxChanged = QC.Signal()
     
     def __init__( self, parent, height_num_chars, data_to_pretty_callable, add_callable = None, edit_callable = None, paste_callable = None ):
@@ -869,7 +872,7 @@ class QueueListBox( QW.QWidget ):
         
         self._permitted_object_types = tuple()
         
-        self._listbox = BetterQListWidget( self )
+        self._listbox = BetterQListWidget( self, delete_callable = self._Delete )
         self._listbox.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         
         self._up_button = ClientGUICommon.BetterButton( self, '\u2191', self._Up )
@@ -961,6 +964,7 @@ class QueueListBox( QW.QWidget ):
         
         self._AddData( data )
         
+        self.listBoxContentsChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -993,6 +997,8 @@ class QueueListBox( QW.QWidget ):
             
             self._listbox.DeleteSelected()
             
+            self.listBoxContentsChanged.emit()
+            self.listBoxContentsDeleted.emit()
             self.listBoxChanged.emit()
             
         
@@ -1001,6 +1007,7 @@ class QueueListBox( QW.QWidget ):
         
         self._listbox.MoveSelected( 1 )
         
+        self.listBoxOrderChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -1018,25 +1025,32 @@ class QueueListBox( QW.QWidget ):
     
     def _Edit( self ):
         
-        for list_widget_item in self._listbox.selectedItems():
+        items = list( self._listbox.selectedItems() )
+        
+        if len( items ) == 0:
             
-            data = list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
-            
-            try:
-                
-                new_data = self._edit_callable( data )
-                
-            except HydrusExceptions.VetoException:
-                
-                break
-                
-            
-            pretty_new_data = self._data_to_pretty_callable( new_data )
-            
-            list_widget_item.setText( pretty_new_data )
-            list_widget_item.setData( QC.Qt.ItemDataRole.UserRole, new_data )
+            return
             
         
+        top_list_widget_item = items[0]
+        
+        data = top_list_widget_item.data( QC.Qt.ItemDataRole.UserRole )
+        
+        try:
+            
+            new_data = self._edit_callable( data )
+            
+        except HydrusExceptions.VetoException:
+            
+            return
+            
+        
+        pretty_new_data = self._data_to_pretty_callable( new_data )
+        
+        top_list_widget_item.setText( pretty_new_data )
+        top_list_widget_item.setData( QC.Qt.ItemDataRole.UserRole, new_data )
+        
+        self.listBoxContentsChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -1271,6 +1285,7 @@ class QueueListBox( QW.QWidget ):
                 
             
         
+        self.listBoxContentsChanged.emit()
         self.listBoxChanged.emit()
         
         return ( num_added, bad_object_type_names, other_bad_errors )
@@ -1292,6 +1307,7 @@ class QueueListBox( QW.QWidget ):
             self._AddData( data )
             
         
+        self.listBoxContentsChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -1299,6 +1315,7 @@ class QueueListBox( QW.QWidget ):
         
         self._listbox.MoveSelected( -1 )
         
+        self.listBoxOrderChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -1325,6 +1342,7 @@ class QueueListBox( QW.QWidget ):
             self._AddData( data )
             
         
+        self.listBoxContentsChanged.emit()
         self.listBoxChanged.emit()
         
     
@@ -1386,6 +1404,20 @@ class QueueListBox( QW.QWidget ):
             
         
         return self._listbox.PopData( 0 )
+        
+    
+    def SetData( self, datas ):
+        
+        selected_datas = self.GetData( only_selected = True )
+        
+        self._listbox.clear()
+        
+        for data in datas:
+            
+            self._AddData( data )
+            
+        
+        self._listbox.SelectData( selected_datas )
         
     
 
@@ -3456,7 +3488,7 @@ class ListBoxTags( ListBox ):
                 
                 def sp_work_callable():
                     
-                    selected_tag_to_service_keys_to_siblings_and_parents = CG.client_controller.Read( 'tag_siblings_and_parents_lookup', ( selected_tag, ) )
+                    selected_tag_to_service_keys_to_siblings_and_parents = CG.client_controller.Read( 'tag_siblings_and_parents_lookup', ClientTags.TAG_DISPLAY_DISPLAY_IDEAL, ( selected_tag, ) )
                     
                     service_keys_to_siblings_and_parents = selected_tag_to_service_keys_to_siblings_and_parents[ selected_tag ]
                     
@@ -3597,7 +3629,7 @@ class ListBoxTags( ListBox ):
                         
                         ClientGUIMenus.AppendSeparator( siblings_menu )
                         
-                        ideals = sorted( ideals_to_service_keys.keys(), key = HydrusTags.ConvertTagToSortable )
+                        ideals = sorted( ideals_to_service_keys.keys(), key = HydrusText.HumanTextSortKey )
                         
                         for ideal in ideals:
                             
@@ -3920,7 +3952,7 @@ class ListBoxTags( ListBox ):
             
             favourite_tags.update( tags )
             
-            CG.client_controller.new_options.SetStringList( 'favourite_tags', list( favourite_tags ) )
+            CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
             
             CG.client_controller.pub( 'notify_new_favourite_tags' )
             
@@ -3942,7 +3974,7 @@ class ListBoxTags( ListBox ):
             
             favourite_tags.difference_update( tags )
             
-            CG.client_controller.new_options.SetStringList( 'favourite_tags', list( favourite_tags ) )
+            CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
             
             CG.client_controller.pub( 'notify_new_favourite_tags' )
             
@@ -4493,6 +4525,11 @@ class ListBoxTagsDisplayCapable( ListBoxTags ):
         return set( self._GetTagsFromTerms( self._selected_terms ) )
         
     
+    def GetTagServiceKey( self ) -> bytes:
+        
+        return self._service_key
+        
+    
     def SetTagServiceKey( self, service_key ):
         
         self._service_key = service_key
@@ -4686,6 +4723,8 @@ class ListBoxTagsStringsAddRemove( ListBoxTagsStrings ):
         
     
 class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
+    
+    cappedDueToSetting = QC.Signal( bool )
     
     def __init__( self, parent: QW.QWidget, tag_display_type: int, tag_presentation_location: int, service_key = None, include_counts = True ):
         
@@ -4918,13 +4957,13 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
     
     def AddAdditionalMenuItems( self, menu: QW.QMenu ):
         
-        ListBoxTagsDisplayCapable.AddAdditionalMenuItems( self, menu )
+        super().AddAdditionalMenuItems( menu )
         
         if CG.client_controller.new_options.GetBoolean( 'advanced_mode' ):
             
             submenu = ClientGUIMenus.GenerateMenu( menu )
             
-            for tag_display_type in ( ClientTags.TAG_DISPLAY_SELECTION_LIST, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, ClientTags.TAG_DISPLAY_STORAGE ):
+            for tag_display_type in ( ClientTags.TAG_DISPLAY_SELECTION_LIST, ClientTags.TAG_DISPLAY_SINGLE_MEDIA, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, ClientTags.TAG_DISPLAY_STORAGE ):
                 
                 if tag_display_type == self._tag_display_type:
                     
@@ -5021,16 +5060,18 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
         self._DataHasChanged()
         
     
-    def SetTagsByMediaFromMediaResultsPanel( self, media, tags_changed ):
+    def SetTagsByMediaFromMediaResultsPanel( self, media, tags_changed, capped_due_to_setting ):
         
         flat_media = ClientMedia.FlattenMedia( media )
         
         media_results = [ m.GetMediaResult() for m in flat_media ]
         
-        self.SetTagsByMediaResultsFromMediaResultsPanel( media_results, tags_changed )
+        self.SetTagsByMediaResultsFromMediaResultsPanel( media_results, tags_changed, capped_due_to_setting )
         
     
-    def SetTagsByMediaResultsFromMediaResultsPanel( self, media_results, tags_changed ):
+    def SetTagsByMediaResultsFromMediaResultsPanel( self, media_results, tags_changed, capped_due_to_setting ):
+        
+        self.cappedDueToSetting.emit( capped_due_to_setting )
         
         if not isinstance( media_results, set ):
             
@@ -5102,7 +5143,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
     
     def SetTagServiceKey( self, service_key ):
         
-        ListBoxTagsDisplayCapable.SetTagServiceKey( self, service_key )
+        super().SetTagServiceKey( service_key )
         
         self.SetTagsByMediaResults( self._last_media_results )
         
@@ -5144,12 +5185,48 @@ class StaticBoxSorterForListBoxTags( ClientGUICommon.StaticBox ):
         
         self._tags_box = None
         
+        self._capped_due_to_setting = False
+        
         # make this its own panel
         self._tag_sort = ClientGUITagSorting.TagSortControl( self, CG.client_controller.new_options.GetDefaultTagSort( self._tag_presentation_location ), show_siblings = show_siblings_sort )
         
         self._tag_sort.valueChanged.connect( self.EventSort )
         
         self.Add( self._tag_sort, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+    
+    def _UpdateCappedDueToSetting( self, capped_due_to_setting ):
+        
+        self._capped_due_to_setting = capped_due_to_setting
+        
+        self._UpdateTitle()
+        
+    
+    def _UpdateTitle( self ):
+        
+        title = self._original_title
+        
+        if self._tags_box is not None:
+            
+            service_key = self._tags_box.GetTagServiceKey()
+            
+            if service_key != CC.COMBINED_TAG_SERVICE_KEY:
+                
+                title = '{} for {}'.format( title, CG.client_controller.services_manager.GetName( service_key ) )
+                
+            
+        
+        if self._capped_due_to_setting:
+            
+            max_number = CG.client_controller.new_options.GetNoneableInteger( 'number_of_unselected_medias_to_present_tags_for' )
+            
+            if max_number is not None:
+                
+                title = f'{title} (for first {HydrusNumbers.ToHumanInt(max_number)} files)'
+                
+            
+        
+        self.SetTitle( title )
         
     
     def SetTagContext( self, tag_context: ClientSearchTagContext.TagContext ):
@@ -5166,14 +5243,7 @@ class StaticBoxSorterForListBoxTags( ClientGUICommon.StaticBox ):
         
         self._tags_box.SetTagServiceKey( service_key )
         
-        title = self._original_title
-        
-        if service_key != CC.COMBINED_TAG_SERVICE_KEY:
-            
-            title = '{} for {}'.format( title, CG.client_controller.services_manager.GetName( service_key ) )
-            
-        
-        self.SetTitle( title )
+        self._UpdateTitle()
         
     
     def EventSort( self ):
@@ -5193,6 +5263,8 @@ class StaticBoxSorterForListBoxTags( ClientGUICommon.StaticBox ):
         self._tags_box = tags_box
         
         self.Add( self._tags_box, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        self._tags_box.cappedDueToSetting.connect( self._UpdateCappedDueToSetting )
         
     
     def SetTagsByMedia( self, media ):

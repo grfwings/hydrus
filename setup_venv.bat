@@ -174,9 +174,9 @@ REM comment this guy out if no special stuff going on
 REM ECHO --------
 REM ECHO Future Libraries
 REM ECHO:
-REM ECHO There is a future test of requests and setuptools. Want to try it?
+REM ECHO There is a test for a new AVIF library. Want to try it?
 REM SET /P future="(y)es/(n)o? "
-
+REM
 REM IF "%future%" == "y" goto :question_future_done
 REM IF "%future%" == "n" goto :question_future_done
 REM goto :parse_fail

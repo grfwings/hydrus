@@ -35,6 +35,231 @@
             <h1 id="changelog"><a href="#changelog">changelog</a></h1>
             <ul>
                 <li>
+                    <h2 id="version_622"><a href="#version_622">version 622</a></h2>
+                    <ul>
+                        <li><h3>misc</h3></li>
+                        <li>fixed several sub-pixel problems with the new rating drawing when using PyQt6. in some cases it seems this was breaking boot. sorry for the trouble!</li>
+                        <li>fixed a 'The chosen db path "db_dir" is not writeable-to!' error when you try to boot two clients/servers at the same time, usually with cold memory (it seems like they were syncing into early bootup checking at the exact same time due to uncached dlls and then interfering with each other's directory write-test)</li>
+                        <li>if the 'selection tags' list is capped to only showing the first (by default) 4096 unselected files, it now says so in its box title</li>
+                        <li>if you hit paste (ctrl+v or shift+insert) on the text input in a write/edit tag autocomplete that has a paste button (e.g. in 'manage tags' dialog), and your clipboard has multiple lines of content, you now get a little yes/no dialog asking if you want to enter everything as separate tags (otherwise, as before, it munges all the lines into your input)</li>
+                        <li>a new checkbox in `options-&gt;tag editing` lets you skip the yes/no check in this case (i.e. always immediately pasting multiline content you enter)</li>
+                        <li>the manage tags dialog paste button is now beside the text input box. it still only does 'add only' actions</li>
+                        <li>all new clients, and all existing clients that don't have `Ctrl+Shift+O` set in `main_gui` shortcut set already, now get `Ctrl+Shift+O` as 'open options dialog'. the 'Use Native MenuBar' option's tooltip now highlights this shortcut (a couple of users have been soft-locked out options dialog to unset this when it borked out)</li>
+                        <li>. </li>
+                        <li><h3>duplicates</h3></li>
+                        <li>if you are in advanced mode, the manual duplicate filter will have a new "(not) visual duplicates" line with some numbers after it. this is the new "A and B are visual duplicates" test I have been working on, which uses a bunch of histogram statistics to programatically differentiate resizes/re-encodes from files with significant visual differences. if you do duplicate filtering this week, please look at this new line and let me know how its predictions hold up. I have tuned over about 100 real pairs, and I feel fairly good, but let's see on a larger scale. it sometimes false negatives (saying they are not visual duplicates when they actually are) when the pair has a particularly wide difference in scale or encoding quality, and I'm ok with that failure, but I do not get any false positives (saying they are visual duplicates when there is actually a watermark or something). I am most interested in false positives, since we hope to fold this tool into the duplicates auto-resolution system and I don't want a positive fail. the statement will also suggest a little more info if it thinks there is an obvious watermark or recolour. please send me any pairs that are reported wrong, and if you like you can look at the numbers. I will retune this tool as needed and fold it into the automatic system, and I'll launch this test as a real comparison statement for all users (but without the ugly debug numbers). thank you for testing!</li>
+                        <li>updated my 'A and B are visual duplicates' test to return a false when the files have resolution ratio that differs by more than 1%</li>
+                        <li>updated my 'A and B are visual duplicates' test to return a false when either file has resolution below (32x32)</li>
+                        <li>the duplicate filter comparison statements are now generated asynchronously. if and when the comparison statements need high CPU, they won't lag the initial pair load</li>
+                        <li>the 'this is a pixel-for-pixel duplicate png!' comparison statement and associated high score no longer applies to webp/png pairs. webp can be lossless, where this decision is less clear. if and when we get a nice 'this webp is lossy/lossless' detector, I'll bring this back</li>
+                        <li>the duplicates auto-resolution thumbnail pair lists should be less crazily tall if you have large thumbnails</li>
+                        <li>the cache that aids potential duplicate pair discovery has its cap (1 million search nodes) removed. on clients with many millions of files, ongoing similar files search will be I think around ~16-50% faster. each node is four numbers and an 8-byte hash, so this will add something in the range of 100-200MB of memory use for giganto clients. for interest, search distance 10 seems to cover a search space of ~40% of the entire tree, so on a db of a million images, that's 400,000 nodes to do hamming distance calculation on. thankfully each test is only about two microseconds, but it adds up, and search distance is the core determinant of search size, so keep it low!</li>
+                        <li><h3>png colours</h3></li>
+                        <li>PNG files are now scanned for gamma and chromaticity metadata on load. if they have this information (and no ICC Profile, which supercedes this info), it is applied much like an ICC Profile to colour-adjust the PNG to what was originally intended. usually these adjustments are very slight, just a shade one way or another</li>
+                        <li>all PNGs with this data (about one in twenty, I think?) should now render better. if any of your PNGs render crazy bright/dark/wrong this week, let me know!</li>
+                        <li>I did this in hopes of fixing some pixel hash stuff (no collision between a png and a non-png that should collide if this data is applied correctly), but my colour translation math seems to be slightly imperfect, so I may revisit this. I won't schedule mass pixel hash regen until I have this figured out</li>
+                        <li><h3>delete lock</h3></li>
+                        <li>added a new checkbox to `options-&gt;files and trash` that lets you say 'if the archive delete lock is on, then when I finish an archive/delete filter, ensure all the deletees are inboxed before the delete'</li>
+                        <li>added a similar checkbox that lets you say 'if the archive delete lock is on, then when I do a manual duplicate filter, ensure all the deletees from merge options are inboxed before the delete'</li>
+                        <li>I don't really want to write exceptions to the delete lock filter, but I hadn't thought about it from quite this angle before. lets see how this works as nice simple solution for this particular problem. if you use the delete lock and want to try this, make sure you are confident it is what you want</li>
+                        <li>if this ends up being a tangle of ugly logic, and/or if the delete lock extends to properties other than 'file is archived' in future, I may yank these options</li>
+                        <li><h3>client api</h3></li>
+                        <li>thanks to a user, the Client API now has calls to get/set the favourite tags. these calls use the existing 'add tags' permission (issue #311)</li>
+                        <li>updated the help and wrote some unit tests for this</li>
+                        <li>client api version is now 80</li>
+                        <li><h3>boring cleanup and weird stuff</h3></li>
+                        <li>fixed a couple places in the Client API documentation where it said a POST request didn't need a header; they all pretty much need `Content-Type: application/json`</li>
+                        <li>the duplicate comparison statements in the duplicate filter hover window are now center-aligned using the correct method/flag</li>
+                        <li>the operator radio buttons in the `NumberTest` widget (which appears in several places to manage 'X is &gt; Y', and the operators where it says &lt;, ≈, ≠, etc..) now have tooltips more clearly explaining what each is</li>
+                        <li>rejiggered some duplicate content update stuff to better separate the metadata updates from the delete file calls; I wasn't sure which order this stuff was happening, but now it is explicit and the delete happens at the end</li>
+                        <li>my 'merge directory' call now strictly does not delete anything from the source dir until it is finished copying with no problems. previously, it would move files as it went, so if the copy failed half way through due to an I/O failure, the source was left partial. this no longer happens</li>
+                        <li>fixed a couple of dumb path translation lines in my directory mirror/merge calls so they can better handle weird dirnames</li>
+                        <li>the advanced mode 'experimental' tag list menu that lets you change the tag display context now shows the 'single media views' option as well</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_621"><a href="#version_621">version 621</a></h2>
+                    <ul>
+                        <li><h3>more ratings</h3></li>
+                        <li>thanks to a user, we have many new rating options--</li>
+                        <li>`options-&gt;media viewer` and `options-&gt;thumbnails` now let you alter the size of ratings!</li>
+                        <li>there are now many new rating shapes to choose from under `services-&gt;manage services`: triangles pointing up/down/left/right; diamond; rhombus pointing right/left; pentagon; hexagon and small hexagon; six point star; eight point starburst; hourglass; large + and X shapes</li>
+                        <li>also, in an experiment, you can now also set a custom svg to your rating. there's a new folder, `install_dir/static/star_shapes`, that you can drop svgs into to have them available. I've put a couple of simple examples in already. try to do a squarish shape with a clear sillhouette on transparency. we will keep working on this, but feel free to try it out yourself and give feedback. I suspect we'll migrate all the existing custom polygons to nicer svgs in future if and when we nail nice svg border colours and stuff</li>
+                        <li>I added a help button to the `manage services` edit panel here, linking to the ratings help, which has a new section on the svg rating shapes</li>
+                        <li>I reworked some stuff behind the scenes to more neatly integrate this rating tech and allow for svg ratings. the 'edit service star shape' UI in `manage services` has two dropdowns now, too</li>
+                        <li>we are experimenting with fractional pixel sizing and drawing here, so some of the new ratings may seem a little blurry in places and/or not line up well, including between the underlying canvas and the top-right hover pop-up. I'm going to work on this a bit and see what I can do to make it more pixel-perfect</li>
+                        <li>we may figure out unicode character ratings in future also</li>
+                        <li><h3>misc</h3></li>
+                        <li>fixed a bug in the duplicates system's 'pixel hash' test. my current pixel hash is dimensionless, and thus, by accident, a completely flat-colour (or careful checkerboard etc..) image of 100x500 has the same pixel hash as the same colour of 200x250. it obviously doesn't come up much, but I regret the error. rather than recompute everyone's pixel hashes with dimension data, we are first patching the test code to double-check the images both have the same width. it seems ok here, but let me know if your 'must (not) be pixel duplicates' duplicate file searches are now interminably slow</li>
+                        <li>split the prefetch settings in `options-&gt;speed and memory` into their own box, and updated the labels a bit</li>
+                        <li>added a setting to this new box to govern how many pairs the duplicate filter will prefetch. previously this was hardcoded to 1, now it defaults to 5 and you can set whatever</li>
+                        <li>when the client or server checks if it is already running, the 'client_running' file's 'process creation time' is now only tested to within a second's accuracy. if you have a bespoke backup workflow that involves creating your own client_running file, it should get caught better now despite float imprecision</li>
+                        <li>updated the various Linux install/running-from-source stuff to talk about `libmpv2` as well as `libmpv1`.</li>
+                        <li>I rolled out a v620a hotfix last week after my refactoring accidentally broke the manual duplicate filter. sorry for the trouble! I have improved my testing regime to catch this in future</li>
+                        <li><h3>duplicates auto-resolution</h3></li>
+                        <li>you can now add 'system:known url' and 'system:number of urls' predicates to the 'test A or B' comparators</li>
+                        <li>you can now add 'system:number of urls' to the 'test A against B using file info' comparators</li>
+                        <li>added unit tests for these, and cleaned up some of the unit tests in this area</li>
+                        <li><h3>avif</h3></li>
+                        <li>the `pillow-avif-plugin` test last week seemed to go well. this library is now folded into the main builds, and AVIF rendering should be more reliable for the time being (issue #1720)</li>
+                        <li>if you run from source, you might like to rebuild your venv this week to get this</li>
+                        <li><h3>psd_tools replacement</h3></li>
+                        <li>`psd-tools` is no longer used by the program</li>
+                        <li>thanks to a user report, we discovered that the Linux build was including an old and vulnerable version of a bz2 decoder. this thing was hanging around because of a drawing library included by a psd parser we use. I am not sure if the decoder was ever called, given what we use the library for. I did a test build of Linux with the bad file simply deleted, and it seemed to boot ok, but I wasn't sure if the file was bundled into a pyd on the Windows and macOS side, and I'm pretty sure it would be included in a source install, so I wasn't really happy</li>
+                        <li>ultimately I decided I didn't like having this complicated psd library hanging around when we only needed to pull dimensions, icc profile existence, and pulling an embedded render preview file, so I cobbled together some other backup solutions we already mostly figured out, including an ffmpeg renderer, and wrote a simple file parser and replaced all the psd_tools stuff with our own calls</li>
+                        <li>there are some psd files ffmpeg seems not to render as good as psd_tools did, but I'm fine with it for now</li>
+                        <li>I seem to be detecting icc profiles that psd tools did not recognise, so I'm scheduling all psds for a 'has an icc profile?' check on update. maybe I'm false-positiving, but I'll make sure the existing store reflects current code at least</li>
+                        <li>I also fixed some psd rendering for files that had weird 100% transparency</li>
+                        <li>along the way I improved some PSD error messages and handling. PSDs that have no embedded preview should stop spamming that info to the log on thumbnail regen</li>
+                        <li><h3>swfrender removal</h3></li>
+                        <li>since cleaning was on my mind, I'm removing the swfrender exes too. new swf files you import will just get default 'flash' thumbnails from now on. having these ancient executables hanging around to load unknown flash files is not an excellent idea these days, even though it has been fun</li>
+                        <li>the actively developed 'Ruffle' flash emulator seems to be working on a CLI executable that can render flash frames, which could be a much better and more reliable replacement in future</li>
+                        <li>I haven't played with it properly yet, but ffmpeg can apparently thumbnail some flv-embed-style flash files, so I'll explore this too</li>
+                        <li><h3>refactoring and cleanup</h3></li>
+                        <li>moved some ffmpeg stuff from `HydrusVideoHandling` to the new `HydrusFFMPEG`</li>
+                        <li>merged all 'ffmpeg was missing' and 'ffmpeg output no content' error handling to single calls and improved coverage</li>
+                        <li>wrote some 'render to pipe' stuff for ffmpeg to make some of the ffmpeg based rendering work a little quicker and without the temp dir</li>
+                        <li>deleted the `HydrusPSDTools` file</li>
+                        <li>moved some more old network reporting mode code to a cleaner unified method</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_620"><a href="#version_620">version 620</a></h2>
+                    <ul>
+                        <li><h3>user gui improvements</h3></li>
+                        <li>thanks to a user, we have some more UI features--</li>
+                        <li>the options dialog now remembers its last page (can uncheck this if you like under `gui` page)</li>
+                        <li>a checkbox under `gui` that says whether to save media viewer size and position on close (normally it only saves on move/resize, but if you regularly use multiple viewers, you may wish to override so a final close saves what you want)</li>
+                        <li>the media viewer gets a 'drag' button in the top hover. drag the button, you drag the window. useful if you are using it in the newer frameless mode</li>
+                        <li>if you right-click this new button, there are some neat new commands to change the fit the window size to the current mediia size too</li>
+                        <li>the new 'resize frame to media' commands are mappable on the 'media viewer' shortcut set. you can set the specific zoom</li>
+                        <li>we now have a command for 'zoom to x%', also! same deal, it is now in the 'media viewer' shortcut set</li>
+                        <li>the media viewer should be better about saving its position when moved by programmatic window position-setters like Windows Snap</li>
+                        <li>two checkboxes under `gui pages` let you promote 'all my files' or 'all local files' buttons to the top of the page picker (for, e.g. if you have many file domains that spill over what the dialog can show)</li>
+                        <li><h3>misc</h3></li>
+                        <li>wrote an animated webp frame duration parser and integrated it into our file metadata stuff. animated webp files are no longer fixed to 12fps and support variable framerate (issue #1694)</li>
+                        <li>on update, all animated webps will be scheduled for a metadata regen to get corrected total duration times</li>
+                        <li>fixed some url unit tests I accidentally broke last week because of the defunct url classes I removed, and updated some of the 'how to make url classes and parsers' and client api help to use more generic url examples</li>
+                        <li>improved the grammar and general presentation of the 'files being parsed' message text in the 'import files' dialog. this text also tooltips itself in case it gets crazy long</li>
+                        <li>the 'quality info' button in the 'edit subscription' dialog is now aware of which queries actually exist on disk versus those that were generated in this 'edit subscriptions' session. it now presents info only on selected queries that actually exist, and if only new queries are selected, it disables itself</li>
+                        <li>the system tray checkboxes are now set to false along with being disabled if the current system does not support a system tray (e.g. Docker). the calls these settings make have an additional protection layer that checks if the current system has a system tray (issue #1569)</li>
+                        <li>the 'show pending and petitioned groups' and 'show whole chains' checkboxes in the manage tag siblings and parents dialogs now disable if you hit 'show all pairs'. these are inherently true with 'show all pairs'</li>
+                        <li>the file maintenance routine that attempts to re-queue known urls for files that are missing or damaged now double-checks that any 'Post URLs' are currently parseable. (some 'decorative' urls have 'Post URL' url classes so as to appear in the media viewer but aren't actually linked to anything)</li>
+                        <li>in the 'thumbnails' shortcut set, you can now set a 'select: not selected' command, to invert the current selection</li>
+                        <li>the display names of normal pages are now clipped to 256 characters and are better about removing accidentally included newline characters</li>
+                        <li>the macOS dialog double-positioning thing we added in March that fixed dialogs slowly creeping like 26 pixels down on every dialog session is now careful not to apply to the main window on boot. it seems the fix was making the main gui move ~100px sideways, no idea why</li>
+                        <li><h3>future build and more AVIF fun</h3></li>
+                        <li>it looks like the AVIF fix last week was not reliable--some boots it would work, others it would not. I don't know if this is some random fail triggered by the deprecated status, but whatever: we should promptly move to the designated 'use this in the interim while Pillow proper figure it out their end' solution to get good AVIF rendering back (issue #1720)</li>
+                        <li>thus I am making another 'future build' this week. I had been planning one for a while, particularly to try out a new mpv dll, but I'm just going to keep it nice and simple this week to test out the AVIF fix. if you are an advanced user, please try it out on your platform and let me know if there are any problems. if you run from source, you can rebuild your venv, and if you select (a)dvanced, you'll get a question if you want to install the AVIF test library</li>
+                        <li>assuming no problems, I'll fold this into v621</li>
+                        <li>on boot, hydrus now imports the `pillow-avif-plugin` library in preference to the old `pillow_heif` solution</li>
+                        <li>as a side thing, it looks like Pillow are going to try slender AVIF binaries in their wheels for 11.3, so this all may get simpler soon</li>
+                        <li>also, hydrus now reports 'avif ok' and 'heif ok' separately in various errors and the `help-&gt;about` dialog</li>
+                        <li><h3>json parsing</h3></li>
+                        <li>the json formula now supports two new parsing rules--</li>
+                        <li>first, a 'walk back up ancestors' parsing rule. it moves `n` steps back up the parsing stack, so if you have an Object where you need to test for one key's existence but you actually need to grab a sibling or cousin value, you can now walk back and it should work</li>
+                        <li>second, a 'filter strings/numbers/bools with string match' parsing rule. if you have grabbed strings or other simple variables, you can test them against a String Match. if you combine this with the 'walk back' step, you can now test Object values and then walk back up and grab a different thing</li>
+                        <li>wrote some unit tests for the existing and new json formula rules</li>
+                        <li><h3>duplicates auto-resolution</h3></li>
+                        <li>fixed an issue with renaming existing rules. due to a saving bug, renaming rules was causing duplicate entries behind the scenes. you might get an update message about it--if you do, your new rule may have rolled back to a previous version. I will have paused it, to be safe, so if you were hit by this, please double-check your rule is named as you wish and the settings are all good and then set it back to semi-automatic or automatic if you are happy</li>
+                        <li>added a maintenance job to the cog to clear the cached pair counts that the rules use to talk about their progress. if there's ever a miscount, this will fix it</li>
+                        <li>when you approve/deny some pending pairs, the selection now tries to preserve to the earliest selection you had before. previously it always fell back to position 0</li>
+                        <li>stopped the duplicates auto-resolution work from sending unintended 'I am not idle' signals as it did file search, prohibiting idle mode from kicking in</li>
+                        <li>fixed a stupid typo error when you say to add a new comparator rule but cancel the 'select which type' add dialog</li>
+                        <li>fixed an issue where a duplicates auto-resolution table wasn't being deleted correctly on rule delete. not a big deal, just a cleanup thing</li>
+                        <li><h3>duplicates auto-resolution exact match detection</h3></li>
+                        <li>_tl;dr: I think I can do the 'A is a resize/re-encode of B' in future_</li>
+                        <li>I did some research and bashed my head against different strategies, and I think I have figured out the core of a routine that can differentiate between resize/re-encode 'exact match' duplicates and files that have significant changes such as corrections or watermarks or recolours. It uses a bunch of math to break the images into normalised tiles, compute a weighted 'wasserstein distance' (earth-mover distance) of the tiles' Lab channel histograms, and reviews those scores, and their mean, variance, and skewness to exclude various classes of differing files</li>
+                        <li>I still have a bit of work to actually plug it in, since each judgment here requires a full image render for both in the pair and some of the UI isn't yet ready to handle a ~1 second delay per pair. I also need to figure out a nicer tuning/testing regime to ensure I didn't just overfit for the examples I generated. I think I'll plug it into the manual duplicate filter's comparison statements and we'll see with human eyes how it does. overall, I feel really good about it. I thought this would be a nightmare, but it looks doable. if you want to check my math and send in your own thoughts, check out the new `ClientImageHistograms.py`</li>
+                        <li><h3>boring refactoring and cleanup</h3></li>
+                        <li>pulled the rich maintenance manager code out of `ClientFiles` to a new `ClientFilesMaintenance`</li>
+                        <li>pulled the file storage manager out of `ClientFiles` to a new `ClientFilesManager`</li>
+                        <li>pulled the phash code out of `ClientImageHandling` and moved it to a new `ClientImagePerceptualHashes`</li>
+                        <li>moved the above files and `ClientFilesPhysical` to new `hydrus.client.files(.images)` modules</li>
+                        <li>reworked the images, image tiles, and thumbnails caches to be explicitly named variables in the client controller, mostly to improve some type checking stuff</li>
+                        <li>standardised some variable names around the cache access, and made the images and image tiles caches work in media results rather than media objects</li>
+                        <li>removed the afaik defunct `cloudscraper` from the code and requirements and a weird insert we needed in the client.spec build templates</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_619"><a href="#version_619">version 619</a></h2>
+                    <ul>
+                        <li><h3>cleaner tags</h3></li>
+                        <li>updated the tag filter to exclude many weird unicode characters. all sorts of Control Characters, right-to-left formatting, zero-width spaces, surrogates, and more is now all removed. Zero-Width characters ZWNJ and ZWJ are allowed unless the rest of the tag is only in extended-latin. the hangul filler character is allowed if the tag includes other hangul syllable or jamo. there is no perfect solution here, but a bunch of mis-parses and other garbage is cleaned up with this (issue #1709)</li>
+                        <li>**your client will clean its tags on update. this will take several minutes if you sync with the PTR**. you will probably see tens of thousands of bad tags--don't worry about it too much, and everything is logged if you are super interested in the saga of `ç¿«∪ç¸`-legacy-decode-jank, `( ͡° ͜ʖ ͡°)`-that-includes-a-hidden-Byte-Order-Mark, and a relatively common `normaltag[ZWNJ]` that's probably either an IME input mistake or some HTML parsing error from years ago</li>
+                        <li>I've been fairly aggressive here, so if I have broken something you do want to input, or something that requires temporary invalid status via an IME, let me know. rest assured, however, that everyone's favourite compound emojis such as `👨‍👩‍👧‍👦` should still work</li>
+                        <li><h3>linux build</h3></li>
+                        <li>the Linux build failed last week because I missed notifications about the Ubuntu 20.04 runner being retired. sorry for the trouble! this has happened before, so I am going to keep a better check on retiring runner news in future</li>
+                        <li>the Linux build is now generated on the 22.04 runner. there _are_ some .so file differences, but it seems to all boot ok, and in one case it actually fixed a previously broken mpv load. also, a normal extract-update seems to have worked in our tests, so we don't think a clean install is strictly needed. You might like to do a clean install anyway, just to be neat: https://hydrusnetwork.github.io/hydrus/getting_started_installing.html#clean_installs</li>
+                        <li><h3>misc</h3></li>
+                        <li>AVIF rendering is fixed. I confidently wrote some code last week that said 'when Pillow updates to 1.21.1, don't load the recently deprecated AVIF support from our external plugin any more because Pillow will now have it natively', and then the Pillow update happened last week and they decided not to bundle in AVIF in their convenient wheel because it bloated their files. I have undone my version check, frozen the plugin at its current version to keep support, and will check this manually on the actual version of Pillow in future before I switch over again. sorry for the trouble! (issue #1714)</li>
+                        <li>added a new `Tell original search page to select exit media when closing the media viewer` checkbox to `options-&gt;media viewer` (default on). this lets you turn off the behaviour where your exit media is selected in the thumbgrid when you exit a media viewer (issue #1712)</li>
+                        <li>the default value for `When maintenance physically deletes files, wait this many ms between each delete:` in `files and trash` is now 600ms, up from 250ms. if you are set to the old default of 250, the update will bump you up. furthermore, the widget in `files and trash` is now a rich time delta widget rather than just a ms integer spinner</li>
+                        <li>the 'are you sure you want to exit the program, these pages say they are not done' yes/no dialog now spawns with yes disabled for 1.2 seconds, just like the archive/delete filter confirmation, enough to jolt you out of an autopilot enter press</li>
+                        <li><h3>default downloaders</h3></li>
+                        <li>the safebooru parser is more careful about fetching valid associable source urls. it was previously juxtaposing the safebooru domain with non-https-having garbage</li>
+                        <li>added a thread parser for holotower</li>
+                        <li>deleted some parsers and url classes for long-defunct sites</li>
+                        <li><h3>sidecar sorting</h3></li>
+                        <li>sidecar objects no longer do a hardcoded sort of their strings before the export step. if you set a different sort via the 'processing' step's string processor, that's directly what will export to the destination</li>
+                        <li>all new sidecar objects now start with a--and all existing sidecar objects will update to get a new--processing step that does 'human text sort (asc)'. thus, all sidecars _should_ continue behaving pretty much as they were before, but if you don't want that, you can now edit it!</li>
+                        <li><h3>actual vs ideal tags</h3></li>
+                        <li>the right-click tag menu that shows current parents and siblings now shows the _ideal_ tag display space, rather than the _actual_. the difference between these two is the ideal is what your settings say whereas the actual is what the client currently has calculated as per _tags-&gt;sibling/parent sync-&gt;review current sync_. this guy was previously showing the actual calc, which was revealing confusing interim technical states after the preferences changed. I am not sure if this change is correct or helpful and suspect I'll need some better UI around here to quickly detect and explain a discrepancy</li>
+                        <li>updated the `/add_tags/get_siblings_and_parents` help to discuss that it fetches actual rather than ideal tags</li>
+                        <li><h3>duplicates auto-resolution</h3></li>
+                        <li>**the duplicates auto-resolution UI is all enabled**, and I've un-hidden the 'add rule' button. have fun with this new tech, but don't go crazy yet. I think pixel-duplicate pairs are now easy to solve if you have firm preferences about keeping exif etc..</li>
+                        <li>finished off a comparison rule for duplicates auto-resolution that tests things like 'A has more than 2x the num pixels as B'. it can test size, width, height, num_pixels, duration, and num_frames and supports equals, not equals, greater than, less than, approx equal (percentage or absolute), and you can set a coefficient (A has more than 2x filesize of B) and/or an absolute delta (A has more than 200 px more height than B)</li>
+                        <li>added two hardcoded comparison rules for 'A and B have the same/differing filetypes'. nice and simple way to ensure you are or aren't comparing like to like in a rule</li>
+                        <li>the one-file comparators can now do exif, icc profile, and human-readable metadata tests</li>
+                        <li>the 'add suggested rules' button now has three choices--the original pixel-duplicates jpeg/png one, and `pixel-perfect pairs - keep EXIF or ICC data` (eliminate pixel duplicate pairs of the same filetype where only one has Exif/ICC data) and `pixel-perfect pairs - eliminate bloat`, (eliminate pixel duplicate pairs of the same filetype where neither have EXIF/ICC data but one is smaller than the other)</li>
+                        <li>the 'action' column in the duplicates auto-resolution preview panels now tooltips to the full text. if this becomes like 100 tags and several URLs, you can now read it!</li>
+                        <li>although we can now poke at the easiest dupe pairs, I think we are still missing a puzzle piece to differentiate alternates from duplicates programatically, even on 'exact-match' searches. we either need cleverer and higher-resolution phashes or a comparison rule that does hardcoded pixel inspection and allows for 'A is &gt; 99.7% pixel-similar to B' in some semantically rich way so we can automatically differentiate jpeg artifacts from banners or watermarks or even colour-only costume changes. while better and perhaps colour-sensitive phashes may come one day, I am going to go for this pixel comparison tech. this will add render CPU cost to each pair decision, which is going to add some bumps to this whole workflow, particularly the preview window, but I suspected we'd have to do this so I've mostly built for it</li>
+                        <li><h3>boring duplicates auto-resolution</h3></li>
+                        <li>wrote unit tests for the new system predicate media-result-extraction system for the types it can currently extract</li>
+                        <li>wrote unit tests for the new relative pair file info comparator</li>
+                        <li>wrote unit tests for the new hardcoded filetype comparator</li>
+                        <li>wrote unit tests for the new one-file comparator capabilities</li>
+                        <li>the number test widget now emits value-changed signals</li>
+                        <li>fixed an issue where many system pred stubs, until now only appearing temporarily, would not serialise</li>
+                        <li>fixed an issue with the duplicates auto-resolution preview panel	 where the 'pass' list was not ordering correct for rules beyond the pixel dupe test rule</li>
+                        <li>fixed an issue where the duplicates auto-resolution dialog would not allow you to add more than one new rule per dialog session</li>
+                        <li>brushed up the auto-resolution help a bit</li>
+                        <li><h3>boring cleanup</h3></li>
+                        <li>moved the 'human text sort' stuff from `HydrusData` to `HydrusText`, and improved its sort reliability when strings differ on order of int/str</li>
+                        <li>merged the generic tag sort code into the human text sort system, since they were both doing the same thing. cleaned up some bad old ideas along the way</li>
+                        <li>fixed some bad old tag processing when generating thumbnail banners and the file has more than two tags of a particular namespace and at least one tag includes non-number data</li>
+                        <li>a bunch of places that have some text beside a widget, e.g. the 'show whole chains' checkbox in 'manage tag parents', now copy the tooltip from the widget itself to the text</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_618"><a href="#version_618">version 618</a></h2>
+                    <ul>
+                        <li><h3>misc</h3></li>
+                        <li>fixed the tag import options setup on 'force metadata refresh'. sorry, I broke this by accident last week!</li>
+                        <li>the weird 'always show system:everything, even if you have more than 10k files' (default off) checkbox under the 'file search' options panel is now replaced with a simpler 'show system:everything' (default on). once users get more experienced, they can turn this off themselves when they notice it. existing users will upgrade to get an appropriate value--if you currently see system:everything, it should default to True to you</li>
+                        <li>the crazy 'hide inbox and archive system predicates if either has no files' option, also under 'file search', is removed. this produces more confusion than value</li>
+                        <li>gave my top-level help and getting started index pages a pass, making it plainer and more concise for new users and clearing out some unneeded waffling/cringe and defunct or advanced info (the tumblr contact link still had an 'rss' alternate link, lol)</li>
+                        <li>fixed an issue where the simple downloader would be unable to resume a parsing job that never finished in a previous session (e.g. if you had network traffic paused). in this case, the gallery result would sit unresolved in the gallery log; the job is now only removed from the pending jobs queue, and the gallery log entry only saved to the log, once the job is complete</li>
+                        <li>if the user has the 'archived file delete lock' on, file maintenance jobs that check for missing/incorrect files now recognise if a record to be deleted is delete-locked and now just send the file to the trash instead. you get a different popup letting you know what happened, and the log maps out what happened too if you need to do sophisticated recovery. it sounds backwards to deny the deletion of a record for a file that does not actually exist, but I will not budge on the delete lock--trying to write exceptions is only going to tie us in knots (issue #1706)</li>
+                        <li>when repairing the client file storage system, or when doing 'move files now', if the source folder has been stored in the file system as an absolute path despite being beneath the db folder, the system now recognises this and recovers. if neither portable nor absolute path worked (i.e. some very odd path normalisation has happened), the system now stops what it was doing and raises an appropriate error. previously, it was possible to get your client into a situation where it would have doubled-up entries for certain prefixes. this whole system could do with a revamp, I think, especially when I get back to background file migration</li>
+                        <li>reworked the last check, last file, and next check column sorts in manage subscription(s) dialogs. the various 'not initialised yet' values were sorting as very old rather than imminent</li>
+                        <li><h3>ipfs update</h3></li>
+                        <li>I have done a pass over the IPFS service in hydrus, catching it up to what their modern daemon's API wants. if you use a new version of IPFS, hydrus should be able to pin directories again. if you use an old version of IPFS, update it please</li>
+                        <li>most importantly, I have removed the `nocopy` feature. the way we did the symlink redirect trick is not supposed to work on modern IPFS. this was always crazy and experimental, so for KISS reasons I will no longer support it</li>
+                        <li>I have also removed the native IPFS multihash download from the client. there were a couple of really obscure ways to launch this rickety old download process that could even spawn a tree selection dialog for picking which files in a directory you wanted to get. it was a big mess and a threading nightmare. all IPFS daemons offer web access to multihashes, so if we want this tech back, I think I want to make a downloader and/or URL Class or something instead, and maybe add like 'parse multihash' content update routine, so we can use all the nice downloader UI instead. you can also, of course, just paste an IPFS direct file URL straight into an url downloader and it should work</li>
+                        <li>the 'pin new directory' command is fixed!! (issue #1710)</li>
+                        <li>if you update your IPFS daemon a lot (as I did this week), I am uncertain if existing pins or directory pins will parse correct, and doubly so if there was nocopy stuff going on before. if nothing is working your end and you can't unpin-then-repin to fix it, I think the best solution is just to prep your currently pinned files in some search pages so you can find them again and then remove/re-add the ipfs service and basically tell hydrus to start over</li>
+                        <li>I gave the ipfs help a full pass, here: https://hydrusnetwork.github.io/hydrus/ipfs.html</li>
+                        <li><h3>boring cleanup</h3></li>
+                        <li>I replaced the last three hacky old duct-taped 'queue' listboxes (where you have a list of texts with up/delete/down buttons beside) with my integrated class that has some more bells and whistles, for instance reactive buttons that only enable when they can fire and selection preservation when you do up/down. the replaced widgets are: the one on the simple downloader page; the list of html parsing formula rules; the list of json parsing formula rules. no more pain in the neck as you reorder parse rules!!</li>
+                        <li>the 'queue' listbox now accepts delete key presses</li>
+                        <li>the 'queue listbox that can edit now only edits the top selected item</li>
+                        <li>the 'queue' listbox has some finer Qt signals working behind the scenes, too</li>
+                        <li>deleted some ancient and terrible data fetching and list manipulation functions that were originally from wx and are thankfully now no longer used</li>
+                        <li>fixed up some more layout flag transitions for my expand/collapse boxes. the IPFS shares box now starts off collapsed but expands to eat up space</li>
+                    </ul>
+                </li>
+                <li>
                     <h2 id="version_617"><a href="#version_617">version 617</a></h2>
                     <ul>
                         <li><h3>misc</h3></li>

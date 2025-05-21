@@ -17,11 +17,11 @@ from hydrus.core.networking import HydrusNetwork
 
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientFiles
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientServices
+from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsManage
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -61,7 +61,7 @@ if HC.PLATFORM_MACOS:
 
 class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.ListeningMediaList, QW.QScrollArea ):
     
-    selectedMediaTagPresentationChanged = QC.Signal( list, bool )
+    selectedMediaTagPresentationChanged = QC.Signal( list, bool, bool )
     selectedMediaTagPresentationIncremented = QC.Signal( list )
     statusTextChanged = QC.Signal( str )
     
@@ -890,6 +890,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             self.SetFocusedMedia( None )
             
+            #
+            
             canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
             
             canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
@@ -1144,6 +1146,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         if CG.client_controller.gui.IsCurrentPage( self._page_key ):
             
+            capped_due_to_setting = False
+            
             if len( self._selected_media ) == 0:
                 
                 number_of_unselected_medias_to_present_tags_for = CG.client_controller.new_options.GetNoneableInteger( 'number_of_unselected_medias_to_present_tags_for' )
@@ -1153,6 +1157,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     tags_media = self._sorted_media
                     
                 else:
+                    
+                    capped_due_to_setting = len( self._sorted_media ) > number_of_unselected_medias_to_present_tags_for
                     
                     tags_media = self._sorted_media[ :number_of_unselected_medias_to_present_tags_for ]
                     
@@ -1166,7 +1172,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             tags_changed = tags_changed or self._had_changes_to_tag_presentation_while_hidden
             
-            self.selectedMediaTagPresentationChanged.emit( tags_media, tags_changed )
+            self.selectedMediaTagPresentationChanged.emit( tags_media, tags_changed, capped_due_to_setting )
             
             self.statusTextChanged.emit( self._GetPrettyStatusForStatusBar() )
             
@@ -1225,23 +1231,23 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         if num_files > 0:
             
-            if job_type == ClientFiles.REGENERATE_FILE_DATA_JOB_FILE_METADATA:
+            if job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA:
                 
                 message = 'This will reparse the {} selected files\' metadata.'.format( HydrusNumbers.ToHumanInt( num_files ) )
                 message += '\n' * 2
                 message += 'If the files were imported before some more recent improvement in the parsing code (such as EXIF rotation or bad video resolution or duration or frame count calculation), this will update them.'
                 
-            elif job_type == ClientFiles.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL:
+            elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL:
                 
                 message = 'This will force-regenerate the {} selected files\' thumbnails.'.format( HydrusNumbers.ToHumanInt( num_files ) )
                 
-            elif job_type == ClientFiles.REGENERATE_FILE_DATA_JOB_REFIT_THUMBNAIL:
+            elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_REFIT_THUMBNAIL:
                 
                 message = 'This will regenerate the {} selected files\' thumbnails, but only if they are the wrong size.'.format( HydrusNumbers.ToHumanInt( num_files ) )
                 
             else:
                 
-                message = ClientFiles.regen_file_enum_to_description_lookup[ job_type ]
+                message = ClientFilesMaintenance.regen_file_enum_to_description_lookup[ job_type ]
                 
             
             do_it_now = True
@@ -1552,7 +1558,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     # so the important part of this mess is here. we send the duplicated media, which is keeping up with content updates, to the method here
                     # original 'first_media' is not changed, and won't be until the database Write clears and publishes everything
-                    content_update_packages.append( duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( first_duplicated_media_result, second_duplicated_media_result, file_deletion_reason = file_deletion_reason, do_not_do_deletes = do_not_do_deletes ) )
+                    content_update_packages.extend( duplicate_content_merge_options.ProcessPairIntoContentUpdatePackages( first_duplicated_media_result, second_duplicated_media_result, file_deletion_reason = file_deletion_reason, do_not_do_deletes = do_not_do_deletes ) )
                     
                 
                 for content_update_package in content_update_packages:

@@ -16,8 +16,8 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
-from hydrus.client import ClientFiles
 from hydrus.client import ClientGlobals as CG
+from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIFunctions
@@ -30,6 +30,7 @@ from hydrus.client.gui.media import ClientGUIMediaMenus
 from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanel
 from hydrus.client.gui.pages import ClientGUIMediaResultsPanelMenus
+from hydrus.client.gui.widgets import ClientGUIPainterShapes
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaFileFilter
 from hydrus.client.media import ClientMediaResultPrettyInfo
@@ -263,7 +264,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         if len( thumbnails ) > 0:
             
-            CG.client_controller.GetCache( 'thumbnail' ).CancelWaterfall( self._page_key, thumbnails )
+            CG.client_controller.thumbnails_cache.CancelWaterfall( self._page_key, thumbnails )
             
         
         self._dirty_canvas_pages.append( canvas_page )
@@ -307,7 +308,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         thumbnails_to_render_later = []
         
-        thumbnail_cache = CG.client_controller.GetCache( 'thumbnail' )
+        thumbnail_cache = CG.client_controller.thumbnails_cache
         
         thumbnail_margin = CG.client_controller.new_options.GetInteger( 'thumbnail_margin' )
         
@@ -344,7 +345,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         if len( thumbnails_to_render_later ) > 0:
             
-            CG.client_controller.GetCache( 'thumbnail' ).Waterfall( self._page_key, thumbnails_to_render_later )
+            CG.client_controller.thumbnails_cache.Waterfall( self._page_key, thumbnails_to_render_later )
             
         
     
@@ -684,14 +685,14 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         visible_thumbnails = [ thumbnail for thumbnail in thumbnails if self._MediaIsInCleanPage( thumbnail ) ]
         
-        thumbnail_cache = CG.client_controller.GetCache( 'thumbnail' )
+        thumbnails_cache = CG.client_controller.thumbnails_cache
         
         thumbnails_to_render_now = []
         thumbnails_to_render_later = []
         
         for thumbnail in visible_thumbnails:
             
-            if thumbnail_cache.HasThumbnailCached( thumbnail ):
+            if thumbnails_cache.HasThumbnailCached( thumbnail ):
                 
                 thumbnails_to_render_now.append( thumbnail )
                 
@@ -708,7 +709,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         if len( thumbnails_to_render_later ) > 0:
             
-            CG.client_controller.GetCache( 'thumbnail' ).Waterfall( self._page_key, thumbnails_to_render_later )
+            thumbnails_cache.Waterfall( self._page_key, thumbnails_to_render_later )
             
         
     
@@ -873,7 +874,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
                 
                 self._RecalculateVirtualSize()
                 
-                CG.client_controller.GetCache( 'thumbnail' ).Waterfall( self._page_key, thumbnails )
+                CG.client_controller.thumbnails_cache.Waterfall( self._page_key, thumbnails )
                 
                 send_publish = False
                 
@@ -1684,9 +1685,9 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
             regen_menu = ClientGUIMenus.GenerateMenu( manage_menu )
             
-            for job_type in ClientFiles.ALL_REGEN_JOBS_IN_HUMAN_ORDER:
+            for job_type in ClientFilesMaintenance.ALL_REGEN_JOBS_IN_HUMAN_ORDER:
                 
-                ClientGUIMenus.AppendMenuItem( regen_menu, ClientFiles.regen_file_enum_to_str_lookup[ job_type ], ClientFiles.regen_file_enum_to_description_lookup[ job_type ], self._RegenerateFileData, job_type )
+                ClientGUIMenus.AppendMenuItem( regen_menu, ClientFilesMaintenance.regen_file_enum_to_str_lookup[ job_type ], ClientFilesMaintenance.regen_file_enum_to_description_lookup[ job_type ], self._RegenerateFileData, job_type )
                 
             
             ClientGUIMenus.AppendMenu( manage_menu, regen_menu, 'maintenance' )
@@ -2174,11 +2175,11 @@ class Thumbnail( Selectable ):
         
         if media.GetDisplayMedia() is None:
             
-            thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( None )
+            thumbnail_hydrus_bmp = CG.client_controller.thumbnails_cache.GetHydrusPlaceholderThumbnail()
             
         else:
             
-            thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( media.GetDisplayMedia().GetMediaResult() )
+            thumbnail_hydrus_bmp = CG.client_controller.thumbnails_cache.GetThumbnail( media.GetDisplayMedia().GetMediaResult() )
             
         
         thumbnail_border = CG.client_controller.new_options.GetInteger( 'thumbnail_border' )
@@ -2283,7 +2284,7 @@ class Thumbnail( Selectable ):
         
         raw_thumbnail_qt_image = thumbnail_hydrus_bmp.GetQtImage()
         
-        thumbnail_dpr_percent = CG.client_controller.new_options.GetInteger( 'thumbnail_dpr_percent' )
+        thumbnail_dpr_percent = new_options.GetInteger( 'thumbnail_dpr_percent' )
         
         if thumbnail_dpr_percent != 100:
             
@@ -2435,17 +2436,24 @@ class Thumbnail( Selectable ):
             painter.drawRects( rectangles )
             
         
-        ICON_MARGIN = 1
         
         locations_manager = media.GetLocationsManager()
         
         # ratings
+        THUMBNAIL_RATING_ICON_SET_SIZE = round( new_options.GetFloat( 'draw_thumbnail_rating_icon_size_px' ) )
+        STAR_DX = THUMBNAIL_RATING_ICON_SET_SIZE
+        STAR_DY = THUMBNAIL_RATING_ICON_SET_SIZE
         
-        draw_thumbnail_rating_background = CG.client_controller.new_options.GetBoolean( 'draw_thumbnail_rating_background' )
+        ICON_PAD = ClientGUIPainterShapes.PAD_PX #4px constant pad between each shape
+        
+        ICON_MARGIN = 1
+        
+        draw_thumbnail_rating_background = new_options.GetBoolean( 'draw_thumbnail_rating_background' )
         
         current_top_right_y = thumbnail_border
         
         services_manager = CG.client_controller.services_manager
+        
         
         like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
         
@@ -2455,8 +2463,8 @@ class Thumbnail( Selectable ):
         
         if num_to_show > 0:
             
-            rect_width = ( 16 * num_to_show ) + ( ICON_MARGIN * 2 )
-            rect_height = 16 + ( ICON_MARGIN * 2 )
+            rect_width = ( STAR_DX * num_to_show ) + ( ICON_PAD * ( num_to_show - 1 ) ) + ( ICON_MARGIN * 2 )
+            rect_height = STAR_DY + ICON_PAD + ( ICON_MARGIN * 2 )
             
             rect_x = width - thumbnail_border - rect_width
             rect_y = current_top_right_y
@@ -2466,8 +2474,8 @@ class Thumbnail( Selectable ):
                 painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
                 
             
-            like_rating_current_x = rect_x + ICON_MARGIN
-            like_rating_current_y = rect_y + ICON_MARGIN
+            like_rating_current_x = rect_x + ICON_PAD / 2
+            like_rating_current_y = rect_y + ICON_PAD / 2
             
             for like_service in like_services_to_show:
                 
@@ -2475,13 +2483,14 @@ class Thumbnail( Selectable ):
                 
                 rating_state = ClientRatings.GetLikeStateFromMedia( ( media, ), service_key )
                 
-                ClientGUIRatings.DrawLike( painter, like_rating_current_x, like_rating_current_y, service_key, rating_state )
+                ClientGUIRatings.DrawLike( painter, like_rating_current_x, like_rating_current_y, service_key, rating_state, QC.QSize( STAR_DX, STAR_DY ) )
                 
-                like_rating_current_x += 16
+                like_rating_current_x += STAR_DX + ICON_PAD
                 
             
             current_top_right_y += rect_height
             
+        
         
         numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
         
@@ -2493,10 +2502,10 @@ class Thumbnail( Selectable ):
             
             ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( media, ), service_key )
             
-            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key )
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, STAR_DX, ICON_PAD )
             
-            rect_width = numerical_width + ( ICON_MARGIN * 2 )
-            rect_height = 16 + ( ICON_MARGIN * 2 )
+            rect_width = numerical_width + ( ICON_MARGIN * 2 ) #icon padding is included in GetNumericalWidth
+            rect_height = STAR_DY + ICON_PAD + ( ICON_MARGIN * 2 )
             
             rect_x = width - thumbnail_border - rect_width
             rect_y = current_top_right_y
@@ -2506,13 +2515,14 @@ class Thumbnail( Selectable ):
                 painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
                 
             
-            numerical_rating_current_x = rect_x + ICON_MARGIN
-            numerical_rating_current_y = rect_y + ICON_MARGIN
+            numerical_rating_current_x = rect_x + ICON_PAD / 2
+            numerical_rating_current_y = rect_y + ICON_PAD / 2
             
-            ClientGUIRatings.DrawNumerical( painter, numerical_rating_current_x, numerical_rating_current_y, service_key, rating_state, rating )
+            ClientGUIRatings.DrawNumerical( painter, numerical_rating_current_x, numerical_rating_current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ), ICON_PAD )
             
             current_top_right_y += rect_height
             
+        
         
         incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
         
@@ -2522,8 +2532,8 @@ class Thumbnail( Selectable ):
         
         if num_to_show > 0:
             
-            control_width = ClientGUIRatings.INCDEC_SIZE.width()
-            control_height = ClientGUIRatings.INCDEC_SIZE.height()
+            control_width = THUMBNAIL_RATING_ICON_SET_SIZE * 2 #+ PAD_PX?
+            control_height = THUMBNAIL_RATING_ICON_SET_SIZE
             
             rect_width = ( control_width * num_to_show ) + ( ICON_MARGIN * 2 )
             rect_height = control_height + ( ICON_MARGIN * 2 )
@@ -2545,7 +2555,7 @@ class Thumbnail( Selectable ):
                 
                 ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( media, ), service_key )
                 
-                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, incdec_rating_current_y, service_key, rating_state, rating )
+                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, incdec_rating_current_y, service_key, rating_state, rating, QC.QSize( STAR_DX * 2, STAR_DY ), QC.QSize( ICON_PAD, ICON_MARGIN ) )
                 
                 incdec_rating_current_x += control_width
                 
@@ -2554,7 +2564,7 @@ class Thumbnail( Selectable ):
             
         
         # icons
-
+        
         icons_to_draw = []
         
         if locations_manager.IsDownloading():

@@ -13,6 +13,7 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
+from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetwork
 from hydrus.core.networking import HydrusNetworkVariableHandling
@@ -31,7 +32,6 @@ from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIPanels
-from hydrus.client.gui import ClientGUIStringControls
 from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
@@ -447,6 +447,7 @@ class EditClientServicePanel( ClientGUIScrolledPanels.EditPanel ):
         return ClientServices.GenerateService( self._service_key, self._service_type, name, dictionary )
         
     
+
 class EditServiceSubPanel( ClientGUICommon.StaticBox ):
     
     def __init__( self, parent, name ):
@@ -1450,33 +1451,144 @@ class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
         
         super().__init__( parent, 'rating shape' )
         
+        menu_items = []
+        
+        page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_RATINGS )
+        
+        menu_items.append( ( 'normal', 'open the ratings help', 'Open the help page for ratings.', page_func ) )
+        
+        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        
+        help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help -->', object_name = 'HydrusIndeterminate' )
+        
+        svg_ratings_are_ok = len( CC.global_icons().user_icons ) > 0
+        
+        choice_tuples = [
+            ( 'shapes', 'shape' )
+        ]
+        
+        if svg_ratings_are_ok:
+            
+            choice_tuples.append( ( 'svgs', 'rating_svg' ) )
+            
+        
+        self._shape_or_svg = ClientGUICommon.BetterRadioBox( self, choice_tuples, vertical = True )
+        
         self._shape = ClientGUICommon.BetterChoice( self )
         
-        for shape in [ ClientRatings.CIRCLE, ClientRatings.SQUARE, ClientRatings.FAT_STAR, ClientRatings.PENTAGRAM_STAR ]:
+        for ( shape, name ) in ClientRatings.shape_to_str_lookup_dict.items():
             
-            self._shape.addItem( ClientRatings.shape_to_str_lookup_dict[ shape ], shape )
+            self._shape.addItem( name, shape )
             
         
+        self._rating_svg = ClientGUICommon.BetterChoice( self )
+        
+        if svg_ratings_are_ok:
+            
+            for name in sorted( CC.global_icons().user_icons.keys(), key = HydrusText.HumanTextSortKey ):
+                
+                self._rating_svg.addItem( name, name )
+                
+            
+        else:
+            
+            self._rating_svg.addItem( 'no svgs found', None )
+            
         #
         
-        self._shape.SetValue( dictionary[ 'shape' ] )
+        shape = dictionary[ 'shape' ]
+        
+        if shape is not None:
+            
+            self._shape_or_svg.SetValue( 'shape' )
+            
+            self._shape.SetValue( dictionary[ 'shape' ] )
+            
+        
+        if svg_ratings_are_ok:
+            
+            rating_svg = dictionary[ 'rating_svg' ]
+            
+            if rating_svg is not None:
+                
+                self._shape_or_svg.SetValue( 'rating_svg' )
+                
+                self._rating_svg.SetValue( rating_svg )
+                
+            
+        else:
+            
+            self._shape_or_svg.SetValue( 'shape' )
+            
+            self._shape_or_svg.setVisible( False )
+            self._rating_svg.setVisible( False )
+            
         
         #
         
         rows = []
         
+        if svg_ratings_are_ok:
+            
+            rows.append( ( 'type: ', self._shape_or_svg ) )
+            
+        
         rows.append( ( 'shape: ', self._shape ) )
+        
+        if svg_ratings_are_ok:
+            
+            rows.append( ( 'svg: ', self._rating_svg ) )
+            
+        
+        # preview here, ideally a manipulable fake control, or maybe we need to be more clever with num_stars in a numerical rating
+        # fake bitmaps can also be fine
+        # scaling size dynamically would also be nice, or at least showing what the current sizes are for media viewer, thumbs, and default 12px for anywhere else
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
+        self.Add( help_hbox, CC.FLAGS_ON_RIGHT )
         self.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        self._UpdateControls()
+        
+        self._shape_or_svg.radioBoxChanged.connect( self._UpdateControls )
+        
+    
+    def _UpdateControls( self ):
+        
+        selection = self._shape_or_svg.GetValue()
+        
+        self._shape.setEnabled( selection == 'shape' )
+        self._rating_svg.setEnabled( selection == 'rating_svg' )
         
     
     def GetValue( self ):
         
         dictionary_part = {}
         
-        dictionary_part[ 'shape' ] = self._shape.GetValue()
+        selection = self._shape_or_svg.GetValue()
+        
+        if selection == 'shape':
+            
+            shape = self._shape.GetValue()
+            
+        else:
+            
+            shape = None
+            
+        
+        dictionary_part[ 'shape' ] = shape
+        
+        if selection == 'rating_svg':
+            
+            rating_svg = self._rating_svg.GetValue()
+            
+        else:
+            
+            rating_svg = None
+            
+        
+        dictionary_part[ 'rating_svg' ] = rating_svg
         
         return dictionary_part
         
@@ -1535,47 +1647,11 @@ class EditServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         interaction_panel = ClientGUIPanels.IPFSDaemonStatusAndInteractionPanel( self, self.parentWidget().GetValue )
         
-        tt = 'This is an *experimental* IPFS filestore that will not copy files when they are pinned. IPFS will refer to files using their original location (i.e. your hydrus client\'s file folder(s)).'
-        tt += '\n' * 2
-        tt += 'Only turn this on if you know what it is.'
+        #
         
-        self._use_nocopy = QW.QCheckBox( self )
+        prefix_panel = ClientGUICommon.StaticBox( self, 'prefix' )
         
-        self._use_nocopy.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
-        
-        portable_initial_dict = dict( dictionary[ 'nocopy_abs_path_translations' ] )
-        
-        abs_initial_dict = {}
-        
-        media_base_locations = CG.client_controller.client_files_manager.GetCurrentFileBaseLocations()
-        
-        all_base_location_paths = { base_location.path for base_location in media_base_locations }
-        
-        for ( portable_hydrus_path, ipfs_path ) in portable_initial_dict.items():
-            
-            hydrus_path = HydrusPaths.ConvertPortablePathToAbsPath( portable_hydrus_path )
-            
-            if hydrus_path in all_base_location_paths:
-                
-                abs_initial_dict[ hydrus_path ] = ipfs_path
-                
-            
-        
-        for base_location in media_base_locations:
-            
-            if base_location.path not in abs_initial_dict:
-                
-                abs_initial_dict[ base_location.path ] = ''
-                
-            
-        
-        help_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().help, self._ShowHelp )
-        
-        help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this path remapping control -->', object_name = 'HydrusIndeterminate' )
-        
-        self._nocopy_abs_path_translations = ClientGUIStringControls.StringToStringDictControl( self, abs_initial_dict, key_name = 'hydrus path', value_name = 'ipfs path', allow_add_delete = False, edit_keys = False )
-        
-        self._multihash_prefix = QW.QLineEdit( self )
+        self._multihash_prefix = QW.QLineEdit( prefix_panel )
         
         tt = 'When you tell the client to copy a ipfs multihash to your clipboard, it will prefix it with whatever is set here.'
         tt += '\n' * 2
@@ -1591,71 +1667,28 @@ class EditServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         #
         
-        self._use_nocopy.setChecked( dictionary[ 'use_nocopy' ] )
         self._multihash_prefix.setText( dictionary[ 'multihash_prefix' ] )
+        
+        #
+        
+        self.Add( interaction_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         #
         
         rows = []
         
         rows.append( ( 'clipboard multihash url prefix: ', self._multihash_prefix ) )
-        rows.append( ( 'use \'nocopy\' filestore for pinning: ', self._use_nocopy ) )
         
-        gridbox = ClientGUICommon.WrapInGrid( self, rows )
+        gridbox = ClientGUICommon.WrapInGrid( prefix_panel, rows )
         
-        self.Add( interaction_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        self.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        self.Add( help_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        self.Add( self._nocopy_abs_path_translations, CC.FLAGS_EXPAND_BOTH_WAYS )
+        prefix_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
-        self._UpdateButtons()
-        
-        self._use_nocopy.clicked.connect( self._UpdateButtons )
-        
-    
-    def _ShowHelp( self ):
-        
-        message = '\'nocopy\' is experimental and advanced!'
-        message += '\n' * 2
-        message += 'In order to add a file through \'nocopy\', IPFS needs to be given a path that is beneath the directory in which its datastore is. Usually this is your USERDIR (default IPFS location is ~/.ipfs). Also, if your IPFS daemon runs on another computer, that path needs to be according to that machine\'s filesystem (and, perhaps, pointing to a shared folder that can stores your hydrus files).'
-        message += '\n' * 2
-        message += 'If your hydrus client_files directory is not already in your USERDIR, you will need to make some symlinks and then put these paths in the control so hydrus knows how to translate the paths when it pins.'
-        message += '\n' * 2
-        message += 'e.g. If you symlink E:\\hydrus\\files to C:\\users\\you\\ipfs_maps\\e_media, then put that same C:\\users\\you\\ipfs_maps\\e_media in the right column for that hydrus file location, and you _should_ be good.'
-        
-        ClientGUIDialogsMessage.ShowInformation( self, message )
-        
-    
-    def _UpdateButtons( self ):
-        
-        if self._use_nocopy.isChecked():
-            
-            self._nocopy_abs_path_translations.setEnabled( True )
-            
-        else:
-            
-            self._nocopy_abs_path_translations.setEnabled( False )
-            
+        self.Add( prefix_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         
     
     def GetValue( self ):
         
         dictionary_part = {}
-        
-        dictionary_part[ 'use_nocopy' ] = self._use_nocopy.isChecked()
-        
-        abs_dict = self._nocopy_abs_path_translations.GetValue()
-        
-        portable_dict = {}
-        
-        for ( hydrus_path, ipfs_path ) in abs_dict.items():
-            
-            portable_hydrus_path = HydrusPaths.ConvertAbsPathToPortablePath( hydrus_path )
-            
-            portable_dict[ portable_hydrus_path ] = os.path.expanduser( ipfs_path )
-            
-        
-        dictionary_part[ 'nocopy_abs_path_translations' ] = portable_dict
         
         dictionary_part[ 'multihash_prefix' ] = self._multihash_prefix.text()
         
@@ -1724,12 +1757,12 @@ class ReviewServicePanel( QW.QWidget ):
         
         if service_type in HC.REPOSITORIES:
             
-            subpanels.append( ( ReviewServiceRepositorySubPanel( self, service ), CC.FLAGS_EXPAND_SIZER_PERPENDICULAR ) )
+            subpanels.append( ( ReviewServiceRepositorySubPanel( self, service ), CC.FLAGS_EXPAND_PERPENDICULAR ) )
             
         
         if service_type == HC.IPFS:
             
-            subpanels.append( ( ReviewServiceIPFSSubPanel( self, service ), CC.FLAGS_EXPAND_BOTH_WAYS ) )
+            subpanels.append( ( ReviewServiceIPFSSubPanel( self, service ), CC.FLAGS_EXPAND_PERPENDICULAR_BUT_BOTH_WAYS_LATER ) )
             
         
         if service_type == HC.CLIENT_API_SERVICE:
@@ -3506,7 +3539,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
     
     def __init__( self, parent, service ):
         
-        super().__init__( parent, 'ipfs', can_expand = True, start_expanded = False )
+        super().__init__( parent, 'ipfs', can_expand = True, start_expanded = False, expanded_size_vertical_policy = QW.QSizePolicy.Policy.Expanding )
         
         self._service = service
         

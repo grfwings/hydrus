@@ -1,16 +1,20 @@
 # noinspection PyUnresolvedReferences
 from hydrus.core.files.images import HydrusImageInit # right up top
 
+import numpy
+import numpy.core.multiarray # important this comes before cv!
+
 import cv2
 import hashlib
 import io
-import numpy
 import typing
 import warnings
 
 from PIL import ImageFile as PILImageFile
 from PIL import Image as PILImage
 from PIL import ImageOps as PILImageOps
+
+from hydrus.core import HydrusData
 
 try:
     
@@ -19,30 +23,6 @@ try:
     from pillow_heif import register_heif_opener
     
     register_heif_opener(thumbnails=False)
-    
-    try:
-        
-        import pillow_heif
-        import PIL
-        
-        if hasattr( pillow_heif, 'register_avif_opener' ) and tuple( ( int( v ) for v in PIL.__version__.split( '.' ) ) ) < ( 11, 2 ):
-            
-            try:
-                
-                from pillow_heif import register_avif_opener
-                
-                register_avif_opener(thumbnails=False) # this is now deprecated 2024-04. Pillow is getting native AVIF in 11.2.0
-                
-            except:
-                
-                pass
-                
-            
-        
-    except:
-        
-        pass
-        
     
     try:
         
@@ -60,6 +40,51 @@ try:
 except:
     
     HEIF_OK = False
+    
+
+AVIF_OK = False
+
+try:
+    
+    import pillow_avif
+    
+    AVIF_OK = True
+    
+except:
+    
+    try:
+        
+        import pillow_heif
+        
+        pillow_does_not_have_native_avif_support = True
+        # this is the version test that failed. they decided not to bundle it in the wheel because it bloated it https://pillow.readthedocs.io/en/stable/releasenotes/11.2.1.html
+        # now waiting on a future version to see if they can figure out a solution 
+        # pillow_does_not_have_native_avif_support = tuple( ( int( v ) for v in PIL.__version__.split( '.' ) ) ) < ( 11, 2 )
+        
+        # they may try again in 11.3: https://github.com/python-pillow/Pillow/pull/5201#issuecomment-2833394184
+        
+        if pillow_does_not_have_native_avif_support and hasattr( pillow_heif, 'register_avif_opener' ):
+            
+            try:
+                
+                from pillow_heif import register_avif_opener
+                
+                register_avif_opener(thumbnails=False) # this is now deprecated 2024-04, pillow_heif 0.22.0
+                
+                AVIF_OK = True
+                
+                HydrusData.Print( 'AVIF Opener registered with legacy library.' )
+                
+            except:
+                
+                HydrusData.Print( 'Could not register AVIF Opener with main or legacy library.' )
+                
+            
+        
+    except:
+        
+        HydrusData.Print( 'Could not register AVIF Opener with main or legacy library.' )
+        
     
 
 try:
@@ -201,7 +226,7 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
             HydrusData.ShowText( 'Loading PSD' )
             
         
-        pil_image = HydrusPSDHandling.MergedPILImageFromPSD( path )
+        pil_image = HydrusPSDHandling.GeneratePILImageFromPSD( path )
         
         return GenerateNumPyImageFromPILImage( pil_image )
         
@@ -470,7 +495,7 @@ def GenerateThumbnailBytesFromNumPy( numpy_image ) -> bytes:
     if len( numpy_image.shape ) == 2:
         
         depth = 3
-                
+        
     else:
         
         ( im_height, im_width, depth ) = numpy_image.shape
@@ -524,6 +549,11 @@ def GetImagePixelHash( path, mime ) -> bytes:
 
 def GetImagePixelHashNumPy( numpy_image ):
     
+    # Yo, this does not take dimensions into account! flat colour images of differing dimensions but same num_pixels have the same hash!
+    # same for some carefully designed checkerboard patterns etc..
+    # _at some point_ we could change this and force a regen for all files, I guess
+    # don't do a 'newline at end of every line', since there may be other strange collisions. do 'encode big int width/height at start of pixel hash'
+    # is there anything else we want to encode?
     return hashlib.sha256( numpy_image.data.tobytes() ).digest()
     
 

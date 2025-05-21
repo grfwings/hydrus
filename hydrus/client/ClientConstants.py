@@ -101,6 +101,7 @@ FLAGS_CENTER = 3
 
 FLAGS_EXPAND_PERPENDICULAR = 4
 FLAGS_EXPAND_BOTH_WAYS = 5
+FLAGS_EXPAND_PERPENDICULAR_BUT_BOTH_WAYS_LATER = 6
 
 FLAGS_EXPAND_BOTH_WAYS_POLITE = 7
 FLAGS_EXPAND_BOTH_WAYS_SHY = 8
@@ -609,6 +610,8 @@ class GlobalPixmaps( object ):
         self.eye = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'eye.png' ) )
         self.fullscreen_switch = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'fullscreen_switch.png' ) )
         self.open_externally = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'open_externally.png' ) )
+        self.move = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'move.png' ) )
+        self.move_cursor = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'move32x.png' ) )
         
         self.dump_ok = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'dump_ok.png' ) )
         self.dump_recoverable = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'dump_recoverable.png' ) )
@@ -678,14 +681,33 @@ class GlobalIcons( object ):
         
     
     def _Initialise( self ):
-                
+        
         self.hydrus = QG.QIcon( os.path.join( HC.STATIC_DIR, 'hydrus_black_square.svg' ) )
         self.github = QG.QIcon( os.path.join( HC.STATIC_DIR, 'github.svg' ) )
         self.x = QG.QIcon( os.path.join( HC.STATIC_DIR, 'x.svg' ) )
         self.tumblr = QG.QIcon( os.path.join( HC.STATIC_DIR, 'tumblr.svg' ) )
         self.discord = QG.QIcon( os.path.join( HC.STATIC_DIR, 'discord.svg' ) )
         self.patreon = QG.QIcon( os.path.join( HC.STATIC_DIR, 'patreon.svg' ) )
+        
+        self.user_icons = {}
+        
+        user_icon_dir = os.path.join( HC.STATIC_DIR, 'star_shapes' )
 
+        if os.path.exists( user_icon_dir ):
+            
+            for filename in os.listdir( user_icon_dir ):
+                
+                if filename.lower().endswith( '.svg' ):
+                    
+                    name = os.path.splitext( filename )[0]
+                    path = os.path.join( user_icon_dir, filename )
+                    
+                    self.user_icons[ name ] = QG.QIcon( path )
+                    
+                
+            
+        
+    
 
 global_icons = GlobalIcons.instance
 

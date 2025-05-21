@@ -105,6 +105,13 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         self._listbook.AddPage( 'advanced', self._AdvancedPanel( self._listbook, self._new_options ) )
         
+        if self._new_options.GetBoolean( 'remember_options_window_panel' ):
+            
+            self._listbook.currentChanged.connect( self.SetCurrentOptionsPanel )
+            
+            self._listbook.SelectName( self._new_options.GetString( 'last_options_window_panel' ) )
+            
+        
         #
         
         vbox = QP.VBoxLayout()
@@ -1279,7 +1286,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._delete_to_recycle_bin = QW.QCheckBox( self )
             
-            self._ms_to_wait_between_physical_file_deletes = ClientGUICommon.BetterSpinBox( self, min=20, max = 5000 )
+            self._ms_to_wait_between_physical_file_deletes = ClientGUITime.TimeDeltaWidget( self, min = 0.02, days = False, hours = False, minutes = False, seconds = True, milliseconds = True )
             tt = 'Deleting a file from a hard disk can be resource expensive, so when files leave the trash, the actual physical file delete happens later, in the background. The operation is spread out so as not to give you lag spikes.'
             self._ms_to_wait_between_physical_file_deletes.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
@@ -1309,6 +1316,12 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._delete_lock_for_archived_files = QW.QCheckBox( delete_lock_panel )
             self._delete_lock_for_archived_files.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will stop the client from physically deleting anything you have archived. You can still trash such files, but they cannot go further. It is a last-ditch catch to rescue accidentally deleted good files.' ) )
             
+            self._delete_lock_reinbox_deletees_after_archive_delete = QW.QCheckBox( delete_lock_panel )
+            self._delete_lock_reinbox_deletees_after_archive_delete.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, and you do an archive/delete filter, this will ensure that all deletee files are inboxed before being deleted.' ) )
+            
+            self._delete_lock_reinbox_deletees_after_duplicate_filter = QW.QCheckBox( delete_lock_panel )
+            self._delete_lock_reinbox_deletees_after_duplicate_filter.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, and you do a duplicate filter, this will ensure that all deletee files from merge options are inboxed before being deleted.' ) )
+            
             advanced_file_deletion_panel = ClientGUICommon.StaticBox( self, 'advanced file deletion and custom reasons' )
             
             self._use_advanced_file_deletion_dialog = QW.QCheckBox( advanced_file_deletion_panel )
@@ -1328,7 +1341,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._delete_to_recycle_bin.setChecked( HC.options[ 'delete_to_recycle_bin' ] )
             
-            self._ms_to_wait_between_physical_file_deletes.setValue( self._new_options.GetInteger( 'ms_to_wait_between_physical_file_deletes' ) )
+            self._ms_to_wait_between_physical_file_deletes.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'ms_to_wait_between_physical_file_deletes' ) ) )
             
             self._confirm_trash.setChecked( HC.options[ 'confirm_trash' ] )
             tt = 'If there is only one place to delete the file from, you will get no delete dialog--it will just be deleted immediately. Applies the same way to undelete.'
@@ -1349,17 +1362,15 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._trash_max_size.SetValue( HC.options[ 'trash_max_size' ] )
             
             self._delete_lock_for_archived_files.setChecked( self._new_options.GetBoolean( 'delete_lock_for_archived_files' ) )
+            self._delete_lock_reinbox_deletees_after_archive_delete.setChecked( self._new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_archive_delete' ) )
+            self._delete_lock_reinbox_deletees_after_duplicate_filter.setChecked( self._new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_duplicate_filter' ) )
             
             self._use_advanced_file_deletion_dialog.setChecked( self._new_options.GetBoolean( 'use_advanced_file_deletion_dialog' ) )
-            
-            self._use_advanced_file_deletion_dialog.clicked.connect( self._UpdateAdvancedControls )
             
             self._remember_last_advanced_file_deletion_special_action.setChecked( CG.client_controller.new_options.GetBoolean( 'remember_last_advanced_file_deletion_special_action' ) )
             self._remember_last_advanced_file_deletion_reason.setChecked( CG.client_controller.new_options.GetBoolean( 'remember_last_advanced_file_deletion_reason' ) )
             
             self._advanced_file_deletion_reasons.AddDatas( self._new_options.GetStringList( 'advanced_file_deletion_reasons' ) )
-            
-            self._UpdateAdvancedControls()
             
             #
             
@@ -1377,7 +1388,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Confirm when copying files across local file services: ', self._confirm_multiple_local_file_services_copy ) )
             rows.append( ( 'Confirm when moving files across local file services: ', self._confirm_multiple_local_file_services_move ) )
             rows.append( ( 'When physically deleting files or folders, send them to the OS\'s recycle bin: ', self._delete_to_recycle_bin ) )
-            rows.append( ( 'When maintenance physically deletes files, wait this many ms between each delete: ', self._ms_to_wait_between_physical_file_deletes ) )
+            rows.append( ( 'When maintenance physically deletes files, wait this long between each delete: ', self._ms_to_wait_between_physical_file_deletes ) )
             rows.append( ( 'When finishing filtering, always delete from all possible domains: ', self._only_show_delete_from_all_local_domains_when_filtering ) )
             rows.append( ( 'Remove files from view when they are archive/delete filtered: ', self._remove_filtered_files ) )
             rows.append( ( '--even skipped files: ', self._remove_filtered_files_even_when_skipped ) )
@@ -1395,6 +1406,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'Do not permit archived files to be deleted from the trash: ', self._delete_lock_for_archived_files ) )
+            rows.append( ( 'After archive/delete filter, ensure deletees are inboxed before delete: ', self._delete_lock_reinbox_deletees_after_archive_delete ) )
+            rows.append( ( 'After duplicate filter, ensure deletees are inboxed before delete: ', self._delete_lock_reinbox_deletees_after_duplicate_filter ) )
             
             gridbox = ClientGUICommon.WrapInGrid( delete_lock_panel, rows )
             
@@ -1421,9 +1434,15 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self.setLayout( vbox )
             
+            self._delete_lock_for_archived_files.clicked.connect( self._UpdateLockControls )
+            
             self._remove_filtered_files.clicked.connect( self._UpdateRemoveFiltered )
             
+            self._use_advanced_file_deletion_dialog.clicked.connect( self._UpdateAdvancedControls )
+            
+            self._UpdateLockControls()
             self._UpdateRemoveFiltered()
+            self._UpdateAdvancedControls()
             
         
         def _AddAFDR( self ):
@@ -1464,6 +1483,12 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._remove_filtered_files_even_when_skipped.setEnabled( self._remove_filtered_files.isChecked() )
             
         
+        def _UpdateLockControls( self ):
+            
+            self._delete_lock_reinbox_deletees_after_archive_delete.setEnabled( self._delete_lock_for_archived_files.isChecked() )
+            self._delete_lock_reinbox_deletees_after_duplicate_filter.setEnabled( self._delete_lock_for_archived_files.isChecked() )
+            
+        
         def UpdateOptions( self ):
             
             self._new_options.SetBoolean( 'prefix_hash_when_copying', self._prefix_hash_when_copying.isChecked() )
@@ -1480,12 +1505,14 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetBoolean( 'only_show_delete_from_all_local_domains_when_filtering', self._only_show_delete_from_all_local_domains_when_filtering.isChecked() )
             
-            self._new_options.SetInteger( 'ms_to_wait_between_physical_file_deletes', self._ms_to_wait_between_physical_file_deletes.value() )
+            self._new_options.SetInteger( 'ms_to_wait_between_physical_file_deletes', HydrusTime.MillisecondiseS( self._ms_to_wait_between_physical_file_deletes.GetValue() ) )
             
             self._new_options.SetBoolean( 'confirm_multiple_local_file_services_copy', self._confirm_multiple_local_file_services_copy.isChecked() )
             self._new_options.SetBoolean( 'confirm_multiple_local_file_services_move', self._confirm_multiple_local_file_services_move.isChecked() )
             
             self._new_options.SetBoolean( 'delete_lock_for_archived_files', self._delete_lock_for_archived_files.isChecked() )
+            self._new_options.SetBoolean( 'delete_lock_reinbox_deletees_after_archive_delete', self._delete_lock_reinbox_deletees_after_archive_delete.isChecked() )
+            self._new_options.SetBoolean( 'delete_lock_reinbox_deletees_after_duplicate_filter', self._delete_lock_reinbox_deletees_after_duplicate_filter.isChecked() )
             
             self._new_options.SetBoolean( 'use_advanced_file_deletion_dialog', self._use_advanced_file_deletion_dialog.isChecked() )
             
@@ -1527,13 +1554,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._ac_read_list_height_num_chars = ClientGUICommon.BetterSpinBox( self._read_autocomplete_panel, min = 1, max = 128 )
             
-            self._always_show_system_everything = QW.QCheckBox( self._read_autocomplete_panel )
+            self._show_system_everything = QW.QCheckBox( self._read_autocomplete_panel )
             tt = 'After users get some experience with the program and a larger collection, they tend to have less use for system:everything.'
-            self._always_show_system_everything.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
-            
-            self._filter_inbox_and_archive_predicates = QW.QCheckBox( self._read_autocomplete_panel )
-            tt = 'If everything is current in the inbox (or archive), then there is no use listing it or its opposite--it either does not change the search or it produces nothing. If you find it jarring though, turn it off here!'
-            self._filter_inbox_and_archive_predicates.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            self._show_system_everything.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             #
             
@@ -1565,9 +1588,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._ac_read_list_height_num_chars.setValue( self._new_options.GetInteger( 'ac_read_list_height_num_chars' ) )
             
-            self._always_show_system_everything.setChecked( self._new_options.GetBoolean( 'always_show_system_everything' ) )
-            
-            self._filter_inbox_and_archive_predicates.setChecked( self._new_options.GetBoolean( 'filter_inbox_and_archive_predicates' ) )
+            self._show_system_everything.setChecked( self._new_options.GetBoolean( 'show_system_everything' ) )
             
             self._forced_search_limit.SetValue( self._new_options.GetNoneableInteger( 'forced_search_limit' ) )
             
@@ -1588,8 +1609,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Autocomplete dropdown floats over file search pages: ', self._autocomplete_float_main_gui ) )
             rows.append( ( 'Autocomplete list height: ', self._ac_read_list_height_num_chars ) )
             rows.append( ( 'Start new search pages in \'searching immediately\': ', self._default_search_synchronised ) )
-            rows.append( ( 'show system:everything even if total files is over 10,000: ', self._always_show_system_everything ) )
-            rows.append( ( 'hide inbox and archive system predicates if either has no files: ', self._filter_inbox_and_archive_predicates ) )
+            rows.append( ( 'Show system:everything: ', self._show_system_everything ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self._read_autocomplete_panel, rows )
             
@@ -1629,8 +1649,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetInteger( 'ac_read_list_height_num_chars', self._ac_read_list_height_num_chars.value() )
             
-            self._new_options.SetBoolean( 'always_show_system_everything', self._always_show_system_everything.isChecked() )
-            self._new_options.SetBoolean( 'filter_inbox_and_archive_predicates', self._filter_inbox_and_archive_predicates.isChecked() )
+            self._new_options.SetBoolean( 'show_system_everything', self._show_system_everything.isChecked() )
             
             self._new_options.SetNoneableInteger( 'forced_search_limit', self._forced_search_limit.GetValue() )
             
@@ -1763,7 +1782,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._menu_choice_buttons_can_mouse_scroll.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             self._use_native_menubar = QW.QCheckBox( self._misc_panel )
-            tt = 'macOS and some Linux allows to embed the main GUI menubar into the OS. This can be buggy! Requires restart.'
+            tt = 'macOS and some Linux allows to embed the main GUI menubar into the OS. This can be buggy! Requires restart. Note that, in case this goes wrong, by default Ctrl+Shift+O should open this options dialog--confirm that before you try this!'
             self._use_native_menubar.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             self._human_bytes_sig_figs = ClientGUICommon.BetterSpinBox( self._misc_panel, min = 1, max = 6 )
@@ -1775,12 +1794,18 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._use_qt_file_dialogs = QW.QCheckBox( self._misc_panel )
             self._use_qt_file_dialogs.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you get crashes opening file/directory dialogs, try this.' ) )
             
+            self._remember_options_window_panel = QW.QCheckBox( self._misc_panel )
+            self._remember_options_window_panel.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will cause the options window (this one) to reopen at the last panel you were looking at when it was closed.' ) )
+            
             #
             
             frame_locations_panel = ClientGUICommon.StaticBox( self, 'frame locations' )
             
             self._disable_get_safe_position_test = QW.QCheckBox( self._misc_panel )
             self._disable_get_safe_position_test.setToolTip( ClientGUIFunctions.WrapToolTip( 'If your windows keep getting \'rescued\' despite being in a good location, try this.' ) )
+            
+            self._save_window_size_and_position_on_close = QW.QCheckBox( self._misc_panel )
+            self._save_window_size_and_position_on_close.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you want to save media viewer size when closing the window in addition to when it gets resized/moved normally, check this box. Can be useful behaviour when using multiple open media viewers.' ) )
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FRAME_LOCATIONS.ID, self._GetPrettyFrameLocationInfo, self._GetPrettyFrameLocationInfo )
             
@@ -1820,7 +1845,11 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._use_qt_file_dialogs.setChecked( self._new_options.GetBoolean( 'use_qt_file_dialogs' ) )
             
+            self._remember_options_window_panel.setChecked( self._new_options.GetBoolean( 'remember_options_window_panel' ) )
+            
             self._disable_get_safe_position_test.setChecked( self._new_options.GetBoolean( 'disable_get_safe_position_test' ) )
+            
+            self._save_window_size_and_position_on_close.setChecked( self._new_options.GetBoolean( 'save_window_size_and_position_on_close' ) )
             
             for ( name, info ) in self._new_options.GetFrameLocations():
                 
@@ -1851,6 +1880,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'EXPERIMENTAL: Bytes strings >1KB pseudo significant figures: ', self._human_bytes_sig_figs ) )
             rows.append( ( 'BUGFIX: If on macOS, show dialog menus in a debug menu: ', self._do_macos_debug_dialog_menus ) )
             rows.append( ( 'ANTI-CRASH BUGFIX: Use Qt file/directory selection dialogs, rather than OS native: ', self._use_qt_file_dialogs ) )
+            rows.append( ( 'Remember last open options panel in this window: ', self._remember_options_window_panel ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self, rows )
             
@@ -1868,6 +1898,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'BUGFIX: Disable off-screen window rescue: ', self._disable_get_safe_position_test ) )
+            
+            rows.append( ( 'Save media viewer window size and position on close: ', self._save_window_size_and_position_on_close ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self, rows )
             
@@ -2026,8 +2058,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetBoolean( 'do_macos_debug_dialog_menus', self._do_macos_debug_dialog_menus.isChecked() )
             self._new_options.SetBoolean( 'use_qt_file_dialogs', self._use_qt_file_dialogs.isChecked() )
+            self._new_options.SetBoolean( 'remember_options_window_panel', self._remember_options_window_panel.isChecked() )
             
             self._new_options.SetBoolean( 'disable_get_safe_position_test', self._disable_get_safe_position_test.isChecked() )
+            self._new_options.SetBoolean( 'save_window_size_and_position_on_close', self._save_window_size_and_position_on_close.isChecked() )
             
             for listctrl_list in self._frame_locations.GetData():
                 
@@ -2070,8 +2104,13 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._show_all_my_files_on_page_chooser = QW.QCheckBox( self._pages_panel )
             self._show_all_my_files_on_page_chooser.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will only show if you have more than one local file domain.' ) )
+            self._show_all_my_files_on_page_chooser_at_top = QW.QCheckBox( self._pages_panel )
+            self._show_all_my_files_on_page_chooser_at_top.setToolTip( ClientGUIFunctions.WrapToolTip( 'Put "all my files" at the top of the page chooser, to better see it if you have many local file domains.' ) )
+            
             self._show_local_files_on_page_chooser = QW.QCheckBox( self._pages_panel )
             self._show_local_files_on_page_chooser.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you do not know what this is, you do not want it!' ) )
+            self._show_local_files_on_page_chooser_at_top = QW.QCheckBox( self._pages_panel )
+            self._show_local_files_on_page_chooser_at_top.setToolTip( ClientGUIFunctions.WrapToolTip( 'Put "local files" at the top of the page chooser (above "all my files" as well, if it is present).' ) )
             
             self._confirm_all_page_closes = QW.QCheckBox( self._pages_panel )
             self._confirm_all_page_closes.setToolTip( ClientGUIFunctions.WrapToolTip( 'With this, you will always be asked, even on single page closures of simple file pages.' ) )
@@ -2172,7 +2211,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._show_session_size_warnings.setChecked( self._new_options.GetBoolean( 'show_session_size_warnings' ) )
             
             self._show_all_my_files_on_page_chooser.setChecked( self._new_options.GetBoolean( 'show_all_my_files_on_page_chooser' ) )
+            self._show_all_my_files_on_page_chooser_at_top.setChecked( self._new_options.GetBoolean( 'show_all_my_files_on_page_chooser_at_top' ) )
             self._show_local_files_on_page_chooser.setChecked( self._new_options.GetBoolean( 'show_local_files_on_page_chooser' ) )
+            self._show_local_files_on_page_chooser_at_top.setChecked( self._new_options.GetBoolean( 'show_local_files_on_page_chooser_at_top' ) )
+            
             self._confirm_all_page_closes.setChecked( self._new_options.GetBoolean( 'confirm_all_page_closes' ) )
             self._confirm_non_empty_downloader_page_close.setChecked( self._new_options.GetBoolean( 'confirm_non_empty_downloader_page_close' ) )
             
@@ -2220,8 +2262,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             rows = []
             
-            rows.append( ( 'In new page chooser, show "all my files" if appropriate: ', self._show_all_my_files_on_page_chooser ) )
-            rows.append( ( 'In new page chooser, show "local files": ', self._show_local_files_on_page_chooser ) )
+            rows.append( ( 'In new page chooser, show "all my files" if appropriate:', self._show_all_my_files_on_page_chooser ) )
+            rows.append( ( '  Put it at the top:', self._show_all_my_files_on_page_chooser_at_top ) )
+            rows.append( ( 'In new page chooser, show "local files":', self._show_local_files_on_page_chooser ) )
+            rows.append( ( '  Put it at the top:', self._show_local_files_on_page_chooser_at_top ) )
             rows.append( ( 'Confirm when closing any page: ', self._confirm_all_page_closes ) )
             rows.append( ( 'Confirm when closing a non-empty downloader page: ', self._confirm_non_empty_downloader_page_close ) )
             rows.append( ( 'Put new page tabs on: ', self._default_new_page_goes ) )
@@ -2300,7 +2344,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetBoolean( 'only_save_last_session_during_idle', self._only_save_last_session_during_idle.isChecked() )
             
             self._new_options.SetBoolean( 'show_all_my_files_on_page_chooser', self._show_all_my_files_on_page_chooser.isChecked() )
+            self._new_options.SetBoolean( 'show_all_my_files_on_page_chooser_at_top', self._show_all_my_files_on_page_chooser_at_top.isChecked() )
             self._new_options.SetBoolean( 'show_local_files_on_page_chooser', self._show_local_files_on_page_chooser.isChecked() )
+            self._new_options.SetBoolean( 'show_local_files_on_page_chooser_at_top', self._show_local_files_on_page_chooser_at_top.isChecked() )
+            
             self._new_options.SetBoolean( 'confirm_all_page_closes', self._confirm_all_page_closes.isChecked() )
             self._new_options.SetBoolean( 'confirm_non_empty_downloader_page_close', self._confirm_non_empty_downloader_page_close.isChecked() )
             
@@ -2997,6 +3044,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._focus_media_tab_on_viewer_close_if_possible = QW.QCheckBox( window_panel )
             self._focus_media_tab_on_viewer_close_if_possible.setToolTip( ClientGUIFunctions.WrapToolTip( 'If the search page you opened a media viewer from is still open, re-focus it upon media viewer close. Useful if you use multiple media viewers launched from different pages. There is also a shortcut action to perform this on an individual basis.' ) )
             
+            self._focus_media_thumb_on_viewer_close = QW.QCheckBox( window_panel )
+            self._focus_media_thumb_on_viewer_close.setToolTip( ClientGUIFunctions.WrapToolTip( 'When you close a Media Viewer, it normally tells the original search page to change the current thumbnail selection to whatever you closed the media viewer on. If you prefer this not to happen, uncheck this!' ) )
+            
             #
             
             media_viewer_panel = ClientGUICommon.StaticBox( self, 'mouse and animations' )
@@ -3033,6 +3083,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._use_nice_resolution_strings = QW.QCheckBox( media_canvas_panel )
             self._use_nice_resolution_strings.setToolTip( ClientGUIFunctions.WrapToolTip( 'Use "1080p" instead of "1920x1080" for common resolutions.' ) )
+            
+            self._media_viewer_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( media_canvas_panel, min = 1.0, max = 255.0 )
+            tt = 'Set size in pixels for like, numerical, and inc/dec rating icons for clicking on. This will be used for both width and height of the square icons, inc/dec rectangles are 2x wide and get padded to be pixel-adjacent. If you want to set the size of ratings icons in thumbnails, check the \'thumbnails\' options page.'
+            self._media_viewer_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             #
             
@@ -3090,6 +3144,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             #
             
             self._focus_media_tab_on_viewer_close_if_possible.setChecked( self._new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ) )
+            self._focus_media_thumb_on_viewer_close.setChecked( self._new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ) )
             
             self._animated_scanbar_height.setValue( self._new_options.GetInteger( 'animated_scanbar_height' ) )
             self._animated_scanbar_nub_width.setValue( self._new_options.GetInteger( 'animated_scanbar_nub_width' ) )
@@ -3105,6 +3160,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._draw_notes_hover_in_media_viewer_background.setChecked( self._new_options.GetBoolean( 'draw_notes_hover_in_media_viewer_background' ) )
             self._draw_bottom_right_index_in_media_viewer_background.setChecked( self._new_options.GetBoolean( 'draw_bottom_right_index_in_media_viewer_background' ) )
             self._use_nice_resolution_strings.setChecked( self._new_options.GetBoolean( 'use_nice_resolution_strings' ) )
+            self._media_viewer_rating_icon_size_px.setValue( self._new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
             
             self._file_info_line_consider_archived_interesting.setChecked( self._new_options.GetBoolean( 'file_info_line_consider_archived_interesting' ) )
             self._file_info_line_consider_archived_time_interesting.setChecked( self._new_options.GetBoolean( 'file_info_line_consider_archived_time_interesting' ) )
@@ -3134,6 +3190,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'Re-focus original search page when closing the media viewer: ', self._focus_media_tab_on_viewer_close_if_possible ) )
+            rows.append( ( 'Tell original search page to select exit media when closing the media viewer: ', self._focus_media_thumb_on_viewer_close ) )
             
             gridbox = ClientGUICommon.WrapInGrid( window_panel, rows )
             
@@ -3163,6 +3220,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Duplicate notes hover-window information in the background of the viewer:', self._draw_notes_hover_in_media_viewer_background ) )
             rows.append( ( 'Draw bottom-right index text in the background of the viewer:', self._draw_bottom_right_index_in_media_viewer_background ) )
             rows.append( ( 'Swap in common resolution labels:', self._use_nice_resolution_strings ) )
+            rows.append( ( 'Media viewer star & inc/dec rating icon size:', self._media_viewer_rating_icon_size_px ) )
             
             media_canvas_gridbox = ClientGUICommon.WrapInGrid( media_canvas_panel, rows )
             
@@ -3253,6 +3311,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         def UpdateOptions( self ):
             
             self._new_options.SetBoolean( 'focus_media_tab_on_viewer_close_if_possible', self._focus_media_tab_on_viewer_close_if_possible.isChecked() )
+            self._new_options.SetBoolean( 'focus_media_thumb_on_viewer_close', self._focus_media_thumb_on_viewer_close.isChecked() )
             
             self._new_options.SetBoolean( 'draw_tags_hover_in_media_viewer_background', self._draw_tags_hover_in_media_viewer_background.isChecked() )
             self._new_options.SetBoolean( 'disable_tags_hover_in_media_viewer', self._disable_tags_hover_in_media_viewer.isChecked() )
@@ -3262,6 +3321,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetBoolean( 'draw_notes_hover_in_media_viewer_background', self._draw_notes_hover_in_media_viewer_background.isChecked() )
             self._new_options.SetBoolean( 'draw_bottom_right_index_in_media_viewer_background', self._draw_bottom_right_index_in_media_viewer_background.isChecked() )
             self._new_options.SetBoolean( 'use_nice_resolution_strings', self._use_nice_resolution_strings.isChecked() )
+            
+            self._new_options.SetFloat( 'media_viewer_rating_icon_size_px', self._media_viewer_rating_icon_size_px.value() )
             
             self._new_options.SetBoolean( 'file_info_line_consider_archived_interesting', self._file_info_line_consider_archived_interesting.isChecked() )
             self._new_options.SetBoolean( 'file_info_line_consider_archived_time_interesting', self._file_info_line_consider_archived_time_interesting.isChecked() )
@@ -4158,16 +4219,20 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._image_cache_prefetch_limit_percentage_st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            self._media_viewer_prefetch_delay_base_ms = ClientGUICommon.BetterSpinBox( image_cache_panel, min = 0, max = 2000 )
+            prefetch_panel = ClientGUICommon.StaticBox( self, 'image prefetch' )
+            
+            self._media_viewer_prefetch_delay_base_ms = ClientGUICommon.BetterSpinBox( prefetch_panel, min = 0, max = 2000 )
             
             tt = 'How long to wait, after the current image is rendered, to start rendering neighbours. Does not matter so much any more, but if you have CPU lag, you can try boosting it a bit.'
             
             self._media_viewer_prefetch_delay_base_ms.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            self._media_viewer_prefetch_num_previous = ClientGUICommon.BetterSpinBox( image_cache_panel, min = 0, max = 50 )
-            self._media_viewer_prefetch_num_next = ClientGUICommon.BetterSpinBox( image_cache_panel, min = 0, max = 50 )
+            self._media_viewer_prefetch_num_previous = ClientGUICommon.BetterSpinBox( prefetch_panel, min = 0, max = 50 )
+            self._media_viewer_prefetch_num_next = ClientGUICommon.BetterSpinBox( prefetch_panel, min = 0, max = 50 )
             
-            self._prefetch_label_warning = ClientGUICommon.BetterStaticText( image_cache_panel )
+            self._duplicate_filter_prefetch_num_pairs = ClientGUICommon.BetterSpinBox( prefetch_panel, min = 0, max = 25 )
+            
+            self._prefetch_label_warning = ClientGUICommon.BetterStaticText( prefetch_panel )
             self._prefetch_label_warning.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you boost the prefetch numbers, make sure your image cache is big enough to handle it! Doubly so if you frequently load images that at 100% are far larger than your screen size. You really don\'t want to be prefetching more than your cache can hold!' ) )
             
             image_tile_cache_panel = ClientGUICommon.StaticBox( self, 'image tile cache' )
@@ -4239,6 +4304,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._media_viewer_prefetch_delay_base_ms.setValue( self._new_options.GetInteger( 'media_viewer_prefetch_delay_base_ms' ) )
             self._media_viewer_prefetch_num_previous.setValue( self._new_options.GetInteger( 'media_viewer_prefetch_num_previous' ) )
             self._media_viewer_prefetch_num_next.setValue( self._new_options.GetInteger( 'media_viewer_prefetch_num_next' ) )
+            self._duplicate_filter_prefetch_num_pairs.setValue( self._new_options.GetInteger( 'duplicate_filter_prefetch_num_pairs' ) )
             
             self._image_cache_storage_limit_percentage.setValue( self._new_options.GetInteger( 'image_cache_storage_limit_percentage' ) )
             self._image_cache_prefetch_limit_percentage.setValue( self._new_options.GetInteger( 'image_cache_prefetch_limit_percentage' ) )
@@ -4322,16 +4388,28 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Image cache timeout:', self._image_cache_timeout ) )
             rows.append( ( 'Maximum image size (in % of cache) that can be cached:', image_cache_storage_sizer ) )
             rows.append( ( 'Maximum image size (in % of cache) that will be prefetched:', image_cache_prefetch_sizer ) )
-            rows.append( ( 'Base ms delay for media viewer neighbour render prefetch:', self._media_viewer_prefetch_delay_base_ms ) )
-            rows.append( ( 'Num previous to prefetch:', self._media_viewer_prefetch_num_previous ) )
-            rows.append( ( 'Num next to prefetch:', self._media_viewer_prefetch_num_next ) )
-            rows.append( ( 'Prefetch numbers are good?:', self._prefetch_label_warning ) )
             
             gridbox = ClientGUICommon.WrapInGrid( image_cache_panel, rows )
             
             image_cache_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
             QP.AddToLayout( vbox, image_cache_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+            
+            #
+            
+            rows = []
+            
+            rows.append( ( 'Base ms delay for Media Viewer neighbour render prefetch:', self._media_viewer_prefetch_delay_base_ms ) )
+            rows.append( ( 'Num previous to prefetch in Media Viewer:', self._media_viewer_prefetch_num_previous ) )
+            rows.append( ( 'Num next to prefetch in Media Viewer:', self._media_viewer_prefetch_num_next ) )
+            rows.append( ( 'Num pairs to prefetch in Duplicate Filter:', self._duplicate_filter_prefetch_num_pairs ) )
+            rows.append( ( 'Prefetch numbers exceed typical cache size?:', self._prefetch_label_warning ) )
+            
+            gridbox = ClientGUICommon.WrapInGrid( prefetch_panel, rows )
+            
+            prefetch_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+            
+            QP.AddToLayout( vbox, prefetch_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             
             #
             
@@ -4418,6 +4496,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._media_viewer_prefetch_num_previous.valueChanged.connect( self.EventImageCacheUpdate )
             self._media_viewer_prefetch_num_next.valueChanged.connect( self.EventImageCacheUpdate )
+            self._duplicate_filter_prefetch_num_pairs.valueChanged.connect( self.EventImageCacheUpdate )
             
             self.EventImageCacheUpdate()
             self.EventThumbnailsUpdate()
@@ -4459,16 +4538,22 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             #
             
-            num_prefetch = 1 + self._media_viewer_prefetch_num_previous.value() + self._media_viewer_prefetch_num_next.value()
+            num_prefetch_media_viewer = 1 + self._media_viewer_prefetch_num_previous.value() + self._media_viewer_prefetch_num_next.value()
+            num_prefetch_duplicate_filter = 2 + ( self._duplicate_filter_prefetch_num_pairs.value() * 2 )
             
-            if num_prefetch > image_cache_estimate // 2:
+            if num_prefetch_media_viewer > image_cache_estimate // 2:
                 
-                label = 'No, reduce or make your image cache bigger!'
+                label = 'Yes! Reduce Media Viewer prefetch or increase your image cache!'
+                object_name = 'HydrusWarning'
+                
+            elif num_prefetch_duplicate_filter > image_cache_estimate // 2:
+                
+                label = 'Yes! Reduce Duplicate Filter prefetch or increase your image cache!'
                 object_name = 'HydrusWarning'
                 
             else:
                 
-                label = 'Yes, looks good!'
+                label = 'No, looks good!'
                 object_name = ''
                 
             
@@ -4534,6 +4619,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetInteger( 'media_viewer_prefetch_delay_base_ms', self._media_viewer_prefetch_delay_base_ms.value() )
             self._new_options.SetInteger( 'media_viewer_prefetch_num_previous', self._media_viewer_prefetch_num_previous.value() )
             self._new_options.SetInteger( 'media_viewer_prefetch_num_next', self._media_viewer_prefetch_num_next.value() )
+            self._new_options.SetInteger( 'duplicate_filter_prefetch_num_pairs', self._duplicate_filter_prefetch_num_pairs.value() )
             
             self._new_options.SetInteger( 'image_cache_storage_limit_percentage', self._image_cache_storage_limit_percentage.value() )
             self._new_options.SetInteger( 'image_cache_prefetch_limit_percentage', self._image_cache_prefetch_limit_percentage.value() )
@@ -4791,6 +4877,11 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
                 self._close_client_to_system_tray.setEnabled( False )
                 self._start_client_in_system_tray.setEnabled( False )
                 
+                self._always_show_system_tray_icon.setChecked( False )
+                self._minimise_client_to_system_tray.setChecked( False )
+                self._close_client_to_system_tray.setChecked( False )
+                self._start_client_in_system_tray.setChecked( False )
+                
             elif not HC.PLATFORM_WINDOWS:
                 
                 if not CG.client_controller.new_options.GetBoolean( 'advanced_mode' ):
@@ -4913,7 +5004,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         def UpdateOptions( self ):
             
-            self._new_options.SetStringList( 'favourite_tags', list( self._favourites.GetTags() ) )
+            self._new_options.SetStringList( 'favourite_tags', sorted( self._favourites.GetTags(), key = HydrusText.HumanTextSortKey ) )
             
             #
             
@@ -4953,6 +5044,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._ac_select_first_with_count = QW.QCheckBox( self._write_autocomplete_panel )
             
+            self._skip_yesno_on_write_autocomplete_multiline_paste = QW.QCheckBox( self._write_autocomplete_panel )
+            
             self._ac_write_list_height_num_chars = ClientGUICommon.BetterSpinBox( self._write_autocomplete_panel, min = 1, max = 128 )
             
             self._expand_parents_on_storage_autocomplete_taglists = QW.QCheckBox( self._write_autocomplete_panel )
@@ -4983,6 +5076,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._expand_parents_on_storage_taglists.setChecked( self._new_options.GetBoolean( 'expand_parents_on_storage_taglists' ) )
             self._expand_parents_on_storage_taglists.setToolTip( ClientGUIFunctions.WrapToolTip( 'This affects taglists in places like the manage tags dialog, where you edit tags as they actually are, and implied parents hang below tags.' ) )
+            
+            self._skip_yesno_on_write_autocomplete_multiline_paste.setChecked( self._new_options.GetBoolean( 'skip_yesno_on_write_autocomplete_multiline_paste' ) )
+            self._skip_yesno_on_write_autocomplete_multiline_paste.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you paste multiline content into the text box of an edit autocomplete that has a paste button, it will ask you if you want to add what you pasted as separate tags. Check this to skip that yes/no test and just do it every time.' ) )
             
             self._expand_parents_on_storage_autocomplete_taglists.setChecked( self._new_options.GetBoolean( 'expand_parents_on_storage_autocomplete_taglists' ) )
             self._expand_parents_on_storage_autocomplete_taglists.setToolTip( ClientGUIFunctions.WrapToolTip( 'This affects the autocomplete results taglist.' ) )
@@ -5026,6 +5122,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'By default, select the first tag result with actual count in write-autocomplete: ', self._ac_select_first_with_count ) )
+            rows.append( ( 'When pasting multiline content into a write-autocomplete, skip the yes/no check: ', self._skip_yesno_on_write_autocomplete_multiline_paste ) )
             rows.append( ( 'Show parent info by default on edit/write autocomplete taglists: ', self._show_parent_decorators_on_storage_autocomplete_taglists ) )
             rows.append( ( 'Show parents expanded by default on edit/write autocomplete taglists: ', self._expand_parents_on_storage_autocomplete_taglists ) )
             rows.append( ( 'Show sibling info by default on edit/write autocomplete taglists: ', self._show_sibling_decorators_on_storage_autocomplete_taglists ) )
@@ -5066,6 +5163,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetBoolean( 'ac_select_first_with_count', self._ac_select_first_with_count.isChecked() )
             
             self._new_options.SetInteger( 'ac_write_list_height_num_chars', self._ac_write_list_height_num_chars.value() )
+            
+            self._new_options.SetBoolean( 'skip_yesno_on_write_autocomplete_multiline_paste', self._skip_yesno_on_write_autocomplete_multiline_paste.isChecked() )
             
             self._new_options.SetBoolean( 'show_parent_decorators_on_storage_taglists', self._show_parent_decorators_on_storage_taglists.isChecked() )
             self._new_options.SetBoolean( 'show_parent_decorators_on_storage_autocomplete_taglists', self._show_parent_decorators_on_storage_autocomplete_taglists.isChecked() )
@@ -5288,7 +5387,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
                     
                     if namespace != 'system':
                         
-                        namespace = HydrusTags.StripTextOfGumpf( namespace )
+                        namespace = HydrusTags.StripTagTextOfGumpf( namespace )
                         
                     
                     existing_namespaces = self._namespace_colours.GetNamespaceColours().keys()
@@ -5907,6 +6006,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             tt = 'If you show any ratings on your thumbnails (you can set this under _services->manage services_), they can get lost in the noise of the underlying thumb. This draws a plain flat rectangle around them in the normal window panel colour. If you think it is ugly, turn it off here!'
             self._draw_thumbnail_rating_background.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
+            self._draw_thumbnail_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( thumbnail_appearance_box, min = 1.0, max = self._thumbnail_width.value() )
+            tt = 'This is the size of any rating icons shown in pixels. It will be square, so this is both the width and height. This only sets it for display on thumbnails, if you want to change the size of icons in the media viewer check the \'media viewer\' options page.'
+            self._draw_thumbnail_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
             self._video_thumbnail_percentage_in = ClientGUICommon.BetterSpinBox( thumbnail_appearance_box, min=0, max=100 )
             
             self._fade_thumbnails = QW.QCheckBox( thumbnail_appearance_box )
@@ -5961,6 +6064,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._fade_thumbnails.setChecked( self._new_options.GetBoolean( 'fade_thumbnails' ) )
             self._draw_thumbnail_rating_background.setChecked( self._new_options.GetBoolean( 'draw_thumbnail_rating_background' ) )
             
+            self._draw_thumbnail_rating_icon_size_px.setValue( self._new_options.GetFloat( 'draw_thumbnail_rating_icon_size_px' ) )
+            
             self._focus_preview_on_ctrl_click.setChecked( self._new_options.GetBoolean( 'focus_preview_on_ctrl_click' ) )
             self._focus_preview_on_ctrl_click_only_static.setChecked( self._new_options.GetBoolean( 'focus_preview_on_ctrl_click_only_static' ) )
             self._focus_preview_on_shift_click.setChecked( self._new_options.GetBoolean( 'focus_preview_on_shift_click' ) )
@@ -5990,6 +6095,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Thumbnail scaling: ', self._thumbnail_scale_type ) )
             rows.append( ( 'Thumbnail UI-scale supersampling %: ', self._thumbnail_dpr_percentage ) )
             rows.append( ( 'Give thumbnail ratings a flat background: ', self._draw_thumbnail_rating_background ) )
+            rows.append( ( 'Thumbnail rating icon size: ', self._draw_thumbnail_rating_icon_size_px ) )
             rows.append( ( 'Generate video thumbnails this % in: ', self._video_thumbnail_percentage_in ) )
             rows.append( ( 'Fade thumbnails: ', self._fade_thumbnails ) )
             rows.append( ( 'Use blurhash missing thumbnail fallback: ', self._allow_blurhash_fallback ) )
@@ -6068,6 +6174,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetBoolean( 'fade_thumbnails', self._fade_thumbnails.isChecked() )
             self._new_options.SetBoolean( 'draw_thumbnail_rating_background', self._draw_thumbnail_rating_background.isChecked() )
             
+            self._new_options.SetFloat( 'draw_thumbnail_rating_icon_size_px', self._draw_thumbnail_rating_icon_size_px.value() )
+            
             self._new_options.SetBoolean( 'show_extended_single_file_info_in_status_bar', self._show_extended_single_file_info_in_status_bar.isChecked() )
             
             try:
@@ -6094,6 +6202,13 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetNoneableString( 'media_background_bmp_path', media_background_bmp_path )
             
+        
+    
+    def SetCurrentOptionsPanel ( self ):
+        
+        current_panel_name = self._listbook.tabText( self._listbook.GetCurrentPageIndex() )
+        
+        self._new_options.SetString( 'last_options_window_panel', current_panel_name )
         
     
     def CommitChanges( self ):

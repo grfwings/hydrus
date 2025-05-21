@@ -15,6 +15,7 @@ from hydrus.client import ClientData
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIFunctions
@@ -33,6 +34,7 @@ from hydrus.client.gui.media import ClientGUIMediaControls
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
+from hydrus.client.gui.widgets import ClientGUIPainterShapes
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResultPrettyInfo
 from hydrus.client.metadata import ClientContentUpdates
@@ -40,14 +42,15 @@ from hydrus.client.metadata import ClientRatings
 
 class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
 
-    def __init__( self, parent, service_key, canvas_key ):
+    def __init__( self, parent, service_key, canvas_key, icon_size ):
         
-        super().__init__( parent, service_key )
+        super().__init__( parent, service_key, icon_size )
         
         self._canvas_key = canvas_key
         self._current_media = None
         self._rating_state = None
         self._rating = None
+        self._iconsize = icon_size
         
         self._hashes = set()
         
@@ -62,7 +65,7 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawIncDec( painter, 0, 0, self._service_key, self._rating_state, self._rating )
+            ClientGUIRatings.DrawIncDec( painter, 0, 0, self._service_key, self._rating_state, self._rating, self._iconsize )
             
         
     
@@ -139,13 +142,14 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
 
 class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
     
-    def __init__( self, parent, service_key, canvas_key ):
+    def __init__( self, parent, service_key, canvas_key, icon_size ):
         
-        super().__init__( parent, service_key )
+        super().__init__( parent, service_key, icon_size )
         
         self._canvas_key = canvas_key
         self._current_media = None
         self._hashes = set()
+        self._iconsize = icon_size
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
         
@@ -158,7 +162,7 @@ class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawLike( painter, 0, 0, self._service_key, self._rating_state )
+            ClientGUIRatings.DrawLike( painter, ClientGUIPainterShapes.PAD_PX / 2, 0, self._service_key, self._rating_state, self._iconsize )
             
         
     
@@ -256,14 +260,15 @@ class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
 
 class RatingNumericalCanvas( ClientGUIRatings.RatingNumerical ):
 
-    def __init__( self, parent, service_key, canvas_key ):
+    def __init__( self, parent, service_key, canvas_key, icon_size ):
         
-        super().__init__( parent, service_key )
+        super().__init__( parent, service_key, icon_size )
         
         self._canvas_key = canvas_key
         self._current_media = None
         self._rating_state = None
         self._rating = None
+        self._iconsize = icon_size
         
         self._hashes = set()
         
@@ -292,7 +297,7 @@ class RatingNumericalCanvas( ClientGUIRatings.RatingNumerical ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawNumerical( painter, 0, 0, self._service_key, self._rating_state, self._rating )
+            ClientGUIRatings.DrawNumerical( painter, 0, 0, self._service_key, self._rating_state, self._rating, self._iconsize )
             
         
     
@@ -886,6 +891,10 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         view_options.setToolTip( ClientGUIFunctions.WrapToolTip( 'view options' ) )
         view_options.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
+        window_drag_button = ClientGUICommon.BetterBitmapWindowDragButton( self, CC.global_pixmaps().move, self._ShowWindowResizeOptionsMenu, self.parentWidget().window() )
+        window_drag_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'click and drag from here to move the window' ) )
+        window_drag_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
+        
         fullscreen_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().fullscreen_switch, CG.client_controller.pub, 'canvas_fullscreen_switch', self._canvas_key )
         fullscreen_switch.setToolTip( ClientGUIFunctions.WrapToolTip( 'fullscreen switch' ) )
         fullscreen_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
@@ -918,6 +927,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         QP.AddToLayout( self._top_right_hbox, self._volume_control, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, shortcuts, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, view_options, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( self._top_right_hbox, window_drag_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, fullscreen_switch, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, open_externally, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._top_right_hbox, drag_button, CC.FLAGS_CENTER_PERPENDICULAR )
@@ -1116,15 +1126,18 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
             
             self.update()
             
-
+        
         def flip_show_window_title_bar():
             
-            self.parentWidget().window().setWindowFlag( QC.Qt.WindowType.FramelessWindowHint, self._window_show_title_bar )
-
+            window_real_geom = self.window().geometry()
+            
             self._window_show_title_bar = not self._window_show_title_bar
             
-            self.parentWidget().window().show()
+            self.window().setWindowFlag( QC.Qt.WindowType.FramelessWindowHint, not self._window_show_title_bar )
+            
+            self.window().setGeometry( window_real_geom )
 
+            self.window().show()
             self.update()
 
 
@@ -1208,6 +1221,44 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         ClientGUIMenus.AppendMenuCheckItem( menu, 'try to lock current size', 'Try to preserve the zoom ratio between visual media. Useful when trying to compare duplicates.', new_options.GetBoolean( 'media_viewer_lock_current_zoom' ), flip_background_boolean, 'media_viewer_lock_current_zoom' )
         ClientGUIMenus.AppendMenuCheckItem( menu, 'lock current zoom type', 'Prevent the zoom level from changing when switching images.', new_options.GetBoolean( 'media_viewer_lock_current_zoom_type' ), flip_background_boolean, 'media_viewer_lock_current_zoom_type' )
         ClientGUIMenus.AppendMenuCheckItem( menu, 'lock current pan', 'Prevent the panning position from changing when switching images. Useful when trying to compare duplicates.', new_options.GetBoolean( 'media_viewer_lock_current_pan' ), flip_background_boolean, 'media_viewer_lock_current_pan' )
+        
+        CGC.core().PopupMenu( self, menu )
+        
+    
+    def _ShowWindowResizeOptionsMenu( self ):
+        
+        menu = ClientGUIMenus.GenerateMenu( self )
+        
+        ClientGUIMenus.AddLastClickMemory( menu )
+        
+        # TODO: fix this up to have an optional second callable on menu items for right-click
+        
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to fit', 'Resize the window to fit the media without changing anything else.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_VIEWER_CENTER ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton 
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA ) ) ) )
+        
+        ClientGUIMenus.AppendSeparator( menu )
+        
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to 50%', 'Zoom the media to 50% and resize the window to fit it.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER, 0.5 ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED, 0.5 ) ) ) )
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to 75%', 'Zoom the media to 75% and resize the window to fit it.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER, 0.75  ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED, 0.75 ) ) ) )
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to 100%', 'Zoom the media to 100% and resize the window to fit it.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER, 1.0  ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED, 1.0 ) ) ) )
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to 150%', 'Zoom the media to 150% and resize the window to fit it.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER, 1.5  ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED, 1.5 ) ) ) )
+        ClientGUIMenus.AppendMenuItem( menu, 'resize to 200%', 'Zoom the media to 200% and resize the window to fit it.', lambda: ( self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER, 2.0  ) )
+                                                                                                                                if HG.last_mouse_click_button != QC.Qt.MouseButton.RightButton
+                                                                                                                                else self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED, 2.0 ) ) ) )
+        
+        #append a non clickable note that says you can right click the above options to choose to center the media first or not. so if you left-click it jumps the media back to window center before resizing, if you right click it jumps the window to where the canvas media location is onscreen and resizes there
+        ClientGUIMenus.AppendSeparator( menu )
+        
+        ClientGUIMenus.AppendMenuLabel( menu, 'Right click any of the above to skip centering the media in the viewer window before zooming and/or resizing.' )
         
         CGC.core().PopupMenu( self, menu )
         
@@ -1443,6 +1494,8 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         self._icon_panel.setLayout( icon_hbox )
         
+        self._rating_icon_size_px = round( CG.client_controller.new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
+        
         # repo strings
         
         self._location_strings = ClientGUICommon.BetterStaticText( self, '' )
@@ -1469,7 +1522,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             service_key = service.GetServiceKey()
             
-            control = RatingLikeCanvas( self, service_key, canvas_key )
+            control = RatingLikeCanvas( self, service_key, canvas_key, QC.QSize( self._rating_icon_size_px, self._rating_icon_size_px ) )
             
             self.mediaChanged.connect( control.SetMedia )
             self.mediaCleared.connect( control.ClearMedia )
@@ -1487,7 +1540,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             service_key = service.GetServiceKey()
             
-            control = RatingNumericalCanvas( self, service_key, canvas_key )
+            control = RatingNumericalCanvas( self, service_key, canvas_key, QC.QSize( self._rating_icon_size_px, self._rating_icon_size_px ) )
             
             self.mediaChanged.connect( control.SetMedia )
             self.mediaCleared.connect( control.ClearMedia )
@@ -1512,7 +1565,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
             
             service_key = service.GetServiceKey()
             
-            control = RatingIncDecCanvas( self, service_key, canvas_key )
+            control = RatingIncDecCanvas( self, service_key, canvas_key, QC.QSize( self._rating_icon_size_px * 2, self._rating_icon_size_px ) )
             
             self.mediaChanged.connect( control.SetMedia )
             self.mediaCleared.connect( control.ClearMedia )
@@ -2164,7 +2217,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         QP.AddToLayout( self._comparison_statements_vbox, self._comparison_statement_score_summary, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        self._comparison_statement_names = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'jpeg_quality', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration' ]
+        self._comparison_statement_names = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'jpeg_quality', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration', 'a_is_exact_match_b_advanced_test' ]
         
         self._comparison_statements_sts = {}
         
@@ -2174,11 +2227,13 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             st = ClientGUICommon.BetterStaticText( panel, 'init' )
             
+            st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
+            
             self._comparison_statements_sts[ name ] = ( panel, st )
             
             hbox = QP.HBoxLayout()
             
-            QP.AddToLayout( hbox, st, CC.FLAGS_CENTER )
+            QP.AddToLayout( hbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
             
             panel.setLayout( hbox )
             
@@ -2186,6 +2241,8 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             QP.AddToLayout( self._comparison_statements_vbox, panel, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
+        
+        self._comparison_statement_updater = self._InitialiseComparisonStatementUpdater()
         
         #
         
@@ -2316,68 +2373,109 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         return ( should_resize, ideal_size, ideal_position )
         
     
-    def _ResetComparisonStatements( self ):
+    def _InitialiseComparisonStatementUpdater( self ):
         
-        statements_and_scores = ClientDuplicates.GetDuplicateComparisonStatements( self._current_media.GetMediaResult(), self._comparison_media.GetMediaResult() )
-        
-        total_score = sum( ( score for ( statement, score ) in statements_and_scores.values() ) )
-        
-        if total_score > 0:
+        def loading_callable():
             
-            text = 'score: +' + HydrusNumbers.ToHumanInt( total_score )
-            object_name = 'HydrusValid'
-            
-        elif total_score < 0:
-            
-            text = 'score: ' + HydrusNumbers.ToHumanInt( total_score )
-            object_name = 'HydrusInvalid'
-            
-        else:
-            
-            text = 'no score difference'
-            object_name = 'HydrusIndeterminate'
-            
-        
-        self._comparison_statement_score_summary.setText( text )
-        
-        self._comparison_statement_score_summary.setObjectName( object_name )
-        
-        self._comparison_statement_score_summary.style().polish( self._comparison_statement_score_summary )
-        
-        for name in self._comparison_statement_names:
-            
-            ( panel, st ) = self._comparison_statements_sts[ name ]
-            
-            got_data = name in statements_and_scores
-            
-            show_panel = got_data
-            
-            panel.setVisible( show_panel )
-            
-            if got_data:
+            for ( panel, st ) in self._comparison_statements_sts.values():
                 
-                ( statement, score ) = statements_and_scores[ name ]
-                
-                st.setText( statement )
-                
-                if score > 0:
+                if panel.isVisible():
                     
-                    object_name = 'HydrusValid'
-                    
-                elif score < 0:
-                    
-                    object_name = 'HydrusInvalid'
-                    
-                else:
-                    
-                    object_name = 'HydrusIndeterminate'
+                    st.setText( '' )
                     
                 
-                st.setObjectName( object_name )
+            
+        
+        def pre_work_callable():
+            
+            return ( self._current_media.GetMediaResult(), self._comparison_media.GetMediaResult() )
+            
+        
+        def work_callable( args ):
+            
+            ( current_media_result, comparison_media_result ) = args
+            
+            statements_and_scores = ClientDuplicates.GetDuplicateComparisonStatements( current_media_result, comparison_media_result )
+            
+            return statements_and_scores
+            
+        
+        def publish_callable( result ):
+            
+            statements_and_scores = result
+            
+            total_score = sum( ( score for ( statement, score ) in statements_and_scores.values() ) )
+            
+            if total_score > 0:
                 
-                st.style().polish( st )
+                text = 'score: +' + HydrusNumbers.ToHumanInt( total_score )
+                object_name = 'HydrusValid'
+                
+            elif total_score < 0:
+                
+                text = 'score: ' + HydrusNumbers.ToHumanInt( total_score )
+                object_name = 'HydrusInvalid'
+                
+            else:
+                
+                text = 'no score difference'
+                object_name = 'HydrusIndeterminate'
                 
             
+            self._comparison_statement_score_summary.setText( text )
+            
+            self._comparison_statement_score_summary.setObjectName( object_name )
+            
+            self._comparison_statement_score_summary.style().polish( self._comparison_statement_score_summary )
+            
+            for name in self._comparison_statement_names:
+                
+                ( panel, st ) = self._comparison_statements_sts[ name ]
+                
+                got_data = name in statements_and_scores
+                
+                show_panel = got_data
+                
+                panel.setVisible( show_panel )
+                
+                if got_data:
+                    
+                    ( statement, score ) = statements_and_scores[ name ]
+                    
+                    st.setText( statement )
+                    
+                    if score > 0:
+                        
+                        object_name = 'HydrusValid'
+                        
+                    elif score < 0:
+                        
+                        object_name = 'HydrusInvalid'
+                        
+                    else:
+                        
+                        object_name = 'HydrusIndeterminate'
+                        
+                    
+                    st.setObjectName( object_name )
+                    
+                    st.style().polish( st )
+                    
+                    if name == 'a_is_exact_match_b_advanced_test':
+                        
+                        tt = 'This is a test comparison line from hydev for the duplicates auto-resolution system. It is supposed to detect exact duplicates that are only resizes or re-encodes. It will not consider a lighter/darker/recolour as a "visual duplicate". Is it making a correct prediction here? If not, hydev would like you to send the pair in so he can check it out.\n\nI mostly want to see false positives. It is fine if a particularly blurry/artifacty duplicate pair is not considered "visual duplicates", but if two actual alternates are considered "visual duplicates", I would like to see them! Thank you for testing.'
+                        st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+                        
+                    
+                
+            
+            # minimumsize is not immediately updated without this
+            self.layout().activate()
+            
+            self._SizeAndPosition()
+            
+        
+        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
         
     
     def SetDuplicatePair( self, canvas_key, shown_media, comparison_media ):
@@ -2389,7 +2487,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             self._EnableDisableButtons()
             
-            self._ResetComparisonStatements()
+            self._comparison_statement_updater.update()
             
             # minimumsize is not immediately updated without this
             self.layout().activate()
@@ -2411,7 +2509,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
 class CanvasHoverFrameTags( CanvasHoverFrame ):
     
     def __init__( self, parent, my_canvas, top_hover: CanvasHoverFrameTop, canvas_key, location_context: ClientLocation.LocationContext ):
-
+        
         super().__init__( parent, my_canvas, canvas_key )
         
         self._top_hover = top_hover
@@ -2425,12 +2523,14 @@ class CanvasHoverFrameTags( CanvasHoverFrame ):
         self.setLayout( vbox )
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
+        
     
     def _GetIdealSizeAndPosition( self ):
-
+        
         if CG.client_controller.new_options.GetBoolean( 'disable_tags_hover_in_media_viewer' ):
-
+            
             return ( False, QC.QSize( 0, 0 ), QC.QPoint( 0, 0 ) )
+            
         
         parent_window = self.parentWidget().window()
         

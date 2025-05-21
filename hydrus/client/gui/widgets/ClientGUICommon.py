@@ -148,6 +148,7 @@ def WrapInText( control, parent, text, object_name = None ):
         
     
     st.setAlignment( QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter )
+    
     h_policy = QW.QSizePolicy.Policy.Expanding
     v_policy = QW.QSizePolicy.Policy.Fixed
     
@@ -155,6 +156,11 @@ def WrapInText( control, parent, text, object_name = None ):
     
     QP.AddToLayout( hbox, st, CC.FLAGS_NONE )
     QP.AddToLayout( hbox, control, CC.FLAGS_CENTER )
+    
+    if isinstance( control, QW.QWidget ):
+        
+        st.setToolTip( control.toolTip() )
+        
     
     return hbox
     
@@ -272,6 +278,54 @@ class BetterBitmapButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
     def EventButton( self ):
         
         self._func( *self._args,  **self._kwargs )
+        
+    
+class BetterBitmapWindowDragButton( BetterBitmapButton ):
+    
+    def __init__( self, parent, bitmap, func, target_window ):
+        
+        super().__init__( parent, bitmap, func )
+        
+        self._target_window = target_window
+        
+        self._original_icon = bitmap
+        
+    
+    def mousePressEvent( self, event ):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self._startDrag()
+            
+            self.setIcon( CC.global_pixmaps().move_cursor )
+            
+        elif event.button() == QC.Qt.MouseButton.RightButton:
+            
+            self._func()
+            
+        else:
+            
+            super().mousePressEvent( event )
+        
+    
+    def mouseReleaseEvent(self, event):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self.setIcon(self._original_icon)
+            
+        super().mouseReleaseEvent(event)
+        
+    
+    def _startDrag( self ):
+        
+        if self._target_window is not None:
+            
+            window_handle = self._target_window.windowHandle()
+            
+            if window_handle is not None:
+                
+                window_handle.startSystemMove()
         
     
 class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
@@ -623,6 +677,35 @@ class BetterSpinBox( QW.QSpinBox ):
             
         
     
+
+class BetterDoubleSpinBox( QW.QDoubleSpinBox ):
+    
+    def __init__( self, parent: QW.QWidget, initial = None, min = None, max = None, width = None ):
+        
+        super().__init__( parent )
+        
+        if min is not None:
+            
+            self.setMinimum( min )
+            
+        
+        if max is not None:
+            
+            self.setMaximum( max )
+            
+        
+        if initial is not None:
+            
+            self.setValue( initial )
+            
+        
+        if width is not None:
+            
+            self.setMinimumWidth( width )
+            
+        
+    
+
 class ButtonWithMenuArrow( QW.QToolButton ):
     
     def __init__( self, parent: QW.QWidget, action: QW.QAction ):
@@ -701,9 +784,24 @@ class BetterRadioBox( QW.QFrame ):
         self._radio_buttons = []
         self._buttons_to_data = {}
         
-        for ( text, data ) in choice_tuples:
+        for tup in choice_tuples:
+            
+            if len( tup ) == 2:
+                
+                ( text, data ) = tup
+                tooltip = None
+                
+            else:
+                
+                ( text, data, tooltip ) = tup
+                
             
             radiobutton = QW.QRadioButton( text, self )
+            
+            if tooltip is not None:
+                
+                radiobutton.setToolTip( ClientGUIFunctions.WrapToolTip( tooltip ) ) 
+                
             
             self._radio_buttons.append( radiobutton )
             
@@ -1628,7 +1726,7 @@ class OnOffButton( QW.QPushButton ):
 
 class StaticBox( QW.QFrame ):
     
-    def __init__( self, parent, title, can_expand = False, start_expanded = True ):
+    def __init__( self, parent, title, can_expand = False, start_expanded = True, expanded_size_vertical_policy = QW.QSizePolicy.Policy.Fixed ):
         
         super().__init__( parent )
         
@@ -1645,7 +1743,7 @@ class StaticBox( QW.QFrame ):
         self._title_st = BetterStaticText( self, label = title )
         self._title_st.setFont( title_font )
         
-        self._expanded_size_vertical_policy = None
+        self._expanded_size_vertical_policy = expanded_size_vertical_policy
         
         self._expand_button = BetterButton( self, label = '\u25B2', func = self.ExpandCollapse )
         self._expand_button.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._expand_button, 4 ) )
@@ -1685,7 +1783,7 @@ class StaticBox( QW.QFrame ):
         
         if not start_expanded:
             
-            self.ExpandCollapse( do_sizer_gubbins = False )
+            self.ExpandCollapse()
             
         
     
@@ -1698,35 +1796,27 @@ class StaticBox( QW.QFrame ):
         self._sizer.addSpacerItem( self._spacer )
         
     
-    def ExpandCollapse( self, do_sizer_gubbins = True ):
+    def ExpandCollapse( self ):
         
         if self._expanded:
             
             new_label = '\u25BC'
             
-            if do_sizer_gubbins:
-                
-                size_policy = self.sizePolicy()
-                
-                self._expanded_size_vertical_policy = size_policy.verticalPolicy()
-                
-                size_policy.setVerticalPolicy( QW.QSizePolicy.Policy.Fixed )
-                
-                self.setSizePolicy( size_policy )
-                
+            size_policy = self.sizePolicy()
+            
+            size_policy.setVerticalPolicy( QW.QSizePolicy.Policy.Fixed )
+            
+            self.setSizePolicy( size_policy )
             
         else:
             
             new_label = '\u25B2'
             
-            if self._expanded_size_vertical_policy is not None:
-                
-                size_policy = self.sizePolicy()
-                
-                size_policy.setVerticalPolicy( self._expanded_size_vertical_policy )
-                
-                self.setSizePolicy( size_policy )
-                
+            size_policy = self.sizePolicy()
+            
+            size_policy.setVerticalPolicy( self._expanded_size_vertical_policy )
+            
+            self.setSizePolicy( size_policy )
             
         
         self._expand_button.setText( new_label )
@@ -1787,7 +1877,7 @@ class TextAndGauge( QW.QWidget ):
         
         super().__init__( parent )
         
-        self._st = BetterStaticText( self )
+        self._st = BetterStaticText( self, tooltip_label = True )
         self._gauge = Gauge( self )
         
         vbox = QP.VBoxLayout( margin = 0 )

@@ -70,7 +70,7 @@ class ThumbnailPairListModel( QC.QAbstractTableModel ):
         
         def work_callable():
             
-            thumbnail_hydrus_bmp = CG.client_controller.GetCache( 'thumbnail' ).GetThumbnail( media_result )
+            thumbnail_hydrus_bmp = CG.client_controller.thumbnails_cache.GetThumbnail( media_result )
             
             return thumbnail_hydrus_bmp
             
@@ -157,7 +157,7 @@ class ThumbnailPairListModelPendingAutoResolutionAction( ThumbnailPairListModel 
         row = index.row()
         col = index.column()
         
-        if role == QC.Qt.ItemDataRole.DisplayRole:
+        if role in ( QC.Qt.ItemDataRole.DisplayRole, QC.Qt.ItemDataRole.ToolTipRole ):
             
             if col == 2:
                 
@@ -356,7 +356,10 @@ class ThumbnailPairList( QW.QTableView ):
         
         my_width = thumbnail_width * model.columnCount() + 24
         
-        self.setMinimumSize( QC.QSize( my_width, thumbnail_height * self.MIN_NUM_ROWS_HEIGHT ) )
+        # this was going bonkers dialog sizing for some users
+        max_thumbnail_height_for_min_height_calc = min( thumbnail_height, 200 )
+        
+        self.setMinimumSize( QC.QSize( my_width, max_thumbnail_height_for_min_height_calc * self.MIN_NUM_ROWS_HEIGHT ) )
         
     
     def SetData( self, tuples_of_data ):

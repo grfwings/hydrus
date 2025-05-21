@@ -32,9 +32,8 @@ from hydrus.core import HydrusTemp
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 from hydrus.core.files import HydrusFileHandling
-from hydrus.core.files import HydrusPSDHandling
 from hydrus.core.files import HydrusOLEHandling
-from hydrus.core.files import HydrusVideoHandling
+from hydrus.core.files import HydrusFFMPEG
 from hydrus.core.files.images import HydrusImageHandling
 from hydrus.core.networking import HydrusNetwork
 
@@ -595,7 +594,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         self._have_shown_once = False
         
-        if self._controller.new_options.GetBoolean( 'start_client_in_system_tray' ):
+        if ClientGUISystemTray.SystemTrayAvailable() and self._controller.new_options.GetBoolean( 'start_client_in_system_tray' ):
             
             self._currently_minimised_to_system_tray = True
             
@@ -721,7 +720,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
         
         library_version_lines.append( 'python: {}'.format( v ) )
-        library_version_lines.append( 'FFMPEG: {}'.format( HydrusVideoHandling.GetFFMPEGVersion() ) )
+        library_version_lines.append( 'FFMPEG: {}'.format( HydrusFFMPEG.GetFFMPEGVersion() ) )
         
         if ClientGUIMPV.MPV_IS_AVAILABLE:
             
@@ -733,7 +732,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             if HC.RUNNING_FROM_FROZEN_BUILD and HC.PLATFORM_MACOS:
                 
-                HydrusData.ShowText( 'The macOS App does not come with MPV support on its own, but if your system has the dev library, libmpv1, it will try to import it. It seems your system does not have this, or it failed to import. The specific error follows:' )
+                HydrusData.ShowText( 'The macOS App does not come with MPV support on its own, but if your system has the dev library, libmpv1 or libmpv2, it will try to import it. It seems your system does not have this, or it failed to import. The specific error follows:' )
                 
             else:
                 
@@ -877,27 +876,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
         
         availability_lines.append( 'cbor2 present: {}'.format( str( CBOR_AVAILABLE ) ) )
-        
         availability_lines.append( 'chardet present: {}'.format( str( HydrusText.CHARDET_OK ) ) )
-        
-        from hydrus.client.networking import ClientNetworkingJobs
-        
-        if ClientNetworkingJobs.CLOUDSCRAPER_OK:
-            
-            try:
-                
-                availability_lines.append( 'cloudscraper present: {}'.format( ClientNetworkingJobs.cloudscraper.__version__ ) )
-                
-            except:
-                
-                availability_lines.append( 'cloudscraper present: unknown version' )
-                
-            
-        else:
-            
-            availability_lines.append( 'cloudscraper present: {}'.format( 'False' ) )
-            
-        
         availability_lines.append( 'cryptography present: {}'.format( HydrusEncryption.CRYPTO_OK ) )
         availability_lines.append( 'dateparser present: {}'.format( ClientTime.DATEPARSER_OK ) )
         availability_lines.append( 'dateutil present: {}'.format( ClientTime.DATEUTIL_OK ) )
@@ -905,12 +884,12 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         availability_lines.append( 'lxml present: {}'.format( ClientParsing.LXML_IS_OK ) )
         availability_lines.append( 'lz4 present: {}'.format( HydrusCompression.LZ4_OK ) )
         availability_lines.append( 'olefile present: {}'.format( HydrusOLEHandling.OLEFILE_OK ) )
-        availability_lines.append( 'Pillow HEIF/AVIF: {}'.format( HydrusImageHandling.HEIF_OK ) )
+        availability_lines.append( 'Pillow HEIF: {}'.format( HydrusImageHandling.HEIF_OK ) )
+        availability_lines.append( 'Pillow AVIF: {}'.format( HydrusImageHandling.AVIF_OK ) )
         availability_lines.append( 'Pillow JXL: {}'.format( HydrusImageHandling.JXL_OK ) )
         availability_lines.append( 'psutil present: {}'.format( HydrusPSUtil.PSUTIL_OK ) )
         availability_lines.append( 'pympler present: {}'.format( HydrusMemory.PYMPLER_OK ) )
         availability_lines.append( 'pyopenssl present: {}'.format( HydrusEncryption.OPENSSL_OK ) )
-        availability_lines.append( 'psd_tools present: {}'.format( HydrusPSDHandling.PSD_TOOLS_OK ) )
         availability_lines.append( 'show-in-file-manager present: {}'.format( ClientPaths.SHOW_IN_FILE_MANAGER_OK ) )
         availability_lines.append( 'speedcopy (experimental test) present: {}'.format( HydrusFileHandling.SPEEDCOPY_OK ) )
         
@@ -2140,6 +2119,20 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
     
     def _FlipShowHideWholeUI( self ):
         
+        if not ClientGUISystemTray.SystemTrayAvailable():
+            
+            try:
+                
+                raise Exception( 'Was called to flip hide/show to system tray, but system tray is not available!' )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e, do_wait = False )
+                
+            
+            return
+            
+        
         if not self._currently_minimised_to_system_tray:
             
             visible_tlws = [ tlw for tlw in QW.QApplication.topLevelWidgets() if tlw.isVisible() or tlw.isMinimized() ]
@@ -2962,12 +2955,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
                 ClientGUIMenus.AppendMenuItem( self._menubar_pages_petition_submenu, service.GetName(), 'Open a new petition page for ' + service.GetName() + '.', self._notebook.NewPagePetitions, service.GetServiceKey(), on_deepest_notebook = True )
                 
-            
-            self._menubar_pages_download_popup_submenu.setEnabled( True )
-            
-            has_ipfs = len( [ service for service in services if service.GetServiceType() == HC.IPFS ] )
-            
-            self._menubar_pages_download_popup_submenu.menuAction().setVisible( has_ipfs )
             
         
         return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
@@ -3944,14 +3931,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuItem( download_menu, 'simple downloader', 'Open a new tab to download files from generic galleries or threads.', self.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_NEW_SIMPLE_DOWNLOADER_PAGE ) )
         
         ClientGUIMenus.AppendMenu( menu, download_menu, 'new download page' )
-        
-        #
-        
-        self._menubar_pages_download_popup_submenu = ClientGUIMenus.GenerateMenu( menu )
-        
-        ClientGUIMenus.AppendMenuItem( self._menubar_pages_download_popup_submenu, 'an ipfs multihash', 'Enter an IPFS multihash and attempt to import whatever is returned.', self._StartIPFSDownload )
-        
-        ClientGUIMenus.AppendMenu( menu, self._menubar_pages_download_popup_submenu, 'new download popup' )
         
         #
         
@@ -6932,44 +6911,6 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         ClientGUIDialogsMessage.ShowInformation( self, message )
         
     
-    def _StartIPFSDownload( self ):
-        
-        ipfs_services = self._controller.services_manager.GetServices( ( HC.IPFS, ), randomised = True )
-        
-        if len( ipfs_services ) > 0:
-            
-            if len( ipfs_services ) == 1:
-                
-                ( service, ) = ipfs_services
-                
-            else:
-                
-                choice_tuples = [ ( service.GetName(), service ) for service in ipfs_services ]
-                
-                try:
-                    
-                    service = ClientGUIDialogsQuick.SelectFromList( self, 'Select which IPFS Daemon', choice_tuples )
-                    
-                except HydrusExceptions.CancelledException:
-                    
-                    return
-                    
-                
-            
-            with ClientGUIDialogs.DialogTextEntry( self, 'Enter multihash to download.' ) as dlg:
-                
-                result = dlg.exec()
-                
-                if result == QW.QDialog.DialogCode.Accepted:
-                    
-                    multihash = dlg.GetValue()
-                    
-                    service.ImportFile( multihash )
-                    
-                
-            
-        
-    
     def _SwitchBoolean( self, name ):
         
         if name == 'autocomplete_delay_mode':
@@ -7176,7 +7117,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     
     def _UpdateSystemTrayIcon( self, currently_booting = False ):
         
-        if not ClientGUISystemTray.SystemTrayAvailable() or ( not (HC.PLATFORM_WINDOWS or HC.PLATFORM_MACOS) and not CG.client_controller.new_options.GetBoolean( 'advanced_mode' ) ):
+        if not ClientGUISystemTray.SystemTrayAvailable() or ( not (HC.PLATFORM_WINDOWS or HC.PLATFORM_MACOS ) and not CG.client_controller.new_options.GetBoolean( 'advanced_mode' ) ):
             
             return
             
@@ -7394,7 +7335,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         try:
             
-            if self._controller.new_options.GetBoolean( 'close_client_to_system_tray' ):
+            if ClientGUISystemTray.SystemTrayAvailable() and self._controller.new_options.GetBoolean( 'close_client_to_system_tray' ):
                 
                 self._FlipShowHideWholeUI()
                 
@@ -7513,7 +7454,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                             
                             self._was_maximised = event.oldState() == QC.Qt.WindowState.WindowMaximized
                             
-                            if not self._currently_minimised_to_system_tray and self._controller.new_options.GetBoolean( 'minimise_client_to_system_tray' ):
+                            if ClientGUISystemTray.SystemTrayAvailable() and not self._currently_minimised_to_system_tray and self._controller.new_options.GetBoolean( 'minimise_client_to_system_tray' ):
                                 
                                 self._FlipShowHideWholeUI()
                                 
@@ -7559,11 +7500,6 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 if not tlw or not QP.isValid( tlw ):
                     
                     self._animation_update_windows.discard( window )
-                    
-                    continue
-                    
-                
-                if self._currently_minimised_to_system_tray:
                     
                     continue
                     
@@ -8194,6 +8130,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 self._SwitchBoolean( 'force_idle_mode' )
                 
+            elif action == CAC.SIMPLE_OPEN_OPTIONS:
+                
+                self._ManageOptions()
+                
             else:
                 
                 command_processed = False
@@ -8291,7 +8231,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         urls = sorted( urls )
         
-        tag_import_options = CG.client_controller.network_engine.domain_manager.GetDefaultTagImportOptionsForURL( urls[0] )
+        tag_import_options = CG.client_controller.network_engine.domain_manager.GetDefaultTagImportOptionsForURL( None, urls[0] )
         
         tag_import_options = tag_import_options.Duplicate()
         

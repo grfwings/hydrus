@@ -44,6 +44,7 @@ from hydrus.client.gui.media import ClientGUIMediaMenus
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsCommitFiltering
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
+from hydrus.client.gui.widgets import ClientGUIPainterShapes
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultPrettyInfo
@@ -1248,9 +1249,41 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 self._media_container.ResetCenterPosition()
                 
+            elif action == CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA:
+                
+                self._media_container.SizeSelfToMedia()
+                
+            elif action == CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_VIEWER_CENTER:
+            
+                self._media_container.SizeSelfToMedia()
+                
+                self._media_container.ResetCenterPosition()
+                
+            elif action == CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED:
+                
+                new_zoom = command.GetSimpleData()
+                
+                self._media_container.ZoomToZoomPercent( new_zoom )
+                
+                self._media_container.SizeSelfToMedia()
+                
+            elif action == CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER:
+                
+                new_zoom = command.GetSimpleData()
+                
+                self._media_container.ZoomToZoomPercent( new_zoom, zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
+                
+                self._media_container.SizeSelfToMedia()
+                
+                self._media_container.ResetCenterPosition()
+                
             elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM:
                 
                 self._media_container.ZoomSwitch()
+            
+            elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER:
+                
+                self._media_container.ZoomSwitch( zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
                 
             elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM:
                 
@@ -1320,9 +1353,17 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 self._media_container.ZoomMax()
                 
-            elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER:
+            elif action == CAC.SIMPLE_ZOOM_TO_PERCENTAGE:
                 
-                self._media_container.ZoomSwitch( zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
+                new_zoom = command.GetSimpleData()
+                
+                self._media_container.ZoomToZoomPercent( new_zoom )
+                
+            elif action == CAC.SIMPLE_ZOOM_TO_PERCENTAGE_CENTER:
+                                                        
+                new_zoom = command.GetSimpleData()
+                
+                self._media_container.ZoomToZoomPercent( new_zoom, zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
                 
             elif action == CAC.SIMPLE_FLIP_ICC_PROFILE_APPLICATION:
                 
@@ -1387,7 +1428,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             if self.CANVAS_TYPE == CC.CANVAS_PREVIEW:
                 
-                if not ClientMedia.UserWantsUsToDisplayMedia( media, self.CANVAS_TYPE ):
+                if not ClientMedia.UserWantsUsToDisplayMedia( media.GetMediaResult(), self.CANVAS_TYPE ):
                     
                     media = None
                     
@@ -2200,13 +2241,19 @@ class CanvasWithHovers( Canvas ):
         
         # ratings
         
+        RATING_ICON_SET_SIZE = round( self._new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
+        STAR_DX = RATING_ICON_SET_SIZE
+        STAR_DY = RATING_ICON_SET_SIZE
+        STAR_PAD = ClientGUIPainterShapes.PAD
+        
         services_manager = CG.client_controller.services_manager
+        
         
         like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
         
         like_services.reverse()
         
-        like_rating_current_x = my_width - 16 - ( QFRAME_PADDING + VBOX_MARGIN )
+        like_rating_current_x = my_width - ( STAR_DX + STAR_PAD.width() / 2 ) - ( QFRAME_PADDING + VBOX_MARGIN )
         
         for like_service in like_services:
             
@@ -2214,15 +2261,16 @@ class CanvasWithHovers( Canvas ):
             
             rating_state = ClientRatings.GetLikeStateFromMedia( ( self._current_media, ), service_key )
             
-            ClientGUIRatings.DrawLike( painter, like_rating_current_x, current_y, service_key, rating_state )
+            ClientGUIRatings.DrawLike( painter, like_rating_current_x, current_y, service_key, rating_state, QC.QSize( STAR_DX, STAR_DY ))
             
-            like_rating_current_x -= 16
+            like_rating_current_x -= STAR_DX + STAR_PAD.width()
             
         
         if len( like_services ) > 0:
             
-            current_y += 16 + VBOX_SPACING
+            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
             
+        
         
         numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
         
@@ -2232,18 +2280,19 @@ class CanvasWithHovers( Canvas ):
             
             ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( self._current_media, ), service_key )
             
-            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key )
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, STAR_PAD.width() )
             
-            ClientGUIRatings.DrawNumerical( painter, my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ), current_y, service_key, rating_state, rating ) # -2 to line up exactly with the floating panel
+            ClientGUIRatings.DrawNumerical( painter, my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ), current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ), STAR_PAD.width() )
             
-            current_y += 16 + VBOX_SPACING
+            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
             
+        
         
         incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
         
         incdec_services.reverse()
         
-        control_width = ClientGUIRatings.INCDEC_SIZE.width()
+        control_width = RATING_ICON_SET_SIZE * 2
         
         incdec_rating_current_x = my_width - control_width - ( QFRAME_PADDING + VBOX_MARGIN )
         
@@ -2253,14 +2302,14 @@ class CanvasWithHovers( Canvas ):
             
             ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( self._current_media, ), service_key )
             
-            ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating )
+            ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating, QC.QSize( RATING_ICON_SET_SIZE * 2, RATING_ICON_SET_SIZE ) )
             
             incdec_rating_current_x -= control_width
             
         
         if len( incdec_services ) > 0:
             
-            current_y += 16 + VBOX_SPACING
+            current_y += STAR_DY + VBOX_SPACING
             
         
         # icons
@@ -3051,28 +3100,40 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
         
         other_media: ClientMedia.MediaSingleton = self._media_list.GetNext( self._current_media )
         
-        media_to_prefetch = [ other_media ]
+        media_results_to_prefetch = [ other_media.GetMediaResult() ]
         
-        # this doesn't handle big skip events, but that's a job for later
-        if self._GetNumRemainingDecisions() > 1: # i.e. more than the current one we are looking at
-            
-            media_to_prefetch.extend( self._batch_of_pairs_to_process[ self._current_pair_index + 1 ] )
-            
+        duplicate_filter_prefetch_num_pairs = CG.client_controller.new_options.GetInteger( 'duplicate_filter_prefetch_num_pairs' )
         
-        image_cache = CG.client_controller.GetCache( 'images' )
-        
-        for media in media_to_prefetch:
+        if duplicate_filter_prefetch_num_pairs > 0:
             
-            hash = media.GetHash()
-            mime = media.GetMime()
+            # this isn't clever enough to handle pending skip logic, but that's fine
             
-            if media.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media, self.CANVAS_TYPE ):
+            start_pos = self._current_pair_index + 1
+            
+            pairs_to_do = self._batch_of_pairs_to_process[ start_pos : start_pos + duplicate_filter_prefetch_num_pairs ]
+            
+            for pair in pairs_to_do:
                 
-                if not image_cache.HasImageRenderer( hash ):
+                media_results_to_prefetch.extend( pair )
+                
+            
+        
+        delay_base = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'media_viewer_prefetch_delay_base_ms' ) )
+        
+        images_cache = CG.client_controller.images_cache
+        
+        for ( i, media_result ) in enumerate( media_results_to_prefetch ):
+            
+            delay = i * delay_base
+            
+            hash = media_result.GetHash()
+            mime = media_result.GetMime()
+            
+            if media_result.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media_result, self.CANVAS_TYPE ):
+                
+                if not images_cache.HasImageRenderer( hash ):
                     
-                    # we do qt safe to make sure the job is cancelled if we are destroyed
-                    
-                    CG.client_controller.CallAfterQtSafe( self, 'image pre-fetch', image_cache.PrefetchImageRenderer, media )
+                    CG.client_controller.CallLaterQtSafe( self, delay, 'image pre-fetch', images_cache.PrefetchImageRenderer, media_result )
                     
                 
             
@@ -3145,7 +3206,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
             file_deletion_reason = None
             
         
-        content_update_packages = [ duplicate_content_merge_options.ProcessPairIntoContentUpdatePackage( media_a.GetMediaResult(), media_b.GetMediaResult(), delete_a = delete_a, delete_b = delete_b, file_deletion_reason = file_deletion_reason ) ]
+        content_update_packages = duplicate_content_merge_options.ProcessPairIntoContentUpdatePackages( media_a.GetMediaResult(), media_b.GetMediaResult(), delete_a = delete_a, delete_b = delete_b, file_deletion_reason = file_deletion_reason )
         
         process_tuple = ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped )
         
@@ -3739,7 +3800,7 @@ class CanvasMediaList( CanvasWithHovers ):
     
     def TryToDoPreClose( self ):
         
-        if self._current_media is not None:
+        if self._current_media is not None and CG.client_controller.new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ):
             
             self.exitFocusMedia.emit( self._current_media )
             
@@ -3818,20 +3879,20 @@ class CanvasMediaList( CanvasWithHovers ):
             to_render.append( ( previous, delay ) )
             
         
-        image_cache = CG.client_controller.GetCache( 'images' )
+        images_cache = CG.client_controller.images_cache
         
         for ( media, delay ) in to_render:
             
             hash = media.GetHash()
             mime = media.GetMime()
             
-            if media.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media, self.CANVAS_TYPE ):
+            if media.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media.GetMediaResult(), self.CANVAS_TYPE ):
                 
-                if not image_cache.HasImageRenderer( hash ):
+                if not images_cache.HasImageRenderer( hash ):
                     
                     # we do qt safe to make sure the job is cancelled if we are destroyed
                     
-                    CG.client_controller.CallLaterQtSafe( self, delay, 'image pre-fetch', image_cache.PrefetchImageRenderer, media )
+                    CG.client_controller.CallLaterQtSafe( self, delay, 'image pre-fetch', images_cache.PrefetchImageRenderer, media.GetMediaResult() )
                     
                 
             
@@ -3975,6 +4036,17 @@ def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContex
         
         job_status.SetStatusText( f'Deleting - {HydrusNumbers.ValueRangeToPrettyString( i * BLOCK_SIZE, num_to_do )}' )
         job_status.SetVariable( 'popup_gauge_1', ( i * BLOCK_SIZE, num_to_do ) )
+        
+        if CG.client_controller.new_options.GetBoolean( 'delete_lock_for_archived_files' ) and CG.client_controller.new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_archive_delete' ):
+            
+            block_of_deleted_hashes = [ m.GetHash() for m in block_of_deleted if not m.GetLocationsManager().inbox ]
+            
+            content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, block_of_deleted_hashes ) )
+            
+            CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+            
+            CG.client_controller.WaitUntilViewFree()
+            
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         

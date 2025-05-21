@@ -215,26 +215,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            HydrusData.Print( 'Attempting ffmpeg PSD thumbnail fallback' )
-            
-            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( suffix = '.png' )
-            
-            try:
-                
-                HydrusVideoHandling.RenderImageToImagePath( path, temp_path )
-                
-                thumbnail_numpy = HydrusImageHandling.GenerateThumbnailNumPyFromStaticImagePath( temp_path, target_resolution, HC.IMAGE_PNG )
-                
-            except Exception as e: 
-                
-                PrintMoreThumbErrorInfo( e, f'Secondary problem generating thumbnail for "{path}".', extra_description = extra_description )
-                
-                thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
-                
-            finally:
-                
-                HydrusTemp.CleanUpTempPath( os_file_handle, temp_path )
-                
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.IMAGE_SVG: 
@@ -282,24 +263,8 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
         
     elif mime == HC.APPLICATION_FLASH:
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
-        
-        try:
-            
-            HydrusFlashHandling.RenderPageToFile( path, temp_path, 1 )
-            
-            thumbnail_numpy = HydrusImageHandling.GenerateThumbnailNumPyFromStaticImagePath( temp_path, target_resolution, HC.IMAGE_PNG )
-            
-        except Exception as e:
-            
-            PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
-            
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
-            
-        finally:
-            
-            HydrusTemp.CleanUpTempPath( os_file_handle, temp_path )
-            
+        # leaving this in place for now, rather than saying 'flash has no thumbs now', to keep legacy flash thumbs alive
+        thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
         
     elif mime in HC.IMAGES or mime == HC.ANIMATION_WEBP:
         
@@ -449,6 +414,11 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
         
         raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-heif library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
         
+    
+    if mime in HC.PIL_AVIF_MIMES and not HydrusImageHandling.AVIF_OK:
+        
+        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-avif-plugin library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
+        
     if mime == HC.IMAGE_JXL and not HydrusImageHandling.JXL_OK:
         
         raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-jxl-plugin library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
@@ -586,9 +556,6 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
             
             HydrusData.Print( 'Problem calculating resolution for "{}":'.format( path ) )
             HydrusData.PrintException( e )
-            HydrusData.Print( 'Attempting PSD resolution fallback' )
-
-            ( width, height ) = HydrusPSDHandling.GetPSDResolutionFallback( path )
             
         
     # must be before VIEWABLE_ANIMATIONS
@@ -596,7 +563,7 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
         
         ( ( width, height ), duration_ms, num_frames ) = HydrusUgoiraHandling.GetUgoiraProperties( path )
         
-    elif mime in HC.VIDEO or mime in HC.HEIF_TYPE_SEQUENCES:
+    elif mime in HC.VIDEO or mime in HC.HEIF_TYPE_SEQUENCES or mime == HC.IMAGE_AVIF_SEQUENCE:
         
         ( ( width, height ), duration_ms, num_frames, has_audio ) = HydrusVideoHandling.GetFFMPEGVideoProperties( path )
         

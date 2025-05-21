@@ -20,6 +20,15 @@ number_test_operator_to_str_lookup = {
     NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE : HC.UNICODE_APPROX_EQUAL
 }
 
+number_test_operator_to_desc_lookup = {
+    NUMBER_TEST_OPERATOR_LESS_THAN : 'less than',
+    NUMBER_TEST_OPERATOR_GREATER_THAN : 'greater than',
+    NUMBER_TEST_OPERATOR_EQUAL : 'equal',
+    NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT : 'equal within a percentage range',
+    NUMBER_TEST_OPERATOR_NOT_EQUAL : 'not equal',
+    NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE : 'equal within an absolute range'
+}
+
 legacy_str_operator_to_number_test_operator_lookup = { s : o for ( o, s ) in number_test_operator_to_str_lookup.items() }
 
 number_test_operator_to_pretty_str_lookup = {
@@ -118,45 +127,54 @@ class NumberTest( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetLambda( self ):
+    def GetLambda( self, replacement_test_value = None ):
+        
+        if replacement_test_value is None:
+            
+            value_to_test = self.value
+            
+        else:
+            
+            value_to_test = replacement_test_value
+            
         
         if self.operator == NUMBER_TEST_OPERATOR_LESS_THAN:
             
-            if self.value > 0:
+            if value_to_test > 0:
                 
-                return lambda x: x is None or x < self.value
+                return lambda x: x is None or x < value_to_test
                 
             else:
                 
-                return lambda x: x is not None and x < self.value
+                return lambda x: x is not None and x < value_to_test
                 
             
         elif self.operator == NUMBER_TEST_OPERATOR_GREATER_THAN:
             
-            if self.value < 0:
+            if value_to_test < 0:
                 
-                return lambda x: x is None or x > self.value
+                return lambda x: x is None or x > value_to_test
                 
             else:
                 
-                return lambda x: x is not None and x > self.value
+                return lambda x: x is not None and x > value_to_test
                 
             
         elif self.operator == NUMBER_TEST_OPERATOR_EQUAL:
             
-            if self.value == 0:
+            if value_to_test == 0:
                 
-                return lambda x: x is None or x == self.value
+                return lambda x: x is None or x == value_to_test
                 
             else:
                 
-                return lambda x: x == self.value
+                return lambda x: x == value_to_test
                 
             
         elif self.operator == NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT:
             
-            lower = self.value * ( 1 - self.extra_value )
-            upper = self.value * ( 1 + self.extra_value )
+            lower = value_to_test * ( 1 - self.extra_value )
+            upper = value_to_test * ( 1 + self.extra_value )
             
             if lower <= 0:
                 
@@ -169,8 +187,8 @@ class NumberTest( HydrusSerialisable.SerialisableBase ):
             
         elif self.operator == NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE:
             
-            lower = self.value - self.extra_value
-            upper = self.value + self.extra_value
+            lower = value_to_test - self.extra_value
+            upper = value_to_test + self.extra_value
             
             if lower <= 0:
                 
@@ -183,13 +201,13 @@ class NumberTest( HydrusSerialisable.SerialisableBase ):
             
         elif self.operator == NUMBER_TEST_OPERATOR_NOT_EQUAL:
             
-            if self.value == 0:
+            if value_to_test == 0:
                 
-                return lambda x: x is not None and x != self.value
+                return lambda x: x is not None and x != value_to_test
                 
             else:
                 
-                return lambda x: x is None or x != self.value
+                return lambda x: x is None or x != value_to_test
                 
             
         
@@ -285,14 +303,23 @@ class NumberTest( HydrusSerialisable.SerialisableBase ):
         return actually_zero or less_than_one
         
     
-    def ToString( self, absolute_number_renderer: typing.Optional[ typing.Callable ] = None ) -> str:
+    def ToString( self, absolute_number_renderer: typing.Optional[ typing.Callable ] = None, replacement_value_string: typing.Optional[ str ] = None ) -> str:
         
         if absolute_number_renderer is None:
             
             absolute_number_renderer = HydrusNumbers.ToHumanInt
             
         
-        result = f'{number_test_operator_to_str_lookup[ self.operator ]} {absolute_number_renderer( self.value )}'
+        if replacement_value_string is None:
+            
+            value_string = absolute_number_renderer( self.value )
+            
+        else:
+            
+            value_string = replacement_value_string
+            
+        
+        result = f'{number_test_operator_to_str_lookup[ self.operator ]} {value_string}'
         
         if self.operator == NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT:
             
@@ -327,9 +354,9 @@ class NumberTest( HydrusSerialisable.SerialisableBase ):
         return lambda x: False not in ( lamb( x ) for lamb in lambdas )
         
     
-    def Test( self, value ) -> bool:
+    def Test( self, value, replacement_test_value = None ) -> bool:
         
-        return self.GetLambda()( value )
+        return self.GetLambda( replacement_test_value = replacement_test_value )( value )
         
     
 
