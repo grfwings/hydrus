@@ -22,12 +22,11 @@ PyYAML>=5.0.0
 requests==2.32.3
 Send2Trash>=1.5.0
 service-identity>=18.1.0
-setuptools==70.3.0
 show-in-file-manager>=1.1.5
 twisted[tls,http2]>=20.3.0
 
 opencv-python-headless==4.10.0.84
 mpv==1.0.7
 
-QtPy==2.4.1
-PySide6==6.7.3
+QtPy==2.4.3
+PySide6==6.8.2.1

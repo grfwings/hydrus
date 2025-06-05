@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import threading
 import typing
 
@@ -145,6 +146,14 @@ class DataCache( object ):
         with self._lock:
             
             self._Delete( key )
+            
+        
+    
+    def GetAllKeys( self ) -> list[ object ]:
+        
+        with self._lock:
+            
+            return list( self._keys_to_data.keys() )
             
         
     

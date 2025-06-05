@@ -1,5 +1,5 @@
 import collections
-import typing
+import collections.abc
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusNumbers
@@ -20,7 +20,7 @@ SEARCH_TYPE_OR = 1
 
 class FileSystemPredicates( object ):
     
-    def __init__( self, predicates: typing.Collection[ ClientSearchPredicate.Predicate ] ):
+    def __init__( self, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ] ):
         
         system_predicates = [ predicate for predicate in predicates if predicate.GetType() in ClientSearchPredicate.SYSTEM_PREDICATE_TYPES ]
         
@@ -489,7 +489,7 @@ class FileSystemPredicates( object ):
         return self._limit
         
     
-    def GetNumTagsNumberTests( self ) -> typing.Dict[ str, typing.List[ ClientNumberTest.NumberTest ] ]:
+    def GetNumTagsNumberTests( self ) -> dict[ str, list[ ClientNumberTest.NumberTest ] ]:
         
         namespaces_to_tests = collections.defaultdict( list )
         
@@ -738,9 +738,15 @@ class FileSearchContext( HydrusSerialisable.SerialisableBase ):
         
     
     def GetNamespacesToExclude( self ): return self._namespaces_to_exclude
+    
     def GetNamespacesToInclude( self ): return self._namespaces_to_include
+    
     def GetORPredicates( self ): return self._or_predicates
-    def GetPredicates( self ): return self._predicates
+    
+    def GetPredicates( self ) -> list[ ClientSearchPredicate.Predicate ]:
+        
+        return self._predicates
+        
     
     def GetSummary( self ):
         

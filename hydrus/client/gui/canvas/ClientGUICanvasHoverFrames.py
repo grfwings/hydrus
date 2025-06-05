@@ -1,9 +1,12 @@
+import typing
+
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
+from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
@@ -22,7 +25,6 @@ from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import ClientGUIShortcuts
-from hydrus.client.gui import ClientGUIShortcutControls
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvasMedia
@@ -65,7 +67,7 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawIncDec( painter, 0, 0, self._service_key, self._rating_state, self._rating, self._iconsize )
+            ClientGUIRatings.DrawIncDec( painter, int( ClientGUIPainterShapes.PAD_PX / 2 ), int( ClientGUIPainterShapes.PAD_PX / 2 ), self._service_key, self._rating_state, self._rating, self._iconsize )
             
         
     
@@ -139,6 +141,12 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         self._UpdateTooltip()    
         
     
+    def sizeHint( self ):
+        
+        pad = ClientGUIPainterShapes.PAD_PX
+        
+        return QC.QSize( self._iconsize.width() + pad, self._iconsize.height() + pad )
+    
 
 class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
     
@@ -162,7 +170,7 @@ class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawLike( painter, ClientGUIPainterShapes.PAD_PX / 2, 0, self._service_key, self._rating_state, self._iconsize )
+            ClientGUIRatings.DrawLike( painter, int( ClientGUIPainterShapes.PAD_PX / 2 ), int( ClientGUIPainterShapes.PAD_PX / 2 ), self._service_key, self._rating_state, self._iconsize )
             
         
     
@@ -258,7 +266,7 @@ class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
         
     
 
-class RatingNumericalCanvas( ClientGUIRatings.RatingNumerical ):
+class RatingNumericalCanvas( ClientGUIRatings.RatingNumericalControl ):
 
     def __init__( self, parent, service_key, canvas_key, icon_size ):
         
@@ -297,7 +305,7 @@ class RatingNumericalCanvas( ClientGUIRatings.RatingNumerical ):
         
         if self._current_media is not None:
             
-            ClientGUIRatings.DrawNumerical( painter, 0, 0, self._service_key, self._rating_state, self._rating, self._iconsize )
+            ClientGUIRatings.DrawNumerical( painter, ClientGUIPainterShapes.PAD_PX / 2, ClientGUIPainterShapes.PAD_PX / 2, self._service_key, self._rating_state, self._rating, self._iconsize )
             
         
     
@@ -1089,7 +1097,9 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         menu = ClientGUIMenus.GenerateMenu( self )
         
-        ClientGUIMenus.AppendMenuItem( menu, 'edit shortcuts', 'edit your sets of shortcuts, and change what shortcuts are currently active on this media viewer', ClientGUIShortcutControls.ManageShortcuts, self )
+        from hydrus.client.gui.panels import ClientGUIManageOptionsPanel
+        
+        ClientGUIMenus.AppendMenuItem( menu, 'edit shortcuts', 'edit your sets of shortcuts, and change what shortcuts are currently active on this media viewer', ClientGUIManageOptionsPanel.ManageShortcuts, self )
         
         if len( custom_shortcuts_names ) > 0:
             
@@ -1552,7 +1562,7 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         # now incdec
         
-        incdec_hbox = QP.HBoxLayout( spacing = 0 )
+        incdec_hbox = QP.HBoxLayout( spacing = 0, margin = ClientGUIPainterShapes.PAD_PX )
         
         incdec_services = CG.client_controller.services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
         
@@ -1825,6 +1835,8 @@ class NotePanel( QW.QWidget ):
         try:
             
             if event.type() == QC.QEvent.Type.MouseButtonPress:
+                
+                event = typing.cast( QG.QMouseEvent, event )
                 
                 if event.button() == QC.Qt.MouseButton.LeftButton:
                     
@@ -2217,7 +2229,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         QP.AddToLayout( self._comparison_statements_vbox, self._comparison_statement_score_summary, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        self._comparison_statement_names = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'jpeg_quality', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration', 'a_is_exact_match_b_advanced_test' ]
+        self._comparison_statement_names = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'jpeg_quality', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration', 'a_and_b_are_visual_duplicates' ]
         
         self._comparison_statements_sts = {}
         
@@ -2225,6 +2237,7 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             panel = QW.QWidget( self )
             
+            # don't set tooltip here, we do it later
             st = ClientGUICommon.BetterStaticText( panel, 'init' )
             
             st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
@@ -2385,8 +2398,18 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
                     
                 
             
+            # minimumsize is not immediately updated without this
+            self.layout().activate()
+            
+            self._SizeAndPosition()
+            
         
         def pre_work_callable():
+            
+            if self._current_media is None or self._comparison_media is None:
+                
+                raise HydrusExceptions.CancelledException()
+                
             
             return ( self._current_media.GetMediaResult(), self._comparison_media.GetMediaResult() )
             
@@ -2461,10 +2484,14 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
                     
                     st.style().polish( st )
                     
-                    if name == 'a_is_exact_match_b_advanced_test':
+                    if name == 'a_and_b_are_visual_duplicates':
                         
-                        tt = 'This is a test comparison line from hydev for the duplicates auto-resolution system. It is supposed to detect exact duplicates that are only resizes or re-encodes. It will not consider a lighter/darker/recolour as a "visual duplicate". Is it making a correct prediction here? If not, hydev would like you to send the pair in so he can check it out.\n\nI mostly want to see false positives. It is fine if a particularly blurry/artifacty duplicate pair is not considered "visual duplicates", but if two actual alternates are considered "visual duplicates", I would like to see them! Thank you for testing.'
+                        tt = f'{statement}\n\nThis uses a custom visual inspection algorithm to try to differentiate resizes/re-encodes vs recolours/alternates. It is pretty good and you can generally trust it. On edge cases, it intentionally errs on the side of false negative.'
                         st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+                        
+                    else:
+                        
+                        st.setToolTip( ClientGUIFunctions.WrapToolTip( statement ) )
                         
                     
                 

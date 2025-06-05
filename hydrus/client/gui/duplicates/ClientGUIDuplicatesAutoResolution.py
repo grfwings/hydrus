@@ -1,3 +1,4 @@
+import collections.abc
 import threading
 import time
 import typing
@@ -41,7 +42,7 @@ from hydrus.client.gui.widgets import ClientGUINumberTest
 
 class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, duplicates_auto_resolution_rules: typing.Collection[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ] ):
+    def __init__( self, parent, duplicates_auto_resolution_rules: collections.abc.Collection[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ] ):
         
         super().__init__( parent )
         
@@ -203,7 +204,7 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         self._duplicates_auto_resolution_rules.AddData( duplicates_auto_resolution_rule, select_sort_and_scroll = True )
         
     
-    def GetValue( self ) -> typing.List[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ]:
+    def GetValue( self ) -> list[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ]:
         
         return self._duplicates_auto_resolution_rules.GetData()
         
@@ -231,6 +232,9 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
             
             self._operation_mode.addItem( ClientDuplicatesAutoResolution.duplicates_auto_resolution_rule_operation_mode_desc_lookup[ operation_mode ], operation_mode )
             
+        
+        self._max_pending_pairs = ClientGUICommon.NoneableSpinCtrl( self._rule_panel, 512, min = 1 )
+        self._max_pending_pairs.setToolTip( ClientGUIFunctions.WrapToolTip( 'Testing needs CPU time. It is generally good to keep a semi-automatic pending queue short and snappy in case you need to change anything (thus resetting the queue) in future.' ) )
         
         self._main_notebook = ClientGUICommon.BetterNotebook( self )
         
@@ -270,6 +274,7 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
         
         self._name.setText( self._duplicates_auto_resolution_rule.GetName() )
         self._operation_mode.SetValue( self._duplicates_auto_resolution_rule.GetOperationMode() )
+        self._max_pending_pairs.SetValue( self._duplicates_auto_resolution_rule.GetMaxPendingPairs() )
         
         #
         
@@ -354,6 +359,7 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
         
         rows.append( ( 'name: ', self._name ) )
         rows.append( ( 'operation: ', self._operation_mode ) )
+        rows.append( ( 'max pending pairs (semi-automatic only): ', self._max_pending_pairs ) )
         
         gridbox = ClientGUICommon.WrapInGrid( self._rule_panel, rows )
         
@@ -374,7 +380,11 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
         
         #
         
+        self._operation_mode.currentIndexChanged.connect( self._OperationModeChanged )
+        
         self._main_notebook.currentChanged.connect( self._CurrentPageChanged )
+        
+        self._OperationModeChanged()
         
     
     def _CurrentPageChanged( self ):
@@ -385,6 +395,15 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
             
             self._full_preview_panel.PageShown()
             
+        else:
+            
+            self._full_preview_panel.PageIsHidden()
+            
+        
+    
+    def _OperationModeChanged( self ):
+        
+        self._max_pending_pairs.setEnabled( self._operation_mode.GetValue() == ClientDuplicatesAutoResolution.DUPLICATES_AUTO_RESOLUTION_RULE_OPERATION_MODE_WORK_BUT_NO_ACTION )
         
     
     def GetValue( self ):
@@ -396,6 +415,8 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
         duplicates_auto_resolution_rule.SetOperationMode( self._operation_mode.GetValue() )
         
         duplicates_auto_resolution_rule.SetPotentialDuplicatesSearchContext( self._potential_duplicates_search_context.GetValue() )
+        
+        duplicates_auto_resolution_rule.SetMaxPendingPairs( self._max_pending_pairs.GetValue() )
         
         #
         
@@ -624,9 +645,11 @@ class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel
         
         allowed_operators = [
             ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
             ClientNumberTest.NUMBER_TEST_OPERATOR_EQUAL,
             ClientNumberTest.NUMBER_TEST_OPERATOR_NOT_EQUAL,
             ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT
         ]
@@ -942,7 +965,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
     
     def _Edit( self ):
         
-        def do_it_qt( duplicates_auto_resolution_rules: typing.List[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ] ):
+        def do_it_qt( duplicates_auto_resolution_rules: list[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ] ):
             
             with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit rules' ) as dlg:
                 

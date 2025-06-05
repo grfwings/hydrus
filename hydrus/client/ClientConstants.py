@@ -640,6 +640,9 @@ class GlobalPixmaps( object ):
         self.highlight = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'highlight.png' ) )
         self.clear_highlight = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'clear_highlight.png' ) )
         
+        self.lock = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'lock.png' ) )
+        self.lock_open = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'lock_open.png' ) )
+        
         self.star = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'star.png' ) )
         
         #self.listctrl = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'listctrl.png' ) )
@@ -666,6 +669,8 @@ class GlobalIcons( object ):
     
     def __init__( self ):
         
+        self.user_icons = {}
+        
         self._Initialise()
         
     
@@ -688,6 +693,11 @@ class GlobalIcons( object ):
         self.tumblr = QG.QIcon( os.path.join( HC.STATIC_DIR, 'tumblr.svg' ) )
         self.discord = QG.QIcon( os.path.join( HC.STATIC_DIR, 'discord.svg' ) )
         self.patreon = QG.QIcon( os.path.join( HC.STATIC_DIR, 'patreon.svg' ) )
+        
+        self.RefreshUserIcons()
+        
+    
+    def RefreshUserIcons( self ):
         
         self.user_icons = {}
         

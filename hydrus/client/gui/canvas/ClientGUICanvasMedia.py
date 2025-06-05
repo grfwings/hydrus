@@ -113,7 +113,7 @@ def CalculateCanvasMediaSize( media, canvas_size: QC.QSize, show_action ):
     return ( canvas_width, canvas_height )
     
 
-def CalculateCanvasZooms( canvas_size: QC.QSize, canvas_type: int, device_pixel_ratio: float, media, show_action ) -> typing.Dict[ int, int ]:
+def CalculateCanvasZooms( canvas_size: QC.QSize, canvas_type: int, device_pixel_ratio: float, media, show_action ) -> dict[ int, int ]:
     
     zoom_types_to_zooms = {
         MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE : 1.0,
@@ -2045,11 +2045,11 @@ class MediaContainer( QW.QWidget ):
             
         elif pan_type == CAC.SIMPLE_PAN_VERTICAL_CENTER:
             
-            delta_y = ( canvas_size.height() / 2 ) - ( my_pos.y() + ( my_size.height() / 2 ) )
+            delta_y = int( canvas_size.height() / 2 ) - ( my_pos.y() + int( my_size.height() / 2 ) )
             
         elif pan_type == CAC.SIMPLE_PAN_HORIZONTAL_CENTER:
             
-            delta_x = ( canvas_size.width() / 2 ) - ( my_pos.x() + ( my_size.width() / 2 ) )
+            delta_x = int( canvas_size.width() / 2 ) - ( my_pos.x() + int( my_size.width() / 2 ) )
             
         
         delta = QC.QPoint( delta_x, delta_y )
@@ -3685,7 +3685,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._canvas_tiles[ tile_coordinate ] = ( tile_pixmap, raw_canvas_clip_rect.topLeft() )
         
     
-    def _GetRawClipRectsFromTileCoordinates( self, tile_coordinate ) -> typing.Tuple[ QC.QRect, QC.QRect ]:
+    def _GetRawClipRectsFromTileCoordinates( self, tile_coordinate ) -> tuple[ QC.QRect, QC.QRect ]:
         
         ( tile_x, tile_y ) = tile_coordinate
         

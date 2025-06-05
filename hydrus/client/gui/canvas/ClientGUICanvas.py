@@ -1,3 +1,4 @@
+import collections.abc
 import typing
 
 from qtpy import QtCore as QC
@@ -394,7 +395,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def _Delete( self, media = None, default_reason = None, file_service_key = None, just_get_content_update_packages = False ) -> typing.Union[ bool, typing.Collection[ ClientContentUpdates.ContentUpdatePackage ] ]:
+    def _Delete( self, media = None, default_reason = None, file_service_key = None, just_get_content_update_packages = False ) -> typing.Union[ bool, collections.abc.Collection[ ClientContentUpdates.ContentUpdatePackage ] ]:
         
         if media is None:
             
@@ -1104,7 +1105,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     ClientGUIMediaSimpleActions.ShowDuplicatesInNewPage( self._location_context, hash, duplicate_type )
                     
                 
-            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_FOCUSED_FALSE_POSITIVES:
+            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_ALL_FOCUSED_FALSE_POSITIVES:
                 
                 # TODO: when media knows dupe relationships, all these lads here need a media scan for the existence of alternate groups or whatever
                 # no duplicate group->don't start the process
@@ -1113,16 +1114,16 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     hash = self._current_media.GetHash()
                     
-                    ClientGUIDuplicateActions.ClearFalsePositives( self, ( hash, ) )
+                    ClientGUIDuplicateActions.ClearAllFalsePositives( self, ( hash, ) )
                     
                 
-            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_FALSE_POSITIVES:
+            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_ALL_FALSE_POSITIVES:
                 
                 if self._current_media is not None:
                     
                     hash = self._current_media.GetHash()
                     
-                    ClientGUIDuplicateActions.ClearFalsePositives( self, ( hash, ) )
+                    ClientGUIDuplicateActions.ClearAllFalsePositives( self, ( hash, ) )
                     
                 
             elif action == CAC.SIMPLE_DUPLICATE_MEDIA_DISSOLVE_FOCUSED_ALTERNATE_GROUP:
@@ -1280,7 +1281,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM:
                 
                 self._media_container.ZoomSwitch()
-            
+                
             elif action == CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER:
                 
                 self._media_container.ZoomSwitch( zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
@@ -1567,13 +1568,23 @@ class MediaContainerDragClickReportingFilter( QC.QObject ):
         
         try:
             
-            if event.type() == QC.QEvent.Type.MouseButtonPress and event.button() == QC.Qt.MouseButton.LeftButton:
+            if event.type() == QC.QEvent.Type.MouseButtonPress:
                 
-                self._canvas.BeginDrag()
+                event = typing.cast( QG.QMouseEvent, event )
                 
-            elif event.type() == QC.QEvent.Type.MouseButtonRelease and event.button() == QC.Qt.MouseButton.LeftButton:
+                if event.button() == QC.Qt.MouseButton.LeftButton:
+                    
+                    self._canvas.BeginDrag()
+                    
                 
-                self._canvas.EndDrag()
+            elif event.type() == QC.QEvent.Type.MouseButtonRelease:
+                
+                event = typing.cast( QG.QMouseEvent, event )
+                
+                if event.button() == QC.Qt.MouseButton.LeftButton:
+                    
+                    self._canvas.EndDrag()
+                    
                 
             
         except Exception as e:
@@ -1834,6 +1845,8 @@ class CanvasPanel( Canvas ):
 
 class CanvasWithHovers( Canvas ):
     
+    canvasWithHoversExiting = QC.Signal()
+    
     def __init__( self, parent, location_context ):
         
         super().__init__( parent, location_context )
@@ -2020,89 +2033,96 @@ class CanvasWithHovers( Canvas ):
         
         notes_width = int( my_width * ClientGUICanvasHoverFrames.SIDE_HOVER_PROPORTIONS ) - ( ( QFRAME_PADDING + NOTE_MARGIN ) * 2 )
         
-        original_font = painter.font()
+        painter.save()
         
-        name_font = QG.QFont( original_font )
-        name_font.setBold( True )
-        
-        notes_font = QG.QFont( original_font )
-        notes_font.setBold( False )
-        
-        # old code that tried to draw it to a smaller box
-        '''
-        for ( name, note ) in names_to_notes.items():
+        try:
             
-            # without wrapping, let's see if we fit into a smaller box than the max possible
+            original_font = painter.font()
             
-            painter.setFont( name_font )
+            name_font = QG.QFont( original_font )
+            name_font.setBold( True )
             
-            name_text_size = painter.fontMetrics().size( 0, name )
+            notes_font = QG.QFont( original_font )
+            notes_font.setBold( False )
             
-            painter.setFont( notes_font )
-            
-            note_text_size = painter.fontMetrics().size( 0, note )
-            
-            notes_width = max( notes_width, name_text_size.width(), note_text_size.width() )
-            
-            if notes_width > max_notes_width:
+            # old code that tried to draw it to a smaller box
+            '''
+            for ( name, note ) in names_to_notes.items():
                 
-                notes_width = max_notes_width
+                # without wrapping, let's see if we fit into a smaller box than the max possible
                 
-                break
+                painter.setFont( name_font )
                 
-            
-        '''
-        
-        left_x = my_width - ( notes_width + QFRAME_PADDING + NOTE_MARGIN )
-        
-        current_y += QFRAME_PADDING + NOTE_MARGIN
-        
-        draw_a_test_rect = False
-        
-        if draw_a_test_rect:
-            
-            painter.setPen( QG.QPen( QG.QColor( 20, 20, 20 ) ) )
-            painter.setBrush( QC.Qt.BrushStyle.NoBrush )
-            
-            painter.drawRect( left_x, current_y, notes_width, 100 )
-            
-        
-        for name in sorted( names_to_notes.keys() ):
-            
-            current_y += NOTE_MARGIN
-            
-            painter.setFont( name_font )
-            
-            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
-            
-            painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
-            
-            current_y += text_rect.height() + NOTE_SPACING
-            
-            #
-            
-            painter.setFont( notes_font )
-            
-            note = notes_manager.GetNote( name )
-            
-            text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
-            
-            # this is important to make sure the justify does fill the available space, rather than the above bounding rect, which is the minimum width using justify
-            text_rect.setWidth( notes_width )
-            
-            painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
-            
-            current_y += text_rect.height()
-            
-            current_y += NOTE_MARGIN
-            
-            if current_y >= my_height:
+                name_text_size = painter.fontMetrics().size( 0, name )
                 
-                break
+                painter.setFont( notes_font )
+                
+                note_text_size = painter.fontMetrics().size( 0, note )
+                
+                notes_width = max( notes_width, name_text_size.width(), note_text_size.width() )
+                
+                if notes_width > max_notes_width:
+                    
+                    notes_width = max_notes_width
+                    
+                    break
+                    
+                
+            '''
+            
+            left_x = my_width - ( notes_width + QFRAME_PADDING + NOTE_MARGIN )
+            
+            current_y += QFRAME_PADDING + NOTE_MARGIN
+            
+            draw_a_test_rect = False
+            
+            if draw_a_test_rect:
+                
+                painter.setPen( QG.QPen( QG.QColor( 20, 20, 20 ) ) )
+                painter.setBrush( QC.Qt.BrushStyle.NoBrush )
+                
+                painter.drawRect( left_x, current_y, notes_width, 100 )
                 
             
-        
-        painter.setFont( original_font )
+            for name in sorted( names_to_notes.keys() ):
+                
+                current_y += NOTE_MARGIN
+                
+                painter.setFont( name_font )
+                
+                text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
+                
+                painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.TextFlag.TextWordWrap, name )
+                
+                current_y += text_rect.height() + NOTE_SPACING
+                
+                #
+                
+                painter.setFont( notes_font )
+                
+                note = notes_manager.GetNote( name )
+                
+                text_rect = painter.fontMetrics().boundingRect( left_x, current_y, notes_width, 100, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
+                
+                # this is important to make sure the justify does fill the available space, rather than the above bounding rect, which is the minimum width using justify
+                text_rect.setWidth( notes_width )
+                
+                painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignJustify | QC.Qt.TextFlag.TextWordWrap, note )
+                
+                current_y += text_rect.height()
+                
+                current_y += NOTE_MARGIN
+                
+                if current_y >= my_height:
+                    
+                    break
+                    
+                
+            
+        finally:
+            
+            painter.restore()
+            
         
     
     def _DrawTags( self, painter: QG.QPainter ):
@@ -2237,7 +2257,7 @@ class CanvasWithHovers( Canvas ):
             ( VBOX_SPACING, VBOX_MARGIN ) = ( 2, 2 )
             
         
-        current_y = QFRAME_PADDING + VBOX_MARGIN
+        current_y = QFRAME_PADDING + VBOX_MARGIN + int( ClientGUIPainterShapes.PAD_PX / 2 )
         
         # ratings
         
@@ -2253,7 +2273,7 @@ class CanvasWithHovers( Canvas ):
         
         like_services.reverse()
         
-        like_rating_current_x = my_width - ( STAR_DX + STAR_PAD.width() / 2 ) - ( QFRAME_PADDING + VBOX_MARGIN )
+        like_rating_current_x = my_width - ( STAR_DX + int( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
         
         for like_service in like_services:
             
@@ -2278,11 +2298,15 @@ class CanvasWithHovers( Canvas ):
             
             service_key = numerical_service.GetServiceKey()
             
+            custom_pad = numerical_service.GetCustomPad()
+            
             ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( self._current_media, ), service_key )
             
-            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, STAR_PAD.width() )
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, custom_pad )
             
-            ClientGUIRatings.DrawNumerical( painter, my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ), current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ), STAR_PAD.width() )
+            current_x = my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ) + STAR_PAD.width() / 2
+            
+            ClientGUIRatings.DrawNumerical( painter, current_x, current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ), custom_pad )
             
             current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
             
@@ -2294,7 +2318,7 @@ class CanvasWithHovers( Canvas ):
         
         control_width = RATING_ICON_SET_SIZE * 2
         
-        incdec_rating_current_x = my_width - control_width - ( QFRAME_PADDING + VBOX_MARGIN )
+        incdec_rating_current_x = my_width - ( control_width + int( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
         
         for incdec_service in incdec_services:
             
@@ -2304,12 +2328,12 @@ class CanvasWithHovers( Canvas ):
             
             ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating, QC.QSize( RATING_ICON_SET_SIZE * 2, RATING_ICON_SET_SIZE ) )
             
-            incdec_rating_current_x -= control_width
+            incdec_rating_current_x -= control_width + STAR_PAD.width()
             
         
         if len( incdec_services ) > 0:
             
-            current_y += STAR_DY + VBOX_SPACING
+            current_y += STAR_DY + int( STAR_PAD.height() / 2 ) + VBOX_SPACING
             
         
         # icons
@@ -2495,6 +2519,8 @@ class CanvasWithHovers( Canvas ):
     def CleanBeforeDestroy( self ):
         
         self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
+        
+        self.canvasWithHoversExiting.emit()
         
         super().CleanBeforeDestroy()
         
@@ -3647,7 +3673,7 @@ class CanvasFilterDuplicates( CanvasWithHovers ):
         self._RecoverAfterMediaUpdate()
         
     
-    def ProcessServiceUpdates( self, service_keys_to_service_updates: typing.Dict[ bytes, typing.Collection[ ClientServices.ServiceUpdate ] ]  ):
+    def ProcessServiceUpdates( self, service_keys_to_service_updates: dict[ bytes, collections.abc.Collection[ ClientServices.ServiceUpdate ] ]  ):
         
         self._media_list.ProcessServiceUpdates( service_keys_to_service_updates )
         
@@ -3985,7 +4011,7 @@ class CanvasMediaList( CanvasWithHovers ):
             
         
     
-    def ProcessServiceUpdates( self, service_keys_to_service_updates: typing.Dict[ bytes, typing.Collection[ ClientServices.ServiceUpdate ] ]  ):
+    def ProcessServiceUpdates( self, service_keys_to_service_updates: dict[ bytes, collections.abc.Collection[ ClientServices.ServiceUpdate ] ]  ):
         
         self._media_list.ProcessServiceUpdates( service_keys_to_service_updates )
         
@@ -3993,7 +4019,7 @@ class CanvasMediaList( CanvasWithHovers ):
         
     
 
-def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContext, kept: typing.Collection[ ClientMediaResult.MediaResult ], deleted: typing.Collection[ ClientMediaResult.MediaResult ] ):
+def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContext, kept: collections.abc.Collection[ ClientMediaResult.MediaResult ], deleted: collections.abc.Collection[ ClientMediaResult.MediaResult ] ):
     
     # there's a problem here that if the user hits F5 super quick, they may see files they just actioned get archived/deleted late
     # we had some odd 'remove again' calls to try to double-action the remove in this case, but it was awkward especially as we moved to Qt signals for that stuff

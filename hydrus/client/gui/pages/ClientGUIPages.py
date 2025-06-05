@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import typing
 
 from qtpy import QtCore as QC
@@ -920,7 +921,7 @@ def ConvertReasonsAndPagesToStatement( reasons_and_pages: list ) -> str:
         for ( reason, pages ) in reasons_and_pages:
             
             reason = typing.cast( str, reason )
-            pages = typing.cast( typing.List[ Page ], pages )
+            pages = typing.cast( list[ Page ], pages )
             
             names = [ page.GetName() for page in pages ]
             
@@ -1097,7 +1098,21 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 if page_type == 'pages':
                     
-                    self.NewPagesNotebook()
+                    new_notebook = self.NewPagesNotebook()
+                    
+                    if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_pick_new' ):
+                        
+                        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                            
+                            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                                
+                                new_name = dlg.GetValue()
+                                
+                                new_notebook.SetName( new_name )
+                                
+                                CG.client_controller.pub( 'refresh_page_name', new_notebook.GetPageKey() )
+                                
+                            
                     
                 elif page_type == 'page':
                     
@@ -1286,6 +1301,66 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         self._ClosePages( closees, 'pages to the right' )
         
     
+    def _CollapsePage( self, page_index: int ):
+        
+        if 0 <= page_index <= self.count() - 1:
+            
+            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( page_index ) )
+            
+            hashes = page.GetHashes()
+            
+            message = f'This will collect the {HydrusNumbers.ToHumanInt(len(hashes))} files in this page and place them, in current order, in a single new search page. This can work on a page of pages.'
+            message += '\n\n'
+            message += 'The old page will be closed, no matter its type.'
+            
+            result = ClientGUIDialogsQuick.GetYesNo( self, message )
+            
+            if result != QW.QDialog.DialogCode.Accepted:
+                
+                return
+                
+            
+            self._ClosePages( [ page_index ], 'collapsing', polite = False )
+            
+            default_location_context = CG.client_controller.new_options.GetDefaultLocalLocationContext()
+            
+            self.NewPageQuery( default_location_context, initial_hashes = hashes, forced_insertion_index = page_index )
+            
+        
+    
+    def _CollapsePagesToTheRight( self, page_index: int ):
+        
+        closees = [ index for index in range( self.count() ) if index >= page_index ]
+        
+        hashes = []
+        
+        for index in closees:
+            
+            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+            
+            hashes.extend( page.GetHashes() )
+            
+        
+        hashes = HydrusData.DedupeList( hashes )
+        
+        message = f'This will collect the {HydrusNumbers.ToHumanInt(len(hashes))} files in view in the {HydrusNumbers.ToHumanInt(len(closees))} pages and place them, in current order, in a single new search page.'
+        message += '\n\n'
+        message += 'All the pages harvested from will be closed, no matter their type.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, message )
+        
+        if result != QW.QDialog.DialogCode.Accepted:
+            
+            return
+            
+        
+        self._ClosePages( closees, 'collapsing', polite = False )
+        
+        default_location_context = CG.client_controller.new_options.GetDefaultLocalLocationContext()
+        
+        self.NewPageQuery( default_location_context, initial_hashes = hashes, forced_insertion_index = page_index )
+        
+    
     def _DuplicatePage( self, index ):
         
         if index == -1 or index > self.count() - 1:
@@ -1344,7 +1419,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return insertion_index
         
     
-    def _GetMediaPages( self, only_my_level ) -> typing.List[ Page ]:
+    def _GetMediaPages( self, only_my_level ) -> list[ Page ]:
         
         results = []
         
@@ -1369,6 +1444,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     def _GetIndex( self, page_key ):
         
         for ( page, index ) in ( ( self.widget( index ), index ) for index in range( self.count() ) ):
+            
+            page = typing.cast( typing.Union[ Page, PagesNotebook ], page )
             
             if page.GetPageKey() == page_key:
                 
@@ -1400,7 +1477,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self
         
     
-    def _GetPages( self ) -> typing.List[ typing.Union[ Page, "PagesNotebook" ] ]:
+    def _GetPages( self ) -> list[ typing.Union[ Page, "PagesNotebook" ] ]:
         
         return [ self.widget( i ) for i in range( self.count() ) ]
         
@@ -1601,6 +1678,21 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             self._MovePage( page, dest_notebook, 0 )
             
+            if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_send' ):
+                
+                with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                    
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                        
+                        new_name = dlg.GetValue()
+                        
+                        dest_notebook.SetName( new_name )
+                        
+                        CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
+                        
+                    
+                
+            
         
     
     def _SendRightPagesToNewNotebook( self, from_index ):
@@ -1615,7 +1707,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             dest_notebook = self.NewPagesNotebook( forced_insertion_index = pages_index, give_it_a_blank_page = False )
             
-            movees = list( range( from_index + 1, pages_index ) )
+            movees = list( range( from_index, pages_index ) )
             
             movees.reverse()
             
@@ -1624,6 +1716,21 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 page = self.widget( index )
                 
                 self._MovePage( page, dest_notebook, 0 )
+                
+            
+            if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_send' ):
+                
+                with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                    
+                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                        
+                        new_name = dlg.GetValue()
+                        
+                        dest_notebook.SetName( new_name )
+                        
+                        CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
+                        
+                    
                 
             
         
@@ -1863,12 +1970,29 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             ClientGUIMenus.AppendSeparator( menu )
             
-            ClientGUIMenus.AppendMenuItem( menu, 'send this page down to a new page of pages', 'Make a new page of pages and put this page in it.', self._SendPageToNewNotebook, tab_index )
+            collapse_menu = ClientGUIMenus.GenerateMenu( menu )
+            
+            ClientGUIMenus.AppendMenuItem( collapse_menu, 'this page', 'Gather the files in this page and put them all in a new single searc hpage.', self._CollapsePage, tab_index )
             
             if can_go_right:
                 
-                ClientGUIMenus.AppendMenuItem( menu, 'send pages to the right to a new page of pages', 'Make a new page of pages and put all the pages to the right into it.', self._SendRightPagesToNewNotebook, tab_index )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages from here to the right', 'Gather all the files from here to the right and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index, 1 )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages to the right', 'Gather all the files from the right of here and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index + 1, 1 )
                 
+            
+            ClientGUIMenus.AppendMenu( menu, collapse_menu, 'collapse to a single page' )
+            
+            send_down_menu = ClientGUIMenus.GenerateMenu( menu )
+            
+            ClientGUIMenus.AppendMenuItem( send_down_menu, 'this page', 'Make a new page of pages and put this page in it.', self._SendPageToNewNotebook, tab_index )
+            
+            if can_go_right:
+                
+                ClientGUIMenus.AppendMenuItem( send_down_menu, 'pages from here to the right', 'Make a new page of pages and put this and all the pages to the right into it.', self._SendRightPagesToNewNotebook, tab_index )
+                ClientGUIMenus.AppendMenuItem( send_down_menu, 'pages to the right', 'Make a new page of pages and put all the pages to the right into it.', self._SendRightPagesToNewNotebook, tab_index + 1 )
+                
+            
+            ClientGUIMenus.AppendMenu( menu, send_down_menu, 'send down to a new page of pages' )
             
             ClientGUIMenus.AppendSeparator( menu )
             
@@ -2203,7 +2327,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                     
                     over_a_tab = False
                     
-                    widget_under_mouse = QW.QApplication.instance().widgetAt( screen_position )
+                    widget_under_mouse = typing.cast( QW.QApplication, QW.QApplication.instance() ).widgetAt( screen_position )
                     
                     if widget_under_mouse is None:
                         
@@ -2224,6 +2348,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 if event.type() == QC.QEvent.Type.MouseButtonDblClick:
                     
+                    event = typing.cast( QG.QMouseEvent, event )
+                    
                     if event.button() == QC.Qt.MouseButton.LeftButton and over_tab_greyspace and not over_a_tab:
                         
                         self.EventNewPageFromScreenPosition( screen_position )
@@ -2232,6 +2358,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                         
                     
                 elif event.type() == QC.QEvent.Type.MouseButtonRelease:
+                    
+                    event = typing.cast( QG.QMouseEvent, event )
                     
                     if event.button() == QC.Qt.MouseButton.RightButton and ( over_a_tab or over_tab_greyspace ):
                         
@@ -2341,6 +2469,20 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             return page # this can be None
             
+        
+    
+    def GetHashes( self ):
+        
+        hashes = []
+        
+        for page in self.GetMediaPages():
+            
+            hashes.extend( page.GetHashes() )
+            
+        
+        hashes = HydrusData.DedupeList( hashes )
+        
+        return hashes
         
     
     def GetMediaPages( self, only_my_level = False ):
@@ -2691,7 +2833,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return total_file_size
         
     
-    def GetTotalNumHashesAndSeeds( self ) -> typing.Tuple[ int, int ]:
+    def GetTotalNumHashesAndSeeds( self ) -> tuple[ int, int ]:
         
         total_num_hashes = 0
         total_num_seeds = 0
@@ -2820,7 +2962,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         page.InsertSessionNotebookPages( 0, session, page_containers, select_first_page, session_is_clean = session_is_clean )
         
     
-    def InsertSessionNotebookPages( self, forced_insertion_index: int, session: ClientGUISession.GUISessionContainer, page_containers: typing.Collection[ ClientGUISession.GUISessionContainerPage ], select_first_page: bool, session_is_clean = True ):
+    def InsertSessionNotebookPages( self, forced_insertion_index: int, session: ClientGUISession.GUISessionContainer, page_containers: collections.abc.Collection[ ClientGUISession.GUISessionContainerPage ], select_first_page: bool, session_is_clean = True ):
         
         done_first_page = False
         
@@ -3232,6 +3374,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         page_name = None,
         on_deepest_notebook = False,
         do_sort = False,
+        forced_insertion_index = None,
         select_page = True
     ):
         
@@ -3240,10 +3383,13 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             initial_hashes = []
             
         
+        start_system_hash_locked = False
+        
         if initial_predicates is None:
             
             if len( initial_hashes ) > 0:
                 
+                start_system_hash_locked = True
                 initial_predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HASH, value = ( tuple( initial_hashes ), 'sha256' ) ) ]
                 
             else:
@@ -3281,7 +3427,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             file_search_context.SetComplete()
             
         
-        page_manager = ClientGUIPageManager.CreatePageManagerQuery( page_name, file_search_context )
+        page_manager = ClientGUIPageManager.CreatePageManagerQuery( page_name, file_search_context, start_system_hash_locked = start_system_hash_locked )
         
         if initial_sort is not None:
             
@@ -3293,7 +3439,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             page_manager.SetVariable( 'media_collect', initial_collect )
             
         
-        page = self.NewPage( page_manager, initial_hashes = initial_hashes, on_deepest_notebook = on_deepest_notebook, select_page = select_page )
+        page = self.NewPage( page_manager, initial_hashes = initial_hashes, on_deepest_notebook = on_deepest_notebook, forced_insertion_index = forced_insertion_index, select_page = select_page )
         
         # don't need to do 'Do a Collect if needed', since SwapPanel lower down does it for us
         

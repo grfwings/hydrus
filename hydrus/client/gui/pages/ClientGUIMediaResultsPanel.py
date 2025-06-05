@@ -1,7 +1,7 @@
 import collections
+import collections.abc
 import itertools
 import time
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -71,6 +71,9 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     refreshQuery = QC.Signal()
     
     newMediaAdded = QC.Signal()
+    
+    filesAdded = QC.Signal( list )
+    filesRemoved = QC.Signal( list )
     
     def __init__( self, parent, page_key, page_manager: ClientGUIPageManager.PageManager, media_results ):
         
@@ -187,6 +190,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
             canvas_window.userRemovedMedia.connect( self.RemoveMedia )
+            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
+            
             
         
     
@@ -309,7 +314,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         raise HydrusExceptions.DataMissing( 'No media singleton!' )
         
     
-    def _GetMediasForFileCommandTarget( self, file_command_target: int ) -> typing.Collection[ ClientMedia.MediaSingleton ]:
+    def _GetMediasForFileCommandTarget( self, file_command_target: int ) -> collections.abc.Collection[ ClientMedia.MediaSingleton ]:
         
         if file_command_target == CAC.FILE_COMMAND_TARGET_FOCUSED_FILE:
             
@@ -896,6 +901,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
             
+            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
+            
             canvas_frame.SetCanvas( canvas_window )
             
             canvas_window.userRemovedMedia.connect( self.RemoveMedia )
@@ -1213,16 +1220,6 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         pass
         
     
-    def _Remove( self, file_filter: ClientMediaFileFilter.FileFilter ):
-        
-        hashes = file_filter.GetMediaListHashes( self )
-        
-        if len( hashes ) > 0:
-            
-            self._RemoveMediaByHashes( hashes )
-            
-        
-    
     def _RegenerateFileData( self, job_type ):
         
         flat_media = self._GetSelectedFlatMedia()
@@ -1300,6 +1297,27 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 CG.client_controller.CallToThread( CG.client_controller.files_maintenance_manager.ScheduleJob, hashes, job_type )
                 
             
+        
+    
+    def _Remove( self, file_filter: ClientMediaFileFilter.FileFilter ):
+        
+        hashes = file_filter.GetMediaListHashes( self )
+        
+        if len( hashes ) > 0:
+            
+            self._RemoveMediaByHashes( hashes )
+            
+        
+    
+    def _RemoveMediaDirectly( self, singleton_media, collected_media ):
+        
+        super()._RemoveMediaDirectly( singleton_media, collected_media )
+        
+        flat_media = list( singleton_media ) + ClientMedia.FlattenMedia( collected_media )
+        
+        hashes = [ m.GetHash() for m in flat_media ]
+        
+        self.filesRemoved.emit( hashes )
         
     
     def _RescindDownloadSelected( self ):
@@ -1885,14 +1903,20 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             CG.client_controller.pub( 'refresh_page_name', self._page_key )
             
-            result = ClientMedia.ListeningMediaList.AddMediaResults( self, media_results )
+            new_media = ClientMedia.ListeningMediaList.AddMediaResults( self, media_results )
             
             self.newMediaAdded.emit()
             
+            hashes = [ m.GetHash() for m in ClientMedia.FlattenMedia( new_media ) ]
+            
+            self.filesAdded.emit( hashes )
+            
             CG.client_controller.pub( 'notify_new_pages_count' )
             
-            return result
+            return new_media
             
+        
+        return []
         
     
     def CleanBeforeDestroy( self ):
@@ -2122,7 +2146,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     ClientGUIMediaSimpleActions.ShowDuplicatesInNewPage( self._location_context, hash, duplicate_type )
                     
                 
-            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_FOCUSED_FALSE_POSITIVES:
+            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_ALL_FOCUSED_FALSE_POSITIVES:
                 
                 if self._HasFocusSingleton():
                     
@@ -2130,16 +2154,25 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     hash = media.GetHash()
                     
-                    ClientGUIDuplicateActions.ClearFalsePositives( self, ( hash, ) )
+                    ClientGUIDuplicateActions.ClearAllFalsePositives( self, ( hash, ) )
                     
                 
-            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_FALSE_POSITIVES:
+            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_ALL_FALSE_POSITIVES:
                 
                 hashes = self._GetSelectedHashes()
                 
                 if len( hashes ) > 0:
                     
-                    ClientGUIDuplicateActions.ClearFalsePositives( self, hashes )
+                    ClientGUIDuplicateActions.ClearAllFalsePositives( self, hashes )
+                    
+                
+            elif action == CAC.SIMPLE_DUPLICATE_MEDIA_CLEAR_INTERNAL_FALSE_POSITIVES:
+                
+                hashes = self._GetSelectedHashes()
+                
+                if len( hashes ) > 1:
+                    
+                    ClientGUIDuplicateActions.ClearInternalFalsePositives( self, hashes )
                     
                 
             elif action == CAC.SIMPLE_DUPLICATE_MEDIA_DISSOLVE_FOCUSED_ALTERNATE_GROUP:
@@ -2520,7 +2553,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
         
     
-    def ProcessServiceUpdates( self, service_keys_to_service_updates: typing.Dict[ bytes, typing.Collection[ ClientServices.ServiceUpdate ] ] ):
+    def ProcessServiceUpdates( self, service_keys_to_service_updates: dict[ bytes, collections.abc.Collection[ ClientServices.ServiceUpdate ] ] ):
         
         ClientMedia.ListeningMediaList.ProcessServiceUpdates( self, service_keys_to_service_updates )
         

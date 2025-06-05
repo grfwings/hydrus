@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import hashlib
 import itertools    
 import math
@@ -2896,7 +2897,7 @@ class DB( HydrusDB.HydrusDB ):
         return paths
         
     
-    def _GetRelatedTagCountsForOneTag( self, tag_display_type, file_service_id, tag_service_id, search_tag_id, max_num_files_to_search, stop_time_for_finding_results = None ) -> typing.Tuple[ collections.Counter, bool ]:
+    def _GetRelatedTagCountsForOneTag( self, tag_display_type, file_service_id, tag_service_id, search_tag_id, max_num_files_to_search, stop_time_for_finding_results = None ) -> tuple[ collections.Counter, bool ]:
         
         # a user provided the basic idea here
         
@@ -3834,6 +3835,7 @@ class DB( HydrusDB.HydrusDB ):
         
         self._read_commands_to_methods.update(
             {
+                'all_potential_duplicate_pairs_and_distances' : self.modules_files_duplicates.GetAllPotentialDuplicatePairsAndDistances,
                 'autocomplete_predicates' : self.modules_tag_search.GetAutocompletePredicates,
                 'client_files_subfolders' : self.modules_files_physical_storage.GetClientFilesSubfolders,
                 'deferred_delete_data' : self.modules_db_maintenance.GetDeferredDeleteTableData,
@@ -3861,7 +3863,7 @@ class DB( HydrusDB.HydrusDB ):
                 'missing_archive_timestamps_legacy_test' : self.modules_files_inbox.WeHaveMissingLegacyArchiveTimestamps,
                 'missing_repository_update_hashes' : self.modules_repositories.GetRepositoryUpdateHashesIDoNotHave,
                 'num_deferred_file_deletes' : self.modules_files_storage.GetDeferredPhysicalDeleteCounts,
-                'potential_duplicate_pairs' : self.modules_files_duplicates_file_query.GetPotentialDuplicatePairs,
+                'potential_duplicate_pairs_fragmentary' : self.modules_files_duplicates_file_query.GetPotentialDuplicatePairsForAutoResolutionMediaResults,
                 'recent_tags' : self.modules_recent_tags.GetRecentTags,
                 'repository_progress' : self.modules_repositories.GetRepositoryProgress,
                 'repository_update_hashes_to_process' : self.modules_repositories.GetRepositoryUpdateHashesICanProcess,
@@ -3940,8 +3942,8 @@ class DB( HydrusDB.HydrusDB ):
                 'analyze' : self.modules_db_maintenance.AnalyzeDueTables,
                 'associate_repository_update_hashes' : self.modules_repositories.AssociateRepositoryUpdateHashes,
                 'clear_deferred_physical_delete' : self.modules_files_storage.ClearDeferredPhysicalDelete,
-                'clear_false_positive_relations' : self.modules_files_duplicates.ClearAllFalsePositiveRelationsFromHashes,
-                'clear_false_positive_relations_between_groups' : self.modules_files_duplicates.ClearFalsePositiveRelationsBetweenGroupsFromHashes,
+                'clear_all_false_positive_relations' : self.modules_files_duplicates.ClearAllFalsePositivesHashes,
+                'clear_internal_false_positive_relations' : self.modules_files_duplicates.ClearInternalFalsePositivesHashes,
                 'clear_orphan_tables' : self.modules_db_maintenance.ClearOrphanTables,
                 'cull_file_viewing_statistics' : self.modules_files_viewing_stats.CullFileViewingStatistics,
                 'db_integrity' : self.modules_db_maintenance.CheckDBIntegrity,
@@ -4000,7 +4002,7 @@ class DB( HydrusDB.HydrusDB ):
         self._db_filenames[ 'external_master' ] = 'client.master.db'
         
     
-    def _FilterInboxHashes( self, hashes: typing.Collection[ bytes ] ):
+    def _FilterInboxHashes( self, hashes: collections.abc.Collection[ bytes ] ):
         
         hash_ids_to_hashes = self.modules_hashes_local_cache.GetHashIdsToHashes( hashes = hashes )
         
@@ -4609,8 +4611,8 @@ class DB( HydrusDB.HydrusDB ):
         location_context: ClientLocation.LocationContext,
         tag_service_key,
         tag_filter: HydrusTags.TagFilter,
-        hashes: typing.Collection[ bytes ],
-        content_statuses: typing.Collection[ int ]
+        hashes: collections.abc.Collection[ bytes ],
+        content_statuses: collections.abc.Collection[ int ]
     ):
         
         # the overall migration loop loads files and checks if they have the tags. thus:
@@ -7139,7 +7141,7 @@ class DB( HydrusDB.HydrusDB ):
                         message += ' Space now only does pause/play media for you.'
                         
                     
-                    message += ' If you actually liked how it was before, sorry, please hit up _file->shortcuts_ to fix it back!'
+                    message += ' If you actually liked how it was before, sorry, please hit up _file->options->shortcuts_ to fix it back!'
                     
                     self.pub_initial_message( message )
                     
@@ -9190,6 +9192,46 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
+        if version == 623:
+            
+            try:
+                
+                from hydrus.client.gui import ClientGUIShortcuts
+                from hydrus.client import ClientApplicationCommand as CAC
+                
+                media_shortcuts_set: ClientGUIShortcuts.ShortcutSet = self.modules_serialisable.GetJSONDumpNamed( HydrusSerialisable.SERIALISABLE_TYPE_SHORTCUT_SET, 'media' )
+                
+                jobs = [
+                    (
+                        ClientGUIShortcuts.Shortcut( ClientGUIShortcuts.SHORTCUT_TYPE_KEYBOARD_CHARACTER, ord( 'C' ), ClientGUIShortcuts.SHORTCUT_PRESS_TYPE_PRESS, [ ClientGUIShortcuts.SHORTCUT_MODIFIER_CTRL ] ),
+                        CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_COPY_FILES ),
+                        CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_COPY_FILES, simple_data = CAC.FILE_COMMAND_TARGET_SELECTED_FILES ) 
+                    )
+                ]
+                
+                for ( shortcut, bad_command, good_command ) in jobs:
+                    
+                    if media_shortcuts_set.HasCommand( shortcut ):
+                        
+                        if media_shortcuts_set.GetCommand( shortcut ) == bad_command:
+                            
+                            media_shortcuts_set.SetCommand( shortcut, good_command )
+                            
+                        
+                    
+                
+                self.modules_serialisable.SetJSONDump( media_shortcuts_set )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update some shortcuts failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
         self._controller.frame_splash_status.SetTitleText( 'updated db to v{}'.format( HydrusNumbers.ToHumanInt( version + 1 ) ) )
         
         self._Execute( 'UPDATE version SET version = ?;', ( version + 1, ) )
@@ -9345,7 +9387,7 @@ class DB( HydrusDB.HydrusDB ):
             
         
     
-    def _Vacuum( self, names: typing.Collection[ str ], maintenance_mode = HC.MAINTENANCE_FORCED, stop_time = None, force_vacuum = False ):
+    def _Vacuum( self, names: collections.abc.Collection[ str ], maintenance_mode = HC.MAINTENANCE_FORCED, stop_time = None, force_vacuum = False ):
         
         ok_names = []
         

@@ -1,3 +1,4 @@
+import collections.abc
 import typing
 
 from qtpy import QtCore as QC
@@ -25,9 +26,14 @@ def AddLastClickMemory( menu: QW.QMenu ):
             
             if event.type() == QC.QEvent.Type.MouseButtonPress:
                 
+                event = typing.cast( QG.QMouseEvent, event )
+                
                 HG.last_mouse_click_button = event.button()
-                    
+                
+            
             return False
+            
+        
 
     filter_obj = _ClickMemoryFilter(menu)
     
@@ -340,7 +346,7 @@ def SetMenuTitle( menu: QW.QMenu, label: str ):
     menu.setTitle( label )
     
 
-def SpamItems( menu: QW.QMenu, labels_descriptions_and_calls: typing.Collection[ typing.Tuple[ str, str, typing.Callable ] ], max_allowed: int ):
+def SpamItems( menu: QW.QMenu, labels_descriptions_and_calls: collections.abc.Collection[ tuple[ str, str, collections.abc.Callable ] ], max_allowed: int ):
     
     if len( labels_descriptions_and_calls ) > max_allowed:
         
@@ -364,7 +370,7 @@ def SpamItems( menu: QW.QMenu, labels_descriptions_and_calls: typing.Collection[
         
     
 
-def SpamLabels( menu: QW.QMenu, labels_and_copy_texts: typing.Collection[ typing.Tuple[ str, str ] ], max_allowed: int ):
+def SpamLabels( menu: QW.QMenu, labels_and_copy_texts: collections.abc.Collection[ tuple[ str, str ] ], max_allowed: int ):
     
     if len( labels_and_copy_texts ) > max_allowed:
         

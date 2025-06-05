@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import threading
 
 from qtpy import QtGui as QG
@@ -141,8 +142,12 @@ class BitmapManager( object ):
             return QG.QImage.Format.Format_RGB888
             
         elif depth == 32:
-
+            
             return QG.QImage.Format.Format_RGBA8888
+            
+        else:
+            
+            raise NotImplementedError( 'Unknown image format!' )
             
         
     

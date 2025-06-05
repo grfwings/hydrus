@@ -1,5 +1,4 @@
 import sqlite3
-import typing
 
 from hydrus.core import HydrusConstants as HC
 
@@ -40,6 +39,20 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
         self.modules_similar_files = modules_similar_files
         self.modules_repositories = modules_repositories
         self.modules_media_results = modules_media_results
+        
+    
+    def _ScheduleJobsForChangedAppearance( self, hash_id ):
+        
+        self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
+        self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_PIXEL_HASH )
+        self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_SIMILAR_FILES_METADATA )
+        
+        # no need for blurhash here, thumbnail forces it
+        
+    
+    def _ScheduleJobsForPossiblyChangedRotation( self, hash_id ):
+        
+        self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
         
     
     def ClearJobs( self, cleared_job_tuples ):
@@ -90,7 +103,7 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
                     
                     if mime in HC.MIMES_WITH_THUMBNAILS and resolution_changed:
                         
-                        self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
+                        self._ScheduleJobsForChangedAppearance( hash_id )
                         
                     
                 elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_OTHER_HASHES:
@@ -109,10 +122,7 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
                         
                         self.modules_files_metadata_basic.SetHasTransparency( hash_id, has_transparency )
                         
-                        if has_transparency:
-                            
-                            self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
-                            
+                        self._ScheduleJobsForChangedAppearance( hash_id )
                         
                     
                     new_file_info_managers_info.add( ( hash_id, hash ) )
@@ -126,6 +136,8 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
                     if previous_has_exif != has_exif:
                         
                         self.modules_files_metadata_basic.SetHasEXIF( hash_id, has_exif )
+                        
+                        self._ScheduleJobsForPossiblyChangedRotation( hash_id )
                         
                     
                     new_file_info_managers_info.add( ( hash_id, hash ) )
@@ -153,10 +165,7 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
                         
                         self.modules_files_metadata_basic.SetHasICCProfile( hash_id, has_icc_profile )
                         
-                        if has_icc_profile: # we have switched from off to on
-                            
-                            self.modules_files_maintenance_queue.AddJobs( { hash_id }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
-                            
+                        self._ScheduleJobsForChangedAppearance( hash_id )
                         
                     
                     new_file_info_managers_info.add( ( hash_id, hash ) )
@@ -253,7 +262,7 @@ class ClientDBFilesMaintenance( ClientDBModule.ClientDBModule ):
             
         
     
-    def GetTablesAndColumnsThatUseDefinitions( self, content_type: int ) -> typing.List[ typing.Tuple[ str, str ] ]:
+    def GetTablesAndColumnsThatUseDefinitions( self, content_type: int ) -> list[ tuple[ str, str ] ]:
         
         return []
         

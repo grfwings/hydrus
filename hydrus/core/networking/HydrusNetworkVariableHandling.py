@@ -1,4 +1,4 @@
-import collections
+import collections.abc
 import json
 import traceback
 import typing
@@ -86,7 +86,7 @@ def DumpToGETQuery( args ):
     
     if 'subject_identifier' in args:
         
-        subject_identifier = args[ 'subject_identifier' ]
+        subject_identifier = typing.cast( HydrusNetwork.AccountIdentifier, args[ 'subject_identifier' ] )
         
         del args[ 'subject_identifier' ]
         

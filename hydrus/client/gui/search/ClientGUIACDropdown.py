@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import itertools
 import typing
 
@@ -50,7 +51,7 @@ def AppendLoadingPredicate( predicates, label ):
     predicates.append( ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_LABEL, value = label + HC.UNICODE_ELLIPSIS ) )
     
 
-def InsertOtherPredicatesForRead( predicates: typing.MutableSequence[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, include_unusual_predicate_types: bool, under_construction_or_predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
+def InsertOtherPredicatesForRead( predicates: collections.abc.MutableSequence[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, include_unusual_predicate_types: bool, under_construction_or_predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
     
     if include_unusual_predicate_types:
         
@@ -72,7 +73,7 @@ def InsertOtherPredicatesForRead( predicates: typing.MutableSequence[ ClientSear
         
     
 
-def InsertTagPredicates( predicates: typing.MutableSequence[ ClientSearchPredicate.Predicate ], tag_service_key: bytes, parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, allow_auto_wildcard_conversion: bool, insert_if_does_not_exist: bool = True ):
+def InsertTagPredicates( predicates: collections.abc.MutableSequence[ ClientSearchPredicate.Predicate ], tag_service_key: bytes, parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, allow_auto_wildcard_conversion: bool, insert_if_does_not_exist: bool = True ):
     
     if parsed_autocomplete_text.IsTagSearch( allow_auto_wildcard_conversion ):
         
@@ -453,7 +454,7 @@ def ReadFetch(
     CG.client_controller.CallAfterQtSafe( win, 'read a/c full results', results_callable, job_status, parsed_autocomplete_text, results_cache, matches )
     
 
-def PutAtTopOfMatches( matches: typing.MutableSequence[ ClientSearchPredicate.Predicate ], predicate: ClientSearchPredicate.Predicate, insert_if_does_not_exist: bool = True ):
+def PutAtTopOfMatches( matches: collections.abc.MutableSequence[ ClientSearchPredicate.Predicate ], predicate: ClientSearchPredicate.Predicate, insert_if_does_not_exist: bool = True ):
     
     # we have to be careful here to preserve autocomplete counts!
     # if it already exists, we move it up, do not replace with the test pred param
@@ -1254,6 +1255,8 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 if event.type() == QC.QEvent.Type.KeyPress and self._can_intercept_unusual_key_events:
                     
+                    event = typing.cast( QG.QKeyEvent, event )
+                    
                     # ok for a while this thing was a mis-mash of logical tests and basically sending anything not explicitly caught to the list
                     # this resulted in annoying miss-cases where ctrl+c et al were being passed to the list and so you couldn't copy text from the text input
                     # THUS we are moving to a strict whitelist. a handful of events will pass down to the list, everything else we jealously keep
@@ -1352,6 +1355,8 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         
                     
                 elif event.type() == QC.QEvent.Type.Wheel:
+                    
+                    event = typing.cast( QG.QWheelEvent, event )
                     
                     current_results_list = typing.cast( ClientGUIListBoxes.ListBoxTags, self._dropdown_notebook.currentWidget() )
                     
@@ -1673,7 +1678,7 @@ class ChildrenTab( ListBoxTagsPredicatesAC ):
         self._tags_to_child_predicates_cache = dict()
         
     
-    def UpdateChildrenIfNeeded( self, context_tags: typing.Collection[ str ] ):
+    def UpdateChildrenIfNeeded( self, context_tags: collections.abc.Collection[ str ] ):
         
         if self._children_need_updating:
             
@@ -2107,7 +2112,7 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         self._SetLocationContext( location_context )
         
     
-    def SetPrefetchResults( self, job_status: ClientThreading.JobStatus, predicates: typing.List[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText ):
+    def SetPrefetchResults( self, job_status: ClientThreading.JobStatus, predicates: list[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText ):
         
         if self._current_fetch_job_status is not None and self._current_fetch_job_status.GetKey() == job_status.GetKey():
             
@@ -2117,7 +2122,7 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
             
         
     
-    def SetContextTags( self, tags: typing.Collection[ str ] ):
+    def SetContextTags( self, tags: collections.abc.Collection[ str ] ):
         """
         The search context or the taglist we are editing just changed, so let's tell anything in here that wants to filter or do lookups based on that.
         """
@@ -2169,6 +2174,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTagsFileSearchContext ):
     
     searchChanged = QC.Signal( ClientSearchFileSearchContext.FileSearchContext )
     searchCancelled = QC.Signal()
+    lockSearch = QC.Signal()
     
     def __init__(
         self,
@@ -2185,7 +2191,8 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTagsFileSearchContext ):
         only_allow_all_my_files_domains = False,
         force_system_everything = False,
         hide_favourites_edit_actions = False,
-        fixed_results_list_height = None
+        fixed_results_list_height = None,
+        show_lock_search_button = False
     ):
         
         self._page_key = page_key
@@ -2219,23 +2226,28 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTagsFileSearchContext ):
         
         #
         
+        self._cancel_search_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().stop, self.searchCancelled.emit )
+        
         self._paste_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'You can paste a newline-separated list of regular tags and/or system predicates.' ) )
-        
-        self._empty_search_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().clear_highlight, self._ClearSearch )
-        self._empty_search_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Clear the search back to an empty page.' ) )
         
         self._favourite_searches_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().star, self._FavouriteSearchesMenu )
         self._favourite_searches_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Load or save a favourite search.' ) )
         
-        self._cancel_search_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().stop, self.searchCancelled.emit )
+        self._empty_search_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().clear_highlight, self._ClearSearch )
+        self._empty_search_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Clear the search back to an empty page.' ) )
+        
+        self._lock_search_button = ClientGUICommon.BetterBitmapButton( self._text_input_panel, CC.global_pixmaps().lock, self.lockSearch.emit )
+        self._lock_search_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Lock the current files in view to a fixed system:hash.' ) )
         
         self._cancel_search_button.hide()
+        self._lock_search_button.setVisible( show_lock_search_button )
         
         QP.AddToLayout( self._text_input_hbox, self._cancel_search_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._text_input_hbox, self._paste_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._text_input_hbox, self._favourite_searches_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( self._text_input_hbox, self._empty_search_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( self._text_input_hbox, self._lock_search_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         #
         
@@ -2926,7 +2938,7 @@ class AutoCompleteDropdownTagsRead( AutoCompleteDropdownTagsFileSearchContext ):
             
         
     
-    def GetPredicates( self ) -> typing.Set[ ClientSearchPredicate.Predicate ]:
+    def GetPredicates( self ) -> set[ ClientSearchPredicate.Predicate ]:
         
         return self._file_search_context.GetPredicates()
         
@@ -3248,7 +3260,7 @@ class ListBoxTagsActiveSearchPredicates( ClientGUIListBoxes.ListBoxTagsPredicate
         return self._my_ac_parent.GetFileSearchContext().GetLocationContext()
         
     
-    def _GetCurrentPagePredicates( self ) -> typing.Set[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentPagePredicates( self ) -> set[ ClientSearchPredicate.Predicate ]:
         
         return self.GetPredicates()
         
