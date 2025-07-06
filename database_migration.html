@@ -20,7 +20,7 @@
       
       
       <link rel="icon" href="assets/favicon.svg">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.14">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
     
     
       
@@ -2363,7 +2363,7 @@
 
 
   
-    <a href="https://github.com/hydrusnetwork/hydrus/edit/master/docs/database_migration.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/hydrusnetwork/hydrus/edit/master/docs/database_migration.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -2383,6 +2383,7 @@
 <p><strong>the software installation</strong></p>
 <p>This is the part that comes with the installer or extract release, with the executable and dlls and a handful of resource folders. It doesn't store any of your settings--it just knows how to present a database as a nice application. If you just run the hydrus_client executable straight, it looks in its 'db' subdirectory for a database, and if one is not found, it creates a new one. If it sees a database running at a lower version than itself, it will update the database before booting it.</p>
 <p>It doesn't really matter where you put this. An SSD will load it marginally quicker the first time, but you probably won't notice. If you run it without command-line parameters, it will try to write to its own directory (to create the initial database), so if you mean to run it like that, it should not be in a protected place like <em>Program Files</em>.</p>
+<p>If you run from source, things are basically the same, but you are building a virtual environment in the <code>venv</code> folder and launching hydrus_client.py from the activated venv instead. Note: a venv includes absolute path links, so you will have to rebuild your venv every time you move your install directory!</p>
 </li>
 <li>
 <p><strong>the actual SQLite database</strong></p>
@@ -2441,8 +2442,8 @@
 <p>And it will instead use the given path. If no database is found, it will similarly create a new empty one at that location. You can use any path that is valid in your system.</p>
 <div class="admonition danger">
 <p class="admonition-title">Bad Locations</p>
-<p><strong>Do not run a SQLite database on a network location!</strong> The database relies on clever hardware-level exclusive file locks, which network interfaces often fake. While the program may work, I cannot guarantee the database will stay non-corrupt.</p>
-<p><strong>Do not run a SQLite database on a location with filesystem-level compression enabled!</strong> In the best case (BTRFS), the database can suddenly get extremely slow when it hits a certain size; in the worst (NTFS), a &gt;50GB database will encounter I/O errors and receive sporadic corruption!</p>
+<p><strong>Do not install to a network location!</strong> (i.e. on a different computer's hard drive) The SQLite database is sensitive to interruption and requires good file locking, which network interfaces often fake. There are <a href="database_migration.html">ways of splitting your client up</a> so the database is on a local SSD but the files are on a network--this is fine--but you really should not put the database on a remote machine unless you know what you are doing and have a backup in case things go wrong.</p>
+<p><strong>Be careful installing to a location with filesystem-level compression or versioning enabled!</strong> It may work ok to start, but when the SQLite database grows to large size, this can cause extreme access latency. I have been told that BTRFS works well these days, and they have been working specifically to improve SQLite performance, but keep it in mind if you are using anything else. Using NTFS compression mode on the database files is not a good idea. Compressing a hydrus database backup is fine, but the live db is sensitive.</p>
 </div>
 <p>Rather than typing the path out in a terminal every time you want to launch your external database, create a new shortcut with the argument in. Something like this:</p>
 <p><img alt="" src="images/db_migration_shortcut.png" /></p>
@@ -2495,7 +2496,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="February 14, 2024 21:20:24 UTC">February 14, 2024</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="June 25, 2025 20:39:30 UTC">June 25, 2025</span>
   </span>
 
     
@@ -2622,7 +2623,7 @@
       <script id="__config" type="application/json">{"base": ".", "features": ["navigation.tracking", "navigation.sections", "navigation.tabs", "content.tabs.link", "navigation.top", "search.suggest", "content.code.annotate", "navigation.instant", "content.action.edit"], "search": "assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.13a4f30d.min.js"></script>
+      <script src="assets/javascripts/bundle.56ea9cef.min.js"></script>
       
     
   </body>
