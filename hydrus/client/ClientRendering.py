@@ -252,6 +252,12 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
             
             self._numpy_image = HydrusImageHandling.GenerateNumPyImage( self._path, self._mime )
             
+        except HydrusExceptions.NoRenderFileException as e:
+            
+            self._numpy_image = self._InitialiseErrorImage( e, mention_log = False )
+            
+            self._render_failed = True
+            
         except Exception as e:
             
             self._numpy_image = self._InitialiseErrorImage( e )
@@ -309,7 +315,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
             
         
     
-    def _InitialiseErrorImage( self, e: Exception ):
+    def _InitialiseErrorImage( self, e: Exception, mention_log = True ):
         
         ( width, height ) = self._resolution
         
@@ -341,8 +347,12 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
         text = 'Image failed to render:'
         text += '\n'
         text += str( e )
-        text += '\n'
-        text += 'Full info written to the log.'
+        
+        if mention_log:
+            
+            text += '\n'
+            text += 'Full info written to the log.'
+            
         
         painter.drawText( QC.QRectF( 0, 0, width, height ), QC.Qt.AlignmentFlag.AlignCenter, text )
         
@@ -661,10 +671,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def CanHaveVariableFramerate( self ):
         
-        with self._lock:
-            
-            return self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA
-            
+        return self._media.GetMime() in ( HC.ANIMATION_GIF, HC.ANIMATION_UGOIRA, HC.ANIMATION_WEBP )
         
     
     def GetBufferIndices( self ):
@@ -681,7 +688,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetDurationMS( self, index ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             if 0 <= index <= len( self._frame_durations_ms ) - 1:
                 
@@ -813,7 +820,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetFrameIndex( self, timestamp_ms ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             so_far = 0
             
@@ -846,7 +853,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetTimestampMS( self, frame_index ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             return sum( self._frame_durations_ms[ : frame_index ] )
             
@@ -858,7 +865,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetTotalDuration( self ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             return sum( self._frame_durations_ms )
             

@@ -119,7 +119,7 @@ def ConvertManyStringsToNiceInsertableHumanSummary( texts: collections.abc.Colle
     
     if do_sort:
         
-        SortStringsIgnoringCase( texts )
+        HumanTextSort( texts )
         
     
     if len( texts ) == 1:
@@ -141,7 +141,57 @@ def ConvertManyStringsToNiceInsertableHumanSummary( texts: collections.abc.Colle
             
         else:
             
-            t = ', '.join( texts )
+            LINE_NO_LONGER_THAN = 64
+            NUM_LINES_LIMIT = 24
+            
+            lines = []
+            line_under_construction = ''
+            
+            texts_to_do = list( texts )
+            
+            while len( texts_to_do ) > 0:
+                
+                text = texts_to_do.pop( 0 )
+                
+                if line_under_construction == '':
+                    
+                    line_under_construction = text
+                    
+                else:
+                    
+                    potential_next_line = f'{line_under_construction}, {text}'
+                    
+                    if len( potential_next_line ) > LINE_NO_LONGER_THAN:
+                        
+                        lines.append( line_under_construction )
+                        
+                        if len( lines ) >= NUM_LINES_LIMIT:
+                            
+                            line_under_construction = ''
+                            texts_to_do.insert( 0, text )
+                            
+                            lines.append( f'and {HydrusNumbers.ToHumanInt( len( texts_to_do ) )} others' )
+                            
+                            break
+                            
+                        else:
+                            
+                            line_under_construction = text
+                            
+                        
+                    else:
+                        
+                        line_under_construction = potential_next_line
+                        
+                    
+                
+            
+            if len( line_under_construction ) > 0:
+                
+                lines.append( line_under_construction )
+                
+            
+            t = '\n'.join( lines )
             
         
         if no_trailing_whitespace:
@@ -169,7 +219,7 @@ def ConvertManyStringsToNiceInsertableHumanSummarySingleLine( texts: collections
     
     if do_sort:
         
-        SortStringsIgnoringCase( texts )
+        HumanTextSort( texts )
         
     
     LINE_NO_LONGER_THAN = 48
@@ -189,24 +239,27 @@ def ConvertManyStringsToNiceInsertableHumanSummarySingleLine( texts: collections
         
     else:
         
-        if sum( ( len( text ) + 4 for text in texts ) ) > LINE_NO_LONGER_THAN:
+        full_result = ', '.join( ( f'"{text}"' for text in texts ) )
+        
+        if len( full_result ) <= LINE_NO_LONGER_THAN:
             
-            first_text = texts[0]
-            
-            possible = f'"{first_text}" & {HydrusNumbers.ToHumanInt(len(texts)-1)} other {collective_description_noun}'
-            
-            if len( possible ) <= LINE_NO_LONGER_THAN:
-                
-                return possible
-                
-            else:
-                
-                return f'{HydrusNumbers.ToHumanInt(len(texts))} {collective_description_noun}'
-                
+            return full_result
             
         else:
             
-            return ', '.join( ( f'"{text}"' for text in texts ) )
+            first_text = texts[0]
+            num_texts = len( texts )
+            
+            leading_example_result = f'"{first_text}" & {HydrusNumbers.ToHumanInt( num_texts - 1 )} other {collective_description_noun}'
+            
+            if len( leading_example_result ) <= LINE_NO_LONGER_THAN:
+                
+                return leading_example_result
+                
+            else:
+                
+                return f'{HydrusNumbers.ToHumanInt( num_texts )} {collective_description_noun}'
+                
             
         
     
@@ -530,11 +583,6 @@ def RemoveNewlines( text: str ) -> str:
     text = ''.join( good_lines )
     
     return text
-    
-
-def SortStringsIgnoringCase( list_of_strings: list[ str ] ):
-    
-    list_of_strings.sort( key = lambda s: s.lower() )
     
 
 def StripIOInputLine( t ):

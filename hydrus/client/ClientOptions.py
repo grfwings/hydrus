@@ -135,7 +135,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'secret_discord_dnd_fix' : False,
             'show_unmatched_urls_in_media_viewer' : False,
             'set_search_focus_on_page_change' : False,
-            'allow_remove_on_manage_tags_input' : True,
+            'allow_remove_on_manage_tags_input' : False,
             'yes_no_on_remove_on_manage_tags' : True,
             'activate_window_on_tag_search_page_activation' : False,
             'show_related_tags' : True,
@@ -235,6 +235,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'delete_lock_for_archived_files' : False,
             'delete_lock_reinbox_deletees_after_archive_delete' : False,
             'delete_lock_reinbox_deletees_after_duplicate_filter' : False,
+            'delete_lock_reinbox_deletees_in_auto_resolution' : False,
             'remember_last_advanced_file_deletion_reason' : True,
             'remember_last_advanced_file_deletion_special_action' : False,
             'do_macos_debug_dialog_menus' : False,
@@ -257,6 +258,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'draw_tags_hover_in_media_viewer_background' : True,
             'draw_top_hover_in_media_viewer_background' : True,
             'draw_top_right_hover_in_media_viewer_background' : True,
+            'draw_top_right_hover_in_preview_window_background' : False,
+            'preview_window_hover_top_right_shows_popup' : False,
             'draw_notes_hover_in_media_viewer_background' : True,
             'draw_bottom_right_index_in_media_viewer_background' : True,
             'disable_tags_hover_in_media_viewer': False,
@@ -295,6 +298,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'set_requests_ca_bundle_env' : False,
             'mpv_loop_playlist_instead_of_file' : False,
             'draw_thumbnail_rating_background' : True,
+            'draw_thumbnail_numerical_ratings_collapsed_always' : False,
             'show_destination_page_when_dnd_url' : True,
             'confirm_non_empty_downloader_page_close' : True,
             'confirm_all_page_closes' : False,
@@ -303,7 +307,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'focus_media_thumb_on_viewer_close' : True,
             'skip_yesno_on_write_autocomplete_multiline_paste' : False,
             'activate_main_gui_on_viewer_close' : False,
-            'override_bandwidth_on_file_urls_from_post_urls' : True
+            'override_bandwidth_on_file_urls_from_post_urls' : True,
+            'remove_leading_url_double_slashes' : False,
+            'stop_mpv_on_media_transition' : False,
         }
         
         #
@@ -508,12 +514,19 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'watcher_page_status_update_time_minimum_ms' : 1000,
             'watcher_page_status_update_time_ratio_denominator' : 30,
             'media_viewer_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE,
-            'preview_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE
+            'preview_default_zoom_type_override' : ClientGUICanvasMedia.MEDIA_VIEWER_ZOOM_TYPE_DEFAULT_FOR_FILETYPE,
+            'export_filename_character_limit' : 220
         }
         
         self._dictionary[ 'floats' ] = {
             'draw_thumbnail_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
-            'media_viewer_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width()
+            'thumbnail_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'media_viewer_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
+            'media_viewer_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'preview_window_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
+            'preview_window_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'dialog_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
+            'dialog_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
         }
         
         #
@@ -683,9 +696,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         example_tags = HydrusTags.CleanTags( [ 'creator:creator', 'series:series', 'title:title' ] )
         
-        from hydrus.client.gui import ClientGUITags
+        from hydrus.client.gui.metadata import ClientGUITagSummaryGenerator
         
-        tsg = ClientGUITags.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
+        tsg = ClientGUITagSummaryGenerator.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
         
         self._dictionary[ 'tag_summary_generators' ][ 'thumbnail_top' ] = tsg
         
@@ -699,7 +712,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         example_tags = HydrusTags.CleanTags( [ 'volume:3', 'chapter:10', 'page:330', 'page:331' ] )
         
-        tsg = ClientGUITags.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
+        tsg = ClientGUITagSummaryGenerator.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
         
         self._dictionary[ 'tag_summary_generators' ][ 'thumbnail_bottom_right' ] = tsg
         
@@ -716,7 +729,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         example_tags = HydrusTags.CleanTags( [ 'creator:creator', 'series:series', 'title:title', 'volume:1', 'chapter:1', 'page:1' ] )
         
-        tsg = ClientGUITags.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
+        tsg = ClientGUITagSummaryGenerator.TagSummaryGenerator( namespace_info = namespace_info, separator = separator, example_tags = example_tags )
         
         self._dictionary[ 'tag_summary_generators' ][ 'media_viewer_top' ] = tsg
         

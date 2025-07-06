@@ -148,6 +148,7 @@ SERIALISABLE_TYPE_POTENTIAL_DUPLICATES_SEARCH_CONTEXT = 134
 SERIALISABLE_TYPE_SUBSIDIARY_PAGE_PARSER = 135
 SERIALISABLE_TYPE_PARSE_FORMULA_STATIC = 136
 SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_PAIR_COMPARATOR_TWO_FILES_RELATIVE_HARDCODED = 137
+SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_PAIR_COMPARATOR_TWO_FILES_RELATIVE_VISUAL_DUPLICATES = 138
 
 SERIALISABLE_TYPES_TO_OBJECT_TYPES = {}
 
@@ -209,9 +210,9 @@ def GetNoneableSerialisableTuple( obj_or_none ):
         
     
 
-def SetNonDupeName( obj, disallowed_names ):
+def SetNonDupeName( obj, disallowed_names, do_casefold = False ):
     
-    non_dupe_name = HydrusData.GetNonDupeName( obj.GetName(), disallowed_names )
+    non_dupe_name = HydrusData.GetNonDupeName( obj.GetName(), disallowed_names, do_casefold = do_casefold )
     
     obj.SetName( non_dupe_name )
     
@@ -424,9 +425,9 @@ class SerialisableBaseNamed( SerialisableBase ):
     
     def SetName( self, name ): self._name = name
     
-    def SetNonDupeName( self, disallowed_names ):
+    def SetNonDupeName( self, disallowed_names, do_casefold = False ):
         
-        self._name = HydrusData.GetNonDupeName( self._name, disallowed_names )
+        self._name = HydrusData.GetNonDupeName( self._name, disallowed_names, do_casefold = do_casefold )
         
     
 class SerialisableDictionary( SerialisableBase, dict ):
