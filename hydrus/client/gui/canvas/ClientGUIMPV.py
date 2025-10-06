@@ -10,6 +10,7 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusPaths
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTime
 from hydrus.core.files import HydrusAnimationHandling
 
@@ -25,19 +26,19 @@ from hydrus.client.gui.media import ClientGUIMediaControls
 from hydrus.client.gui.media import ClientGUIMediaVolume
 from hydrus.client.media import ClientMedia
 
-mpv_failed_reason = 'MPV seems ok!'
+MPV_IS_AVAILABLE = True
+MPV_MODULE_NOT_FOUND = False
+MPV_IMPORT_ERROR = 'MPV seems fine!'
 
 try:
     
     import mpv
     
-    MPV_IS_AVAILABLE = True
-    
 except Exception as e:
     
-    mpv_failed_reason = traceback.format_exc()
-    
     MPV_IS_AVAILABLE = False
+    MPV_MODULE_NOT_FOUND = isinstance( e, ModuleNotFoundError )
+    MPV_IMPORT_ERROR = traceback.format_exc()
     
 
 damaged_file_hashes = set()
@@ -229,8 +230,8 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         # THUS, DO NOT EVER TALK TO THIS GUY DURING A paintEvent. fetch your data and call update() if it changed. Also, we now make sure _something_ is loaded as much as possible, even if it is a black square png
         # #####
         #
-        self._black_png_path = os.path.join( HC.STATIC_DIR, 'blacksquare.png' )
-        self._hydrus_png_path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        self._black_png_path = HydrusStaticDir.GetStaticPath( 'blacksquare.png' )
+        self._hydrus_png_path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         self._currently_in_media_load_error_state = False
         
         global LOCALE_IS_SET
@@ -386,56 +387,23 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             if event_type == mpv.MpvEventID.SEEK:
                 
-                QW.QApplication.instance().postEvent( self, MPVFileSeekedEvent() )
+                QW.QApplication.postEvent( self, MPVFileSeekedEvent() )
                 
             elif event_type == mpv.MpvEventID.FILE_LOADED:
                 
-                QW.QApplication.instance().postEvent( self, MPVFileLoadedEvent() )
+                QW.QApplication.postEvent( self, MPVFileLoadedEvent() )
                 
             elif event_type == mpv.MpvEventID.SHUTDOWN:
                 
-                app = QW.QApplication.instance()
-                
-                if app is not None and QP.isValid( self ):
+                if QP.isValid( self ):
                     
-                    app.postEvent( self, MPVShutdownEvent() )
+                    QW.QApplication.postEvent( self, MPVShutdownEvent() )
                     
                 
             
         
         self._player.register_event_callback( event_handler )
         
-        '''
-        @player.event_callback( mpv.MpvEventID.SEEK )
-        def seek_event( event ):
-            
-            QW.QApplication.instance().postEvent( self, MPVFileSeekedEvent() )
-            
-        
-        @player.event_callback( mpv.MpvEventID.FILE_LOADED )
-        def file_loaded_event( event ):
-            
-            QW.QApplication.instance().postEvent( self, MPVFileLoadedEvent() )
-            
-        
-        @player.event_callback( mpv.MpvEventID.SHUTDOWN )
-        def file_started_event( event ):
-            
-            app = QW.QApplication.instance()
-            
-            if app is not None and QP.isValid( self ):
-                
-                app.postEvent( self, MPVShutdownEvent() )
-                
-            
-        '''
-        '''
-        @player.event_callback( mpv.MpvEventID.LOG_MESSAGE )
-        def log_event( event ):
-            
-            QW.QApplication.instance().postEvent( self, MPVLogEvent( player, event ) )
-            
-        '''
     
     def _LooksLikeALoadError( self ):
         
@@ -1013,11 +981,6 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             self._player.pause = True
             
-            if CG.client_controller.new_options.GetBoolean( 'stop_mpv_on_media_transition' ):
-                
-                self._player.stop()
-                
-            
             if self._media is None:
                 
                 self._player.loadfile( self._black_png_path )
@@ -1169,7 +1132,7 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     def UpdateConfAndCoreOptions( self ):
         
-        # this fixes at least instance of the 100% CPU 'too many events queued' bug, which was down to bad APNG EOF rewind navigation
+        # this fixes at least one instance of the 100% CPU 'too many events queued' bug, which was down to bad APNG EOF rewind navigation
         loop_playlist = CG.client_controller.new_options.GetBoolean( 'mpv_loop_playlist_instead_of_file' )
         
         self._player[ 'loop' ] = not loop_playlist

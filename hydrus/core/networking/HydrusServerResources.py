@@ -7,7 +7,7 @@ from twisted.internet import reactor, defer
 from twisted.internet.threads import deferToThread
 from twisted.web.server import NOT_DONE_YET
 from twisted.web.resource import Resource
-from twisted.web.static import File as FileResource, NoRangeStaticProducer, SingleRangeStaticProducer
+from twisted.web.static import NoRangeStaticProducer, SingleRangeStaticProducer
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -371,8 +371,6 @@ def GenerateNormieEris( service ):
     )
     
 
-hydrus_favicon = FileResource( os.path.join( HC.STATIC_DIR, 'hydrus.ico' ), defaultType = 'image/x-icon' )
-
 class HydrusDomain( object ):
     
     def __init__( self, local_only ):
@@ -460,7 +458,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoGETJob, request )
             
@@ -483,7 +481,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoOPTIONSJob, request )
             
@@ -506,7 +504,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoPOSTJob, request )
             
@@ -773,7 +771,14 @@ class HydrusResource( Resource ):
     
     def _profileJob( self, call, request: HydrusServerRequest.HydrusRequest ):
         
-        HydrusProfiling.Profile( 'Profiling {}: {}'.format( self._service.GetName(), request.path ), 'request.profile_result = call( request )', globals(), locals(), min_duration_ms = HG.server_profile_min_job_time_ms )
+        def do_it():
+            
+            request.profile_result = call( request )
+            
+        
+        summary = 'Profiling {}: {}'.format( self._service.GetName(), request.path )
+        
+        HydrusProfiling.Profile( summary, do_it, min_duration_ms = HG.server_profile_min_job_time_ms )
         
         return request.profile_result
         

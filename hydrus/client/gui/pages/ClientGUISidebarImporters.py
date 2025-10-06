@@ -3,8 +3,8 @@ import typing
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
 
@@ -15,7 +15,6 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientThreading
 from hydrus.client.gui import ClientGUIAsync
-from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -40,6 +39,7 @@ from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.gui.widgets import ClientGUITextInput
 from hydrus.client.importing import ClientImporting
+from hydrus.client.importing import ClientImportGallery
 from hydrus.client.importing import ClientImportWatchers
 from hydrus.client.importing import ClientImportLocal
 from hydrus.client.importing import ClientImportSimpleURLs
@@ -146,7 +146,7 @@ class SidebarImporterHDD( SidebarImporter ):
         
         self._file_seed_cache_control = ClientGUIFileSeedCache.FileSeedCacheStatusControl( self._import_queue_panel, self._page_key )
         
-        self._pause_button = ClientGUICommon.BetterBitmapButton( self._import_queue_panel, CC.global_pixmaps().file_pause, self.Pause )
+        self._pause_button = ClientGUICommon.IconButton( self._import_queue_panel, CC.global_icons().file_pause, self.Pause )
         self._pause_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play imports' ) )
         
         self._hdd_import: ClientImportLocal.HDDImport = self._page_manager.GetVariable( 'hdd_import' )
@@ -199,11 +199,11 @@ class SidebarImporterHDD( SidebarImporter ):
         
         if paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().file_play )
+            self._pause_button.SetIconSmart( CC.global_icons().file_play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().file_pause )
+            self._pause_button.SetIconSmart( CC.global_icons().file_pause )
             
         
         self._current_action.setText( current_action )
@@ -246,7 +246,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         self._last_time_imports_changed = 0
         self._next_update_time = 0.0
         
-        self._multiple_gallery_import = self._page_manager.GetVariable( 'multiple_gallery_import' )
+        self._multiple_gallery_import = typing.cast( ClientImportGallery.MultipleGalleryImport, self._page_manager.GetVariable( 'multiple_gallery_import' ) )
         
         self._highlighted_gallery_import = self._multiple_gallery_import.GetHighlightedGalleryImport()
         
@@ -271,16 +271,26 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         
         self._gallery_importers_listctrl_panel.SetListCtrl( self._gallery_importers_listctrl )
         
-        self._gallery_importers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().highlight, self._HighlightSelectedGalleryImport, tooltip = 'highlight', enabled_check_func = self._CanHighlight )
-        self._gallery_importers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().clear_highlight, self._ClearExistingHighlightAndPanel, tooltip = 'clear highlight', enabled_check_func = self._CanClearHighlight )
-        self._gallery_importers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().file_pause, self._PausePlayFiles, tooltip = 'pause/play files', enabled_only_on_selection = True )
-        self._gallery_importers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().gallery_pause, self._PausePlayGallery, tooltip = 'pause/play search', enabled_only_on_selection = True )
-        self._gallery_importers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().trash, self._RemoveGalleryImports, tooltip = 'remove selected', enabled_only_on_selection = True )
+        self._gallery_importers_listctrl_panel.AddIconButton( CC.global_icons().highlight, self._HighlightSelectedGalleryImport, tooltip = 'highlight', enabled_check_func = self._CanHighlight )
+        self._gallery_importers_listctrl_panel.AddIconButton( CC.global_icons().clear_highlight, self._ClearExistingHighlightAndPanel, tooltip = 'clear highlight', enabled_check_func = self._CanClearHighlight )
+        self._gallery_importers_listctrl_panel.AddIconButton( CC.global_icons().file_pause, self._PausePlayFiles, tooltip = 'pause/play files', enabled_only_on_selection = True )
+        self._gallery_importers_listctrl_panel.AddIconButton( CC.global_icons().gallery_pause, self._PausePlayGallery, tooltip = 'pause/play search', enabled_only_on_selection = True )
         
-        self._gallery_importers_listctrl_panel.NewButtonRow()
+        menu_template_items = []
         
-        self._gallery_importers_listctrl_panel.AddButton( 'retry failed', self._RetryFailed, enabled_check_func = self._CanRetryFailed )
-        self._gallery_importers_listctrl_panel.AddButton( 'retry ignored', self._RetryIgnored, enabled_check_func = self._CanRetryIgnored )
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry ignored', 'Retry the files that were moved over for one reason or another.', self._RetryIgnored )
+        menu_template_item.SetVisibleCallable( self._CanRetryIgnored )
+        
+        menu_template_items.append( menu_template_item )
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry failed', 'Retry the files that failed.', self._RetryFailed )
+        menu_template_item.SetVisibleCallable( self._CanRetryFailed )
+        
+        menu_template_items.append( menu_template_item )
+        
+        self._gallery_importers_listctrl_panel.AddMenuIconButton( CC.global_icons().retry, 'retry commands', menu_template_items, enabled_check_func = self._CanRetryAnything )
+        
+        self._gallery_importers_listctrl_panel.AddIconButton( CC.global_icons().trash, self._RemoveGalleryImports, tooltip = 'remove selected', enabled_only_on_selection = True )
         
         self._gallery_importers_listctrl.Sort()
         
@@ -288,7 +298,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         
         self._query_input = ClientGUITextInput.TextAndPasteCtrl( self._gallery_downloader_panel, self._PendQueries )
         
-        self._cog_button = ClientGUICommon.BetterBitmapButton( self._gallery_downloader_panel, CC.global_pixmaps().cog, self._ShowCogMenu )
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self._gallery_downloader_panel, self._GetCogIconMenuTemplateItems() )
         
         self._gug_key_and_name = ClientGUIImport.GUGKeyAndNameSelector( self._gallery_downloader_panel, self._multiple_gallery_import.GetGUGKeyAndName(), update_callable = self._SetGUGKeyAndName )
         
@@ -318,7 +328,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         
         input_hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( input_hbox, self._query_input, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( input_hbox, self._query_input, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
         QP.AddToLayout( input_hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         self._gallery_downloader_panel.Add( self._gallery_importers_status_st_top, CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -394,6 +404,11 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         gallery_import = selected[0]
         
         return not self._ThisIsTheCurrentOrLoadingHighlight( gallery_import )
+        
+    
+    def _CanRetryAnything( self ):
+        
+        return self._CanRetryIgnored() or self._CanRetryFailed()
         
     
     def _CanRetryFailed( self ):
@@ -718,12 +733,12 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
                 
                 all_media_results = []
                 
-                for ( i, block_of_hashes ) in enumerate( HydrusData.SplitIteratorIntoChunks( hashes, BLOCK_SIZE ) ):
+                for ( i, block_of_hashes ) in enumerate( HydrusLists.SplitIteratorIntoChunks( hashes, BLOCK_SIZE ) ):
                     
                     num_done = i * BLOCK_SIZE
                     
                     job_status.SetStatusText( 'Loading files: {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) ) )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
+                    job_status.SetGauge( num_done, num_to_do )
                     
                     if not have_published_job_status and HydrusTime.TimeHasPassedFloat( start_time + 3 ):
                         
@@ -743,7 +758,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
                     
                 
                 job_status.SetStatusText( 'Done!' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
                 return all_media_results
                 
@@ -898,6 +913,8 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
             gallery_import.RetryFailed()
             
         
+        self._gallery_importers_listctrl.UpdateDatas()
+        
     
     def _RetryIgnored( self ):
         
@@ -914,6 +931,8 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
             
             gallery_import.RetryIgnored( ignored_regex = ignored_regex )
             
+        
+        self._gallery_importers_listctrl.UpdateDatas()
         
     
     def _SetGUGKeyAndName( self, gug_key_and_name ):
@@ -968,22 +987,41 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
             
         
     
-    def _ShowCogMenu( self ):
+    def _GetCogIconMenuTemplateItems( self ) -> list[ ClientGUIMenuButton.MenuTemplateItem ]:
         
-        menu = ClientGUIMenus.GenerateMenu( self )
+        menu_template_items = []
         
-        start_file_queues_paused = self._multiple_gallery_import.GetStartFileQueuesPaused()
-        start_gallery_queues_paused = self._multiple_gallery_import.GetStartGalleryQueuesPaused()
-        do_not_allow_new_dupes = self._multiple_gallery_import.GetDoNotAllowNewDupes()
-        merge_simultaneous_pends_to_one_importer = self._multiple_gallery_import.GetMergeSimultaneousPendsToOneImporter()
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            self._multiple_gallery_import.FlipStartFileQueuesPaused,
+            self._multiple_gallery_import.GetStartFileQueuesPaused
+        )
         
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'start new importers\' files paused', 'Start any new importers in a file import-paused state.', start_file_queues_paused, self._multiple_gallery_import.SetStartFileQueuesPaused, not start_file_queues_paused )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'start new importers\' search paused', 'Start any new importers in a gallery search-paused state.', start_gallery_queues_paused, self._multiple_gallery_import.SetStartGalleryQueuesPaused, not start_gallery_queues_paused )
-        ClientGUIMenus.AppendSeparator( menu )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'do not allow new duplicates', 'This will discard any query/source pair you try to add that is already in the list.', do_not_allow_new_dupes, self._multiple_gallery_import.SetDoNotAllowNewDupes, not do_not_allow_new_dupes )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'bundle multiple pasted queries into one importer (advanced)', 'If you are pasting many small queries at once (such as md5 lookups), check this to smooth out the workflow.', merge_simultaneous_pends_to_one_importer, self._multiple_gallery_import.SetMergeSimultaneousPendsToOneImporter, not merge_simultaneous_pends_to_one_importer )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'start new importers\' files paused', 'Start any new importers in a file import-paused state.', check_manager ) )
         
-        CGC.core().PopupMenu( self._cog_button, menu )
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            self._multiple_gallery_import.FlipStartGalleryQueuesPaused,
+            self._multiple_gallery_import.GetStartGalleryQueuesPaused
+        )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'start new importers\' search paused', 'Start any new importers in a gallery search-paused state.', check_manager ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            self._multiple_gallery_import.FlipDoNotAllowNewDupes,
+            self._multiple_gallery_import.GetDoNotAllowNewDupes
+        )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'do not allow new duplicates', 'This will discard any query/source pair you try to add that is already in the list.', check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            self._multiple_gallery_import.FlipMergeSimultaneousPendsToOneImporter,
+            self._multiple_gallery_import.GetMergeSimultaneousPendsToOneImporter
+        )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck('bundle multiple pasted queries into one importer (advanced)', 'If you are pasting many small queries at once (such as md5 lookups), check this to smooth out the workflow.', check_manager ) )
+        
+        return menu_template_items
         
     
     def _ShowSelectedImportersFileSeedCaches( self ):
@@ -1370,17 +1408,27 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
         
         self._watchers_listctrl_panel.SetListCtrl( self._watchers_listctrl )
         
-        self._watchers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().highlight, self._HighlightSelectedWatcher, tooltip = 'highlight', enabled_check_func = self._CanHighlight )
-        self._watchers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().clear_highlight, self._ClearExistingHighlightAndPanel, tooltip = 'clear highlight', enabled_check_func = self._CanClearHighlight )
-        self._watchers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().file_pause, self._PausePlayFiles, tooltip = 'pause/play files', enabled_only_on_selection = True )
-        self._watchers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().gallery_pause, self._PausePlayChecking, tooltip = 'pause/play checking', enabled_only_on_selection = True )
-        self._watchers_listctrl_panel.AddBitmapButton( CC.global_pixmaps().trash, self._RemoveWatchers, tooltip = 'remove selected', enabled_only_on_selection = True )
+        self._watchers_listctrl_panel.AddIconButton( CC.global_icons().highlight, self._HighlightSelectedWatcher, tooltip = 'highlight', enabled_check_func = self._CanHighlight )
+        self._watchers_listctrl_panel.AddIconButton( CC.global_icons().clear_highlight, self._ClearExistingHighlightAndPanel, tooltip = 'clear highlight', enabled_check_func = self._CanClearHighlight )
+        self._watchers_listctrl_panel.AddIconButton( CC.global_icons().file_pause, self._PausePlayFiles, tooltip = 'pause/play files', enabled_only_on_selection = True )
+        self._watchers_listctrl_panel.AddIconButton( CC.global_icons().gallery_pause, self._PausePlayChecking, tooltip = 'pause/play checking', enabled_only_on_selection = True )
         self._watchers_listctrl_panel.AddButton( 'check now', self._CheckNow, enabled_only_on_selection = True )
         
-        self._watchers_listctrl_panel.NewButtonRow()
+        menu_template_items = []
         
-        self._watchers_listctrl_panel.AddButton( 'retry failed', self._RetryFailed, enabled_check_func = self._CanRetryFailed )
-        self._watchers_listctrl_panel.AddButton( 'retry ignored', self._RetryIgnored, enabled_check_func = self._CanRetryIgnored )
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry ignored', 'Retry the files that were moved over for one reason or another.', self._RetryIgnored )
+        menu_template_item.SetVisibleCallable( self._CanRetryIgnored )
+        
+        menu_template_items.append( menu_template_item )
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry failed', 'Retry the files that failed.', self._RetryFailed )
+        menu_template_item.SetVisibleCallable( self._CanRetryFailed )
+        
+        menu_template_items.append( menu_template_item )
+        
+        self._watchers_listctrl_panel.AddMenuIconButton( CC.global_icons().retry, 'retry commands', menu_template_items, enabled_check_func = self._CanRetryAnything )
+        
+        self._watchers_listctrl_panel.AddIconButton( CC.global_icons().trash, self._RemoveWatchers, tooltip = 'remove selected', enabled_only_on_selection = True )
         
         self._watchers_listctrl.Sort()
         
@@ -1509,6 +1557,11 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
         watcher = selected[0]
         
         return not self._ThisIsTheCurrentOrLoadingHighlight( watcher )
+        
+    
+    def _CanRetryAnything( self ):
+        
+        return self._CanRetryIgnored() or self._CanRetryFailed()
         
     
     def _CanRetryFailed( self ):
@@ -1864,12 +1917,12 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
                 
                 all_media_results = []
                 
-                for ( i, block_of_hashes ) in enumerate( HydrusData.SplitIteratorIntoChunks( hashes, BLOCK_SIZE ) ):
+                for ( i, block_of_hashes ) in enumerate( HydrusLists.SplitIteratorIntoChunks( hashes, BLOCK_SIZE ) ):
                     
                     num_done = i * BLOCK_SIZE
                     
                     job_status.SetStatusText( 'Loading files: {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) ) )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
+                    job_status.SetGauge( num_done, num_to_do )
                     
                     if not have_published_job_status and HydrusTime.TimeHasPassedFloat( start_time + 3 ):
                         
@@ -1889,7 +1942,7 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
                     
                 
                 job_status.SetStatusText( 'Done!' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
                 return all_media_results
                 
@@ -2075,6 +2128,8 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
             watcher.RetryFailed()
             
         
+        self._watchers_listctrl.UpdateDatas()
+        
     
     def _RetryIgnored( self ):
         
@@ -2091,6 +2146,8 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
             
             watcher.RetryIgnored( ignored_regex = ignored_regex )
             
+        
+        self._watchers_listctrl.UpdateDatas()
         
     
     def _SetOptionsToWatchers( self ):
@@ -2515,7 +2572,7 @@ class SidebarImporterSimpleDownloader( SidebarImporter ):
         
         self._import_queue_panel = ClientGUICommon.StaticBox( self._simple_downloader_panel, 'imports' )
         
-        self._pause_files_button = ClientGUICommon.BetterBitmapButton( self._import_queue_panel, CC.global_pixmaps().file_pause, self.PauseFiles )
+        self._pause_files_button = ClientGUICommon.IconButton( self._import_queue_panel, CC.global_icons().file_pause, self.PauseFiles )
         self._pause_files_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play files' ) )
         self._current_action = ClientGUICommon.BetterStaticText( self._import_queue_panel, ellipsize_end = True )
         self._file_seed_cache_control = ClientGUIFileSeedCache.FileSeedCacheStatusControl( self._import_queue_panel, self._page_key )
@@ -2525,7 +2582,7 @@ class SidebarImporterSimpleDownloader( SidebarImporter ):
         
         self._simple_parsing_jobs_panel = ClientGUICommon.StaticBox( self._simple_downloader_panel, 'parsing' )
         
-        self._pause_queue_button = ClientGUICommon.BetterBitmapButton( self._simple_parsing_jobs_panel, CC.global_pixmaps().gallery_pause, self.PauseQueue )
+        self._pause_queue_button = ClientGUICommon.IconButton( self._simple_parsing_jobs_panel, CC.global_icons().gallery_pause, self.PauseQueue )
         self._pause_queue_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play queue' ) )
         
         self._parser_status = ClientGUICommon.BetterStaticText( self._simple_parsing_jobs_panel, ellipsize_end = True )
@@ -2550,11 +2607,11 @@ class SidebarImporterSimpleDownloader( SidebarImporter ):
         
         self._formulae.setMinimumWidth( formulae_width )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'edit formulae', 'Edit these parsing formulae.', self._EditFormulae ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit formulae', 'Edit these parsing formulae.', self._EditFormulae ) )
         
-        self._formula_cog = ClientGUIMenuButton.MenuBitmapButton( self._simple_parsing_jobs_panel, CC.global_pixmaps().cog, menu_items )
+        self._formula_cog = ClientGUIMenuButton.CogIconButton( self._simple_parsing_jobs_panel, menu_template_items )
         
         self._RefreshFormulae()
         
@@ -2816,20 +2873,20 @@ class SidebarImporterSimpleDownloader( SidebarImporter ):
         
         if files_paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_files_button, CC.global_pixmaps().file_play )
+            self._pause_files_button.SetIconSmart( CC.global_icons().file_play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_files_button, CC.global_pixmaps().file_pause )
+            self._pause_files_button.SetIconSmart( CC.global_icons().file_pause )
             
         
         if queue_paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_queue_button, CC.global_pixmaps().gallery_play )
+            self._pause_queue_button.SetIconSmart( CC.global_icons().gallery_play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_queue_button, CC.global_pixmaps().gallery_pause )
+            self._pause_queue_button.SetIconSmart( CC.global_icons().gallery_pause )
             
         
         ( file_network_job, page_network_job ) = self._simple_downloader_import.GetNetworkJobs()
@@ -2917,7 +2974,7 @@ class SidebarImporterURLs( SidebarImporter ):
         
         self._import_queue_panel = ClientGUICommon.StaticBox( self._url_panel, 'imports' )
         
-        self._pause_button = ClientGUICommon.BetterBitmapButton( self._import_queue_panel, CC.global_pixmaps().file_pause, self.Pause )
+        self._pause_button = ClientGUICommon.IconButton( self._import_queue_panel, CC.global_icons().file_pause, self.Pause )
         self._pause_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play files' ) )
         
         self._file_download_control = ClientGUINetworkJobControl.NetworkJobControl( self._import_queue_panel )
@@ -3025,11 +3082,11 @@ class SidebarImporterURLs( SidebarImporter ):
         
         if paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().file_play )
+            self._pause_button.SetIconSmart( CC.global_icons().file_play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().file_pause )
+            self._pause_button.SetIconSmart( CC.global_icons().file_pause )
             
         
         ( file_network_job, gallery_network_job ) = self._urls_import.GetNetworkJobs()

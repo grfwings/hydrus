@@ -114,10 +114,12 @@ def ConvertDomainIntoAllApplicableDomains( domain, discard_www = True ):
     
     return domains
     
+
 def ConvertDomainIntoNextLevelDomain( domain ):
     
     return '.'.join( domain.split( '.' )[1:] ) # i.e. strip off the leftmost subdomain maps.google.com -> google.com
     
+
 def ConvertDomainIntoSecondLevelDomain( domain ):
     
     domains = ConvertDomainIntoAllApplicableDomains( domain )
@@ -129,6 +131,7 @@ def ConvertDomainIntoSecondLevelDomain( domain ):
     
     return domains[-1]
     
+
 def ConvertHTTPSToHTTP( url ):
     
     if url.startswith( 'http://' ):
@@ -298,17 +301,9 @@ def ConvertQueryTextToDict( query_text ):
 
 def ConvertURLIntoDomain( url ):
     
+    CheckLooksLikeAFullURL( url )
+    
     parser_result = ParseURL( url )
-    
-    if parser_result.scheme == '':
-        
-        raise HydrusExceptions.URLClassException( 'URL "' + url + '" was not recognised--did you forget the http:// or https://?' )
-        
-    
-    if parser_result.netloc == '':
-        
-        raise HydrusExceptions.URLClassException( 'URL "' + url + '" was not recognised--is it missing a domain?' )
-        
     
     domain = parser_result.netloc
     
@@ -348,13 +343,7 @@ def CookieDomainMatches( cookie, search_domain ):
     
     return matches_exactly or matches_dot or valid_subdomain
     
-def DomainEqualsAnotherForgivingWWW( test_domain, wwwable_domain ):
-    
-    # domain is either the same or starts with www. or www2. or something
-    rule = r'^(www[^\.]*\.)?' + re.escape( wwwable_domain ) + '$'
-    
-    return re.search( rule, test_domain ) is not None
-    
+
 def GetCookie( cookies, search_domain, cookie_name_string_match ):
     
     for cookie in cookies:
@@ -428,15 +417,17 @@ def GetSearchURLs( url ):
             search_urls.add( collapsed_adjusted_url )
             
         
+        alt_netloc = None
+        
         if netloc.startswith( 'www' ):
             
             try:
                 
-                alt_netloc = ConvertDomainIntoSecondLevelDomain( netloc )
+                alt_netloc = RemoveWWWFromDomain( netloc )
                 
             except HydrusExceptions.URLClassException:
                 
-                continue
+                pass
                 
             
         else:
@@ -444,9 +435,12 @@ def GetSearchURLs( url ):
             alt_netloc = 'www.' + netloc
             
         
-        adjusted_url = urllib.parse.urlunparse( ( scheme, alt_netloc, path, params, query, fragment ) )
-        
-        search_urls.add( adjusted_url )
+        if alt_netloc is not None:
+            
+            adjusted_url = urllib.parse.urlunparse( ( scheme, alt_netloc, path, params, query, fragment ) )
+            
+            search_urls.add( adjusted_url )
+            
         
     
     for url in list( search_urls ):
@@ -464,7 +458,7 @@ def GetSearchURLs( url ):
     return search_urls
     
 
-def LooksLikeAFullURL( text: str ) -> bool:
+def CheckLooksLikeAFullURL( text: str ):
     
     try:
         
@@ -472,17 +466,29 @@ def LooksLikeAFullURL( text: str ) -> bool:
         
         if p.scheme == '':
             
-            return False
+            raise HydrusExceptions.URLClassException( 'No scheme--did you forgot http/https?--in "{text}"!' )
             
         
         if p.netloc == '':
             
-            return False
+            raise HydrusExceptions.URLClassException( 'No domain in "{text}"!' )
             
+        
+    except:
+        
+        raise HydrusExceptions.URLClassException( f'Could not parse "{text}" at all!' )
+        
+    
+
+def LooksLikeAFullURL( text: str ) -> bool:
+    
+    try:
+        
+        CheckLooksLikeAFullURL( text )
         
         return True
         
-    except:
+    except HydrusExceptions.URLClassException:
         
         return False
         
@@ -510,6 +516,8 @@ def NormaliseAndFilterAssociableURLs( urls ):
     for url in urls:
         
         try:
+            
+            CheckLooksLikeAFullURL( url )
             
             url = CG.client_controller.network_engine.domain_manager.NormaliseURL( url )
             

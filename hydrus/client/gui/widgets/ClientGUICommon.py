@@ -257,78 +257,7 @@ class ShortcutAwareToolTipMixin( object ):
         self._RefreshToolTip()
         
     
-class BetterBitmapButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
-    
-    def __init__( self, parent, bitmap, func, *args, **kwargs ):
-        
-        super().__init__( parent )
-        
-        self.SetToolTipCallable( self.setToolTip )
-        
-        self.setIcon( QG.QIcon( bitmap ) )
-        self.setIconSize( bitmap.size() )
-        self.setSizePolicy( QW.QSizePolicy.Policy.Maximum, QW.QSizePolicy.Policy.Maximum )
-        
-        self._func = func
-        self._args = args
-        self._kwargs = kwargs
-        
-        self.clicked.connect( self.EventButton )
-        
-    
-    def EventButton( self ):
-        
-        self._func( *self._args,  **self._kwargs )
-        
-    
-class BetterBitmapWindowDragButton( BetterBitmapButton ):
-    
-    def __init__( self, parent, bitmap, func, target_window ):
-        
-        super().__init__( parent, bitmap, func )
-        
-        self._target_window = target_window
-        
-        self._original_icon = bitmap
-        
-    
-    def mousePressEvent( self, event ):
-        
-        if event.button() == QC.Qt.MouseButton.LeftButton:
-            
-            self._startDrag()
-            
-            self.setIcon( CC.global_pixmaps().move_cursor )
-            
-        elif event.button() == QC.Qt.MouseButton.RightButton:
-            
-            self._func()
-            
-        else:
-            
-            super().mousePressEvent( event )
-        
-    
-    def mouseReleaseEvent(self, event):
-        
-        if event.button() == QC.Qt.MouseButton.LeftButton:
-            
-            self.setIcon(self._original_icon)
-            
-        super().mouseReleaseEvent(event)
-        
-    
-    def _startDrag( self ):
-        
-        if self._target_window is not None:
-            
-            window_handle = self._target_window.windowHandle()
-            
-            if window_handle is not None:
-                
-                window_handle.startSystemMove()
-        
-    
+
 class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
     
     def __init__( self, parent, label, func, *args, **kwargs ):
@@ -346,6 +275,10 @@ class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
         self._yes_no_text = None
         
         self.clicked.connect( self.EventButton )
+        
+        # default is Minimum horizontal, but Preferred says we can go down to minSizeHint
+        # QPushButton minSizeHint is actually the same as sizeHint though, so maybe this does nothing hooray
+        self.setSizePolicy( QW.QSizePolicy.Policy.Preferred, QW.QSizePolicy.Policy.Fixed )
         
     
     def EventButton( self ):
@@ -891,10 +824,8 @@ class BetterRadioBox( QW.QFrame ):
 
 class BetterStaticText( QP.EllipsizedLabel ):
     
-    def __init__( self, parent, label = None, tooltip_label = False, **kwargs ):
+    def __init__( self, parent, label = None, tooltip_label = False, ellipsize_end = False, ellipsized_ideal_width_chars = 24 ):
         
-        ellipsize_end = 'ellipsize_end' in kwargs and kwargs[ 'ellipsize_end' ]
-
         super().__init__( parent, ellipsize_end = ellipsize_end )
         
         # otherwise by default html in 'this is a <hr> parsing step' stuff renders fully lmaoooo
@@ -902,7 +833,7 @@ class BetterStaticText( QP.EllipsizedLabel ):
         
         self._tooltip_label = tooltip_label
         
-        if 'ellipsize_end' in kwargs and kwargs[ 'ellipsize_end' ]:
+        if ellipsize_end:
             
             self._tooltip_label = True
             
@@ -986,85 +917,7 @@ class BetterHyperLink( BetterStaticText ):
     
     link_color = QC.Property( QG.QColor, get_link_color, set_link_color )
     
-class BufferedWindow( QW.QWidget ):
-    
-    def __init__( self, *args, **kwargs ):
-        
-        super().__init__( *args )
-        
-        if 'size' in kwargs:
-            
-            size = kwargs[ 'size' ]
-            
-            if isinstance( size, QC.QSize ):
-                
-                self.setFixedSize( kwargs[ 'size' ] )
-                
-            
-        
-    
-    def _Draw( self, painter ):
-        
-        raise NotImplementedError()
-        
-    
-    def paintEvent( self, event ):
-        
-        painter = QG.QPainter( self )
-        
-        self._Draw( painter )
-        
-    
-class BufferedWindowIcon( BufferedWindow ):
-    
-    def __init__( self, parent, pixmap: QG.QPixmap, click_callable = None ):
-        
-        device_independant_size = pixmap.size() / pixmap.devicePixelRatio()
-        
-        super().__init__( parent, size = device_independant_size )
-        
-        self._pixmap = pixmap
-        self._click_callable = click_callable
-        
-    
-    def _Draw( self, painter ):
-        
-        background_colour = QP.GetBackgroundColour( self.parentWidget() )
-        
-        painter.setBackground( QG.QBrush( background_colour ) )
-        
-        painter.eraseRect( painter.viewport() )
-        
-        painter.setRenderHint( QG.QPainter.RenderHint.SmoothPixmapTransform, True ) # makes any scaling here due to jank thumbs look good
-        
-        device_independant_pixmap_width = self._pixmap.width() / self._pixmap.devicePixelRatio()
-        device_independant_pixmap_height = self._pixmap.height() / self._pixmap.devicePixelRatio()
-        
-        x_offset = round( ( self.width() - device_independant_pixmap_width ) / 2 )
-        y_offset = round( ( self.height() - device_independant_pixmap_height ) / 2 )
-        
-        if isinstance( self._pixmap, QG.QImage ):
-            
-            painter.drawImage( x_offset, y_offset, self._pixmap )
-            
-        else:
-            
-            painter.drawPixmap( x_offset, y_offset, self._pixmap )
-            
-        
-    
-    def mousePressEvent( self, event ):
-        
-        if self._click_callable is None:
-            
-            return BufferedWindow.mousePressEvent( self, event )
-            
-        else:
-            
-            self._click_callable()
-            
-        
-    
+
 class BusyCursor( object ):
     
     def __enter__( self ):
@@ -1120,6 +973,7 @@ class CheckboxManagerBoolean( CheckboxManager ):
         setattr( self._obj, self._name, not value )
         
     
+
 class CheckboxManagerCalls( CheckboxManager ):
     
     def __init__( self, invert_call, value_call ):
@@ -1140,6 +994,7 @@ class CheckboxManagerCalls( CheckboxManager ):
         self._invert_call()
         
     
+
 class CheckboxManagerOptions( CheckboxManager ):
     
     def __init__( self, boolean_name ):
@@ -1147,6 +1002,12 @@ class CheckboxManagerOptions( CheckboxManager ):
         super().__init__()
         
         self._boolean_name = boolean_name
+        self._additional_notify_calls = []
+        
+    
+    def AddNotifyCall( self, func ):
+        
+        self._additional_notify_calls.append( func )
         
     
     def GetCurrentValue( self ):
@@ -1169,6 +1030,11 @@ class CheckboxManagerOptions( CheckboxManager ):
         
         CG.client_controller.pub( 'checkbox_manager_inverted' )
         CG.client_controller.pub( 'notify_new_menu_option' )
+        
+        for func in self._additional_notify_calls:
+            
+            func()
+            
         
     
 
@@ -1311,6 +1177,165 @@ class Gauge( QW.QProgressBar ):
         self.SetValue( 0 )
         
         self._is_pulsing = True
+        
+    
+
+class IconButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
+    
+    def __init__( self, parent, bitmap_or_icon, func, *args, **kwargs ):
+        
+        super().__init__( parent )
+        
+        self.SetToolTipCallable( self.setToolTip )
+        
+        if isinstance( bitmap_or_icon, QG.QPixmap ):
+            
+            icon = QG.QIcon( bitmap_or_icon )
+            icon_size = bitmap_or_icon.size()
+            
+        else:
+            
+            icon = bitmap_or_icon
+            icon_size = None # QC.QSize( 16, 16 )
+            
+        
+        self.last_icon_set = icon
+        
+        self.setIcon( icon )
+        
+        if icon_size is not None:
+            
+            self.setIconSize( icon_size ) # if and when we move to SVG, maybe we'll do devicePixelRatio stuff here? 16x16 * dpr?
+            
+        
+        #self.setSizePolicy( QW.QSizePolicy.Policy.Maximum, QW.QSizePolicy.Policy.Maximum )
+        
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+        
+        self.clicked.connect( self.EventButton )
+        
+    
+    def EventButton( self ):
+        
+        self._func( *self._args,  **self._kwargs )
+        
+    
+    def SetIconSmart( self, icon: QG.QIcon ):
+        
+        # this is actually useful as I understand. the jump to C++ copies the icon and Qt doesn't know it is the same guy
+        
+        if icon is self.last_icon_set:
+            
+            return
+            
+        
+        self.setIcon( icon )
+        
+        self.last_icon_set = icon
+        
+    
+
+class IconButtonMultiClickable( IconButton ):
+    
+    def __init__( self, parent, icon, func, right_click_func = None, middle_click_func = None ):
+        
+        super().__init__( parent, icon, func )
+        
+        self._left_click_func = func
+        self._right_click_func = right_click_func
+        self._middle_click_func = middle_click_func
+        
+    
+    def mousePressEvent( self, event ):
+        
+        if event.button() == QC.Qt.MouseButton.RightButton and self._right_click_func is not None:
+            
+            self._right_click_func()
+            
+        elif event.button() == QC.Qt.MouseButton.MiddleButton and self._middle_click_func is not None:
+            
+            self._middle_click_func()
+            
+        else:
+            
+            self._left_click_func()
+            
+        
+    
+
+class NamespaceWidget( QW.QWidget ):
+    
+    def __init__( self, parent ):
+        
+        super().__init__( parent )
+        
+        # think about updating to this to have ':' for 'namespaced', but either optionall or (ideally) all users of it would need to support that too
+        
+        choice_tuples = [
+            ( 'any namespace', '*' ),
+            ( 'unnamespaced', '' ),
+            ( 'namespace', 'specific' )
+        ]
+        
+        self._selector = BetterRadioBox( self, choice_tuples, vertical = True )
+        
+        self._namespace = QW.QLineEdit( self )
+        
+        self._namespace.setPlaceholderText( 'e.g. character' )
+        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'No trailing colon. Wildcards are ok!' ) )
+        
+        vbox = QP.VBoxLayout( margin = 0 )
+        
+        QP.AddToLayout( vbox, self._selector, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._namespace, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        self.setLayout( vbox )
+        
+        self._selector.radioBoxChanged.connect( self._UpdateControls )
+        
+        self.SetValue( '*' )
+        
+    
+    def _UpdateControls( self ):
+        
+        value = self._selector.GetValue()
+        
+        self._namespace.setEnabled( value == 'specific' )
+        
+    
+    def GetValue( self ):
+        
+        value = self._selector.GetValue()
+        
+        if value in ( '', '*' ):
+            
+            return value
+            
+        
+        return self._namespace.text()
+        
+    
+    def SetValue( self, value ):
+        
+        if value is None:
+            
+            value = '*'
+            
+        
+        if value in ( '', '*' ):
+            
+            self._selector.SetValue( value )
+            
+        else:
+            
+            self._selector.SetValue( 'specific' )
+            
+            self._namespace.setText( value )
+            
+        
+        self._UpdateControls()
         
     
 
@@ -1878,6 +1903,7 @@ class TextCatchEnterEventFilter( QC.QObject ):
         return False
         
     
+
 class TextAndGauge( QW.QWidget ):
     
     def __init__( self, parent ):
@@ -1917,3 +1943,57 @@ class TextAndGauge( QW.QWidget ):
         self._gauge.SetRange( range )
         self._gauge.SetValue( value )
         
+    
+
+class WindowDragButton( IconButton ):
+    
+    def __init__( self, parent, icon, func, target_window ):
+        
+        super().__init__( parent, icon, func )
+        
+        self._target_window = target_window
+        
+        self._original_icon = icon
+        
+    
+    def mousePressEvent( self, event ):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self._startDrag()
+            
+            self.SetIconSmart( CC.global_icons().move_cursor )
+            
+        elif event.button() == QC.Qt.MouseButton.RightButton:
+            
+            self._func()
+            
+        else:
+            
+            super().mousePressEvent( event )
+            
+        
+    
+    def mouseReleaseEvent(self, event):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self.SetIconSmart( self._original_icon )
+            
+        
+        super().mouseReleaseEvent( event )
+        
+    
+    def _startDrag( self ):
+        
+        if self._target_window is not None:
+            
+            window_handle = self._target_window.windowHandle()
+            
+            if window_handle is not None:
+                
+                window_handle.startSystemMove()
+                
+            
+        
+    

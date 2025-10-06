@@ -6,6 +6,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
@@ -25,6 +26,7 @@ from hydrus.client.gui.metadata import ClientGUITagActions
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 
@@ -63,7 +65,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             if service_key == default_tag_service_key:
                 
                 # Py 3.11/PyQt6 6.5.0/two tabs/total tab characters > ~12/select second tab during init = first tab disappears bug
-                QP.CallAfter( self._tag_services.setCurrentWidget, page )
+                CG.client_controller.CallAfter( self._tag_services, self._tag_services.setCurrentWidget, page )
                 
             
         
@@ -186,19 +188,19 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             self._tag_siblings.Sort()
             
-            menu_items = []
+            menu_template_items = []
             
-            menu_items.append( ( 'normal', 'from clipboard (add new pairs and ignore pre-existing)', 'Load siblings from text in your clipboard.', HydrusData.Call( self._ImportFromClipboard, True ) ) )
-            menu_items.append( ( 'normal', 'from .txt file (add new pairs and ignore pre-existing)', 'Load siblings from a .txt file.', HydrusData.Call( self._ImportFromTXT, True ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard (add new pairs and ignore pre-existing)', 'Load siblings from text in your clipboard.', HydrusData.Call( self._ImportFromClipboard, True ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from .txt file (add new pairs and ignore pre-existing)', 'Load siblings from a .txt file.', HydrusData.Call( self._ImportFromTXT, True ) ) )
             
-            self._listctrl_panel.AddMenuButton( 'import', menu_items )
+            self._listctrl_panel.AddMenuButton( 'import', menu_template_items )
             
-            menu_items = []
+            menu_template_items = []
             
-            menu_items.append( ( 'normal', 'to clipboard', 'Save selected siblings to your clipboard.', self._ExportToClipboard ) )
-            menu_items.append( ( 'normal', 'to .txt file', 'Save selected siblings to a .txt file.', self._ExportToTXT ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Save selected siblings to your clipboard.', self._ExportToClipboard ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to .txt file', 'Save selected siblings to a .txt file.', self._ExportToTXT ) )
             
-            self._listctrl_panel.AddMenuButton( 'export', menu_items, enabled_only_on_selection = True )
+            self._listctrl_panel.AddMenuButton( 'export', menu_template_items, enabled_only_on_selection = True )
             
             ( gumpf, preview_height ) = ClientGUIFunctions.ConvertTextToPixels( self._old_siblings, ( 12, 4 ) )
             
@@ -450,7 +452,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
                 pairs.append( pair )
                 
             
-            pairs = HydrusData.DedupeList( pairs )
+            pairs = HydrusLists.DedupeList( pairs )
             
             return pairs
             

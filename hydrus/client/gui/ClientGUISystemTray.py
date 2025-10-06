@@ -1,11 +1,9 @@
-import os
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
-from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 
+from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
@@ -38,9 +36,9 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         self._just_clicked_to_show = False
         
-        png_path = os.path.join( HC.STATIC_DIR, 'hydrus_non-transparent.png' )
+        icon = CC.global_icons().hydrus_system_tray
         
-        self.setIcon( QG.QIcon( png_path ) )
+        self.setIcon( icon )
         
         self.activated.connect( self._ClickActivated )
         
@@ -51,7 +49,7 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         # if we click immediately, some users get frozen ui, I assume a mix-up with the icon being destroyed during the same click event or similar
         
-        QP.CallAfter( self._WasActivated, activation_reason )
+        CG.client_controller.CallAfter( self, self._WasActivated, activation_reason )
         
     
     def _RegenerateMenu( self ):

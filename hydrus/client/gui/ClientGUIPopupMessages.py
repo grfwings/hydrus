@@ -11,6 +11,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
 
@@ -141,6 +142,10 @@ class PopupMessage( PopupWindow ):
         self._network_job_ctrl.hide()
         self._time_network_job_disappeared = 0
         
+        # this is kind of stupid, but whatever for now
+        width = ClientGUIFunctions.ConvertTextToPixelWidth( self._network_job_ctrl, 58 )
+        self._network_job_ctrl.setMinimumWidth( width )
+        
         self._copy_to_clipboard_button = ClientGUICommon.BetterButton( self, 'copy to clipboard', self.CopyToClipboard )
         self._copy_to_clipboard_button_ev = QP.WidgetEventFilter( self._copy_to_clipboard_button )
         self._copy_to_clipboard_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
@@ -173,12 +178,12 @@ class PopupMessage( PopupWindow ):
         self._copy_tb_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._copy_tb_button.hide()
         
-        self._pause_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pause, self.PausePlay )
+        self._pause_button = ClientGUICommon.IconButton( self, CC.global_icons().pause, self.PausePlay )
         self._pause_button_ev = QP.WidgetEventFilter( self._pause_button )
         self._pause_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._pause_button.hide()
         
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, self.Cancel )
+        self._cancel_button = ClientGUICommon.IconButton( self, CC.global_icons().stop, self.Cancel )
         self._cancel_button_ev = QP.WidgetEventFilter( self._cancel_button )
         self._cancel_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._cancel_button.hide()
@@ -296,11 +301,11 @@ class PopupMessage( PopupWindow ):
         
         if self._job_status.IsPaused():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().play )
+            self._pause_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().pause )
+            self._pause_button.SetIconSmart( CC.global_icons().pause )
             
         
     
@@ -440,7 +445,7 @@ class PopupMessage( PopupWindow ):
         
         #
         
-        popup_gauge_1 = self._job_status.GetIfHasVariable( 'popup_gauge_1' )
+        popup_gauge_1 = self._job_status.GetGauge()
         
         if popup_gauge_1 is not None and not paused:
             
@@ -788,7 +793,7 @@ class JobStatusPopupQueue( object ):
                             
                             new_hashes.extend( hashes )
                             
-                            new_hashes = HydrusData.DedupeList( new_hashes )
+                            new_hashes = HydrusLists.DedupeList( new_hashes )
                             
                             existing_job_status.SetFiles( new_hashes, existing_label )
                             
@@ -910,7 +915,7 @@ class PopupMessageManager( QW.QFrame ):
             # for whatever reason, self._message_vbox.activate does not cause the vbox.sizeHint to be recalculated at this point. it just sits at the last value unless original was (0,0)?!?
             # so we'll do it callafter. it works
             
-            QP.CallAfter( self.MakeSureEverythingFits )
+            CG.client_controller.CallAfter( self, self.MakeSureEverythingFits )
             
         
     

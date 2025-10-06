@@ -18,7 +18,7 @@ from hydrus.client.gui import ClientGUIFunctions
 
 HG.last_mouse_click_button = QC.Qt.MouseButton.LeftButton
 
-def AddLastClickMemory( menu: QW.QMenu ):
+def AddLastClickMemory( gui_item ):
     
     class _ClickMemoryFilter( QC.QObject ):
         
@@ -34,10 +34,10 @@ def AddLastClickMemory( menu: QW.QMenu ):
             return False
             
         
-
-    filter_obj = _ClickMemoryFilter(menu)
     
-    menu.installEventFilter(filter_obj)
+    filter_obj = _ClickMemoryFilter( gui_item )
+    
+    gui_item.installEventFilter( filter_obj )
     
     return filter_obj
     
@@ -62,16 +62,11 @@ def AppendMenuIconItem( menu: QW.QMenu, label: str, description: str, icon: QG.Q
     
     menu_item.setIcon( icon )
     
-    menu.addAction(menu_item)
+    menu.addAction( menu_item )
     
     BindMenuItem( menu_item, callable, *args, **kwargs )
     
     return menu_item
-    
-
-def AppendMenuBitmapItem( menu, label, description, bitmap, callable, *args, **kwargs ):
-    
-    return AppendMenuIconItem(menu, label, description, QG.QIcon( bitmap ), callable, *args, **kwargs)
     
 
 def AppendMenuCheckItem( menu, label, description, initial_value, callable, *args, **kwargs ):
@@ -89,6 +84,7 @@ def AppendMenuCheckItem( menu, label, description, initial_value, callable, *arg
     
     return menu_item
     
+
 def AppendMenuItem( menu, label, description, callable, *args, role: QW.QAction.MenuRole = None, **kwargs ):
     
     menu_item = QW.QAction( menu )
@@ -184,7 +180,14 @@ def AppendMenuOrItem( menu, submenu_name, menu_tuples, sort_tuples = True ):
         
         label = '{}{}'.format( item_prefix, label )
         
-        AppendMenuItem( submenu, label, description, call )
+        if call is None:
+            
+            AppendMenuLabel( submenu, label, description )
+            
+        else:
+            
+            AppendMenuItem( submenu, label, description, call )
+            
         
     
 def AppendSeparator( menu ):
@@ -266,11 +269,11 @@ def GetEventCallable( callable, *args, **kwargs ):
     
     def event_callable( checked_state ):
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'ui' ):
             
             summary = 'Profiling menu: ' + repr( callable )
             
-            HydrusProfiling.Profile( summary, 'callable( *args, **kwargs )', globals(), locals(), min_duration_ms = HG.menu_profile_min_job_time_ms )
+            HydrusProfiling.Profile( summary, HydrusData.Call( callable, *args, **kwargs ), min_duration_ms = HG.menu_profile_min_job_time_ms )
             
         else:
             
@@ -319,6 +322,8 @@ def SetMenuItemLabel( menu_item: QW.QAction, label: str ):
 
 def SetMenuTexts( menu_item: QW.QAction, label: str, description: str ):
     
+    unsanitized_label = label
+    
     label = SanitiseLabel( label )
     
     elided_label = HydrusText.ElideText( label, 128, elide_center = True )
@@ -329,7 +334,7 @@ def SetMenuTexts( menu_item: QW.QAction, label: str, description: str ):
     
     if label != elided_label:
         
-        menu_item.setToolTip( ClientGUIFunctions.WrapToolTip( label ) )
+        menu_item.setToolTip( ClientGUIFunctions.WrapToolTip( unsanitized_label ) + '\n\n' + description )
         
     elif description != label and description != '':
         

@@ -1,6 +1,5 @@
 import collections.abc
 import threading
-import time
 import typing
 
 from qtpy import QtCore as QC
@@ -11,19 +10,20 @@ from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientLocation
 from hydrus.client import ClientThreading
 from hydrus.client.duplicates import ClientDuplicatesAutoResolution
 from hydrus.client.duplicates import ClientDuplicatesAutoResolutionComparators
 from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.files.images import ClientVisualData
 from hydrus.client.gui import ClientGUIAsync
-from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
-from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.duplicates import ClientGUIDuplicatesAutoResolutionRulePreview
@@ -34,11 +34,13 @@ from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.metadata import ClientGUIMetadataConditional
+from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.gui.widgets import ClientGUINumberTest
 from hydrus.client.search import ClientNumberTest
+from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
 
 class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel ):
@@ -47,13 +49,13 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         
         super().__init__( parent )
         
-        menu_items = []
+        menu_template_items = []
         
         call = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
         
-        menu_items.append( ( 'normal', 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -71,7 +73,7 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         self._duplicates_auto_resolution_rules_panel.AddButton( 'add', self._Add )
         self._duplicates_auto_resolution_rules_panel.AddButton( 'edit', self._Edit, enabled_only_on_single_selection = True )
         self._duplicates_auto_resolution_rules_panel.AddDeleteButton()
-        #self._duplicates_auto_resolution_rules_panel.AddImportExportButtons( ( ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, ), self._ImportRule )
+        self._duplicates_auto_resolution_rules_panel.AddImportExportButtons( ( ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, ), self._ImportRule )
         
         #
         
@@ -106,7 +108,27 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         
         duplicates_auto_resolution_rule = ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule( name )
         
-        # TODO: set some good defaults
+        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        
+        predicates = [
+            ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = ( HC.GENERAL_IMAGE, ) ),
+            ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HEIGHT, value = ClientNumberTest.NumberTest.STATICCreateFromCharacters( '>', 128 ) ),
+            ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_WIDTH, value = ClientNumberTest.NumberTest.STATICCreateFromCharacters( '>', 128 ) ),
+        ]
+        
+        file_search_context_1 = ClientSearchFileSearchContext.FileSearchContext(
+            location_context = location_context,
+            predicates = predicates
+        )
+        
+        potential_duplicates_search_context = ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext()
+        
+        potential_duplicates_search_context.SetFileSearchContext1( file_search_context_1 )
+        potential_duplicates_search_context.SetDupeSearchType( ClientDuplicates.DUPE_SEARCH_BOTH_FILES_MATCH_ONE_SEARCH )
+        potential_duplicates_search_context.SetPixelDupesPreference( ClientDuplicates.SIMILAR_FILES_PIXEL_DUPES_ALLOWED )
+        potential_duplicates_search_context.SetMaxHammingDistance( 0 )
+        
+        duplicates_auto_resolution_rule.SetPotentialDuplicatesSearchContext( potential_duplicates_search_context )
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit rule' ) as dlg:
             
@@ -201,6 +223,11 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
     def _ImportRule( self, duplicates_auto_resolution_rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ):
         
         duplicates_auto_resolution_rule.SetNonDupeName( self._GetExistingNames(), do_casefold = True )
+        
+        # this is already sorted for the "add suggested" rules, but isn't for duplicate/clipboard/png import. we'll do it anyway to be safe and cover all situations
+        duplicates_auto_resolution_rule.SetId( ClientDuplicatesAutoResolution.NEW_RULE_SESSION_ID )
+        
+        ClientDuplicatesAutoResolution.NEW_RULE_SESSION_ID -= 1
         
         self._duplicates_auto_resolution_rules.AddData( duplicates_auto_resolution_rule, select_sort_and_scroll = True )
         
@@ -451,7 +478,7 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
         
         ( action, delete_a, delete_b, duplicate_content_merge_options ) = self._edit_actions_panel.GetValue()
         
-        if action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE ) and not pair_selector.CanDetermineBetter():
+        if action == HC.DUPLICATE_BETTER and not pair_selector.CanDetermineBetter():
             
             raise HydrusExceptions.VetoException( 'Hey, you have the action set to "better/worse duplicate" but the comparison step has no way to figure out A or B! You need to add at least one step that specifies either A or B so the rule knows which way around to apply the action. If there is no easy determination, perhaps "set as same quality" is more appropriate?' )
             
@@ -479,7 +506,6 @@ class EditPairActionsWidget( ClientGUICommon.StaticBox ):
         
         for duplicate_type in [
             HC.DUPLICATE_BETTER,
-            HC.DUPLICATE_WORSE,
             HC.DUPLICATE_SAME_QUALITY,
             HC.DUPLICATE_ALTERNATE,
             HC.DUPLICATE_FALSE_POSITIVE
@@ -508,23 +534,16 @@ class EditPairActionsWidget( ClientGUICommon.StaticBox ):
         self._delete_b.setChecked( delete_b )
         self._use_default_duplicates_content_merge_options.setChecked( duplicates_content_merge_options is None )
         
-        action_to_set = action
-        
-        if action_to_set == HC.DUPLICATE_WORSE:
-            
-            action_to_set = HC.DUPLICATE_BETTER
-            
-        
         if duplicates_content_merge_options is None:
             
-            duplicates_content_merge_options = CG.client_controller.new_options.GetDuplicateContentMergeOptions( action_to_set )
+            duplicates_content_merge_options = CG.client_controller.new_options.GetDuplicateContentMergeOptions( action )
             
         else:
             
             self._custom_duplicate_content_merge_options.ExpandCollapse()
             
         
-        self._custom_duplicate_content_merge_options.SetValue( action_to_set, duplicates_content_merge_options )
+        self._custom_duplicate_content_merge_options.SetValue( action, duplicates_content_merge_options )
         
         #
         
@@ -548,20 +567,15 @@ class EditPairActionsWidget( ClientGUICommon.StaticBox ):
     
     def _UpdateActionControls( self ):
         
-        action_to_set = self._action.GetValue()
-        
-        if action_to_set == HC.DUPLICATE_WORSE:
-            
-            action_to_set = HC.DUPLICATE_BETTER
-            
+        action = self._action.GetValue()
         
         current_action = self._custom_duplicate_content_merge_options.GetDuplicateAction()
         
-        if current_action != action_to_set:
+        if current_action != action:
             
-            duplicates_content_merge_options = CG.client_controller.new_options.GetDuplicateContentMergeOptions( action_to_set )
+            duplicates_content_merge_options = CG.client_controller.new_options.GetDuplicateContentMergeOptions( action )
             
-            self._custom_duplicate_content_merge_options.SetValue( action_to_set, duplicates_content_merge_options )
+            self._custom_duplicate_content_merge_options.SetValue( action, duplicates_content_merge_options )
             
         
     
@@ -647,6 +661,125 @@ class EditPairComparatorOneFilePanel( ClientGUIScrolledPanels.EditPanel ):
         
     
 
+class EditComparatorList( ClientGUIListBoxes.AddEditDeleteListBox ):
+    
+    def __init__( self, parent: QW.QWidget ):
+        
+        super().__init__( parent, 8, self._PairComparatorToPretty, self._AddComparator, self._EditComparator )
+        
+        self.AddImportExportButtons( ( ClientDuplicatesAutoResolutionComparators.PairComparator, ) )
+        
+    
+    def _AddComparator( self ):
+        
+        choice_tuples = [
+            ( 'test A or B', ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile(), 'A comparator that tests one file at a time using system predicates.' ),
+            ( 'test A against B using file info', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo(), 'A comparator that performs a number test on the width, filesize, etc.. of A vs B.' ),
+            ( 'test if A and B are visual duplicates', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeVisualDuplicates( acceptable_confidence = ClientVisualData.VISUAL_DUPLICATES_RESULT_ALMOST_CERTAINLY ), 'A comparator that examines the differences in the images\' shape and colour to determine if they are visual duplicates.' )
+        ]
+        
+        additional_comparators = [
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME ), 'A comparator that tests if the two files share the same filetype.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS ), 'A comparator that tests if the two files have different filetype.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of EXIF data.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of ICC Profile data.' ),
+        ]
+        
+        choice_tuples.extend(
+            ( ( comparator.GetSummary(), comparator, description ) for ( comparator, description ) in additional_comparators )
+        )
+        
+        choice_tuples.append(
+            ( 'OR Comparator', ClientDuplicatesAutoResolutionComparators.PairComparatorOR( [] ), 'A comparator that tests an OR of several sub-comparators.' )
+        )
+        
+        try:
+            
+            comparator = ClientGUIDialogsQuick.SelectFromListButtons( self, 'Which type of comparator?', choice_tuples )
+            
+        except HydrusExceptions.CancelledException:
+            
+            raise
+            
+        
+        return self._EditComparator( comparator )
+        
+    
+    def _EditComparator( self, comparator: ClientDuplicatesAutoResolutionComparators.PairComparator ):
+        
+        with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit comparator' ) as dlg:
+            
+            if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile ):
+                
+                panel = EditPairComparatorOneFilePanel( dlg, comparator )
+                
+            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
+                
+                panel = EditPairComparatorRelativeFileinfoPanel( dlg, comparator )
+                
+            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeVisualDuplicates ):
+                
+                panel = EditPairComparatorRelativeVisualDuplicatesPanel( dlg, comparator )
+                
+            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOR ):
+                
+                panel = EditPairComparatorOR( dlg, comparator )
+                
+            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded ):
+                
+                return comparator
+                
+            
+            dlg.SetPanel( panel )
+            
+            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                
+                edited_comparator = panel.GetValue()
+                
+                return edited_comparator
+                
+            else:
+                
+                raise HydrusExceptions.VetoException()
+                
+            
+        
+    
+    def _PairComparatorToPretty( self, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparator ):
+        
+        return pair_comparator.GetSummary()
+        
+    
+
+class EditPairComparatorOR( ClientGUIScrolledPanels.EditPanel ):
+    
+    def __init__( self, parent, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorOR ):
+        
+        super().__init__( parent )
+        
+        self._comparators = EditComparatorList( self )
+        
+        self._comparators.AddDatas( pair_comparator.GetComparators() )
+        
+        #
+        
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, self._comparators, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        self.widget().setLayout( vbox )
+        
+    
+    def GetValue( self ):
+        
+        comparators = self._comparators.GetData()
+        
+        pair_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOR( comparators )
+        
+        return pair_comparator
+        
+    
+
 class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def __init__( self, parent, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
@@ -664,6 +797,32 @@ class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel
             self._system_predicate.addItem( predicate.ToString(), predicate )
             
         
+        self._time_panel = QW.QWidget( self )
+        
+        allowed_operators = [
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_NOT_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE
+        ]
+        
+        self._time_number_test = ClientGUITime.NumberTestWidgetTimestamp(
+            self._time_panel,
+            allowed_operators = allowed_operators,
+            swap_in_string_for_value = 'B'
+        )
+        
+        self._time_delta = ClientGUITime.TimeDeltaWidget( self, min = - 86400 * 10000, days = True, hours = True, minutes = True, seconds = True, milliseconds = True, negative_allowed = True )
+        
+        self._time_delta.SetValue( 0 )
+        
+        #
+        
+        self._duration_panel = QW.QWidget( self )
+        
         allowed_operators = [
             ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
             ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
@@ -675,62 +834,171 @@ class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT
         ]
         
-        self._number_test = ClientGUINumberTest.NumberTestWidget(
-            self,
+        self._duration_number_test = ClientGUITime.NumberTestWidgetDuration(
+            self._duration_panel,
             allowed_operators = allowed_operators,
             swap_in_string_for_value = 'B'
         )
         
-        self._multiplier = QW.QDoubleSpinBox( self )
-        self._multiplier.setDecimals( 2 )
-        self._multiplier.setSingleStep( 0.01 )
-        self._multiplier.setMinimum( -10000 )
-        self._multiplier.setMaximum( 10000 )
+        self._duration_multiplier = QW.QDoubleSpinBox( self._duration_panel )
+        self._duration_multiplier.setDecimals( 2 )
+        self._duration_multiplier.setSingleStep( 0.01 )
+        self._duration_multiplier.setMinimum( -10000 )
+        self._duration_multiplier.setMaximum( 10000 )
         
-        self._multiplier.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._multiplier, 11 ) )
+        self._duration_multiplier.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._duration_multiplier, 11 ) )
         
-        self._delta = ClientGUICommon.BetterSpinBox( self, min = -100000000, max = 100000000 )
+        self._duration_multiplier.setValue( 1.00 )
         
-        self._delta.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._delta, 13 ) )
+        self._duration_delta = ClientGUITime.TimeDeltaWidget( self, min = - 86400 * 10000, minutes = True, seconds = True, milliseconds = True, negative_allowed = True )
         
-        tt = 'If you dabble with this, the unit is usually obvious, but for duration, the unit is milliseconds!'
+        self._duration_delta.SetValue( 0 )
         
-        self._delta.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        #
+        
+        self._normal_panel = QW.QWidget( self )
+        
+        allowed_operators = [
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_NOT_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT
+        ]
+        
+        self._normal_number_test = ClientGUINumberTest.NumberTestWidget(
+            self._normal_panel,
+            allowed_operators = allowed_operators,
+            swap_in_string_for_value = 'B'
+        )
+        
+        self._normal_multiplier = QW.QDoubleSpinBox( self._normal_panel )
+        self._normal_multiplier.setDecimals( 2 )
+        self._normal_multiplier.setSingleStep( 0.01 )
+        self._normal_multiplier.setMinimum( -10000 )
+        self._normal_multiplier.setMaximum( 10000 )
+        
+        self._normal_multiplier.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._normal_multiplier, 11 ) )
+        
+        self._normal_multiplier.setValue( 1.00 )
+        
+        self._normal_delta = ClientGUICommon.BetterSpinBox( self._normal_panel, min = -100000000, max = 100000000 )
+        
+        self._normal_delta.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._normal_delta, 13 ) )
+        
+        self._normal_delta.setValue( 0 )
+        
+        #
         
         self._live_value_st = ClientGUICommon.BetterStaticText( self )
         
         #
         
-        self._system_predicate.SetValue( pair_comparator.GetSystemPredicate() )
-        self._number_test.SetValue( pair_comparator.GetNumberTest() )
-        self._multiplier.setValue( pair_comparator.GetMultiplier() )
-        self._delta.setValue( pair_comparator.GetDelta() )
+        self._SetValue( pair_comparator )
+        
+        #
+        
+        rows = []
+        
+        rows.append( ( 'operator: ', self._time_number_test ) )
+        rows.append( ( 'delta (optional)', self._time_delta ) )
+        
+        gridbox = ClientGUICommon.WrapInGrid( self._time_panel, rows )
+        
+        self._time_panel.setLayout( gridbox )
+        
+        #
+        
+        rows = []
+        
+        rows.append( ( 'operator: ', self._duration_number_test ) )
+        rows.append( ( 'multiplier (optional): ', self._duration_multiplier ) )
+        rows.append( ( 'delta (optional)', self._duration_delta ) )
+        
+        gridbox = ClientGUICommon.WrapInGrid( self._duration_panel, rows )
+        
+        self._duration_panel.setLayout( gridbox )
+        
+        #
+        
+        rows = []
+        
+        rows.append( ( 'operator: ', self._normal_number_test ) )
+        rows.append( ( 'multiplier (optional): ', self._normal_multiplier ) )
+        rows.append( ( 'delta (optional)', self._normal_delta ) )
+        
+        gridbox = ClientGUICommon.WrapInGrid( self._normal_panel, rows )
+        
+        self._normal_panel.setLayout( gridbox )
         
         #
         
         vbox = QP.VBoxLayout()
         
-        rows = []
-        
-        rows.append( ( 'value to test: ', self._system_predicate ) )
-        rows.append( ( 'operator: ', self._number_test ) )
-        rows.append( ( 'multiplier (optional): ', self._multiplier ) )
-        rows.append( ( 'delta (optional): ', self._delta ) )
-        
-        gridbox = ClientGUICommon.WrapInGrid( self, rows )
-        
-        QP.AddToLayout( vbox, gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
+        QP.AddToLayout( vbox, self._system_predicate, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, self._time_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, self._duration_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, self._normal_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._live_value_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         
-        self._system_predicate.currentIndexChanged.connect( self._UpdateLabel )
-        self._number_test.valueChanged.connect( self._UpdateLabel )
-        self._multiplier.valueChanged.connect( self._UpdateLabel )
-        self._delta.valueChanged.connect( self._UpdateLabel )
+        self._system_predicate.currentIndexChanged.connect( self._UpdateWidgets )
         
-        self._UpdateLabel()
+        self._time_number_test.valueChanged.connect( self._UpdateLabel )
+        self._time_delta.timeDeltaChanged.connect( self._UpdateLabel )
+        
+        self._duration_number_test.valueChanged.connect( self._UpdateLabel )
+        self._duration_multiplier.valueChanged.connect( self._UpdateLabel )
+        self._duration_delta.timeDeltaChanged.connect( self._UpdateLabel )
+        
+        self._normal_number_test.valueChanged.connect( self._UpdateLabel )
+        self._normal_multiplier.valueChanged.connect( self._UpdateLabel )
+        self._normal_delta.valueChanged.connect( self._UpdateLabel )
+        
+        self._UpdateWidgets()
+        
+    
+    def _SetValue( self, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
+        
+        system_predicate = pair_comparator.GetSystemPredicate()
+        
+        self._system_predicate.SetValue( system_predicate )
+        
+        we_time_pred = system_predicate.GetType() in (
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
+        )
+        
+        we_duration_pred = system_predicate.GetType() == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION
+        
+        if we_time_pred:
+            
+            self._time_number_test.SetValue( pair_comparator.GetNumberTest() )
+            
+            self._time_delta.SetValue( HydrusTime.SecondiseMS( pair_comparator.GetDelta() ) )
+            
+        elif we_duration_pred:
+            
+            self._duration_number_test.SetValue( pair_comparator.GetNumberTest() )
+            
+            self._duration_multiplier.setValue( pair_comparator.GetMultiplier() )
+            self._duration_delta.SetValue( HydrusTime.SecondiseMS( pair_comparator.GetDelta() ) )
+            
+        else:
+            
+            self._normal_number_test.SetValue( pair_comparator.GetNumberTest() )
+            
+            self._normal_multiplier.setValue( pair_comparator.GetMultiplier() )
+            self._normal_delta.setValue( pair_comparator.GetDelta() )
+            
         
     
     def _UpdateLabel( self ):
@@ -749,15 +1017,64 @@ class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel
         self._live_value_st.setText( text )
         
     
+    def _UpdateWidgets( self ):
+        
+        system_predicate = self._system_predicate.GetValue()
+        
+        we_time_pred = system_predicate.GetType() in (
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
+        )
+        
+        we_duration_pred = system_predicate.GetType() == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION
+        
+        self._time_panel.setVisible( we_time_pred )
+        
+        self._duration_panel.setVisible( we_duration_pred )
+        
+        self._normal_panel.setVisible( not ( we_time_pred or we_duration_pred ) )
+        
+        self._UpdateLabel()
+        
+    
     def GetValue( self ):
         
         system_predicate = self._system_predicate.GetValue()
         
-        number_test = self._number_test.GetValue()
-        number_test.value = 1
+        we_time_pred = system_predicate.GetType() in (
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
+        )
         
-        multiplier = self._multiplier.value()
-        delta = self._delta.value()
+        we_duration_pred = system_predicate.GetType() == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION
+        
+        if we_time_pred:
+            
+            number_test = self._time_number_test.GetValue()
+            
+            multiplier = 1.00
+            delta = HydrusTime.MillisecondiseS( self._time_delta.GetValue() )
+            
+        elif we_duration_pred:
+            
+            number_test = self._duration_number_test.GetValue()
+            
+            multiplier = self._duration_multiplier.value()
+            delta = HydrusTime.MillisecondiseS( self._duration_delta.GetValue() )
+            
+        else:
+            
+            number_test = self._normal_number_test.GetValue()
+            
+            multiplier = self._normal_multiplier.value()
+            delta = self._normal_delta.value()
+            
+        
+        number_test.value = 1
         
         pair_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo()
         
@@ -836,86 +1153,11 @@ class EditPairSelectorWidget( ClientGUICommon.StaticBox ):
         
         self._original_pair_selector = pair_selector
         
-        self._comparators = ClientGUIListBoxes.AddEditDeleteListBox( self, 8, self._PairComparatorToPretty, self._Add, self._Edit )
+        self._comparators = EditComparatorList( self )
         
         self._comparators.AddDatas( self._original_pair_selector.GetComparators() )
         
         self.Add( self._comparators, CC.FLAGS_EXPAND_BOTH_WAYS )
-        
-    
-    def _Add( self ):
-        
-        choice_tuples = [
-            ( 'test A or B', ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile(), 'A comparator that tests one file at a time using system predicates.' ),
-            ( 'test A against B using file info', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo(), 'A comparator that performs a number test on the width, filesize, etc.. of A vs B.' ),
-            ( 'test if A and B are visual duplicates', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeVisualDuplicates( acceptable_confidence = ClientVisualData.VISUAL_DUPLICATES_RESULT_ALMOST_CERTAINLY ), 'A comparator that examines the differences in the images\' shape and colour to determine if they are visual duplicates.' )
-        ]
-        
-        additional_comparators = []
-        
-        comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME )
-        
-        additional_comparators.append( comparator )
-        
-        comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS )
-        
-        additional_comparators.append( comparator )
-        
-        choice_tuples.extend(
-            ( ( comparator.GetSummary(), comparator, comparator.GetSummary() ) for comparator in additional_comparators )
-        )
-        
-        try:
-            
-            comparator = ClientGUIDialogsQuick.SelectFromListButtons( self, 'Which type of comparator?', choice_tuples )
-            
-        except HydrusExceptions.CancelledException:
-            
-            raise
-            
-        
-        return self._Edit( comparator )
-        
-    
-    def _Edit( self, comparator: ClientDuplicatesAutoResolutionComparators.PairComparator ):
-        
-        with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit comparator' ) as dlg:
-            
-            if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile ):
-                
-                panel = EditPairComparatorOneFilePanel( dlg, comparator )
-                
-            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
-                
-                panel = EditPairComparatorRelativeFileinfoPanel( dlg, comparator )
-                
-            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeVisualDuplicates ):
-                
-                panel = EditPairComparatorRelativeVisualDuplicatesPanel( dlg, comparator )
-                
-            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded ):
-                
-                return comparator
-                
-            
-            dlg.SetPanel( panel )
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                edited_comparator = panel.GetValue()
-                
-                return edited_comparator
-                
-            else:
-                
-                raise HydrusExceptions.VetoException()
-                
-            
-        
-    
-    def _PairComparatorToPretty( self, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparator ):
-        
-        return pair_comparator.GetSummary()
         
     
     def GetValue( self ) -> ClientDuplicatesAutoResolutionComparators.PairSelector:
@@ -938,20 +1180,20 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         super().__init__( parent )
         
-        menu_items = []
+        menu_template_items = []
         
         call = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
         
-        menu_items.append( ( 'normal', 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
         #
         
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().refresh, self._UpdateList )
-        self._cog_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().cog, self._ShowCogMenu )
+        self._refresh_button = ClientGUICommon.IconButton( self, CC.global_icons().refresh, self._UpdateList )
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self, self._GetCogMenuTemplateItems() )
         
         #
         
@@ -996,6 +1238,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         self._rules_list_updater.update()
         
         CG.client_controller.sub( self, 'NotifyWorkComplete', 'notify_duplicates_auto_resolution_work_complete' )
+        CG.client_controller.sub( self, 'NotifyNewRules', 'notify_duplicates_auto_resolution_new_rules' )
         
     
     def _CanWorkHard( self ):
@@ -1029,7 +1272,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         if result == QW.QDialog.DialogCode.Accepted:
             
-            CG.client_controller.Write( 'duplicate_auto_resolution_maintenance_fix_orphan_rules' )
+            CG.client_controller.Write( 'duplicates_auto_resolution_maintenance_fix_orphan_rules' )
             
             self._rules_list_updater.update()
             
@@ -1043,7 +1286,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         if result == QW.QDialog.DialogCode.Accepted:
             
-            CG.client_controller.Write( 'duplicate_auto_resolution_maintenance_fix_orphan_potential_pairs' )
+            CG.client_controller.Write( 'duplicates_auto_resolution_maintenance_fix_orphan_potential_pairs' )
             
             self._rules_list_updater.update()
             
@@ -1082,11 +1325,9 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                 
                 try:
                     
-                    work_edit_lock = CG.client_controller.duplicates_auto_resolution_manager.GetEditWorkLock()
+                    edit_work_lock = CG.client_controller.duplicates_auto_resolution_manager.GetEditWorkLock()
                     
-                    while not work_edit_lock.acquire( False ):
-                        
-                        time.sleep( 0.1 )
+                    while not edit_work_lock.acquire( timeout = 0.25 ):
                         
                         if HG.started_shutdown:
                             
@@ -1111,7 +1352,9 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                     
                 finally:
                     
-                    work_edit_lock.release()
+                    edit_work_lock.release()
+                    
+                    CG.client_controller.duplicates_auto_resolution_manager.Wake()
                     
                 
             
@@ -1149,6 +1392,85 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         self._rules_list_updater.update()
         
     
+    def _GetCogMenuTemplateItems( self ) -> list[ ClientGUIMenuButton.MenuTemplateItem ]:
+        
+        menu_template_items = []
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            lambda: self._FlipBoolean( 'duplicates_auto_resolution_during_idle' ),
+            lambda: CG.client_controller.new_options.GetBoolean( 'duplicates_auto_resolution_during_idle' )
+        )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'work on these rules during idle time', 'Allow the client to work on auto-resolution rules when you are not using the program.', check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls(
+            lambda: self._FlipBoolean( 'duplicates_auto_resolution_during_active' ),
+            lambda: CG.client_controller.new_options.GetBoolean( 'duplicates_auto_resolution_during_active' )
+        )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'work on these rules during normal time', 'Allow the client to work on auto-resolution rules when you are using the program.', check_manager ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        def title_call_1():
+            
+            rules = self._duplicates_auto_resolution_rules.GetData( only_selected = True )
+            
+            if len( rules ) == 0:
+                
+                return 'reset search on all rules'
+                
+            else:
+                
+                return f'reset search on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules'
+                
+            
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( title_call_1, 'Reset the search for the given rules.', self._ResetSearch ) )
+        
+        def title_call_2():
+            
+            rules = self._duplicates_auto_resolution_rules.GetData( only_selected = True )
+            
+            if len( rules ) == 0:
+                
+                return 'reset test on all rules'
+                
+            else:
+                
+                return f'reset test on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules'
+                
+            
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( title_call_2, 'Reset the test for the given rules.', self._ResetTest ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        def title_call_3():
+            
+            rules = self._duplicates_auto_resolution_rules.GetData( only_selected = True )
+            
+            if len( rules ) == 0:
+                
+                return 'reset all denied pairs on all rules'
+                
+            else:
+                
+                return f'reset all denied pairs on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules'
+                
+            
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( title_call_3, 'Reset all the denied pairs for the given rules.', self._ResetDeclined ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'maintenance: delete orphan rules', 'Scan for rules that are partly missing (probably from hard drive damage) and delete them.', self._DeleteOrphanRules ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'maintenance: fix orphan potential pairs', 'Scan for potential pairs in your rule cache that are no longer pertinent and delete them.', self._DeleteOrphanPotentialPairs ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'maintenance: regen cached numbers', 'Clear cached pair counts and regenerate from source.', self._RegenNumbers ) )
+        
+        return menu_template_items
+        
+    
     def _InitialiseUpdater( self ):
         
         def loading_callable():
@@ -1158,7 +1480,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         def work_callable( args ):
             
-            rules = CG.client_controller.Read( 'duplicate_auto_resolution_rules_with_counts' )
+            rules = CG.client_controller.Read( 'duplicates_auto_resolution_rules_with_counts' )
             
             return rules
             
@@ -1181,7 +1503,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         if result == QW.QDialog.DialogCode.Accepted:
             
-            CG.client_controller.Write( 'duplicate_auto_resolution_maintenance_regen_numbers' )
+            CG.client_controller.Write( 'duplicates_auto_resolution_maintenance_regen_numbers' )
             
             self._rules_list_updater.update()
             
@@ -1201,7 +1523,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                 
             
         
-        text = f'This will command the database to repeal all user-declined decisions for these {HydrusNumbers.ToHumanInt(len(rules))} rules. Do this if you want to re-do them or have decided to set this rule to fully automatic and are happy it can now handle them appropriately.'
+        text = f'This will command the database to repeal all user-denied decisions for these {HydrusNumbers.ToHumanInt(len(rules))} rules.\n\nDo this only if the rules have tens of thousands of denied pairs and you do not want to undo them manually in the "review actions" window.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
@@ -1227,7 +1549,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                 
             
         
-        text = f'This will command the database to re-search these {HydrusNumbers.ToHumanInt(len(rules))} rules. It will not undo any user-declined decisions. There is no point to running this unless you suspect a miscount or other sync bug.'
+        text = f'This will command the database to re-search these {HydrusNumbers.ToHumanInt(len(rules))} rules. It will not undo any user-denied decisions. There is no point to running this unless you suspect a miscount or other sync bug.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
@@ -1253,7 +1575,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                 
             
         
-        text = f'This will command the database to re-test the pending/fails for these {HydrusNumbers.ToHumanInt(len(rules))} rules. It will not undo any user-declined decisions. There is no point to running this unless you suspect a miscount or other sync bug.'
+        text = f'This will command the database to re-test the pending/fails for these {HydrusNumbers.ToHumanInt(len(rules))} rules. It will not undo any user-denied decisions. There is no point to running this unless you suspect a miscount or other sync bug.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, text )
         
@@ -1279,46 +1601,18 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
             
         
     
-    def _ShowCogMenu( self ):
+    def _UpdateList( self ):
         
-        rules = self._duplicates_auto_resolution_rules.GetData( only_selected = True )
-        
-        menu = ClientGUIMenus.GenerateMenu( self )
-        
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'work on these rules during idle time', 'Allow the client to work on auto-resolution rules when you are not using the program.', CG.client_controller.new_options.GetBoolean( 'maintain_similar_files_duplicate_pairs_during_idle' ), self._FlipBoolean, 'maintain_similar_files_duplicate_pairs_during_idle' )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'work on these rules during normal time', 'Allow the client to work on auto-resolution rules when you are using the program.', CG.client_controller.new_options.GetBoolean( 'duplicates_auto_resolution_during_active' ), self._FlipBoolean, 'duplicates_auto_resolution_during_active' )
-        
-        ClientGUIMenus.AppendSeparator( menu )
-        
-        if len( rules ) == 0:
-            
-            ClientGUIMenus.AppendMenuItem( menu, f'reset search on all rules', 'Reset the search for all your rules.', self._ResetSearch )
-            ClientGUIMenus.AppendMenuItem( menu, f'reset test on all rules', 'Reset the test for all your rules.', self._ResetTest )
-            ClientGUIMenus.AppendMenuItem( menu, f'reset user declined on all rules', 'Reset the test for all your rules.', self._ResetDeclined )
-            
-        else:
-            
-            ClientGUIMenus.AppendMenuItem( menu, f'reset search on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules', 'Reset the search for the given rules.', self._ResetSearch )
-            ClientGUIMenus.AppendMenuItem( menu, f'reset test on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules', 'Reset the search for the given rules.', self._ResetTest )
-            ClientGUIMenus.AppendMenuItem( menu, f'reset user declined search on {HydrusNumbers.ToHumanInt( len( rules ) )} selected rules', 'Reset the search for the given rules.', self._ResetDeclined )
-            
-        
-        ClientGUIMenus.AppendSeparator( menu )
-        
-        ClientGUIMenus.AppendMenuItem( menu, 'maintenance: delete orphan rules', 'Scan for rules that are partly missing (probably from hard drive damage) and delete them.', self._DeleteOrphanRules )
-        ClientGUIMenus.AppendMenuItem( menu, 'maintenance: fix orphan potential pairs', 'Scan for potential pairs in your rule cache that are no longer pertinent and delete them.', self._DeleteOrphanPotentialPairs )
-        ClientGUIMenus.AppendMenuItem( menu, 'maintenance: regen cached numbers', 'Clear cached pair counts and regenerate from source.', self._RegenNumbers )
-        
-        CGC.core().PopupMenu( self._cog_button, menu )
+        self._rules_list_updater.update()
         
     
-    def _UpdateList( self ):
+    def NotifyNewRules( self ):
         
         self._rules_list_updater.update()
         
     
     def NotifyWorkComplete( self ):
         
-        self._rules_list_updater.update()
+        self._duplicates_auto_resolution_rules.UpdateDatas()
         
     

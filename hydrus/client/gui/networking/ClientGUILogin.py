@@ -308,7 +308,9 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         warning = 'WARNING: Your credentials are stored in plaintext! For this and other reasons, I recommend you use throwaway accounts with hydrus!'
         warning += '\n' * 2
-        warning += 'If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! Pixiv now requires this! If you do set up HC for an external login, I recommend you set the respective domain(s) you are logging into to "not active" here (hit "flip active" on them), so hydrus knows it is not supposed to be taking responsibility.'
+        warning += 'This system is old and only works for simple sites. If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! Pixiv now requires this! If you do set up HC for an external login, I recommend you set the respective domain(s) you are logging into to "not active" here (hit "flip active" on them), so hydrus knows it is not supposed to be taking responsibility.'
+        warning += '\n' * 2
+        warning += 'If you are looking for your login cookies, go to _network->data->review session cookies_.'
         
         warning_st = ClientGUICommon.BetterStaticText( self, warning )
         warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
@@ -1227,12 +1229,12 @@ def GenerateTestNetworkJobPresentationContextFactory( window: QW.QWidget, networ
         
         def enter_call():
             
-            QP.CallAfter( qt_set_it, network_job )
+            CG.client_controller.CallAfter( window, qt_set_it, network_job )
             
         
         def exit_call():
             
-            QP.CallAfter( qt_set_it, None )
+            CG.client_controller.CallAfter( window, qt_set_it, None )
             
         
         return ClientImporting.NetworkJobPresentationContext( enter_call, exit_call )
@@ -1267,7 +1269,7 @@ class ReviewTestResultPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.SetMinClientSize( self._data_preview, min_size )
         
-        self._data_copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._CopyData )
+        self._data_copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._CopyData )
         self._data_copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy the current example data to the clipboard.' ) )
         
         self._temp_variables = QW.QPlainTextEdit( self )
@@ -1350,13 +1352,13 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_LOGIN )
         
-        menu_items.append( ( 'normal', 'open the login scripts help', 'Open the help page for login scripts in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the login scripts help', 'Open the help page for login scripts in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1745,7 +1747,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 network_engine.Shutdown()
                 
-                QP.CallAfter( clean_up, login_result )
+                CG.client_controller.CallAfter( self, clean_up, login_result )
                 
             
         

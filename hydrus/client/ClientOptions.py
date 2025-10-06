@@ -40,7 +40,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         from hydrus.client.gui.canvas import ClientGUIMPV
         
-        if ClientGUIMPV.MPV_IS_AVAILABLE:
+        # we may permit mpv testing in macOS, but we won't default to it even if it seems ok
+        if ClientGUIMPV.MPV_IS_AVAILABLE and not HC.PLATFORM_MACOS:
             
             video_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV
             audio_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV
@@ -150,7 +151,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'only_show_delete_from_all_local_domains_when_filtering' : False,
             'use_system_ffmpeg' : False,
             'elide_page_tab_names' : True,
-            'maintain_similar_files_duplicate_pairs_during_idle' : False,
+            'maintain_similar_files_duplicate_pairs_during_active' : False,
+            'maintain_similar_files_duplicate_pairs_during_idle' : True,
             'show_namespaces' : True,
             'show_number_namespaces' : True,
             'show_subtag_number_namespaces' : True,
@@ -193,6 +195,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'pause_all_gallery_searches' : False,
             'popup_message_force_min_width' : False,
             'always_show_iso_time' : False,
+            'do_not_do_chmod_mode' : False,
             'confirm_multiple_local_file_services_move' : True,
             'confirm_multiple_local_file_services_copy' : True,
             'use_advanced_file_deletion_dialog' : False,
@@ -258,8 +261,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'draw_tags_hover_in_media_viewer_background' : True,
             'draw_top_hover_in_media_viewer_background' : True,
             'draw_top_right_hover_in_media_viewer_background' : True,
-            'draw_top_right_hover_in_preview_window_background' : False,
-            'preview_window_hover_top_right_shows_popup' : False,
+            'draw_top_right_hover_in_preview_window_background' : True,
+            'preview_window_hover_top_right_shows_popup' : True,
             'draw_notes_hover_in_media_viewer_background' : True,
             'draw_bottom_right_index_in_media_viewer_background' : True,
             'disable_tags_hover_in_media_viewer': False,
@@ -307,9 +310,11 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'focus_media_thumb_on_viewer_close' : True,
             'skip_yesno_on_write_autocomplete_multiline_paste' : False,
             'activate_main_gui_on_viewer_close' : False,
+            'activate_main_gui_on_focusing_viewer_close' : False,
             'override_bandwidth_on_file_urls_from_post_urls' : True,
             'remove_leading_url_double_slashes' : False,
-            'stop_mpv_on_media_transition' : False,
+            'always_apply_ntfs_export_filename_rules' : False,
+            'replace_percent_twenty_with_space_in_gug_input' : False,
         }
         
         #
@@ -441,7 +446,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'gallery_page_wait_period_subscriptions' : 5,
             'watcher_page_wait_period' : 5,
             'popup_message_character_width' : 56,
-            'duplicate_filter_max_batch_size' : 250,
+            'duplicate_filter_max_batch_size' : 100,
             'video_thumbnail_percentage_in' : 35,
             'global_audio_volume' : 70,
             'media_viewer_audio_volume' : 70,
@@ -489,8 +494,14 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'system_busy_cpu_percent' : 50,
             'human_bytes_sig_figs' : 3,
             'ms_to_wait_between_physical_file_deletes' : 600,
-            'potential_duplicates_search_work_time_ms' : 500,
-            'potential_duplicates_search_rest_percentage' : 100,
+            'potential_duplicates_search_work_time_ms_active' : 100,
+            'potential_duplicates_search_work_time_ms_idle' : 5000,
+            'potential_duplicates_search_rest_percentage_active' : 1900,
+            'potential_duplicates_search_rest_percentage_idle' : 50,
+            'duplicates_auto_resolution_work_time_ms_active' : 100,
+            'duplicates_auto_resolution_work_time_ms_idle' : 1000,
+            'duplicates_auto_resolution_rest_percentage_active' : 900,
+            'duplicates_auto_resolution_rest_percentage_idle' : 100,
             'repository_processing_work_time_ms_very_idle' : 30000,
             'repository_processing_rest_percentage_very_idle' : 3,
             'repository_processing_work_time_ms_idle' : 10000,
@@ -520,13 +531,17 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         self._dictionary[ 'floats' ] = {
             'draw_thumbnail_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
-            'thumbnail_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'thumbnail_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2, #deprecated
+            'thumbnail_rating_incdec_height_px' : ClientGUIPainterShapes.SIZE.height(),
             'media_viewer_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
-            'media_viewer_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'media_viewer_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2, #deprecated
+            'media_viewer_rating_incdec_height_px' : ClientGUIPainterShapes.SIZE.height(),
             'preview_window_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
-            'preview_window_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'preview_window_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2, #deprecated
+            'preview_window_rating_incdec_height_px' : ClientGUIPainterShapes.SIZE.height(),
             'dialog_rating_icon_size_px' : ClientGUIPainterShapes.SIZE.width(),
-            'dialog_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2,
+            'dialog_rating_incdec_width_px' : ClientGUIPainterShapes.SIZE.width() * 2, #deprecated
+            'dialog_rating_incdec_height_px' : ClientGUIPainterShapes.SIZE.height(),
         }
         
         #
@@ -546,6 +561,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'num_recent_tags' : 20,
             'duplicate_background_switch_intensity_a' : 0,
             'duplicate_background_switch_intensity_b' : 3,
+            'duplicate_filter_auto_commit_batch_size' : 1,
             'last_review_bandwidth_search_distance' : 7 * 86400,
             'file_viewing_statistics_media_min_time_ms' : 2 * 1000,
             'file_viewing_statistics_media_max_time_ms' : 600 * 1000,
@@ -562,7 +578,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'slideshow_short_duration_cutoff_percentage' : 75,
             'slideshow_long_duration_overspill_percentage' : 50,
             'num_to_show_in_ac_dropdown_children_tab' : 40,
-            'number_of_unselected_medias_to_present_tags_for' : 4096
+            'number_of_unselected_medias_to_present_tags_for' : 4096,
+            'export_path_character_limit' : None,
+            'export_dirname_character_limit' : None,
         }
         
         #

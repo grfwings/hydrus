@@ -5,6 +5,7 @@ import typing
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
@@ -45,7 +46,7 @@ class GalleryImport( HydrusSerialisable.SerialisableBase ):
             initial_search_urls = []
             
         
-        initial_search_urls = HydrusData.DedupeList( initial_search_urls )
+        initial_search_urls = HydrusLists.DedupeList( initial_search_urls )
         
         super().__init__()
         
@@ -1392,6 +1393,46 @@ class MultipleGalleryImport( HydrusSerialisable.SerialisableBase ):
         with self._lock:
             
             return True in ( gallery_import.CurrentlyWorking() for gallery_import in self._gallery_imports )
+            
+        
+    
+    def FlipDoNotAllowNewDupes( self ):
+        
+        with self._lock:
+            
+            self._do_not_allow_new_dupes = not self._do_not_allow_new_dupes
+            
+            self._SerialisableChangeMade()
+            
+        
+    
+    def FlipMergeSimultaneousPendsToOneImporter( self ):
+        
+        with self._lock:
+            
+            self._merge_simultaneous_pends_to_one_importer = not self._merge_simultaneous_pends_to_one_importer
+            
+            self._SerialisableChangeMade()
+            
+        
+    
+    def FlipStartFileQueuesPaused( self ):
+        
+        with self._lock:
+            
+            self._start_file_queues_paused = not self._start_file_queues_paused
+            
+            self._SerialisableChangeMade()
+            
+        
+    
+    def FlipStartGalleryQueuesPaused( self ):
+        
+        with self._lock:
+            
+            self._start_gallery_queues_paused = not self._start_gallery_queues_paused
+            
+            self._SerialisableChangeMade()
             
         
     

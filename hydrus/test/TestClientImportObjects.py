@@ -1,8 +1,10 @@
 import os
+import random
 import unittest
 
 from hydrus.core import HydrusConstants as HC
 
+from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientStrings
 from hydrus.client.importing import ClientImportFileSeeds
 from hydrus.client.networking import ClientNetworkingURLClass
@@ -10,6 +12,253 @@ from hydrus.client.networking import ClientNetworkingURLClass
 from hydrus.test import TestGlobals as TG
 
 class TestFileSeedCache( unittest.TestCase ):
+    
+    def test_compaction_0_simple( self ):
+        
+        file_seed_cache = ClientImportFileSeeds.FileSeedCache()
+        
+        last_fifty = []
+        
+        for i in range( 100 ):
+            
+            url = f'https://example.com/post/{i}'
+            
+            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+            
+            file_seed.source_time = 100000
+            
+            file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_NEW )
+            
+            file_seed_cache.AddFileSeeds( ( file_seed, ) )
+            
+            if i >= 50:
+                
+                last_fifty.append( file_seed )
+                
+            
+        
+        self.assertFalse( file_seed_cache.CanCompact( 50, 80000 ) )
+        self.assertFalse( file_seed_cache.CanCompact( 150, 120000 ) )
+        self.assertTrue( file_seed_cache.CanCompact( 50, 120000 ) )
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 100 )
+        
+        file_seed_cache.Compact( 50, 120000 )
+        
+        self.assertEqual( len( file_seed_cache ), len( last_fifty ) )
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 50 )
+        
+        for file_seed in last_fifty:
+            
+            self.assertTrue( file_seed_cache.HasFileSeed( file_seed ) )
+            
+        
+    
+    def test_compaction_1_parents( self ):
+        
+        file_seed_cache = ClientImportFileSeeds.FileSeedCache()
+        
+        last_fifty_with_children = []
+        
+        for i in range( 100 ):
+            
+            url = f'https://example.com/post/{i}'
+            
+            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+            
+            file_seed.source_time = 100000
+            
+            num_children = random.randint( 2, 8 )
+            
+            file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_CHILD_FILES, note = f'Found {num_children} new URLs in {num_children} posts.' )
+            
+            file_seed_cache.AddFileSeeds( ( file_seed, ) )
+            
+            if i >= 50:
+                
+                last_fifty_with_children.append( file_seed )
+                
+            
+            # children:
+            
+            for j in range( num_children ):
+                
+                url = f'https://manga.example.com/post/{i}/{j}'
+                
+                file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+                
+                file_seed.source_time = 100000
+                
+                file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_NEW )
+                
+                file_seed_cache.AddFileSeeds( ( file_seed, ) )
+                
+                if i >= 50:
+                    
+                    last_fifty_with_children.append( file_seed )
+                    
+                
+            
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 100 )
+        
+        self.assertFalse( file_seed_cache.CanCompact( 50, 80000 ) )
+        self.assertFalse( file_seed_cache.CanCompact( 150, 120000 ) )
+        self.assertTrue( file_seed_cache.CanCompact( 50, 120000 ) )
+        
+        file_seed_cache.Compact( 50, 120000 )
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 50 )
+        
+        self.assertEqual( len( file_seed_cache ), len( last_fifty_with_children ) )
+        
+        for file_seed in last_fifty_with_children:
+            
+            self.assertTrue( file_seed_cache.HasFileSeed( file_seed ) )
+            
+        
+    
+    def test_compaction_2_parents_bad_note( self ):
+        
+        file_seed_cache = ClientImportFileSeeds.FileSeedCache()
+        
+        last_fifty_with_children = []
+        
+        for i in range( 100 ):
+            
+            url = f'https://example.com/post/{i}'
+            
+            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+            
+            file_seed.source_time = 100000
+            
+            file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_CHILD_FILES, note = 'Hello old note will not parse.' )
+            
+            file_seed_cache.AddFileSeeds( ( file_seed, ) )
+            
+            if i >= 50:
+                
+                last_fifty_with_children.append( file_seed )
+                
+            
+            # children:
+            
+            for j in range( random.randint( 2, 8 ) ):
+                
+                url = f'https://manga.example.com/post/{i}/{j}'
+                
+                file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+                
+                file_seed.source_time = 100000
+                
+                file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_NEW )
+                
+                file_seed_cache.AddFileSeeds( ( file_seed, ) )
+                
+                if i >= 50:
+                    
+                    last_fifty_with_children.append( file_seed )
+                    
+                
+            
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 100 )
+        
+        self.assertFalse( file_seed_cache.CanCompact( 50, 80000 ) )
+        self.assertFalse( file_seed_cache.CanCompact( 150, 120000 ) )
+        self.assertTrue( file_seed_cache.CanCompact( 50, 120000 ) )
+        
+        file_seed_cache.Compact( 50, 120000 )
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 50 )
+        
+        self.assertEqual( len( file_seed_cache ), len( last_fifty_with_children ) )
+        
+        for file_seed in last_fifty_with_children:
+            
+            self.assertTrue( file_seed_cache.HasFileSeed( file_seed ) )
+            
+        
+    
+    def test_compaction_3_nested_parents_hooray( self ):
+        
+        file_seed_cache = ClientImportFileSeeds.FileSeedCache()
+        
+        last_fifty_with_children = []
+        
+        for i in range( 100 ):
+            
+            url = f'https://example.com/post/{i}'
+            
+            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+            
+            file_seed.source_time = 100000
+            
+            file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_CHILD_FILES, note = f'Found 1 new URLs in 1 posts.' )
+            
+            file_seed_cache.AddFileSeeds( ( file_seed, ) )
+            
+            if i >= 50:
+                
+                last_fifty_with_children.append( file_seed )
+                
+            
+            url = f'https://example.com/post/{i}/directory'
+            
+            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+            
+            file_seed.source_time = 100000
+            
+            num_children = random.randint( 2, 8 )
+            
+            file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_CHILD_FILES, note = f'Found {num_children} new URLs in {num_children} posts.' )
+            
+            file_seed_cache.AddFileSeeds( ( file_seed, ) )
+            
+            if i >= 50:
+                
+                last_fifty_with_children.append( file_seed )
+                
+            
+            # children:
+            
+            for j in range( num_children ):
+                
+                url = f'https://manga.example.com/post/{i}/{j}'
+                
+                file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
+                
+                file_seed.source_time = 100000
+                
+                file_seed.SetStatus( CC.STATUS_SUCCESSFUL_AND_NEW )
+                
+                file_seed_cache.AddFileSeeds( ( file_seed, ) )
+                
+                if i >= 50:
+                    
+                    last_fifty_with_children.append( file_seed )
+                    
+                
+            
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 100 )
+        
+        self.assertFalse( file_seed_cache.CanCompact( 50, 80000 ) )
+        self.assertFalse( file_seed_cache.CanCompact( 150, 120000 ) )
+        self.assertTrue( file_seed_cache.CanCompact( 50, 120000 ) )
+        
+        file_seed_cache.Compact( 50, 120000 )
+        
+        self.assertEqual( file_seed_cache.GetApproxNumMasterFileSeeds(), 50 )
+        
+        self.assertEqual( len( file_seed_cache ), len( last_fifty_with_children ) )
+        
+        for file_seed in last_fifty_with_children:
+            
+            self.assertTrue( file_seed_cache.HasFileSeed( file_seed ) )
+            
+        
     
     def test_renormalise( self ):
         
@@ -44,14 +293,8 @@ class TestFileSeedCache( unittest.TestCase ):
         name = 'tokensite post'
         url_type = HC.URL_TYPE_POST
         preferred_scheme = 'https'
-        netloc = 'tokensite.lad'
         
-        alphabetise_get_parameters = True
-        match_subdomains = False
-        keep_matched_subdomains = False
-        can_produce_multiple_files = False
-        should_be_associated_with_files = True
-        keep_fragment = False
+        url_domain_mask = ClientNetworkingURLClass.URLDomainMask( raw_domains = [ 'tokensite.lad' ] )
         
         path_components = []
         
@@ -72,7 +315,7 @@ class TestFileSeedCache( unittest.TestCase ):
         gallery_index_delta = 1
         example_url = 'https://tokensite.lad/post/123456?token=abcdabcdabcdabcdabcdabcdabcdabcd}'
         
-        url_class = ClientNetworkingURLClass.URLClass( name, url_type = url_type, preferred_scheme = preferred_scheme, netloc = netloc, path_components = path_components, parameters = parameters, send_referral_url = send_referral_url, referral_url_converter = referral_url_converter, gallery_index_type = gallery_index_type, gallery_index_identifier = gallery_index_identifier, gallery_index_delta = gallery_index_delta, example_url = example_url )
+        url_class = ClientNetworkingURLClass.URLClass( name, url_type = url_type, preferred_scheme = preferred_scheme, url_domain_mask = url_domain_mask, path_components = path_components, parameters = parameters, send_referral_url = send_referral_url, referral_url_converter = referral_url_converter, gallery_index_type = gallery_index_type, gallery_index_identifier = gallery_index_identifier, gallery_index_delta = gallery_index_delta, example_url = example_url )
         
         #
         

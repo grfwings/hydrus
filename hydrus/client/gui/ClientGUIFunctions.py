@@ -201,22 +201,7 @@ def DialogIsOpen():
     
     for tlw in tlws:
         
-        if isinstance( tlw, QP.Dialog ) and tlw.isModal():
-            
-            return True
-            
-        
-    
-    return False
-    
-
-def DialogIsOpenAndIAmNotItsChild( win: QW.QWidget ):
-    
-    tlws = QW.QApplication.topLevelWidgets()
-    
-    for tlw in tlws:
-        
-        if isinstance( tlw, QP.Dialog ) and tlw.isModal() and not IsQtAncestor( win, tlw, through_tlws = True):
+        if isinstance( tlw, QP.Dialog ) and tlw.isVisible():
             
             return True
             
@@ -439,32 +424,29 @@ def MouseIsOverWidget( win: QW.QWidget ):
     return win.rect().contains( local_mouse_pos )
     
 
+def MyWindowHasAChildTLW( win: QW.QWidget ):
+    
+    me = win.window()
+    
+    tlws = QW.QApplication.topLevelWidgets()
+    
+    for tlw in tlws:
+        
+        if tlw != me and IsQtAncestor( tlw, me, through_tlws = True ):
+            
+            return True
+            
+        
+    
+    return False
+    
+
+
 def NotebookScreenToHitTest( notebook, screen_position ):
     
     tab_pos = notebook.tabBar().mapFromGlobal( screen_position )    
     
     return notebook.tabBar().tabAt( tab_pos )
-    
-
-def SetBitmapButtonBitmap( button, bitmap ):
-    
-    # old wx stuff, but still basically relevant
-    # the button's bitmap, retrieved via GetBitmap, is not the same as the one we gave it!
-    # hence testing bitmap vs that won't work to save time on an update loop, so we'll just save it here custom
-    # this isn't a big memory deal for our purposes since they are small and mostly if not all from the GlobalPixmaps library so shared anyway
-    
-    if hasattr( button, 'last_bitmap' ):
-        
-        if button.last_bitmap == bitmap:
-            
-            return
-            
-        
-    
-    button.setIcon( QG.QIcon( bitmap ) )
-    button.setIconSize( bitmap.size() )
-    
-    button.last_bitmap = bitmap
     
 
 def SetFocusLater( win: QW.QWidget ):

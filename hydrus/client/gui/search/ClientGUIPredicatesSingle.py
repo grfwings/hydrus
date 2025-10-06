@@ -8,6 +8,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core.files import HydrusFileHandling
@@ -55,7 +56,7 @@ class StaticSystemPredicateButton( QW.QWidget ):
             
         
         self._predicates_button = ClientGUICommon.BetterButton( self, label, self._DoPredicatesChoose )
-        self._remove_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().trash_delete, self._DoPredicatesRemove )
+        self._remove_button = ClientGUICommon.IconButton( self, CC.global_icons().trash_delete, self._DoPredicatesRemove )
         
         hbox = QP.HBoxLayout()
         
@@ -464,7 +465,7 @@ class PanelPredicateSystemAgeDate( PanelPredicateSystemDate ):
     
     def _GetPredicateType( self ) -> int:
         
-        return ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE
+        return ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME
         
     
     def GetDefaultPredicate( self ) -> ClientSearchPredicate.Predicate:
@@ -575,12 +576,12 @@ class PanelPredicateSystemAgeDelta( PanelPredicateSystemSingle ):
     
     def GetDefaultPredicate( self ):
         
-        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 7, 0 ) ) )
+        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 7, 0 ) ) )
         
     
     def GetPredicates( self ):
         
-        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( self._sign.GetValue(), 'delta', (self._years.value(), self._months.value(), self._days.value(), self._hours.value() ) ) ), )
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( self._sign.GetValue(), 'delta', (self._years.value(), self._months.value(), self._days.value(), self._hours.value() ) ) ), )
         
         return predicates
         
@@ -1932,9 +1933,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
         
         super().__init__( parent )
         
-        self._namespace = QW.QLineEdit( self )
-        self._namespace.setPlaceholderText( 'Leave empty for unnamespaced, \'*\' for all namespaces' )
-        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'Leave empty for unnamespaced, \'*\' for all namespaces. Other wildcards also supported.' ) )
+        self._namespace = ClientGUICommon.NamespaceWidget( self )
         
         choices = ['<',HC.UNICODE_APPROX_EQUAL,'=','>']
         
@@ -1953,7 +1952,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
             namespace = '*'
             
         
-        self._namespace.setText( namespace )
+        self._namespace.SetValue( namespace )
         
         self._sign.SetValue( sign )
         
@@ -1986,7 +1985,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
     
     def GetPredicates( self ):
         
-        ( namespace, operator, value ) = ( self._namespace.text(), self._sign.GetValue(), self._num_tags.value() )
+        ( namespace, operator, value ) = ( self._namespace.GetValue(), self._sign.GetValue(), self._num_tags.value() )
         
         predicate = None
         
@@ -2015,6 +2014,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
         return predicates
         
     
+
 class PanelPredicateSystemNumNotes( PanelPredicateSystemSingle ):
     
     def __init__( self, parent, predicate ):
@@ -2681,7 +2681,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         self._clear_button = ClientGUICommon.BetterButton( self, 'clear', self._Clear )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setText( 'Paste image!')
         
         self._pixel_hashes = QW.QPlainTextEdit( self )
@@ -2857,7 +2857,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         new_text_lines.append( pixel_hash.hex() )
         
-        new_text_lines = HydrusData.DedupeList( new_text_lines )
+        new_text_lines = HydrusLists.DedupeList( new_text_lines )
         
         self._pixel_hashes.setPlainText( '\n'.join( new_text_lines ) )
         
@@ -2865,7 +2865,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         new_text_lines.extend( [ perceptual_hash.hex() for perceptual_hash in perceptual_hashes ] )
         
-        new_text_lines = HydrusData.DedupeList( new_text_lines )
+        new_text_lines = HydrusLists.DedupeList( new_text_lines )
         
         self._perceptual_hashes.setPlainText( '\n'.join( new_text_lines ) )
         
@@ -3191,7 +3191,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
         
         super().__init__( parent )
         
-        self._namespace = QW.QLineEdit( self )
+        self._namespace = ClientGUICommon.NamespaceWidget( self )
         
         choices = [ '<', HC.UNICODE_APPROX_EQUAL, '>' ]
         
@@ -3205,10 +3205,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
         
         ( namespace, sign, num ) = predicate.GetValue()
         
-        self._namespace.setText( namespace )
-        self._namespace.setPlaceholderText( 'Leave empty for unnamespaced, \'*\' for all namespaces' )
-        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'Leave empty for unnamespaced, \'*\' for all namespaces. Other wildcards also supported.' ) )
-        
+        self._namespace.SetValue( namespace )
         self._sign.SetValue( sign )
         self._num.setValue( num )
         
@@ -3237,7 +3234,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
     
     def GetPredicates( self ):
         
-        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER, ( self._namespace.text(), self._sign.GetValue(), self._num.value() ) ), )
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER, ( self._namespace.GetValue(), self._sign.GetValue(), self._num.value() ) ), )
         
         return predicates
         

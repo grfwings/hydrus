@@ -1,5 +1,6 @@
 import collections.abc
 
+from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
@@ -8,11 +9,16 @@ from hydrus.core import HydrusNumbers
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client import ClientLocation
+from hydrus.client.duplicates import ClientPotentialDuplicatesManager
+from hydrus.client.duplicates import ClientPotentialDuplicatesPairFactory
+from hydrus.client.gui import ClientGUIAsync
+from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
+from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.canvas import ClientGUICanvas
+from hydrus.client.gui.canvas import ClientGUICanvasDuplicates
 from hydrus.client.gui.canvas import ClientGUICanvasFrame
 from hydrus.client.gui.duplicates import ClientGUIDuplicatesAutoResolution
 from hydrus.client.gui.duplicates import ClientGUIDuplicatesContentMergeOptions
@@ -24,101 +30,43 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
+from hydrus.client.search import ClientSearchTagContext
 
-class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
+class FilterPanel( QW.QWidget ):
     
-    SHOW_COLLECT = False
+    locationChanged = QC.Signal( ClientLocation.LocationContext )
+    tagContextChanged = QC.Signal( ClientSearchTagContext.TagContext )
+    setCurrentMediaAs = QC.Signal( int )
+    showPotentialDupes = QC.Signal( list )
+    setPageState = QC.Signal( int )
+    showPairInPage = QC.Signal( list )
     
-    def __init__( self, parent, page, page_manager: ClientGUIPageManager.PageManager ):
+    def __init__( self, parent: QW.QWidget, page_manager: ClientGUIPageManager.PageManager, media_sort_widget, make_tags_box_callable ):
         
-        super().__init__( parent, page, page_manager )
+        super().__init__( parent )
         
-        self._duplicates_manager = ClientDuplicates.DuplicatesManager.instance()
-        
-        self._similar_files_maintenance_status = None
-        self._duplicates_manager_is_fetching_maintenance_numbers = False
-        self._potential_file_search_currently_happening = False
-        self._maintenance_numbers_need_redrawing = True
-        
-        self._have_done_first_maintenance_numbers_show = False
+        self._page_manager = page_manager
+        self._page_key = self._page_manager.GetVariable( 'page_key' )
         
         new_options = CG.client_controller.new_options
         
-        #
+        self._options_panel = ClientGUICommon.StaticBox( self, 'merge options' )
         
-        self._main_notebook = ClientGUICommon.BetterNotebook( self )
+        menu_template_items = []
         
-        # TODO: make these two panels into their own classes and rewire everything into panel signals
-        self._main_left_panel = QW.QWidget( self._main_notebook )
-        self._main_right_panel = QW.QWidget( self._main_notebook )
-        
-        self._duplicates_auto_resolution_panel = ClientGUIDuplicatesAutoResolution.ReviewDuplicatesAutoResolutionPanel( self )
-        
-        #
-        
-        self._refresh_maintenance_status = ClientGUICommon.BetterStaticText( self._main_left_panel, ellipsize_end = True )
-        self._refresh_maintenance_button = ClientGUICommon.BetterBitmapButton( self._main_left_panel, CC.global_pixmaps().refresh, self._duplicates_manager.RefreshMaintenanceNumbers )
-        
-        menu_items = []
-        
-        menu_items.append( ( 'normal', 'reset potential duplicates', 'This will delete all the discovered potential duplicate pairs. All files that may have potential pairs will be queued up for similar file search again.', self._ResetUnknown ) )
-        menu_items.append( ( 'separator', 0, 0, 0 ) )
-        
-        check_manager = ClientGUICommon.CheckboxManagerOptions( 'maintain_similar_files_duplicate_pairs_during_idle' )
-        
-        menu_items.append( ( 'check', 'search for potential duplicates at the current distance during idle time/shutdown', 'Tell the client to find duplicate pairs in its normal db maintenance cycles, whether you have that set to idle or shutdown time.', check_manager ) )
-        
-        self._cog_button = ClientGUIMenuButton.MenuBitmapButton( self._main_left_panel, CC.global_pixmaps().cog, menu_items )
-        
-        menu_items = []
-        
-        page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES )
-        
-        menu_items.append( ( 'normal', 'open the html duplicates help', 'Open the help page for duplicates processing in your web browser.', page_func ) )
-        
-        self._help_button = ClientGUIMenuButton.MenuBitmapButton( self._main_left_panel, CC.global_pixmaps().help, menu_items )
-        
-        #
-        
-        self._searching_panel = ClientGUICommon.StaticBox( self._main_left_panel, 'finding potential duplicates' )
-        
-        self._eligible_files = ClientGUICommon.BetterStaticText( self._searching_panel, ellipsize_end = True )
-        
-        menu_items = []
-        
-        menu_items.append( ( 'normal', 'exact match', 'Search for exact matches.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_EXACT_MATCH ) ) )
-        menu_items.append( ( 'normal', 'very similar', 'Search for very similar files.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_VERY_SIMILAR ) ) )
-        menu_items.append( ( 'normal', 'similar', 'Search for similar files.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_SIMILAR ) ) )
-        menu_items.append( ( 'normal', 'speculative', 'Search for files that are probably similar.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_SPECULATIVE ) ) )
-        
-        self._max_hamming_distance_for_potential_discovery_button = ClientGUIMenuButton.MenuButton( self._searching_panel, 'similarity', menu_items )
-        
-        self._max_hamming_distance_for_potential_discovery_spinctrl = ClientGUICommon.BetterSpinBox( self._searching_panel, min=0, max=64, width = 50 )
-        self._max_hamming_distance_for_potential_discovery_spinctrl.setSingleStep( 2 )
-        
-        self._num_searched = ClientGUICommon.TextAndGauge( self._searching_panel )
-        
-        self._search_button = ClientGUICommon.BetterBitmapButton( self._searching_panel, CC.global_pixmaps().play, self._duplicates_manager.StartPotentialsSearch )
-        
-        #
-        
-        self._options_panel = ClientGUICommon.StaticBox( self._main_right_panel, 'merge options' )
-        
-        menu_items = []
-        
-        menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'this is better\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_BETTER ) ) )
-        menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'same quality\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_SAME_QUALITY ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'this is better\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_BETTER ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'same quality\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_SAME_QUALITY ) ) )
         
         if new_options.GetBoolean( 'advanced_mode' ):
             
-            menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'alternates\' (advanced!)', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_ALTERNATE ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'alternates\' (advanced!)', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_ALTERNATE ) ) )
             
         
-        self._edit_merge_options = ClientGUIMenuButton.MenuButton( self._options_panel, 'edit default duplicate metadata merge options', menu_items )
+        self._edit_merge_options = ClientGUIMenuButton.MenuButton( self._options_panel, 'edit default duplicate metadata merge options', menu_template_items )
         
         #
         
-        potential_duplicates_search_context = page_manager.GetVariable( 'potential_duplicates_search_context' )
+        potential_duplicates_search_context = self._page_manager.GetVariable( 'potential_duplicates_search_context' )
         
         if self._page_manager.HasVariable( 'synchronised' ):
             
@@ -135,15 +83,38 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         
         #
         
-        self._filtering_panel = ClientGUICommon.StaticBox( self._main_right_panel, 'duplicate filter' )
+        self._filtering_panel = ClientGUICommon.StaticBox( self, 'duplicate filter' )
+        
+        duplicate_pair_sort_type = page_manager.GetVariable( 'duplicate_pair_sort_type' )
+        duplicate_pair_sort_asc = page_manager.GetVariable( 'duplicate_pair_sort_asc' )
+        
+        self._potential_duplicates_sort_widget = ClientGUIPotentialDuplicatesSearchContext.PotentialDuplicatesSortWidget( self._filtering_panel, duplicate_pair_sort_type, duplicate_pair_sort_asc )
+        
+        self._potential_duplicates_sort_widget.valueChanged.connect( self._PotentialDuplicatesSortChanged )
+        
+        filter_group_mode = page_manager.GetVariable( 'filter_group_mode' )
+        
+        choice_tuples = [
+            ( 'mixed pairs', False ),
+            ( 'group mode', True )
+        ]
+        
+        self._filter_group_mode = ClientGUIMenuButton.MenuChoiceButton( self, choice_tuples )
+        self._filter_group_mode.setToolTip( ClientGUIFunctions.WrapToolTip( 'In group mode, each batch in the duplicate filter will include one entire group of files that are transitively related, much like you see when hitting "show some random potential duplicates". The filter will iteratively work on the group until all relationships are cleared, and then move on to another. Groups are selected randomly.' ) )
+        
+        self._filter_group_mode.SetValue( filter_group_mode )
+        
+        self._filter_group_mode.valueChanged.connect( self._FilterGroupModeChanged )
         
         self._launch_filter = ClientGUICommon.BetterButton( self._filtering_panel, 'launch the filter', self._LaunchFilter )
         
         #
         
-        random_filtering_panel = ClientGUICommon.StaticBox( self._main_right_panel, 'quick and dirty processing' )
+        random_filtering_panel = ClientGUICommon.StaticBox( self, 'quick and dirty processing' )
         
-        self._show_some_dupes = ClientGUICommon.BetterButton( random_filtering_panel, 'show some random potential pairs', self._ShowRandomPotentialDupes )
+        self._show_some_dupes = ClientGUICommon.BetterButton( random_filtering_panel, 'show some random potential duplicates', self.ShowRandomPotentialDupes )
+        tt = 'This will randomly select a file in the current pair search and show you all the directly or transitively potential files that are also in the same domain. Sometimes this will just be a pair, others it might be a hundred alternates, but they should all look similar.'
+        self._show_some_dupes.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
         self._set_random_as_same_quality_button = ClientGUICommon.BetterButton( random_filtering_panel, 'set current media as duplicates of the same quality', self._SetCurrentMediaAs, HC.DUPLICATE_SAME_QUALITY )
         self._set_random_as_alternates_button = ClientGUICommon.BetterButton( random_filtering_panel, 'set current media as all related alternates', self._SetCurrentMediaAs, HC.DUPLICATE_ALTERNATE )
@@ -151,56 +122,18 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         
         #
         
-        self._main_notebook.addTab( self._main_left_panel, 'preparation' )
-        self._main_notebook.addTab( self._main_right_panel, 'filtering' )
-        self._main_notebook.addTab( self._duplicates_auto_resolution_panel, 'auto-resolution' )
-        
-        self._main_notebook.setCurrentWidget( self._main_right_panel )
-        
-        #
-        
-        self._media_sort_widget.hide()
-        
-        distance_hbox = QP.HBoxLayout()
-        
-        QP.AddToLayout( distance_hbox, ClientGUICommon.BetterStaticText(self._searching_panel,label='search distance: '), CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( distance_hbox, self._max_hamming_distance_for_potential_discovery_button, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( distance_hbox, self._max_hamming_distance_for_potential_discovery_spinctrl, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        gridbox_2 = QP.GridLayout( cols = 2 )
-        
-        gridbox_2.setColumnStretch( 0, 1 )
-        
-        QP.AddToLayout( gridbox_2, self._num_searched, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        QP.AddToLayout( gridbox_2, self._search_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        self._searching_panel.Add( self._eligible_files, CC.FLAGS_EXPAND_PERPENDICULAR )
-        self._searching_panel.Add( distance_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        self._searching_panel.Add( gridbox_2, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
-        #
+        self._options_panel.Add( self._edit_merge_options, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( hbox, self._refresh_maintenance_status, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
-        QP.AddToLayout( hbox, self._refresh_maintenance_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( hbox, self._help_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._potential_duplicates_sort_widget, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( hbox, self._filter_group_mode, CC.FLAGS_CENTER )
         
-        vbox = QP.VBoxLayout()
-        
-        QP.AddToLayout( vbox, hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._searching_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        vbox.addStretch( 0 )
-        
-        self._main_left_panel.setLayout( vbox )
-        
-        #
-        
-        self._options_panel.Add( self._edit_merge_options, CC.FLAGS_EXPAND_PERPENDICULAR )
-        
+        self._filtering_panel.Add( hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         self._filtering_panel.Add( self._launch_filter, CC.FLAGS_EXPAND_PERPENDICULAR )
         
+        random_filtering_panel.Add( media_sort_widget, CC.FLAGS_EXPAND_PERPENDICULAR )
+        # random_filtering_panel.Add( self._media_collect_widget, CC.FLAGS_EXPAND_PERPENDICULAR ) # hidden for now
         random_filtering_panel.Add( self._show_some_dupes, CC.FLAGS_EXPAND_PERPENDICULAR )
         random_filtering_panel.Add( self._set_random_as_same_quality_button, CC.FLAGS_EXPAND_PERPENDICULAR )
         random_filtering_panel.Add( self._set_random_as_alternates_button, CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -212,43 +145,16 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         QP.AddToLayout( vbox, self._potential_duplicates_search_context, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._filtering_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, random_filtering_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        self._MakeCurrentSelectionTagsBox( vbox )
+        make_tags_box_callable( vbox )
         
-        self._main_right_panel.setLayout( vbox )
+        self.setLayout( vbox )
         
         #
         
-        vbox = QP.VBoxLayout()
-        
-        QP.AddToLayout( vbox, self._main_notebook, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        
-        self.widget().setLayout( vbox )
-        
-        CG.client_controller.sub( self, 'NotifyNewMaintenanceNumbers', 'new_similar_files_maintenance_numbers' )
         CG.client_controller.sub( self, 'NotifyNewPotentialsSearchNumbers', 'new_similar_files_potentials_search_numbers' )
         
-        self._max_hamming_distance_for_potential_discovery_spinctrl.valueChanged.connect( self.MaxHammingDistanceForPotentialDiscoveryChanged )
-        
         self._potential_duplicates_search_context.restartedSearch.connect( self._NotifyPotentialsSearchStarted )
-        self._potential_duplicates_search_context.thisSearchHasPairs.connect( self._NotifyPotentialsSearchHasPairs )
-        
-        self._main_notebook.currentChanged.connect( self._CurrentPageChanged )
-        
-        self._CurrentPageChanged()
-        
-    
-    def _CurrentPageChanged( self ):
-        
-        page = self._main_notebook.currentWidget()
-        
-        if page == self._main_right_panel:
-            
-            self._potential_duplicates_search_context.PageShown()
-            
-        else:
-            
-            self._potential_duplicates_search_context.PageHidden()
-            
+        self._potential_duplicates_search_context.thisSearchDefinitelyHasNoPairs.connect( self._NotifyPotentialsSearchDefinitelyHasNoPairs )
         
     
     def _EditMergeOptions( self, duplicate_type ):
@@ -276,15 +182,45 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
             
         
     
+    def _FilterGroupModeChanged( self ):
+        
+        filter_group_mode = self._filter_group_mode.GetValue()
+        
+        self._page_manager.SetVariable( 'filter_group_mode', filter_group_mode )
+        
+    
     def _LaunchFilter( self ):
         
         potential_duplicates_search_context = self._potential_duplicates_search_context.GetValue()
         
+        ( duplicate_pair_sort_type, duplicate_pair_sort_asc ) = self._potential_duplicates_sort_widget.GetValue()
+        filter_group_mode = self._filter_group_mode.GetValue()
+        
+        if filter_group_mode:
+            
+            potential_duplicate_pair_factory = ClientPotentialDuplicatesPairFactory.PotentialDuplicatePairFactoryDBGroupMode(
+                potential_duplicates_search_context,
+                duplicate_pair_sort_type,
+                duplicate_pair_sort_asc
+            )
+            
+        else:
+            
+            no_more_than = CG.client_controller.new_options.GetInteger( 'duplicate_filter_max_batch_size' )
+            
+            potential_duplicate_pair_factory = ClientPotentialDuplicatesPairFactory.PotentialDuplicatePairFactoryDBMixed(
+                potential_duplicates_search_context,
+                duplicate_pair_sort_type,
+                duplicate_pair_sort_asc,
+                no_more_than
+            )
+            
+        
         canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
         
-        canvas_window = ClientGUICanvas.CanvasFilterDuplicates( canvas_frame, potential_duplicates_search_context )
+        canvas_window = ClientGUICanvasDuplicates.CanvasFilterDuplicates( canvas_frame, potential_duplicate_pair_factory )
         
-        canvas_window.showPairInPage.connect( self._ShowPairInPage )
+        canvas_window.showPairInPage.connect( self.showPairInPage )
         
         canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
         
@@ -293,14 +229,14 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
     
     def _NotifyPotentialsSearchStarted( self ):
         
-        self._launch_filter.setEnabled( False )
-        self._show_some_dupes.setEnabled( False )
-        
-    
-    def _NotifyPotentialsSearchHasPairs( self ):
-        
         self._launch_filter.setEnabled( True )
         self._show_some_dupes.setEnabled( True )
+        
+    
+    def _NotifyPotentialsSearchDefinitelyHasNoPairs( self ):
+        
+        self._launch_filter.setEnabled( False )
+        self._show_some_dupes.setEnabled( False )
         
     
     def _PotentialDuplicatesSearchContextChanged( self ):
@@ -317,9 +253,318 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         self.tagContextChanged.emit( potential_duplicates_search_context.GetFileSearchContext1().GetTagContext() )
         
     
-    def _ResetUnknown( self ):
+    def _PotentialDuplicatesSortChanged( self ):
         
-        text = 'ADVANCED TOOL: This will delete all the current potential duplicate pairs. All files that may be similar will be queued for search again.'
+        ( duplicate_pair_sort_type, duplicate_pair_sort_asc ) = self._potential_duplicates_sort_widget.GetValue()
+        
+        self._page_manager.SetVariable( 'duplicate_pair_sort_type', duplicate_pair_sort_type )
+        self._page_manager.SetVariable( 'duplicate_pair_sort_asc', duplicate_pair_sort_asc )
+        
+    
+    def _SetCurrentMediaAs( self, duplicate_type ):
+        
+        self.setCurrentMediaAs.emit( duplicate_type )
+        
+    
+    def NotifyNewPotentialsSearchNumbers( self ):
+        
+        self._potential_duplicates_search_context.NotifyNewDupePairs()
+        
+    
+    def PageHidden( self ):
+        
+        self._potential_duplicates_search_context.PageHidden()
+        
+    
+    def PageShown( self ):
+        
+        self._potential_duplicates_search_context.PageShown()
+        
+    
+    def RefreshDuplicateNumbers( self ):
+        
+        self._potential_duplicates_search_context.NotifyNewDupePairs()
+        
+    
+    def ShowRandomPotentialDupes( self ):
+        
+        def work_callable():
+            
+            hashes = CG.client_controller.Read( 'random_potential_duplicate_hashes', potential_duplicates_search_context )
+            
+            return hashes
+            
+        
+        def publish_callable( hashes ):
+            
+            self._show_some_dupes.setEnabled( True )
+            
+            self.setPageState.emit( CC.PAGE_STATE_NORMAL )
+            
+            if len( hashes ) == 0:
+                
+                ClientGUIDialogsMessage.ShowInformation( self, 'No potential files in this search!' )
+                
+                self._potential_duplicates_search_context.NotifyNewDupePairs()
+                
+            else:
+                
+                self.showPotentialDupes.emit( hashes )
+                
+            
+        
+        self._show_some_dupes.setEnabled( False )
+        
+        self.setPageState.emit( CC.PAGE_STATE_SEARCHING )
+        
+        potential_duplicates_search_context = self._potential_duplicates_search_context.GetValue()
+        
+        ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable ).start()
+        
+    
+    def REPEATINGPageUpdate( self ):
+        
+        self._potential_duplicates_search_context.REPEATINGPageUpdate()
+        
+    
+
+class PreparationPanel( QW.QWidget ):
+    
+    pageTabNameChanged = QC.Signal( str )
+    
+    def __init__( self, parent: QW.QWidget ):
+        
+        super().__init__( parent )
+        
+        menu_template_items = []
+        
+        page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the html duplicates help', 'Open the help page for duplicates processing in your web browser.', page_func ) )
+        
+        self._help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
+        
+        #
+        
+        self._searching_panel = ClientGUICommon.StaticBox( self, 'finding potential duplicates' )
+        
+        self._refresh_maintenance_button = ClientGUICommon.IconButton( self._searching_panel, CC.global_icons().refresh, self._RefreshMaintenanceNumbers )
+        
+        #
+        
+        menu_template_items = []
+        
+        submenu_template_items = []
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'maintain_similar_files_duplicate_pairs_during_idle' )
+        check_manager.AddNotifyCall( CG.client_controller.potential_duplicates_manager.Wake )
+        
+        submenu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'during idle time', 'Tell the client to find potential duplicate pairs in its normal idle time maintenance.', check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'maintain_similar_files_duplicate_pairs_during_active' )
+        check_manager.AddNotifyCall( CG.client_controller.potential_duplicates_manager.Wake )
+        
+        submenu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'during normal time', 'Tell the client to find potential duplicate pairs all the time.', check_manager ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSubmenu( 'search for potential duplicates', submenu_template_items ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'regenerate search tree', 'This will clear and regenerate the search tree. Useful if it appears to have orphan branches.', self._RegenerateSimilarFilesTree ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'regenerate search numbers', 'This will clear and regenerate the cache of the counts of which files have been searched at particular distances. Only useful if there is a miscount.', self._RegenerateMaintenanceNumbers ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'delete all potential duplicates and re-search', 'This will delete all the discovered potential duplicate pairs. All files that may have potential pairs will be queued up for similar file search again.', self._ResetPotentialDuplicates ) )
+        
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self._searching_panel, menu_template_items )
+        
+        #
+        
+        self._eligible_files = ClientGUICommon.BetterStaticText( self._searching_panel, ellipsize_end = True )
+        
+        menu_template_items = []
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'exact match', 'Search for exact matches.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_EXACT_MATCH ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'very similar', 'Search for very similar files.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_VERY_SIMILAR ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'similar', 'Search for similar files.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_SIMILAR ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'speculative', 'Search for files that are probably similar.', HydrusData.Call( self._SetSearchDistance, CC.HAMMING_SPECULATIVE ) ) )
+        
+        self._max_hamming_distance_for_potential_discovery_button = ClientGUIMenuButton.MenuButton( self._searching_panel, 'similarity', menu_template_items )
+        
+        self._max_hamming_distance_for_potential_discovery_spinctrl = ClientGUICommon.BetterSpinBox( self._searching_panel, min=0, max=64, width = 50 )
+        self._max_hamming_distance_for_potential_discovery_spinctrl.setSingleStep( 2 )
+        
+        self._num_searched = ClientGUICommon.TextAndGauge( self._searching_panel )
+        
+        self._start_search_button = ClientGUICommon.IconButton( self._searching_panel, CC.global_icons().play, self._StartWorkingHard )
+        self._start_search_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Go/work harder!' ) )
+        self._pause_search_button = ClientGUICommon.IconButton( self._searching_panel, CC.global_icons().pause, self._StopWorkingHard )
+        self._pause_search_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Stop/pump the breaks!' ) )
+        
+        self._start_search_button.setEnabled( False )
+        self._pause_search_button.setVisible( False )
+        
+        #
+        
+        distance_hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( distance_hbox, ClientGUICommon.BetterStaticText(self._searching_panel,label='search distance: '), CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( distance_hbox, self._max_hamming_distance_for_potential_discovery_button, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( distance_hbox, self._max_hamming_distance_for_potential_discovery_spinctrl, CC.FLAGS_CENTER_PERPENDICULAR )
+        
+        num_files_hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( num_files_hbox, self._num_searched, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( num_files_hbox, self._start_search_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( num_files_hbox, self._pause_search_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        
+        info_hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( info_hbox, self._eligible_files, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
+        QP.AddToLayout( info_hbox, self._refresh_maintenance_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( info_hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        
+        self._searching_panel.Add( info_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        self._searching_panel.Add( distance_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        self._searching_panel.Add( num_files_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        #
+        
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, self._help_button, CC.FLAGS_ON_RIGHT )
+        QP.AddToLayout( vbox, self._searching_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.addStretch( 0 )
+        
+        self.setLayout( vbox )
+        
+        #
+        
+        self._maintenance_status_updater = self._InitialiseMaintenanceStatusUpdater()
+        
+        CG.client_controller.sub( self, 'NotifyNewMaintenanceNumbers', 'new_similar_files_maintenance_numbers' )
+        
+        self._max_hamming_distance_for_potential_discovery_spinctrl.valueChanged.connect( self.MaxHammingDistanceForPotentialDiscoveryChanged )
+        
+        self._maintenance_status_updater.update()
+        
+    
+    def _InitialiseMaintenanceStatusUpdater( self ):
+        
+        def loading_callable():
+            
+            pass
+            
+        
+        def work_callable( args ):
+            
+            searched_distances_to_count = ClientPotentialDuplicatesManager.PotentialDuplicatesMaintenanceNumbersStore.instance().GetMaintenanceNumbers()
+            
+            return searched_distances_to_count
+            
+        
+        def publish_callable( searched_distances_to_count ):
+            
+            total_num_files = sum( searched_distances_to_count.values() )
+            
+            self._eligible_files.setText( '{} eligible files in the system.'.format(HydrusNumbers.ToHumanInt(total_num_files)) )
+            
+            search_distance = CG.client_controller.new_options.GetInteger( 'similar_files_duplicate_pairs_search_distance' )
+            
+            num_searched = sum( ( count for ( value, count ) in searched_distances_to_count.items() if value >= search_distance ) )
+            
+            not_all_files_searched = num_searched < total_num_files
+            
+            self._start_search_button.setEnabled( not_all_files_searched )
+            
+            page_name = 'preparation'
+            
+            if not_all_files_searched:
+                
+                if num_searched == 0:
+                    
+                    self._num_searched.SetValue( 'Have not yet searched at this distance.', 0, total_num_files )
+                    
+                else:
+                    
+                    self._num_searched.SetValue( 'Searched ' + HydrusNumbers.ValueRangeToPrettyString( num_searched, total_num_files ) + ' files at this distance.', num_searched, total_num_files )
+                    
+                
+                show_percentage_page_name = True
+                
+                percent_done = num_searched / total_num_files
+                
+                if CG.client_controller.new_options.GetBoolean( 'hide_duplicates_needs_work_message_when_reasonably_caught_up' ) and percent_done > 0.99:
+                    
+                    show_percentage_page_name = False
+                    
+                
+                if show_percentage_page_name:
+                    
+                    percent_string = HydrusNumbers.FloatToPercentage( percent_done )
+                    
+                    if percent_string == '100.0%':
+                        
+                        percent_string = '99.9%'
+                        
+                    
+                    page_name = f'preparation ({percent_string} done)'
+                    
+                
+            else:
+                
+                self._num_searched.SetValue( 'All potential duplicates found at this distance.', total_num_files, total_num_files )
+                
+            
+            self.pageTabNameChanged.emit( page_name )
+            
+        
+        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        
+    
+    def _RefreshMaintenanceNumbers( self ):
+        
+        ClientPotentialDuplicatesManager.PotentialDuplicatesMaintenanceNumbersStore.instance().RefreshMaintenanceNumbers()
+        
+        self._maintenance_status_updater.update()
+        
+        CG.client_controller.potential_duplicates_manager.Wake()
+        
+    
+    def _RegenerateMaintenanceNumbers( self ):
+        
+        text = 'The store of how many files have been searched at each distance has cached numbers. If you believe the count is incorrect, hit this and they will be regenerated from source. Correcting a miscount is the only purpose of this task.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, text )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            CG.client_controller.Write( 'regenerate_similar_files_search_count_numbers' )
+            
+            self._RefreshMaintenanceNumbers()
+            
+        
+    
+    def _RegenerateSimilarFilesTree( self ):
+        
+        message = 'This will delete and then recreate the similar files search tree. This is useful if it has orphans or if you suspect it has become unbalanced in a way that maintenance cannot correct.'
+        message += '\n' * 2
+        message += 'If you have a lot of files, it can take a little while, during which the gui may hang.'
+        message += '\n' * 2
+        message += 'If you do not have a specific reason to run this, it is pointless.'
+        
+        ( result, was_cancelled ) = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it', check_for_cancelled = True )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            CG.client_controller.Write( 'regenerate_similar_files_tree' )
+            
+        
+    
+    def _ResetPotentialDuplicates( self ):
+        
+        text = 'ADVANCED TOOL: This will delete all the current potential duplicate pairs and queue every eligible file up for another re-search.'
         text += '\n' * 2
         text += 'This can be useful if you know you have database damage and need to reset and re-search everything, or if you have accidentally searched too broadly and are now swamped with too many false positives. It is not useful for much else.'
         
@@ -329,8 +574,148 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
             
             CG.client_controller.Write( 'delete_potential_duplicate_pairs' )
             
-            self._duplicates_manager.RefreshMaintenanceNumbers()
+            self._RefreshMaintenanceNumbers()
             
+        
+    
+    def _SetSearchDistance( self, value ):
+        
+        self._max_hamming_distance_for_potential_discovery_spinctrl.setValue( value )
+        
+        self._maintenance_status_updater.update()
+        
+    
+    def _StartWorkingHard( self ):
+        
+        self._start_search_button.setVisible( False )
+        self._pause_search_button.setVisible( True )
+        
+        CG.client_controller.potential_duplicates_manager.SetWorkHard( True )
+        
+    
+    def _StopWorkingHard( self ):
+        
+        self._start_search_button.setVisible( True )
+        self._pause_search_button.setVisible( False )
+        
+        CG.client_controller.potential_duplicates_manager.SetWorkHard( False )
+        
+    
+    def _UpdateSearchStatus( self ):
+        
+        search_distance = CG.client_controller.new_options.GetInteger( 'similar_files_duplicate_pairs_search_distance' )
+        
+        if self._max_hamming_distance_for_potential_discovery_spinctrl.value() != search_distance:
+            
+            self._max_hamming_distance_for_potential_discovery_spinctrl.setValue( search_distance )
+            
+        
+        if search_distance in CC.hamming_string_lookup:
+            
+            button_label = CC.hamming_string_lookup[ search_distance ]
+            
+        else:
+            
+            button_label = 'custom'
+            
+        
+        if button_label != self._max_hamming_distance_for_potential_discovery_button.text():
+            
+            self._max_hamming_distance_for_potential_discovery_button.setText( button_label )
+            
+        
+        is_working_hard = CG.client_controller.potential_duplicates_manager.IsWorkingHard()
+        
+        self._start_search_button.setVisible( not is_working_hard )
+        self._pause_search_button.setVisible( is_working_hard )
+        
+    
+    def MaxHammingDistanceForPotentialDiscoveryChanged( self ):
+        
+        search_distance = self._max_hamming_distance_for_potential_discovery_spinctrl.value()
+        
+        CG.client_controller.new_options.SetInteger( 'similar_files_duplicate_pairs_search_distance', search_distance )
+        
+        self._maintenance_status_updater.update()
+        
+        CG.client_controller.potential_duplicates_manager.Wake()
+        
+    
+    def NotifyNewMaintenanceNumbers( self ):
+        
+        # note this thing is basically instant and we want the page name update so we are fine to call it even when we are not visible
+        self._maintenance_status_updater.update()
+        
+    
+    def REPEATINGPageUpdate( self ):
+        
+        self._UpdateSearchStatus()
+        
+    
+
+class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
+    
+    SHOW_COLLECT = False
+    
+    def __init__( self, parent, page, page_manager: ClientGUIPageManager.PageManager ):
+        
+        super().__init__( parent, page, page_manager )
+        
+        #
+        
+        self._main_notebook = ClientGUICommon.BetterNotebook( self )
+        
+        self._preparation_panel = PreparationPanel( self._main_notebook )
+        self._filter_panel = FilterPanel( self._main_notebook, self._page_manager, self._media_sort_widget, self._MakeCurrentSelectionTagsBox )
+        self._duplicates_auto_resolution_panel = ClientGUIDuplicatesAutoResolution.ReviewDuplicatesAutoResolutionPanel( self._main_notebook )
+        
+        #
+        
+        self._main_notebook.addTab( self._preparation_panel, 'preparation' )
+        self._main_notebook.addTab( self._filter_panel, 'filtering' )
+        self._main_notebook.addTab( self._duplicates_auto_resolution_panel, 'auto-resolution' )
+        
+        self._main_notebook.setCurrentWidget( self._filter_panel )
+        
+        #
+        
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, self._main_notebook, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        
+        self.widget().setLayout( vbox )
+        
+        self._main_notebook.currentChanged.connect( self._CurrentPageChanged )
+        
+        self._CurrentPageChanged()
+        
+        self._preparation_panel.pageTabNameChanged.connect( self._RenamePreparationTabName )
+        
+        self._filter_panel.locationChanged.connect( self.locationChanged )
+        self._filter_panel.tagContextChanged.connect( self.tagContextChanged )
+        self._filter_panel.setCurrentMediaAs.connect( self._SetCurrentMediaAs )
+        self._filter_panel.showPotentialDupes.connect( self.ShowPotentialDupes )
+        self._filter_panel.setPageState.connect( self._SetPageState )
+        self._filter_panel.showPairInPage.connect( self._ShowPairInPage )
+        
+    
+    def _CurrentPageChanged( self ):
+        
+        page = self._main_notebook.currentWidget()
+        
+        if page == self._filter_panel:
+            
+            self._filter_panel.PageShown()
+            
+        else:
+            
+            self._filter_panel.PageHidden()
+            
+        
+    
+    def _RenamePreparationTabName( self, page_name: str ):
+        
+        self._main_notebook.setTabText( 0, page_name )
         
     
     def _SetCurrentMediaAs( self, duplicate_type ):
@@ -341,15 +726,13 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         
         if change_made:
             
-            self._ShowRandomPotentialDupes()
+            self._filter_panel.ShowRandomPotentialDupes()
             
         
     
-    def _SetSearchDistance( self, value ):
+    def _SetPageState( self, page_state: int ):
         
-        self._max_hamming_distance_for_potential_discovery_spinctrl.setValue( value )
-        
-        self._UpdateMaintenanceStatus()
+        self._page_state = page_state
         
     
     def _ShowPairInPage( self, media: collections.abc.Collection[ ClientMedia.MediaSingleton ] ):
@@ -359,7 +742,36 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         self._page.GetMediaResultsPanel().AddMediaResults( self._page_key, media_results )
         
     
-    def _ShowPotentialDupes( self, hashes ):
+    def PageHidden( self ):
+        
+        super().PageHidden()
+        
+        page = self._main_notebook.currentWidget()
+        
+        if page == self._filter_panel:
+            
+            self._filter_panel.PageHidden()
+            
+        
+    
+    def PageShown( self ):
+        
+        super().PageShown()
+        
+        page = self._main_notebook.currentWidget()
+        
+        if page == self._filter_panel:
+            
+            self._filter_panel.PageShown()
+            
+        
+    
+    def RefreshQuery( self ):
+        
+        self._filter_panel.RefreshDuplicateNumbers()
+        
+    
+    def ShowPotentialDupes( self, hashes ):
         
         if len( hashes ) > 0:
             
@@ -374,187 +786,24 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
         
         panel.SetEmptyPageStatusOverride( 'no dupes found' )
         
+        # panel.Collect( self._media_collect_widget.GetValue() ) hidden for now
+        
+        panel.Sort( self._media_sort_widget.GetSort() )
+        
         self._page.SwapMediaResultsPanel( panel )
-        
-        self._page_state = CC.PAGE_STATE_NORMAL
-        
-    
-    def _ShowRandomPotentialDupes( self ):
-        
-        potential_duplicates_search_context = self._potential_duplicates_search_context.GetValue()
-        
-        self._page_state = CC.PAGE_STATE_SEARCHING
-        
-        hashes = CG.client_controller.Read( 'random_potential_duplicate_hashes', potential_duplicates_search_context )
-        
-        if len( hashes ) == 0:
-            
-            self._potential_duplicates_search_context.NotifyNewDupePairs()
-            
-        else:
-            
-            self._ShowPotentialDupes( hashes )
-            
-        
-    
-    def _UpdateMaintenanceStatus( self ):
-        
-        self._refresh_maintenance_button.setEnabled( not ( self._duplicates_manager_is_fetching_maintenance_numbers or self._potential_file_search_currently_happening ) )
-        
-        if self._similar_files_maintenance_status is None:
-            
-            self._search_button.setEnabled( False )
-            
-            return
-            
-        
-        searched_distances_to_count = self._similar_files_maintenance_status
-        
-        self._cog_button.setEnabled( True )
-        
-        total_num_files = sum( searched_distances_to_count.values() )
-        
-        self._eligible_files.setText( '{} eligible files in the system.'.format(HydrusNumbers.ToHumanInt(total_num_files)) )
-        
-        self._max_hamming_distance_for_potential_discovery_button.setEnabled( True )
-        self._max_hamming_distance_for_potential_discovery_spinctrl.setEnabled( True )
-        
-        options_search_distance = CG.client_controller.new_options.GetInteger( 'similar_files_duplicate_pairs_search_distance' )
-        
-        if self._max_hamming_distance_for_potential_discovery_spinctrl.value() != options_search_distance:
-            
-            self._max_hamming_distance_for_potential_discovery_spinctrl.setValue( options_search_distance )
-            
-        
-        search_distance = self._max_hamming_distance_for_potential_discovery_spinctrl.value()
-        
-        if search_distance in CC.hamming_string_lookup:
-            
-            button_label = CC.hamming_string_lookup[ search_distance ]
-            
-        else:
-            
-            button_label = 'custom'
-            
-        
-        self._max_hamming_distance_for_potential_discovery_button.setText( button_label )
-        
-        num_searched = sum( ( count for ( value, count ) in searched_distances_to_count.items() if value is not None and value >= search_distance ) )
-        
-        not_all_files_searched = num_searched < total_num_files
-        
-        we_can_start_work = not_all_files_searched and not self._potential_file_search_currently_happening
-        
-        self._search_button.setEnabled( we_can_start_work )
-        
-        page_name = 'preparation'
-        
-        if not_all_files_searched:
-            
-            if num_searched == 0:
-                
-                self._num_searched.SetValue( 'Have not yet searched at this distance.', 0, total_num_files )
-                
-            else:
-                
-                self._num_searched.SetValue( 'Searched ' + HydrusNumbers.ValueRangeToPrettyString( num_searched, total_num_files ) + ' files at this distance.', num_searched, total_num_files )
-                
-            
-            show_page_name = True
-            
-            percent_done = num_searched / total_num_files
-            
-            if CG.client_controller.new_options.GetBoolean( 'hide_duplicates_needs_work_message_when_reasonably_caught_up' ) and percent_done > 0.99:
-                
-                show_page_name = False
-                
-            
-            if show_page_name:
-                
-                percent_string = HydrusNumbers.FloatToPercentage(percent_done)
-                
-                if percent_string == '100.0%':
-                    
-                    percent_string = '99.9%'
-                    
-                
-                page_name = f'preparation ({percent_string} done)'
-                
-            
-        else:
-            
-            self._num_searched.SetValue( 'All potential duplicates found at this distance.', total_num_files, total_num_files )
-            
-        
-        self._main_notebook.setTabText( 0, page_name )
-        
-    
-    def MaxHammingDistanceForPotentialDiscoveryChanged( self ):
-        
-        search_distance = self._max_hamming_distance_for_potential_discovery_spinctrl.value()
-        
-        CG.client_controller.new_options.SetInteger( 'similar_files_duplicate_pairs_search_distance', search_distance )
-        
-        CG.client_controller.pub( 'new_similar_files_maintenance_numbers' )
-        
-        self._UpdateMaintenanceStatus()
-        
-    
-    def NotifyNewMaintenanceNumbers( self ):
-        
-        self._maintenance_numbers_need_redrawing = True
-        
-    
-    def NotifyNewPotentialsSearchNumbers( self ):
-        
-        self._potential_duplicates_search_context.NotifyNewDupePairs()
-        
-    
-    def PageHidden( self ):
-        
-        super().PageHidden()
-        
-        page = self._main_notebook.currentWidget()
-        
-        if page == self._main_right_panel:
-            
-            self._potential_duplicates_search_context.PageHidden()
-            
-        
-    
-    def PageShown( self ):
-        
-        super().PageShown()
-        
-        page = self._main_notebook.currentWidget()
-        
-        if page == self._main_right_panel:
-            
-            self._potential_duplicates_search_context.PageShown()
-            
-        
-    
-    def RefreshDuplicateNumbers( self ):
-        
-        self._potential_duplicates_search_context.NotifyNewDupePairs()
-        
-    
-    def RefreshQuery( self ):
-        
-        self._potential_duplicates_search_context.NotifyNewDupePairs()
         
     
     def REPEATINGPageUpdate( self ):
         
-        if self._maintenance_numbers_need_redrawing:
-            
-            ( self._similar_files_maintenance_status, self._duplicates_manager_is_fetching_maintenance_numbers, self._potential_file_search_currently_happening ) = self._duplicates_manager.GetMaintenanceNumbers()
-            
-            self._maintenance_numbers_need_redrawing = False
-            
-            self._UpdateMaintenanceStatus()
-            
+        current_page = self._main_notebook.currentWidget()
         
-        self._potential_duplicates_search_context.REPEATINGPageUpdate()
+        if current_page == self._preparation_panel:
+            
+            self._preparation_panel.REPEATINGPageUpdate()
+            
+        elif current_page == self._filter_panel:
+            
+            self._filter_panel.REPEATINGPageUpdate()
+            
         
     

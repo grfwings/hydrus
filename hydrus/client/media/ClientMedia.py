@@ -92,6 +92,22 @@ def GetBlurhashToSortableCall( sort_data: int ):
     return sort_data_to_blurhash_to_sortable_calls.get( sort_data, HydrusBlurhash.ConvertBlurhashToSortableLightness )
     
 
+def GetLocalFileServiceKeys( flat_medias: collections.abc.Collection[ "MediaSingleton" ] ):
+    
+    local_media_file_service_keys = set( CG.client_controller.services_manager.GetServiceKeys( ( HC.LOCAL_FILE_DOMAIN, ) ) )
+    
+    local_file_service_keys_counter = collections.Counter()
+    
+    for m in flat_medias:
+        
+        locations_manager = m.GetLocationsManager()
+        
+        local_file_service_keys_counter.update( local_media_file_service_keys.intersection( locations_manager.GetCurrent() ) )
+        
+    
+    return local_file_service_keys_counter
+    
+
 def GetMediasTags( pool, tag_service_key, tag_display_type, content_statuses ):
     
     tags_managers = []
@@ -567,6 +583,7 @@ class MediaList( object ):
         self._hashes_to_collected_media = {}
         
         self._media_sort = MediaSort( ( 'system', CC.SORT_FILES_BY_FILESIZE ), CC.SORT_ASC )
+        self._secondary_media_sort = None
         self._media_collect = MediaCollect()
         
         self._sorted_media = HydrusLists.FastIndexUniqueList( [ self._GenerateMediaSingleton( media_result ) for media_result in media_results ] )
@@ -574,6 +591,8 @@ class MediaList( object ):
         
         self._singleton_media = set( self._sorted_media )
         self._collected_media = set()
+        
+        self._media_index_history = []
         
         self._RecalcHashes()
         
@@ -713,6 +732,45 @@ class MediaList( object ):
             
         
     
+    def _GetRandom( self, media ):
+        
+        if len( self._sorted_media ) == 0 or media is None:
+            
+            return None
+            
+        
+        if len( self._sorted_media ) == 1:
+            
+            return media
+            
+        
+        curr_index = self._sorted_media.index( media )
+        
+        self._media_index_history.append( curr_index )
+        
+        while True:
+            
+            random_index = random.randrange( len( self._sorted_media ) )
+            
+            if random_index != curr_index:
+                
+                return self._sorted_media[ random_index ]
+                
+            
+        
+    
+    def _UndoRandom( self, media ):
+        
+        if len ( self._media_index_history ) == 0:
+            
+            return media
+            
+        
+        recent_index = self._media_index_history.pop()
+        
+        return self._sorted_media[ recent_index ]
+        
+    
     def _HasHashes( self, hashes ):
         
         for hash in hashes:
@@ -768,6 +826,8 @@ class MediaList( object ):
                 self._hashes_to_singleton_media[ hash ] = m
                 
             
+        
+        self._media_index_history = []
         
     
     def _RemoveMediaByHashes( self, hashes ):
@@ -1143,6 +1203,16 @@ class MediaList( object ):
         return self._GetPrevious( media )
         
     
+    def GetRandom( self, media ):
+        
+        return self._GetRandom( media )
+        
+    
+    def UndoRandom( self, media ):
+        
+        return self._UndoRandom( media )
+        
+    
     def GetSelectedMedia( self ):
         
         return self._selected_media
@@ -1343,26 +1413,36 @@ class MediaList( object ):
         self._tag_context = tag_context
         
     
-    def Sort( self, media_sort = None ):
+    def Sort( self, media_sort: typing.Optional[ "MediaSort" ] = None, secondary_sort: typing.Optional[ "MediaSort" ] = None ):
+        
+        # TODO: TBH, I think I should stop caching the last sort and just take params every time. that's KISS
         
         if media_sort is None:
             
             media_sort = self._media_sort
             
         
-        for media in self._collected_media:
+        if secondary_sort is None:
             
-            media.Sort( media_sort )
+            if self._secondary_media_sort is None:
+                
+                secondary_sort = CG.client_controller.new_options.GetFallbackSort()
+                
+            else:
+                
+                secondary_sort = self._secondary_media_sort
+                
             
         
         self._media_sort = media_sort
+        self._secondary_media_sort = secondary_sort
         
-        media_sort_fallback = CG.client_controller.new_options.GetFallbackSort()
+        for media in self._collected_media:
+            
+            media.Sort( media_sort = media_sort, secondary_sort = secondary_sort )
+            
         
-        media_sort_fallback.Sort( self._location_context, self._tag_context, self._sorted_media )
-        
-        # this is a stable sort, so the fallback order above will remain for equal items
-        
+        self._secondary_media_sort.Sort( self._location_context, self._tag_context, self._sorted_media )
         self._media_sort.Sort( self._location_context, self._tag_context, self._sorted_media )
         
         self._RecalcHashes()
@@ -2311,7 +2391,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext ):
+    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext ):
         
         ( sort_metadata, sort_data ) = self.sort_type
         
@@ -2602,7 +2682,9 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     
                     tags_manager = x.GetTagsManager()
                     
-                    return len( tags_manager.GetCurrentAndPending( tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
+                    # this is self.tag_context, not the given tag context
+                    
+                    return len( tags_manager.GetCurrentAndPending( self.tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
                     
                 
             elif sort_data == CC.SORT_FILES_BY_MIME:
@@ -2756,6 +2838,9 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
     
     def Sort( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext, media_results_list: HydrusLists.FastIndexUniqueList ):
         
+        # the tag context here is that of the page overall. I removed it from GetSortKeyAndReverse when I started sucking it from the media sort here for num_tags, but maybe in future we'll want some
+        # sophisticated logic somewhere that soys 'use the page' instead of what the sort has. so don't remove it too aggressively m8
+        
         ( sort_metadata, sort_data ) = self.sort_type
         
         if sort_data == CC.SORT_FILES_BY_RANDOM:
@@ -2764,7 +2849,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         else:
             
-            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context, tag_context )
+            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context )
             
             media_results_list.sort( key = sort_key, reverse = reverse )
             

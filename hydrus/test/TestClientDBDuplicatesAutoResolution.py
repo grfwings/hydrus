@@ -3,7 +3,11 @@ import time
 import typing
 import unittest
 
+from unittest import mock
+
 from hydrus.core import HydrusConstants as HC
+from hydrus.core import HydrusStaticDir
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientLocation
@@ -72,6 +76,39 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         cls._delete_db()
         
     
+    def _do_resolution_work( self, rule ):
+        
+        media_result_pair = self._read( 'duplicates_auto_resolution_resolution_pair', rule )
+        
+        while media_result_pair is not None:
+            
+            ( media_result_1, media_result_2 ) = media_result_pair
+            
+            # this is the high CPU bit and needs to be out of the db
+            # we used to have a nice embedded db call that looped and could clear hundreds of null pairs in one transaction, but it relied on db-side testing
+            # maybe we could have two calls, for a known fast test somehow, but let's KISS from the other direction and simply regret the overhead
+            result = rule.TestPair( media_result_1, media_result_2 )
+            
+            if result is None:
+                
+                self._write( 'duplicates_auto_resolution_commit_resolution_pair_failed', rule, media_result_pair )
+                
+            else:
+                
+                self._write( 'duplicates_auto_resolution_commit_resolution_pair_passed', rule, result )
+                
+            
+            next_media_result_pair = self._read( 'duplicates_auto_resolution_resolution_pair', rule )
+            
+            if next_media_result_pair == media_result_pair:
+                
+                raise Exception( 'Resolution Work failed to clear a pair!' )
+                
+            
+            media_result_pair = next_media_result_pair
+            
+        
+    
     def _read( self, action, *args, **kwargs ): return TestClientDBDuplicatesAutoResolution._db.Read( action, *args, **kwargs )
     def _write( self, action, *args, **kwargs ): return TestClientDBDuplicatesAutoResolution._db.Write( action, True, *args, **kwargs )
     
@@ -115,7 +152,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             
             TG.test_controller.SetRead( 'hash_status', ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
-            path = os.path.join( HC.STATIC_DIR, 'testing', filename )
+            path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
             
             hash = bytes.fromhex( hex_hash )
             
@@ -148,9 +185,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -168,9 +205,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate(), rule_2.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_2_read = [ rule for rule in rules_we_read if rule.GetId() not in ( -1, rule_1.GetId() ) ][0]
         
@@ -187,9 +224,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_2.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         compare_rule_lists( rules_we_read, rules_we_are_setting )
         
@@ -199,9 +236,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_2.Duplicate(), rule_3.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_3_read = [ rule for rule in rules_we_read if rule.GetId() > 0 and rule.GetId() != rule_2.GetId() ][0]
         
@@ -268,9 +305,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -284,17 +321,17 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED : 2 } )
         
-        self._write( 'duplicate_auto_resolution_do_resolution_work', rule_1_read )
+        self._do_resolution_work( rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -308,9 +345,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1 ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -370,9 +407,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -386,17 +423,17 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED : 2 } )
         
-        self._write( 'duplicate_auto_resolution_do_resolution_work', rule_1_read )
+        self._do_resolution_work( rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -428,9 +465,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1 ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -490,9 +527,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -506,17 +543,17 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED : 2 } )
         
-        self._write( 'duplicate_auto_resolution_do_resolution_work', rule_1_read )
+        self._do_resolution_work( rule_1_read )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -528,9 +565,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1 ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -556,9 +593,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -573,7 +610,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -583,7 +620,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         self._write( 'remove_potential_pairs', ( hashes[0], ) )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -598,7 +635,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -613,7 +650,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
             ]
         )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -663,20 +700,20 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED : 2 } )
         
-        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
         self.assertFalse( still_work_to_do_here )
         self.assertTrue( matching_pairs_produced_here )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -750,30 +787,28 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED : 2 } )
         
-        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
         self.assertFalse( still_work_to_do_here )
         self.assertTrue( matching_pairs_produced_here )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED : 2 } )
         
-        still_work_to_do_here = self._write( 'duplicate_auto_resolution_do_resolution_work', rule_1_read )
+        self._do_resolution_work( rule_1_read )
         
-        self.assertFalse( still_work_to_do_here )
-        
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -865,30 +900,28 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         rules_we_are_setting = [ rule_1.Duplicate() ]
         
-        self._write( 'duplicate_auto_resolution_set_rules', rules_we_are_setting )
+        self._write( 'duplicates_auto_resolution_set_rules', rules_we_are_setting )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED : 2 } )
         
-        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicate_auto_resolution_do_search_work', rule_1_read )
+        ( still_work_to_do_here, matching_pairs_produced_here ) = self._write( 'duplicates_auto_resolution_do_search_work', rule_1_read )
         
         self.assertFalse( still_work_to_do_here )
         self.assertTrue( matching_pairs_produced_here )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
         self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED : 2 } )
         
-        still_work_to_do_here = self._write( 'duplicate_auto_resolution_do_resolution_work', rule_1_read )
+        self._do_resolution_work( rule_1_read )
         
-        self.assertFalse( still_work_to_do_here )
-        
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -917,7 +950,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         hashes = self._semi_resolution_setup()
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -925,9 +958,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         [ ( media_result_1, media_result_2 ) ] = pending_action_pairs
         
-        self._write( 'duplicate_auto_resolution_approve_pending_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
+        self._write( 'duplicates_auto_resolution_approve_pending_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -962,7 +995,7 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         hashes = self._semi_resolution_setup()
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -970,9 +1003,9 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         
         [ ( media_result_1, media_result_2 ) ] = pending_action_pairs
         
-        self._write( 'duplicate_auto_resolution_deny_pending_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
+        self._write( 'duplicates_auto_resolution_deny_pending_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
         
-        rules_we_read = self._read( 'duplicate_auto_resolution_rules_with_counts' )
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
         
         rule_1_read = rules_we_read[0]
         
@@ -995,5 +1028,54 @@ class TestClientDBDuplicatesAutoResolution( unittest.TestCase ):
         actioned_pairs_with_info = self._read( 'duplicates_auto_resolution_actioned_pairs', rule_1_read )
         
         self.assertEqual( actioned_pairs_with_info, [] )
+        
+    
+    def test_rules_semi_resolution_deny_fetch_and_rescind( self ):
+        
+        # two pairs, and our search gets both, and one tests ok--we deny it
+        
+        hashes = self._semi_resolution_setup()
+        
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
+        
+        rule_1_read = rules_we_read[0]
+        
+        pending_action_pairs = self._read( 'duplicates_auto_resolution_pending_action_pairs', rule_1_read )
+        
+        [ ( media_result_1, media_result_2 ) ] = pending_action_pairs
+        
+        with mock.patch.object( HydrusTime, 'GetNowMS', return_value = 123456 ):
+            
+            self._write( 'duplicates_auto_resolution_deny_pending_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
+            
+            rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
+            
+            rule_1_read = rules_we_read[0]
+            
+            self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED : 1, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST : 1 } )
+            
+            #
+            
+            declined_pairs_with_info = self._read( 'duplicates_auto_resolution_declined_pairs', rule_1_read )
+            
+            [ ( read_media_result_smaller, read_media_result_larger, timestamp_ms ) ] = declined_pairs_with_info
+            
+            self.assertEqual( { read_media_result_smaller, read_media_result_larger }, { media_result_1, media_result_2 } )
+            self.assertTrue( timestamp_ms, 123456 )
+            
+        
+        #
+        
+        self._write( 'duplicates_auto_resolution_rescind_declined_pairs', rule_1_read, [ ( media_result_1, media_result_2 ) ] )
+        
+        rules_we_read = self._read( 'duplicates_auto_resolution_rules_with_counts' )
+        
+        rule_1_read = rules_we_read[0]
+        
+        self._compare_counts_cache( rule_1_read.GetCountsCacheDuplicate(), { ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED : 1, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST : 1 } )
+        
+        declined_pairs_with_info = self._read( 'duplicates_auto_resolution_declined_pairs', rule_1_read )
+        
+        self.assertEqual( declined_pairs_with_info, [] )
         
     

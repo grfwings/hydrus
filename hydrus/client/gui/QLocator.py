@@ -14,6 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import collections.abc
+import typing
+
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
@@ -22,6 +25,7 @@ import math
 import re
 
 def elideRichText(richText: str, maxWidth: int, widget, elideFromLeft: bool):
+    
     doc = QG.QTextDocument()
     opt = QG.QTextOption()
     opt.setWrapMode(QG.QTextOption.WrapMode.NoWrap)
@@ -29,7 +33,7 @@ def elideRichText(richText: str, maxWidth: int, widget, elideFromLeft: bool):
     doc.setDocumentMargin(0)
     doc.setHtml(richText)
     doc.adjustSize()
-
+    
     if doc.size().width() > maxWidth:
         cursor = QG.QTextCursor (doc)
         if elideFromLeft:
@@ -50,15 +54,22 @@ def elideRichText(richText: str, maxWidth: int, widget, elideFromLeft: bool):
         cursor.insertText(elidedPostfix)
 
         return doc.toHtml()
+        
 
     return richText
+    
 
 class FocusEventFilter(QC.QObject):
+    
     focused = QC.Signal()
+    
     def __init__(self, parent = None):
+        
         super().__init__(parent)
+        
 
     def eventFilter(self, watched, event) -> bool:
+        
         try:
             
             if event.type() == QC.QEvent.Type.FocusIn:
@@ -72,9 +83,13 @@ class FocusEventFilter(QC.QObject):
             
         
         return False
+        
+    
 
 class QLocatorSearchResult:
+    
     def __init__(self, id: int, defaultIconPath: str, selectedIconPath: str, closeOnActivated: bool, text: list, toggled: bool = False, toggledIconPath: str = "", toggledSelectedIconPath: str = ""):
+        
         self.id = id
         self.defaultIconPath = defaultIconPath
         self.selectedIconPath = selectedIconPath
@@ -83,13 +98,16 @@ class QLocatorSearchResult:
         self.toggled = toggled
         self.toggledIconPath = toggledIconPath
         self.toggledSelectedIconPath = toggledSelectedIconPath
+        
+    
 
 class QLocatorTitleWidget(QW.QWidget):
     def __init__(self, title: str, iconPath: str, height: int, shouldRemainHidden: bool, parent = None):
         super().__init__(parent)
         self.icon = QG.QIcon(iconPath)
         self.iconHeight = height - 2
-        self.setLayout(QW.QHBoxLayout())
+        hbox = QW.QHBoxLayout()
+        self.setLayout(hbox)
         self.iconLabel = QW.QLabel()
         self.iconLabel.setFixedHeight(self.iconHeight)
         self.iconLabel.setPixmap(self.icon.pixmap(self.iconHeight, self.iconHeight))
@@ -97,14 +115,14 @@ class QLocatorTitleWidget(QW.QWidget):
         self.titleLabel.setText(title)
         self.titleLabel.setTextFormat(QC.Qt.TextFormat.RichText)
         self.countLabel = QW.QLabel()
-        self.layout().setContentsMargins(4, 1, 4, 1)
-        self.layout().addWidget(self.iconLabel)
-        self.layout().addWidget(self.titleLabel)
-        self.layout().addStretch(1)
-        self.layout().addWidget(self.countLabel)
-        self.layout().setAlignment(self.countLabel, QC.Qt.AlignmentFlag.AlignVCenter)
-        self.layout().setAlignment(self.iconLabel, QC.Qt.AlignmentFlag.AlignVCenter)
-        self.layout().setAlignment(self.titleLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setContentsMargins(4, 1, 4, 1)
+        hbox.addWidget(self.iconLabel)
+        hbox.addWidget(self.titleLabel)
+        hbox.addStretch(1)
+        hbox.addWidget(self.countLabel)
+        hbox.setAlignment(self.countLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setAlignment(self.iconLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setAlignment(self.titleLabel, QC.Qt.AlignmentFlag.AlignVCenter)
         titleFont = self.titleLabel.font()
         titleFont.setBold(True)
         self.titleLabel.setFont(titleFont)
@@ -130,7 +148,8 @@ class QLocatorResultWidget(QW.QWidget):
         self.iconHeight = height - 2
         self.setObjectName("unselectedLocatorResult")
         self.keyEventTarget = keyEventTarget
-        self.setLayout(QW.QHBoxLayout())
+        hbox = QW.QHBoxLayout()
+        self.setLayout( hbox )
         self.iconLabel = QW.QLabel(self)
         self.iconLabel.setFixedHeight(self.iconHeight)
         self.mainTextLabel = QW.QLabel(self)
@@ -143,14 +162,14 @@ class QLocatorResultWidget(QW.QWidget):
         self.secondaryTextLabel.setMaximumWidth(secondaryTextWidth)
         self.secondaryTextLabel.setTextFormat(QC.Qt.TextFormat.RichText)
         self.secondaryTextLabel.setTextInteractionFlags(QC.Qt.TextInteractionFlag.NoTextInteraction)
-        self.layout().setContentsMargins(4, 1, 4, 1)
-        self.layout().addWidget(self.iconLabel)
-        self.layout().addWidget(self.mainTextLabel)
-        self.layout().addStretch(1)
-        self.layout().addWidget(self.secondaryTextLabel)
-        self.layout().setAlignment(self.mainTextLabel, QC.Qt.AlignmentFlag.AlignVCenter)
-        self.layout().setAlignment(self.iconLabel, QC.Qt.AlignmentFlag.AlignVCenter)
-        self.layout().setAlignment(self.secondaryTextLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setContentsMargins(4, 1, 4, 1)
+        hbox.addWidget(self.iconLabel)
+        hbox.addWidget(self.mainTextLabel)
+        hbox.addStretch(1)
+        hbox.addWidget(self.secondaryTextLabel)
+        hbox.setAlignment(self.mainTextLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setAlignment(self.iconLabel, QC.Qt.AlignmentFlag.AlignVCenter)
+        hbox.setAlignment(self.secondaryTextLabel, QC.Qt.AlignmentFlag.AlignVCenter)
         self.setFixedHeight(height)
         self.setSizePolicy(QW.QSizePolicy.Policy.Expanding, QW.QSizePolicy.Policy.Fixed)
         self.activateEnterShortcut = QW.QShortcut(QG.QKeySequence(QC.Qt.Key.Key_Enter), self)
@@ -248,7 +267,7 @@ class QLocatorResultWidget(QW.QWidget):
             QW.QApplication.postEvent(self.keyEventTarget, QG.QKeyEvent(ev.type(), ev.key(), ev.modifiers(), ev.text(), ev.isAutoRepeat()))
             self.keyEventTarget.setFocus()
         else:
-            super().keyPressEvent(self, ev)
+            super().keyPressEvent( ev )
 
 class QAbstractLocatorSearchProvider(QC.QObject):
     resultsAvailable = QC.Signal(int, list)
@@ -515,7 +534,7 @@ class QLocatorWidget(QW.QWidget):
 
         if self.locator:
             for provider in self.locator.providers:
-                self.providerAdded(provider.title(), self.locator.iconBasePath + provider.titleIconPath(), provider.suggestedReservedItemCount(), provider.hideTitle())
+                self.providerAdded(provider.title(), self.locator.getIconPath( provider.titleIconPath() ), provider.suggestedReservedItemCount(), provider.hideTitle())
             self.locator.providerAdded.connect(self.providerAdded)
             self.locator.resultsAvailable.connect(self.handleResultsAvailable)
 
@@ -568,7 +587,7 @@ class QLocatorWidget(QW.QWidget):
         self.resultItems = []
         if self.locator:
             for provider in self.locator.providers:
-                self.providerAdded(provider.title(), self.locator.iconBasePath + provider.titleIconPath(), provider.suggestedReservedItemCount(), provider.hideTitle())
+                self.providerAdded(provider.title(), self.locator.getIconPath( provider.titleIconPath() ), provider.suggestedReservedItemCount(), provider.hideTitle())
 
     def handleResultsAvailable(self, providerIndex: int, jobID: int) -> None:
         data = self.locator.getResult(jobID)
@@ -610,6 +629,7 @@ class QLocatorWidget(QW.QWidget):
 
     def handleResultUp(self):
         resultWidget = self.sender()
+        resultWidget = typing.cast( QLocatorResultWidget, resultWidget )
         resultWidget.setSelected(False)
         i = self.selectedLayoutItemIndex - 1
         while i > 0:
@@ -626,6 +646,7 @@ class QLocatorWidget(QW.QWidget):
 
     def handleResultDown(self):
         resultWidget = self.sender()
+        resultWidget = typing.cast( QLocatorResultWidget, resultWidget )
         i = self.selectedLayoutItemIndex + 1
         while i < self.resultLayout.count():
             widget = self.resultLayout.itemAt(i).widget()
@@ -744,7 +765,6 @@ class QLocatorWidget(QW.QWidget):
         widget.setDefaultStylingEnabled(self.defaultStylingEnabled)
 
 class QLocator(QC.QObject):
-    iconBasePathChanged = QC.Signal(str)
     providerAdded = QC.Signal(str, str, int, bool)
     resultsAvailable = QC.Signal(int, int)
     def __init__(self, parent):
@@ -753,29 +773,40 @@ class QLocator(QC.QObject):
         self.currentJobs = {}
         self.savedProviderData = {}
         self.jobIDCounter = 0
-        self.iconBasePath = str()
-
+        self.iconPathFactory = None
+    
     def addProvider(self, provider) -> None:
         self.providers.append(provider)
         provider.setParent(self)
         provider.resultsAvailable.connect(self.handleItemUpdate)
-        self.providerAdded.emit(provider.title(), self.iconBasePath + provider.titleIconPath(), provider.suggestedReservedItemCount(), provider.hideTitle())
+        self.providerAdded.emit(provider.title(), self.getIconPath( provider.titleIconPath() ), provider.suggestedReservedItemCount(), provider.hideTitle())
 
     def provider(self, idx: int):
         if idx >= 0 and idx <= len(self.providers):
             return self.providers[idx]
         return None
-
+        
+    
+    def getIconPath( self, filename ):
+        
+        if self.iconPathFactory is None:
+            
+            raise Exception( 'No way to determine icons for the Locator!' )
+            
+        
+        return self.iconPathFactory( filename ) 
+        
+    
     def getResult(self, jobID: int):
         return self.savedProviderData.pop(jobID, None)
 
     def __del__(self):
         self.stopJobs()
 
-    def setIconBasePath(self, iconBasePath: str) -> None:
-        if self.iconBasePath != iconBasePath:
-            self.iconBasePath = iconBasePath
-            self.iconBasePathChanged.emit(self.iconBasePath)
+    def setIconPathFactory(self, iconPathFactory: collections.abc.Callable[ [ str ], str ] ) -> None:
+        
+        self.iconPathFactory = iconPathFactory
+        
 
     def query(self, queryText: str, context) -> list:
         jobIDs = []
@@ -796,10 +827,10 @@ class QLocator(QC.QObject):
             del self.currentJobs[jobID]
             self.savedProviderData[jobID] = data
             for dataItem in self.savedProviderData[jobID]:
-                dataItem.defaultIconPath = self.iconBasePath + dataItem.defaultIconPath
-                dataItem.selectedIconPath = self.iconBasePath + dataItem.selectedIconPath
-                dataItem.toggledIconPath = self.iconBasePath + dataItem.toggledIconPath
-                dataItem.toggledSelectedIconPath = self.iconBasePath + dataItem.toggledSelectedIconPath
+                dataItem.defaultIconPath = self.getIconPath( dataItem.defaultIconPath )
+                dataItem.selectedIconPath = self.getIconPath( dataItem.selectedIconPath )
+                dataItem.toggledIconPath = self.getIconPath( dataItem.toggledIconPath )
+                dataItem.toggledSelectedIconPath = self.getIconPath( dataItem.toggledSelectedIconPath )
             self.resultsAvailable.emit(providerIndex, jobID)
 
     def stopJobs(self, ids = None) -> None:

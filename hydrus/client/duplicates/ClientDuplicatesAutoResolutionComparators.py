@@ -4,8 +4,9 @@ import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusTime
 
-from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientDuplicatesComparisonStatements
 from hydrus.client.files.images import ClientVisualData
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientMetadataConditional 
@@ -152,6 +153,10 @@ class PairComparatorOneFile( PairComparator ):
             
             return self._metadata_conditional.Test( media_result_a ) or self._metadata_conditional.Test( media_result_b )
             
+        else:
+            
+            return False
+            
         
     
 
@@ -221,6 +226,15 @@ class PairComparatorRelativeFileInfo( PairComparator ):
         
         pred_string = self._system_predicate.ToString()
         
+        we_time_pred = self._system_predicate.GetType() in (
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
+        )
+        
+        we_duration_pred = self._system_predicate.GetType() == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION
+        
         what_we_are_testing = 'B'
         
         if self._multiplier != 1.0:
@@ -228,18 +242,30 @@ class PairComparatorRelativeFileInfo( PairComparator ):
             what_we_are_testing = f'{self._multiplier:.2f}x {what_we_are_testing}'
             
         
+        if we_time_pred or we_duration_pred:
+            
+            absolute_number_renderer = lambda t: HydrusTime.TimeDeltaToPrettyTimeDelta( t / 1000 )
+            
+            delta_string = absolute_number_renderer( self._delta )
+            
+        else:
+            
+            absolute_number_renderer = None
+            delta_string = self._delta
+            
+        
         if self._delta > 0:
             
-            what_we_are_testing = f'{what_we_are_testing} +{self._delta}'
+            what_we_are_testing = f'{what_we_are_testing} +{delta_string}'
             
         elif self._delta < 0:
             
-            what_we_are_testing = f'{what_we_are_testing} {self._delta}'
+            what_we_are_testing = f'{what_we_are_testing} {delta_string}'
             
         
-        number_test_string = self._number_test.ToString( replacement_value_string = what_we_are_testing )
+        number_test_string = self._number_test.ToString( absolute_number_renderer = absolute_number_renderer, replacement_value_string = what_we_are_testing, use_time_operators = we_time_pred )
         
-        return f'A has {pred_string} {number_test_string}'
+        return f'A has "{pred_string}" {number_test_string}'
         
     
     def IsFast( self ) -> bool:
@@ -292,11 +318,15 @@ HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIAL
 
 HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME = 0
 HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS = 1
+HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME = 2
+HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME = 3
 # do not put pixel similarity here. we'll have this enum be a toolbox of _very_ hardcoded stuff, no customisation for KISS
 
 hardcoded_comparator_type_str_lookup = {
     HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME : 'A and B have the same filetype',
-    HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS : 'A and B have different filetypes'
+    HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS : 'A and B have different filetypes',
+    HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME : 'A and B have the same "has exif" value',
+    HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME : 'A and B have the same "has icc profile" value',
 }
 
 class PairComparatorRelativeHardcoded( PairComparator ):
@@ -360,6 +390,14 @@ class PairComparatorRelativeHardcoded( PairComparator ):
                 
                 return a_filetype != b_filetype
                 
+            
+        elif self._hardcoded_type == HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME:
+            
+            return media_result_a.GetFileInfoManager().has_exif == media_result_b.GetFileInfoManager().has_exif
+            
+        elif self._hardcoded_type == HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME:
+            
+            return media_result_a.GetFileInfoManager().has_icc_profile == media_result_b.GetFileInfoManager().has_icc_profile
             
         
         raise Exception( f'Do not understand what I should do with a type of {self._hardcoded_type}!' )
@@ -428,15 +466,15 @@ class PairComparatorRelativeVisualDuplicates( PairComparator ):
         
         if media_result_a.GetMime() in HC.IMAGES and media_result_b.GetMime() in HC.IMAGES:
             
-            visual_data_a = ClientDuplicates.GetVisualData( media_result_a )
-            visual_data_b = ClientDuplicates.GetVisualData( media_result_b )
+            visual_data_a = ClientDuplicatesComparisonStatements.GetVisualData( media_result_a )
+            visual_data_b = ClientDuplicatesComparisonStatements.GetVisualData( media_result_b )
             
             ( simple_seems_good, simple_result, simple_score_statement ) = ClientVisualData.FilesAreVisuallySimilarSimple( visual_data_a, visual_data_b )
             
             if simple_seems_good:
                 
-                visual_data_tiled_a = ClientDuplicates.GetVisualDataTiled( media_result_a )
-                visual_data_tiled_b = ClientDuplicates.GetVisualDataTiled( media_result_b )
+                visual_data_tiled_a = ClientDuplicatesComparisonStatements.GetVisualDataTiled( media_result_a )
+                visual_data_tiled_b = ClientDuplicatesComparisonStatements.GetVisualDataTiled( media_result_b )
                 
                 ( regional_seems_good, regional_result, regional_score_statement ) = ClientVisualData.FilesAreVisuallySimilarRegional( visual_data_tiled_a, visual_data_tiled_b )
                 
@@ -449,6 +487,92 @@ class PairComparatorRelativeVisualDuplicates( PairComparator ):
     
 
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_PAIR_COMPARATOR_TWO_FILES_RELATIVE_VISUAL_DUPLICATES ] = PairComparatorRelativeVisualDuplicates
+
+class PairComparatorOR( PairComparator ):
+    
+    SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_PAIR_COMPARATOR_OR
+    SERIALISABLE_NAME = 'Duplicates Auto-Resolution Pair Comparator - OR'
+    SERIALISABLE_VERSION = 1
+    
+    def __init__( self, sub_comparators: collections.abc.Collection[ PairComparator ] = None ):
+        """
+        This guy holds other comparators and does an OR of them. 
+        """
+        
+        if sub_comparators is None:
+            
+            sub_comparators = []
+            
+        
+        super().__init__()
+        
+        self._sub_comparators = HydrusSerialisable.SerialisableList( sub_comparators )
+        
+        self._SortComparators()
+        
+    
+    def _GetSerialisableInfo( self ):
+        
+        return self._sub_comparators.GetSerialisableTuple()
+        
+    
+    def _InitialiseFromSerialisableInfo( self, serialisable_info ):
+        
+        self._sub_comparators = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_info )
+        
+        self._SortComparators()
+        
+    
+    def _SortComparators( self ):
+        
+        # maybe one day we sort for speed, but for now let's just be stable
+        
+        self._sub_comparators = HydrusSerialisable.SerialisableList( sorted( self._sub_comparators, key = lambda sc: sc.GetSummary() ) )
+        
+    
+    def GetComparators( self ):
+        
+        return self._sub_comparators
+        
+    
+    def CanDetermineBetter( self ) -> bool:
+        
+        # let's be strict to stay safe
+        return len( self._sub_comparators ) > 0 and False not in ( sub_comparator.CanDetermineBetter() for sub_comparator in self._sub_comparators )
+        
+    
+    def GetSummary( self ):
+        
+        return '(' + ') OR ('.join( ( sub_comparator.GetSummary() for sub_comparator in self._sub_comparators ) ) + ')'
+        
+    
+    def IsFast( self ) -> bool:
+        
+        # let's be strict to stay safe
+        return False not in ( sub_comparator.IsFast() for sub_comparator in self._sub_comparators )
+        
+    
+    def OrderDoesNotMatter( self ):
+        
+        # let's be strict to stay safe
+        return False not in ( sub_comparator.OrderDoesNotMatter() for sub_comparator in self._sub_comparators )
+        
+    
+    def Test( self, media_result_a: ClientMediaResult.MediaResult, media_result_b: ClientMediaResult.MediaResult ) -> bool:
+        
+        for sub_comparator in self._sub_comparators:
+            
+            if sub_comparator.Test( media_result_a, media_result_b ):
+                
+                return True
+                
+            
+        
+        return False
+        
+    
+
+HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_PAIR_COMPARATOR_OR ] = PairComparatorOR
 
 class PairSelector( HydrusSerialisable.SerialisableBase ):
     
@@ -601,6 +725,11 @@ class PairSelector( HydrusSerialisable.SerialisableBase ):
         comparator_strings = sorted( [ comparator.GetSummary() for comparator in self._comparators ] )
         
         return ', '.join( comparator_strings )
+        
+    
+    def IsFast( self ) -> bool:
+        
+        return False not in ( comparator.IsFast() for comparator in self._comparators )
         
     
     def MatchingPairMatchesBothWaysAround( self, media_result_1: ClientMediaResult.MediaResult, media_result_2: ClientMediaResult.MediaResult ) -> bool:

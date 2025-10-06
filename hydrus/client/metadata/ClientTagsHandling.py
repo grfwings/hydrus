@@ -15,6 +15,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
+from hydrus.client.search import ClientSearchTagContext
 
 class TagAutocompleteOptions( HydrusSerialisable.SerialisableBase ):
     
@@ -259,7 +260,7 @@ class TagAutocompleteOptions( HydrusSerialisable.SerialisableBase ):
         return self._write_autocomplete_location_context
         
     
-    def GetWriteAutocompleteSearchDomain( self, location_context: ClientLocation.LocationContext ):
+    def GetWriteAutocompleteSearchDomain( self, location_context: ClientLocation.LocationContext, display_tag_service_key: bytes ):
         
         tag_service_key = self._service_key
         
@@ -278,7 +279,9 @@ class TagAutocompleteOptions( HydrusSerialisable.SerialisableBase ):
             location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
             
         
-        return ( location_context, tag_service_key )
+        tag_context = ClientSearchTagContext.TagContext( service_key = tag_service_key, display_service_key = display_tag_service_key )
+        
+        return ( location_context, tag_context )
         
     
     def GetWriteAutocompleteTagDomain( self ):
@@ -358,7 +361,7 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         
         self._go_faster = set()
         
-        self._last_loop_work_time = 0.5
+        self._last_loop_work_period = 0.5
         
         self._new_data_event = threading.Event()
         
@@ -368,7 +371,7 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         self._controller.sub( self, 'NotifyNewDisplayData', 'notify_new_tag_display_application' )
         
     
-    def _GetRestTime( self, service_key, expected_work_time, actual_work_time ):
+    def _GetRestTime( self, service_key, expected_work_period, actual_work_period ):
         
         rest_ratio = None
         
@@ -395,7 +398,7 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 rest_ratio = CG.client_controller.new_options.GetInteger( 'tag_display_processing_rest_percentage_normal' ) / 100
                 
-                if actual_work_time > expected_work_time * 10:
+                if actual_work_period > expected_work_period * 10:
                     
                     # if suddenly a job blats the user for ten seconds or _ten minutes_ during normal time, we are going to take a big break
                     rest_ratio *= 5
@@ -403,15 +406,15 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
             
         
-        if actual_work_time > expected_work_time * 10:
+        if actual_work_period > expected_work_period * 10:
             
             # if suddenly a job blats the user for ten seconds or _ten minutes_ during normal time, we are going to take a big break
             rest_ratio *= 30
             
         
-        reasonable_work_time = min( 5 * expected_work_time, actual_work_time )
+        reasonable_work_period = min( 5 * expected_work_period, actual_work_period )
         
-        return reasonable_work_time * rest_ratio
+        return reasonable_work_period * rest_ratio
         
     
     def _GetServiceKeyToWorkOn( self ):
@@ -435,7 +438,7 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         return service_key
         
     
-    def _GetWorkTime( self, service_key ):
+    def _GetWorkPeriod( self, service_key ):
         
         with self._lock:
             
@@ -576,21 +579,21 @@ class TagDisplayMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     continue
                     
                 
-                work_time = self._GetWorkTime( service_key )
+                expected_work_period = self._GetWorkPeriod( service_key )
                 
                 start_time = HydrusTime.GetNowPrecise()
                 
-                still_needs_work = self._controller.WriteSynchronous( 'sync_tag_display_maintenance', service_key, work_time )
+                still_needs_work = self._controller.WriteSynchronous( 'sync_tag_display_maintenance', service_key, expected_work_period )
                 
                 finish_time = HydrusTime.GetNowPrecise()
                 
-                total_time_took = finish_time - start_time
+                actual_work_period = finish_time - start_time
                 
                 self._service_keys_to_needs_work[ service_key ] = still_needs_work
                 
-                wait_time = self._GetRestTime( service_key, work_time, total_time_took )
+                wait_time = self._GetRestTime( service_key, expected_work_period, actual_work_period )
                 
-                self._last_loop_work_time = work_time
+                self._last_loop_work_period = expected_work_period
                 
             else:
                 

@@ -1,3 +1,5 @@
+import functools
+import re
 import typing
 import urllib.parse
 
@@ -5,6 +7,7 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusText
 
 from hydrus.client import ClientStrings
 from hydrus.client.networking import ClientNetworkingFunctions
@@ -70,6 +73,7 @@ def ConvertURLClassesIntoAPIPairs( url_classes ):
     
     return pairs
     
+
 def SortURLClassesListDescendingComplexity( url_classes: list[ "URLClass" ] ):
     
     # sort reverse = true so most complex come first
@@ -231,11 +235,225 @@ class URLClassParameterFixedName( HydrusSerialisable.SerialisableBase ):
 
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_URL_CLASS_PARAMETER_FIXED_NAME ] = URLClassParameterFixedName
 
+class URLDomainMask( HydrusSerialisable.SerialisableBase ):
+    
+    SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_URL_DOMAIN_MASK
+    SERIALISABLE_NAME = 'URL Domain Mask'
+    SERIALISABLE_VERSION = 1
+    
+    def __init__( self, raw_domains: typing.Optional[ list[ str ] ] = None, domain_regexes: typing.Optional[ list[ str ] ] = None, match_subdomains: bool = False, keep_matched_subdomains: bool = False ):
+        
+        if raw_domains is None:
+            
+            raw_domains = []
+            
+        
+        if domain_regexes is None:
+            
+            domain_regexes = []
+            
+        
+        self._raw_domains = tuple( sorted( raw_domains ) )
+        self._domain_regexes = tuple( sorted( domain_regexes ) )
+        self.match_subdomains = match_subdomains
+        self.keep_matched_subdomains = keep_matched_subdomains
+        
+        self._re_match_patterns = []
+        self._re_clip_patterns = []
+        self._cache_initialised = False
+        
+    
+    def __eq__( self, other ):
+        
+        if isinstance( other, URLDomainMask ):
+            
+            return self.__hash__() == other.__hash__()
+            
+        
+        return NotImplemented
+        
+    
+    def __hash__( self ):
+        
+        return ( self._raw_domains, self._domain_regexes, self.match_subdomains ).__hash__()
+        
+    
+    def _GetSerialisableInfo( self ):
+        
+        return (
+            list( self._raw_domains ),
+            list( self._domain_regexes ),
+            self.match_subdomains,
+            self.keep_matched_subdomains
+        )
+        
+    
+    def _InitialiseCache( self ):
+        
+        all_domain_regexes = list( self._domain_regexes )
+        all_domain_regexes.extend( ( re.escape( raw_domain ) for raw_domain in self._raw_domains ) )
+        all_domain_regexes.sort()
+        
+        try:
+            
+            if self.match_subdomains:
+                
+                # anything.ourdomain or ourdomain
+                self._re_match_patterns = [ re.compile( r'^(.*\.)?' + domain_regex + '$' ) for domain_regex in all_domain_regexes ]
+                
+            else:
+                
+                # wwwanything.ourdomain or ourdomain
+                self._re_match_patterns = [ re.compile( r'^(www[^\.]*\.)?' + domain_regex + '$' ) for domain_regex in all_domain_regexes ]
+                
+            
+            self._re_clip_patterns = [ re.compile( domain_regex + '$' ) for domain_regex in all_domain_regexes ]
+            
+        except:
+            
+            self._re_match_patterns = []
+            self._re_clip_patterns = []
+            
+        
+        self._cache_initialised = True
+        
+    
+    def _InitialiseFromSerialisableInfo( self, serialisable_info ):
+        
+        (
+            raw_domains,
+            domain_regexes,
+            self.match_subdomains,
+            self.keep_matched_subdomains
+        ) = serialisable_info
+        
+        self._raw_domains = tuple( sorted( raw_domains ) )
+        self._domain_regexes = tuple( sorted( domain_regexes ) )
+        
+    
+    def GetDomainRegexes( self ) -> list[ str ]:
+        
+        return list( self._domain_regexes )
+        
+    
+    def GetRawDomains( self ) -> list[ str ]:
+        
+        return list( self._raw_domains )
+        
+    
+    def GetSortingComplexity( self ) -> int:
+        
+        all_items = [ len( raw_domain ) for raw_domain in self._raw_domains ] + [ len( domain_regex ) for domain_regex in self._domain_regexes ]
+        
+        if len( all_items ) == 0:
+            
+            return 10
+            
+        else:
+            
+            return max( all_items )
+            
+        
+    
+    def IsSingleRawDomain( self ):
+        
+        return len( self._raw_domains ) == 1 and self.NoRegexes()
+        
+    
+    @functools.lru_cache( 128 )
+    def Matches( self, domain: str ) -> bool:
+        
+        if not self._cache_initialised:
+            
+            self._InitialiseCache()
+            
+        
+        return True in ( pattern.match( domain ) is not None for pattern in self._re_match_patterns )
+        
+    
+    def Normalise( self, domain: str ):
+        
+        if self.keep_matched_subdomains:
+            
+            return domain
+            
+        else:
+            
+            if not self._cache_initialised:
+                
+                self._InitialiseCache()
+                
+            
+            for pattern in self._re_clip_patterns:
+                
+                result = pattern.search( domain )
+                
+                if result is not None:
+                    
+                    return result[0]
+                    
+                
+            
+            raise HydrusExceptions.URLClassException( 'Could not match that domain with this domain mask!' )
+            
+        
+    
+    def NoRegexes( self ):
+        
+        return len( self._domain_regexes ) == 0
+        
+    
+    def Test( self, domain: str ):
+        
+        if not self.Matches( domain ):
+            
+            me_str = self.ToString()
+            
+            if self.match_subdomains:
+                
+                raise HydrusExceptions.URLClassException( domain + ' (potentially excluding subdomains) did not match ' + me_str )
+                
+            else:
+                
+                raise HydrusExceptions.URLClassException( domain + ' did not match ' + me_str )
+                
+            
+        
+    
+    def ToString( self ):
+        
+        if len( self._raw_domains ) > 0:
+            
+            self_domain_description = HydrusText.ConvertManyStringsToNiceInsertableHumanSummarySingleLine( self._raw_domains, 'domains' )
+            
+            if len( self._domain_regexes ) > 0:
+                
+                self_domain_description += HydrusText.ConvertManyStringsToNiceInsertableHumanSummarySingleLine( self._domain_regexes, 'domain regexes' )
+                
+            
+        else:
+            
+            if len( self._domain_regexes ) > 0:
+                
+                self_domain_description = HydrusText.ConvertManyStringsToNiceInsertableHumanSummarySingleLine( self._domain_regexes, 'domain regexes' )
+                
+            else:
+                
+                self_domain_description = 'no domain rules, will not match anything!'
+                
+            
+        
+        return f'URL Domain Mask: {self_domain_description}'
+        
+    
+
+HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_URL_DOMAIN_MASK ] = URLDomainMask
+
 class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_URL_CLASS
     SERIALISABLE_NAME = 'URL Class'
-    SERIALISABLE_VERSION = 14
+    SERIALISABLE_VERSION = 15
     
     def __init__(
         self,
@@ -243,7 +461,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         url_class_key = None,
         url_type = None,
         preferred_scheme = 'https',
-        netloc = 'hostname.com',
+        url_domain_mask = None,
         path_components = None,
         parameters = None,
         has_single_value_parameters = False,
@@ -266,6 +484,11 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         if url_type is None:
             
             url_type = HC.URL_TYPE_POST
+            
+        
+        if url_domain_mask is None:
+            
+            url_domain_mask = URLDomainMask( raw_domains = [ 'hostname.com' ] )
             
         
         if path_components is None:
@@ -325,10 +548,9 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         self._url_class_key = url_class_key
         self._url_type = url_type
         self._preferred_scheme = preferred_scheme
-        self._netloc = netloc
         
-        self._match_subdomains = False
-        self._keep_matched_subdomains = False
+        self._url_domain_mask = url_domain_mask
+        
         self._alphabetise_get_parameters = True
         self._no_more_path_components_than_this = False
         self._no_more_parameters_than_this = False
@@ -376,23 +598,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     
     def _ClipNetLoc( self, netloc ):
         
-        if self._keep_matched_subdomains:
-            
-            # for domains like artistname.website.com, where removing the subdomain may break the url, we leave it alone
-            
-            pass
-            
-        else:
-            
-            # for domains like mediaserver4.website.com, where multiple subdomains serve the same content as the larger site
-            
-            if not ClientNetworkingFunctions.DomainEqualsAnotherForgivingWWW( netloc, self._netloc ):
-                
-                netloc = self._netloc
-                
-            
-        
-        return netloc
+        return self._url_domain_mask.Normalise( netloc )
         
     
     def _ClipAndFleshOutPath( self, path_components: list[ str ], for_server: bool ):
@@ -543,6 +749,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     
     def _GetSerialisableInfo( self ):
         
+        serialisable_url_domain_mask = self._url_domain_mask.GetSerialisableTuple()
         serialisable_url_class_key = self._url_class_key.hex()
         serialisable_path_components = [ ( string_match.GetSerialisableTuple(), default ) for ( string_match, default ) in self._path_components ]
         serialisable_parameters = self._parameters.GetSerialisableTuple()
@@ -551,13 +758,13 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         serialisable_api_lookup_converter = self._api_lookup_converter.GetSerialisableTuple()
         serialisable_referral_url_converter = self._referral_url_converter.GetSerialisableTuple()
         
-        booleans = ( self._match_subdomains, self._keep_matched_subdomains, self._alphabetise_get_parameters, self._no_more_path_components_than_this, self._no_more_parameters_than_this, self._keep_extra_parameters_for_server, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment )
+        booleans = ( self._alphabetise_get_parameters, self._no_more_path_components_than_this, self._no_more_parameters_than_this, self._keep_extra_parameters_for_server, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment )
         
         return (
             serialisable_url_class_key,
             self._url_type,
             self._preferred_scheme,
-            self._netloc,
+            serialisable_url_domain_mask,
             booleans,
             serialisable_path_components,
             serialisable_parameters,
@@ -580,7 +787,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
             serialisable_url_class_key,
             self._url_type,
             self._preferred_scheme,
-            self._netloc,
+            serialisable_url_domain_mask,
             booleans,
             serialisable_path_components,
             serialisable_parameters,
@@ -596,8 +803,9 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
             self._example_url
             ) = serialisable_info
         
-        ( self._match_subdomains, self._keep_matched_subdomains, self._alphabetise_get_parameters, self._no_more_path_components_than_this, self._no_more_parameters_than_this, self._keep_extra_parameters_for_server, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment ) = booleans
+        ( self._alphabetise_get_parameters, self._no_more_path_components_than_this, self._no_more_parameters_than_this, self._keep_extra_parameters_for_server, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment ) = booleans
         
+        self._url_domain_mask = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_url_domain_mask )
         self._url_class_key = bytes.fromhex( serialisable_url_class_key )
         self._path_components = [ ( HydrusSerialisable.CreateFromSerialisableTuple( serialisable_string_match ), default ) for ( serialisable_string_match, default ) in serialisable_path_components ]
         self._parameters = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_parameters )
@@ -1060,6 +1268,59 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
             return ( 14, new_serialisable_info )
             
         
+        if version == 14:
+            
+            (
+                serialisable_url_class_key,
+                url_type,
+                preferred_scheme,
+                netloc,
+                booleans,
+                serialisable_path_components,
+                serialisable_parameters,
+                has_single_value_parameters,
+                serialisable_single_value_parameters_match,
+                serialisable_header_overrides,
+                serialisable_api_lookup_converter,
+                send_referral_url,
+                serialisable_referrel_url_converter,
+                gallery_index_type,
+                gallery_index_identifier,
+                gallery_index_delta,
+                example_url
+            ) = old_serialisable_info
+            
+            ( match_subdomains, keep_matched_subdomains, alphabetise_get_parameters, no_more_path_components_than_this, no_more_parameters_than_this, keep_extra_parameters_for_server, can_produce_multiple_files, should_be_associated_with_files, keep_fragment ) = booleans
+            
+            url_domain_mask = URLDomainMask( raw_domains = [ netloc ], match_subdomains = match_subdomains, keep_matched_subdomains = keep_matched_subdomains )
+            
+            booleans = ( alphabetise_get_parameters, no_more_path_components_than_this, no_more_parameters_than_this, keep_extra_parameters_for_server, can_produce_multiple_files, should_be_associated_with_files, keep_fragment )
+            
+            serialisable_url_domain_mask = url_domain_mask.GetSerialisableTuple()
+            
+            new_serialisable_info = (
+                serialisable_url_class_key,
+                url_type,
+                preferred_scheme,
+                serialisable_url_domain_mask,
+                booleans,
+                serialisable_path_components,
+                serialisable_parameters,
+                has_single_value_parameters,
+                serialisable_single_value_parameters_match,
+                serialisable_header_overrides,
+                serialisable_api_lookup_converter,
+                send_referral_url,
+                serialisable_referrel_url_converter,
+                gallery_index_type,
+                gallery_index_identifier,
+                gallery_index_delta,
+                example_url
+            )
+            
+            return ( 15, new_serialisable_info )
+            
+        
     
     def AlphabetiseGetParameters( self ):
         
@@ -1105,11 +1366,6 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         return self._url_class_key
         
     
-    def GetDomain( self ):
-        
-        return self._netloc
-        
-    
     def GetExampleURL( self, encoded = True ):
         
         if encoded:
@@ -1130,11 +1386,6 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     def GetHeaderOverrides( self ):
         
         return self._header_overrides
-        
-    
-    def GetNetloc( self ):
-        
-        return self._netloc
         
     
     def GetNextGalleryPage( self, url ):
@@ -1305,7 +1556,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         # note, we have added a bunch of extra params and stuff here, and here's another one, 2024-05:
             # adding domain length so that api.vxtwitter.com will match before vxtwitter.com. subdomains before domains!
         
-        len_domain = len( self._netloc )
+        len_domain = self._url_domain_mask.GetSortingComplexity()
         num_required_path_components = len( [ 1 for ( string_match, default ) in self._path_components if default is None ] )
         num_total_path_components = len( self._path_components )
         num_required_parameters = len( [ 1 for parameter in self._parameters if not parameter.HasDefaultValue() ] )
@@ -1325,7 +1576,12 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     
     def GetURLBooleans( self ):
         
-        return ( self._match_subdomains, self._keep_matched_subdomains, self._alphabetise_get_parameters, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment )
+        return ( self._alphabetise_get_parameters, self._can_produce_multiple_files, self._should_be_associated_with_files, self._keep_fragment )
+        
+    
+    def GetURLDomainMask( self ) -> URLDomainMask:
+        
+        return self._url_domain_mask
         
     
     def GetURLType( self ):
@@ -1370,11 +1626,6 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
             
             return False
             
-        
-    
-    def MatchesSubdomains( self ):
-        
-        return self._match_subdomains
         
     
     def Normalise( self, url, for_server = False ):
@@ -1467,20 +1718,21 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
     
     def SetURLBooleans(
         self,
-        match_subdomains: bool,
-        keep_matched_subdomains: bool,
         alphabetise_get_parameters: bool,
         can_produce_multiple_files: bool,
         should_be_associated_with_files: bool,
         keep_fragment: bool
     ):
         
-        self._match_subdomains = match_subdomains
-        self._keep_matched_subdomains = keep_matched_subdomains
         self._alphabetise_get_parameters = alphabetise_get_parameters
         self._can_produce_multiple_files = can_produce_multiple_files
         self._should_be_associated_with_files = should_be_associated_with_files
         self._keep_fragment = keep_fragment
+        
+    
+    def SetURLDomainMask( self, url_domain_mask: URLDomainMask ):
+        
+        self._url_domain_mask = url_domain_mask
         
     
     def ShouldAssociateWithFiles( self ):
@@ -1494,20 +1746,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         
         p = ClientNetworkingFunctions.ParseURL( url )
         
-        if self._match_subdomains:
-            
-            if p.netloc != self._netloc and not p.netloc.endswith( '.' + self._netloc ):
-                
-                raise HydrusExceptions.URLClassException( p.netloc + ' (potentially excluding subdomains) did not match ' + self._netloc )
-                
-            
-        else:
-            
-            if not ClientNetworkingFunctions.DomainEqualsAnotherForgivingWWW( p.netloc, self._netloc ):
-                
-                raise HydrusExceptions.URLClassException( p.netloc + ' did not match ' + self._netloc )
-                
-            
+        self._url_domain_mask.Test( p.netloc )
         
         path = p.path
         query = p.query
@@ -1591,4 +1830,5 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
         return self._api_lookup_converter.MakesChanges()
         
     
+
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_URL_CLASS ] = URLClass

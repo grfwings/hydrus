@@ -29,7 +29,9 @@ A hydrus client consists of three components:
     
     All of your jpegs and webms and so on (and their thumbnails) are stored in a single complicated directory that is by default at _install\_dir/db/client\_files_. All the files are named by their hash and stored in efficient hash-based subdirectories. In general, it is not navigable by humans, but it works very well for the fast access from a giant pool of files the client needs to do to manage your media.
     
-    Thumbnails tend to be fetched dozens at a time, so it is, again, ideal if they are stored on an SSD. Your regular media files--which on many clients total hundreds of GB--are usually fetched one at a time for human consumption and do not benefit from the expensive low-latency of an SSD. They are best stored on a cheap HDD, and, if desired, also work well across a network file system.
+    Thumbnails tend to be fetched dozens at a time, and very randomly, so it is, again, ideal if they are stored on an SSD. Your regular media files--which on many clients total hundreds of GB--are usually fetched one at a time for human consumption and do not benefit from the expensive low-latency of an SSD. They are best stored on a cheap HDD, and, if desired, also work well across a network file system.
+    
+    There are 256 file folders, named using the hexadecimal prefix of the files they store, from f00 to fff, and 256 thumbnail folders, from t00 to tff. Thus you should expect to have 512 folders total. This is likely to change in future to 4096/8192 (i.e. three hex chars).
     
 
 ## these components can be put on different drives { id="different_drives" }
@@ -43,12 +45,7 @@ Backing such an arrangement up is obviously more complicated, and the internal c
 !!! danger
     **As always, I recommend creating a backup before you try any of this, just in case it goes wrong.**
 
-If you would like to move your files and thumbnails to new locations, I generally recommend you not move their folders around yourself--the database has an internal knowledge of where it thinks its file and thumbnail folders are, and if you move them while it is closed, it will become confused.
-
-??? note "Missing Locations"
-    If your folders are in the wrong locations on a client boot, a repair dialog appears, and you can manually update the client's internal understanding. This is not impossible to figure out, _and in some tricky storage situations doing this on purpose can be faster than letting the client migrate things itself_, but generally it is best and safest to do everything through the dialog.
-
-Go _database->move media files_, giving you this dialog:
+If you would like to move your files and thumbnails to new locations, hit _database->move media files_, giving you this dialog:
 
 ![](images/db_migration.png)
 
@@ -76,6 +73,14 @@ While the ideal usage has changed significantly, note that the current usage rem
 ![](images/db_migration_move_done.png)
 
 The current and ideal usages line up, and the defunct `C:\Hydrus Network\db\client_files` location, which no longer stores anything, is removed from the list.
+
+!!! note "Missing Locations"
+    If any of the 512 file/thumbnail media folders are not where the client expects them to be on program boot, a repair dialog appears to let you update the record. This is not impossible to figure out, _and in some situations doing this on purpose can be faster than letting the client migrate things itself_. I generally do not recommend moving folders around while the client is not up, but if you are feeling confident, go for it. You made a backup, right? :^)
+    
+    Note that you cannot boot a client until it has located all the file subfolders.
+    
+    Also, if your folders are in the 'wrong' locations but all those locations are known to the client, you will not get the repair dialog--it'll just give you a popup and shuffle its internal knowledge around.
+    
 
 ## informing the software that the SQLite database is not in the default location { id="launch_parameter" }
 
@@ -106,7 +111,7 @@ Note that an install with an 'external' database no longer needs access to write
 
 ## backups { id="finally" }
 
-If your database now lives in one or more new locations, make sure to update your backup routine to follow them!
+If your database now lives in one or more new locations, make sure to update your backup routine! You should be maintaining a copy of everything. As your collection grows, you may want to similarly store your db + thumbs on a low-latency SSD USB stick (a nice 3.2 USB drive can sustain 350MB/s write of the db files and 4,000 thumbs/s) but the media files on a big cheap multi-TB regular USB drive.
 
 ## moving to an SSD { id="to_an_ssd" }
 
@@ -134,6 +139,44 @@ Specifically:
 You should now have _something_ like this (let's say the D drive is the fast SSD, and E is the high capacity HDD):
 
 ![](images/db_migration_example.png)
+
+## moving to a new machine { id="to_new_OS" }
+
+The hydrus database is completely portable. As well as moving it about within the same system, you can move your whole hydrus client to another computer quite easily. It all runs on Windows/Linux/macOS with no big modifications needed. The only thing you need to watch out for are the paths the database uses to talk to other parts of the system--for instance the location of an Export Folder.
+
+If the OSes are the same (e.g. Windows to Windows), moving from one machine to another is usually pretty easy--just drag and drop the whole install from one drive to another, via a network share or USB drive--but going from one OS type to another introduces a couple of extra wrinkles.
+
+??? note "OS Paths"
+    Remember that Windows has paths that start with drive letters, like `D:\` and uses backslashes to split paths; but Linux and macOS all start with root `/` and use regular slashes. If your OS suddenly changes, your absolute `D:\hydrus_files` is going to be seen as a relative path by Linux and you'll end up with like `/home/you/hydrus/db/D:\hydrus_files`. There's no huge worry here--hydrus won't rush to break anything, and the worst case is generally it just freaking out that the thing doesn't exist. You just need to tell it the correct new path.
+
+Before any system migration, make sure you:
+
+- finish any hard drive import pages that were working
+- pause your import folders
+- pause your export folders
+- MAKE A BACKUP
+
+Install a fresh new hydrus on the new machine and then, using a network share or a USB drive, copy the database folder, files, and thumbnails from the old to the new. You can insert the db directly into your new `install_dir/db` folder, or if you want to set up a new `--db_dir`, put the db in that location and set up the new shortcut.
+
+??? note "source installs"
+    If the type of OS hasn't changed, you can usually get away with copying a built install folder around. If you run from source, however, you _must_ recreate a new source install folder with that OS's `git` and then build a new venv (then obviously migrate your source db dir as needed). Do not try to migrate a source installation folder!
+
+??? note "macOS App"
+    If you are moving to or from the macOS App, recall that the App cannot store the hydrus db inside it, so the correct 'default' location (i.e. without `--db_dir`), analogous to `install_dir/db` on other installs, is `~/Library/Hydrus`. You can always go `file->open->database directory` on any running client to find out where it is currently running from.
+
+Boot up your newly assembled client, and if your files or thumbnails are stored outside of `install_folder/db/client_files`, there's a good chance it will complain about them being missing. Don't panic! Just tell the repair dialog the correct new locations, and it'll stitch itself back together.
+
+Then:
+
+- check `options->external programs` and update anything as needed
+- check `options->exporting` and update the default export directory
+- check a file's `right-click->share->export files` window to see what the default export path there is
+- check `database->move media files` and remove any empty stubs from the old system
+- edit your import folders to point at the correct locations
+- edit your export folders to point at the correct locations
+- unpause import/export folders
+
+Then you should be good! Let me know if you run into any trouble.
 
 ## p.s. running multiple clients { id="multiple_clients" }
 

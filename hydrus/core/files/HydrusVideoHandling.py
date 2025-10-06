@@ -134,6 +134,18 @@ def GetFFMPEGVideoProperties( path, force_count_frames_manually = False ):
         
         num_frames = ParseFFMPEGNumFramesManually( lines )
         
+        if num_frames > 0 and duration_s is not None:
+            
+            implied_fps_given_what_we_know = num_frames / duration_s
+            
+            if 0 < fps < 1000 < implied_fps_given_what_we_know:
+                
+                # ok let's assume FFMPEG pulled 'duration = 40ms' for a file with 400 frames (looking at this now)
+                # we'll trust out 'not confident' fps number over that
+                duration_s = None
+                
+            
+        
         if duration_s is None:
             
             duration_s = num_frames / fps
@@ -166,6 +178,11 @@ def GetMime( path ):
     
     ( has_video, video_format ) = ParseFFMPEGVideoFormat( lines )
     ( has_audio, audio_format ) = HydrusAudioHandling.ParseFFMPEGAudio( lines )
+    
+    if not ( has_video or has_audio ):
+        
+        return HC.APPLICATION_UNKNOWN
+        
     
     if 'matroska' in mime_text or 'webm' in mime_text:
         
@@ -468,7 +485,7 @@ def ParseFFMPEGFPSFromFirstSecond( lines_for_first_second ):
         
     
 
-def ParseFFMPEGFPSPossibleResults( video_line ):
+def ParseFFMPEGFPSPossibleResults( video_line ) -> tuple[ set[ float ], bool ]:
     
     def that_fps_string_is_likely_stupid( fps: str ) -> bool:
         
@@ -638,6 +655,7 @@ def ParseFFMPEGNumFramesManually( lines ) -> int:
     
     return num_frames
     
+
 def ParseFFMPEGVideoFormat( lines ):
     
     try:
@@ -654,6 +672,11 @@ def ParseFFMPEGVideoFormat( lines ):
         match = re.search( r'(?<=Video:\s).+?(?=,)', line )
         
         video_format = match.group()
+        
+        if video_format.startswith( 'none' ): # none (CRAW / mem_address), none, 6000x4000, blah blah
+            
+            return ( False, 'none' )
+            
         
     except:
         

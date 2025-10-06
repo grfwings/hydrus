@@ -12,6 +12,7 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPSUtil
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
@@ -73,7 +74,7 @@ class ShortcutsPanel( OptionsPagePanel ):
         
         super().__init__( parent )
         
-        help_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().help, self._ShowHelp )
+        help_button = ClientGUICommon.IconButton( self, CC.global_icons().help, self._ShowHelp )
         help_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Show help regarding editing shortcuts.' ) )
         
         self._call_mouse_buttons_primary_secondary = QW.QCheckBox( self )
@@ -800,7 +801,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._set_requests_ca_bundle_env = QW.QCheckBox( general )
             self._set_requests_ca_bundle_env.setToolTip( ClientGUIFunctions.WrapToolTip( 'Just testing something here; ignore unless hydev asks you to use it please. Requires restart. Note: this breaks the self-signed certificates of hydrus services.' ) )
             
-            self._verify_regular_https = QW.QCheckBox( general )
+            self._do_not_verify_regular_https = QW.QCheckBox( general )
+            self._do_not_verify_regular_https.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will not verify any HTTPS traffic. This tech is important for security, so only enable this mode temporarily, to test out unusual situations.' ) )
             
             #
             
@@ -822,7 +824,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             #
             
             self._set_requests_ca_bundle_env.setChecked( self._new_options.GetBoolean( 'set_requests_ca_bundle_env' ) )
-            self._verify_regular_https.setChecked( self._new_options.GetBoolean( 'verify_regular_https' ) )
+            self._do_not_verify_regular_https.setChecked( not self._new_options.GetBoolean( 'verify_regular_https' ) )
             
             self._http_proxy.SetValue( self._new_options.GetNoneableString( 'http_proxy' ) )
             self._https_proxy.SetValue( self._new_options.GetNoneableString( 'https_proxy' ) )
@@ -867,7 +869,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'max number of simultaneous active network jobs: ', self._max_network_jobs ) )
             rows.append( ( 'max number of simultaneous active network jobs per domain: ', self._max_network_jobs_per_domain ) )
             rows.append( ( 'DEBUG: set the REQUESTS_CA_BUNDLE env to certifi cacert.pem on program start:', self._set_requests_ca_bundle_env ) )
-            rows.append( ( 'BUGFIX: verify regular https traffic:', self._verify_regular_https ) )
+            rows.append( ( 'DEBUG: do not verify regular https traffic:', self._do_not_verify_regular_https ) )
             
             gridbox = ClientGUICommon.WrapInGrid( general, rows )
             
@@ -921,7 +923,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         def UpdateOptions( self ):
             
             self._new_options.SetBoolean( 'set_requests_ca_bundle_env', self._set_requests_ca_bundle_env.isChecked() )
-            self._new_options.SetBoolean( 'verify_regular_https', self._verify_regular_https.isChecked() )
+            self._new_options.SetBoolean( 'verify_regular_https', not self._do_not_verify_regular_https.isChecked() )
             
             self._new_options.SetNoneableString( 'http_proxy', self._http_proxy.GetValue() )
             self._new_options.SetNoneableString( 'https_proxy', self._https_proxy.GetValue() )
@@ -1004,6 +1006,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             tt = 'The client used to remove leading double slashes from an URL path, collapsing something like https://site.com//images/123456 to https://site.com/images/123456. This is not correct, and it no longer does this. If you need it to do this again, to fix some URL CLass, turn this on. I will retire this option eventually, so update your downloader to work in the new system (ideally recognise both formats).'
             self._remove_leading_url_double_slashes.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
+            self._replace_percent_twenty_with_space_in_gug_input = QW.QCheckBox( misc )
+            tt = 'Checking this will cause any query text input into a downloader like "skirt%20blue_eyes" to be considered as "skirt blue_eyes". This lets you copy/paste an input straight from certain encoded URLs, but it also causes trouble if you need to input %20 raw, so this is no longer the default behaviour. This is a legacy option and I recommend you turn it off if you no longer think you need it.'
+            self._replace_percent_twenty_with_space_in_gug_input.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
             self._pause_character = QW.QLineEdit( misc )
             self._stop_character = QW.QLineEdit( misc )
             self._show_new_on_file_seed_short_summary = QW.QCheckBox( misc )
@@ -1052,6 +1058,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._process_subs_in_random_order.setChecked( self._new_options.GetBoolean( 'process_subs_in_random_order' ) )
             
             self._remove_leading_url_double_slashes.setChecked( self._new_options.GetBoolean( 'remove_leading_url_double_slashes' ) )
+            self._replace_percent_twenty_with_space_in_gug_input.setChecked( self._new_options.GetBoolean( 'replace_percent_twenty_with_space_in_gug_input' ) )
             self._pause_character.setText( self._new_options.GetString( 'pause_character' ) )
             self._stop_character.setText( self._new_options.GetString( 'stop_character' ) )
             self._show_new_on_file_seed_short_summary.setChecked( self._new_options.GetBoolean( 'show_new_on_file_seed_short_summary' ) )
@@ -1117,6 +1124,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Delay time on a subscription network error:', self._subscription_network_error_delay ) )
             rows.append( ( 'Delay time on a subscription other error:', self._subscription_other_error_delay ) )
             rows.append( ( 'DEBUG: remove leading double-slashes from URL paths:', self._remove_leading_url_double_slashes ) )
+            rows.append( ( 'DEBUG: consider %20 the same as space in downloader query text inputs:', self._replace_percent_twenty_with_space_in_gug_input ) )
             
             gridbox = ClientGUICommon.WrapInGrid( misc, rows )
             
@@ -1156,6 +1164,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetDefaultSubscriptionCheckerOptions( self._subscription_checker_options.GetValue() )
             
             self._new_options.SetBoolean( 'remove_leading_url_double_slashes', self._remove_leading_url_double_slashes.isChecked() )
+            self._new_options.SetBoolean( 'replace_percent_twenty_with_space_in_gug_input', self._replace_percent_twenty_with_space_in_gug_input.isChecked() )
             self._new_options.SetString( 'pause_character', self._pause_character.text() )
             self._new_options.SetString( 'stop_character', self._stop_character.text() )
             self._new_options.SetBoolean( 'show_new_on_file_seed_short_summary', self._show_new_on_file_seed_short_summary.isChecked() )
@@ -1205,6 +1214,10 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             batches_panel = ClientGUICommon.StaticBox( self, 'duplicate filter batches' )
             
             self._duplicate_filter_max_batch_size = ClientGUICommon.BetterSpinBox( batches_panel, min = 5, max = 1024 )
+            self._duplicate_filter_max_batch_size.setToolTip( ClientGUIFunctions.WrapToolTip( 'In group mode you always see the whole group, which in some cases can be 1,000+ items.' ) )
+            
+            self._duplicate_filter_auto_commit_batch_size = ClientGUICommon.NoneableSpinCtrl( batches_panel, 1, min = 1, max = 50, none_phrase = 'no, always confirm' )
+            self._duplicate_filter_auto_commit_batch_size.setToolTip( ClientGUIFunctions.WrapToolTip( 'When you are dealing with numerous 1/1 size batches/groups, it can get annoying to click through the confirm every time. This will auto-confirm any batch with this many decisions of fewer, assuming no manual skips.' ) )
             
             colours_panel = ClientGUICommon.StaticBox( self, 'colours' )
             
@@ -1235,6 +1248,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._duplicate_comparison_score_has_audio.setValue( self._new_options.GetInteger( 'duplicate_comparison_score_has_audio' ) )
             
             self._duplicate_filter_max_batch_size.setValue( self._new_options.GetInteger( 'duplicate_filter_max_batch_size' ) )
+            self._duplicate_filter_auto_commit_batch_size.SetValue( self._new_options.GetNoneableInteger( 'duplicate_filter_auto_commit_batch_size' ) )
             
             self._duplicate_background_switch_intensity_a.SetValue( self._new_options.GetNoneableInteger( 'duplicate_background_switch_intensity_a' ) )
             self._duplicate_background_switch_intensity_b.SetValue( self._new_options.GetNoneableInteger( 'duplicate_background_switch_intensity_b' ) )
@@ -1291,7 +1305,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             rows = []
             
-            rows.append( ( 'Max size of duplicate filter pair batches:', self._duplicate_filter_max_batch_size ) )
+            rows.append( ( 'Max size of duplicate filter pair batches (in mixed mode):', self._duplicate_filter_max_batch_size ) )
+            rows.append( ( 'Auto-commit completed batches of this size or smaller:', self._duplicate_filter_auto_commit_batch_size ) )
             
             gridbox = ClientGUICommon.WrapInGrid( batches_panel, rows )
             
@@ -1347,6 +1362,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetInteger( 'duplicate_filter_max_batch_size', self._duplicate_filter_max_batch_size.value() )
             
+            self._new_options.SetNoneableInteger( 'duplicate_filter_auto_commit_batch_size', self._duplicate_filter_auto_commit_batch_size.GetValue() )
+            
             self._new_options.SetNoneableInteger( 'duplicate_background_switch_intensity_a', self._duplicate_background_switch_intensity_a.GetValue() )
             self._new_options.SetNoneableInteger( 'duplicate_background_switch_intensity_b', self._duplicate_background_switch_intensity_b.GetValue() )
             self._new_options.SetBoolean( 'draw_transparency_checkerboard_media_canvas_duplicates', self._draw_transparency_checkerboard_media_canvas_duplicates.isChecked() )
@@ -1359,6 +1376,24 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             super().__init__( parent )
             
+            self._exports_panel = ClientGUICommon.StaticBox( self, 'all exports' )
+            
+            self._always_apply_ntfs_export_filename_rules = QW.QCheckBox( self._exports_panel )
+            tt = 'IF YOU ARE DRAG AND DROPPING CLEVER FILENAMES TO NTFS, TURN THIS ON.\n\nWhen generating an export filename, hydrus will try to determine the filesystem of the destination, and if it is Windows-like (NTFS, exFAT, CIFS, etc..), it will remove colons and such from the filename. If you have a complicated mount setup where hydrus might not recognise this is true (e.g. NTFS behind NFS, or a mountpoint deeper than the base export folder that translates to NTFS), or if you are doing any drag and drops to an NTFS drive (in this case, hydrus first exports to your tempdir before the drag and drop even starts, and Qt & your OS handle the rest), turn this on and it will always make safer filenames.'
+            self._always_apply_ntfs_export_filename_rules.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._export_dirname_character_limit = ClientGUICommon.NoneableSpinCtrl( self, 64, none_phrase = 'let hydrus decide', min = 16, max = 8192 )
+            tt = 'BEST USED IN CONJUNCTION WITH THE PATH LIMIT FOR WHEN YOU ARE TESTING OUT VERY LONG PATH NAMES. When generating an export filename that includes subdirectory generation, hydrus will clip those subdirs so everything fits reasonable below the system path limit. This value forces the per-dirname to never be longer than this. On Windows, this means characters, on Linux/macOS, it means bytes (when encoding unicode characters). This stuff can get complicated, so be careful changing it too much! Most OS filesystems do not accept a directory name longer than 256 chars/bytes, but you should leave a little padding for surprises, and of course you will want some space for a filename too.'
+            self._export_dirname_character_limit.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._export_path_character_limit = ClientGUICommon.NoneableSpinCtrl( self, 250, none_phrase = 'let hydrus decide', min = 96, max = 8192 )
+            tt = 'When generating an export filename, hydrus will clip the generated subdirectories and filename so they fit into the system path limit. This value overrides that limit. On Windows, this means characters, on Linux/macOS, it means bytes (when encoding unicode characters). This stuff can get complicated, so be careful changing it too much! Most OS filesystems do not accept a directory name longer than 256 chars/bytes, but you should leave a little padding for surprises. Also, on Windows, the entire path typically also has to be shorter than 256 characters total, so do not go crazy here unless you know what you are doing! (Linux is usually 4096; macOS 1024.)'
+            self._export_path_character_limit.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._export_filename_character_limit = ClientGUICommon.BetterSpinBox( self._exports_panel, min = 16, max = 8192 )
+            tt = 'When generating an export filename, hydrus will clip the output so it is not longer than this. On Windows, this means characters, on Linux/macOS, it means bytes (when encoding unicode characters). This stuff can get complicated, so be careful changing it too much! Most OS filesystems do not accept a filename longer than 256 chars/bytes, but you should leave a little padding for stuff like sidecar suffixes and other surprises. If you have a Linux folder using eCryptFS, the filename limit is around 140 bytes, which with sophisticated unicode output can be really short. On Windows, the entire path typically also has to be shorter than 256 characters total! (Linux is usually 4096; macOS 1024.)'
+            self._export_filename_character_limit.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
             self._dnd_panel = ClientGUICommon.StaticBox( self, 'drag and drop' )
             
             # TODO: Yo, make the 50 files/200MB thresholds options of their own with warnings about lag!
@@ -1370,11 +1405,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._discord_dnd_filename_pattern = QW.QLineEdit( self._dnd_panel )
             self._discord_dnd_filename_pattern.setToolTip( ClientGUIFunctions.WrapToolTip( 'When you put your DnD files in your temp folder, we have a chance to rename them. This export phrase will do that. If no filename can be generated, hash will be used instead.' ) )
             
-            self._export_pattern_button = ClientGUICommon.ExportPatternButton( self )
-            
-            self._export_filename_character_limit = ClientGUICommon.BetterSpinBox( self, min = 16, max = 2048 )
-            tt = 'When generating an export filename, hydrus will clip the output so it is not longer than this. On Windows, this means characters, on Linux/macOS, it means bytes (when encoding unicode characters). This stuff can get complicated, so be careful changing it too much! Most OS filesystems do not accept a filename longer than 256 chars/bytes, but you should leave a little padding for stuff like sidecar suffixes and other surprises. If you have a Linux folder using eCryptFS, the filename limit is around 140 bytes, which with sophisticated unicode output can be really short. On Windows, the entire path also has to be shorter than 256 characters total! (Linux is usually 4096; macOS 1024.)'
-            self._export_filename_character_limit.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            self._export_pattern_button = ClientGUICommon.ExportPatternButton( self._dnd_panel )
             
             self._secret_discord_dnd_fix = QW.QCheckBox( self._dnd_panel )
             self._secret_discord_dnd_fix.setToolTip( ClientGUIFunctions.WrapToolTip( 'THIS SOMETIMES FIXES DnD FOR WEIRD PROGRAMS, BUT IT ALSO OFTEN BREAKS IT FOR OTHERS.\n\nBecause of weird security/permission issues, a program will sometimes not accept a drag and drop file export from hydrus unless the DnD is set to "move" rather than "copy" (discord has done this for some people). Since we do not want to let you accidentally move your files out of your primary file store, this is only enabled if you are copying the files in question to your temp folder first!' ) )
@@ -1403,7 +1434,24 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
                     
                 
             
+            self._always_apply_ntfs_export_filename_rules.setChecked( self._new_options.GetBoolean( 'always_apply_ntfs_export_filename_rules' ) )
+            
+            self._export_path_character_limit.SetValue( self._new_options.GetNoneableInteger( 'export_path_character_limit' ) )
+            self._export_dirname_character_limit.SetValue( self._new_options.GetNoneableInteger( 'export_dirname_character_limit' ) )
             self._export_filename_character_limit.setValue( self._new_options.GetInteger( 'export_filename_character_limit' ) )
+            
+            #
+            
+            rows = []
+            
+            rows.append( ( 'ADVANCED: Always apply NTFS filename rules to export filenames: ', self._always_apply_ntfs_export_filename_rules ) )
+            rows.append( ( 'ADVANCED: Export path length limit (characters/bytes): ', self._export_path_character_limit ) )
+            rows.append( ( 'ADVANCED: Export dirname length limit (characters/bytes): ', self._export_dirname_character_limit ) )
+            rows.append( ( 'ADVANCED: Export filename length limit (characters/bytes): ', self._export_filename_character_limit ) )
+            
+            gridbox = ClientGUICommon.WrapInGrid( self._exports_panel, rows )
+            
+            self._exports_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
             #
             
@@ -1413,7 +1461,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'BUGFIX: Set drag-and-drops to have a "move" flag: ', self._secret_discord_dnd_fix ) )
             rows.append( ( 'Drag-and-drop export filename pattern: ', self._discord_dnd_filename_pattern ) )
             rows.append( ( '', self._export_pattern_button ) )
-            rows.append( ( 'ADVANCED: Export filename length limit (characters/bytes): ', self._export_filename_character_limit ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self._dnd_panel, rows )
             
@@ -1446,6 +1493,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             vbox = QP.VBoxLayout()
             
+            QP.AddToLayout( vbox, self._exports_panel, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             QP.AddToLayout( vbox, self._dnd_panel, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             QP.AddToLayout( vbox, self._export_folder_panel, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             vbox.addStretch( 0 )
@@ -1468,13 +1516,25 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         def UpdateOptions( self ):
             
+            self._new_options.SetBoolean( 'always_apply_ntfs_export_filename_rules', self._always_apply_ntfs_export_filename_rules.isChecked() )
+            self._new_options.SetNoneableInteger( 'export_path_character_limit', self._export_path_character_limit.GetValue() )
+            self._new_options.SetNoneableInteger( 'export_dirname_character_limit', self._export_dirname_character_limit.GetValue() )
+            self._new_options.SetInteger( 'export_filename_character_limit', self._export_filename_character_limit.value() )
+            
             self._new_options.SetBoolean( 'discord_dnd_fix', self._discord_dnd_fix.isChecked() )
             self._new_options.SetString( 'discord_dnd_filename_pattern', self._discord_dnd_filename_pattern.text() )
             self._new_options.SetBoolean( 'secret_discord_dnd_fix', self._secret_discord_dnd_fix.isChecked() )
             
-            HC.options[ 'export_path' ] = HydrusPaths.ConvertAbsPathToPortablePath( self._export_location.GetPath() )
+            path = str( self._export_location.GetPath() ).strip()
             
-            self._new_options.SetInteger( 'export_filename_character_limit', self._export_filename_character_limit.value() )
+            if path != '':
+                
+                HC.options[ 'export_path' ] = HydrusPaths.ConvertAbsPathToPortablePath( self._export_location.GetPath() )
+                
+            else:
+                
+                HC.options[ 'export_path' ] = None
+                
             
         
     
@@ -1712,6 +1772,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._trash_max_age = ClientGUICommon.NoneableSpinCtrl( self, 72, none_phrase = 'no age limit', min = 0, max = 8640 )
             self._trash_max_size = ClientGUICommon.NoneableSpinCtrl( self, 2048, none_phrase = 'no size limit', min = 0, max = 20480 )
             
+            self._do_not_do_chmod_mode = QW.QCheckBox( self )
+            self._do_not_do_chmod_mode.setToolTip( ClientGUIFunctions.WrapToolTip( 'CAREFUL. When hydrus copies files around, it preserves or sets permission bits. If you are on ACL-backed storage, e.g. via NFSv4 with ACL set, chmod is going to raise errors and/or audit logspam. You can try stopping all chmod here--hydrus will use differing copy calls that only copy the file contents and try to preserve access/modified times.' ) )
+            
             delete_lock_panel = ClientGUICommon.StaticBox( self, 'delete lock' )
             
             self._delete_lock_for_archived_files = QW.QCheckBox( delete_lock_panel )
@@ -1721,7 +1784,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._delete_lock_reinbox_deletees_after_archive_delete.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, and you do an archive/delete filter, this will ensure that all deletee files are inboxed before being deleted.' ) )
             
             self._delete_lock_reinbox_deletees_after_duplicate_filter = QW.QCheckBox( delete_lock_panel )
-            self._delete_lock_reinbox_deletees_after_duplicate_filter.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, and you do a duplicate filter, this will ensure that all deletee files from merge options are inboxed before being deleted.' ) )
+            self._delete_lock_reinbox_deletees_after_duplicate_filter.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, and you do a duplicate filter, this will ensure that all file delese you manually trigger and all file deletees that come from merge options are inboxed before being deleted.' ) )
             
             self._delete_lock_reinbox_deletees_in_auto_resolution = QW.QCheckBox( delete_lock_panel )
             self._delete_lock_reinbox_deletees_in_auto_resolution.setToolTip( ClientGUIFunctions.WrapToolTip( 'Be careful with this!\n\nIf the delete lock is on, any auto-resolution rule action, semi-automatic or automatic, will ensure that all deletee files from merge options are inboxed before being deleted.' ) )
@@ -1765,6 +1828,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._trash_max_age.SetValue( HC.options[ 'trash_max_age' ] )
             self._trash_max_size.SetValue( HC.options[ 'trash_max_size' ] )
             
+            self._do_not_do_chmod_mode.setChecked( self._new_options.GetBoolean( 'do_not_do_chmod_mode' ) )
+            
             self._delete_lock_for_archived_files.setChecked( self._new_options.GetBoolean( 'delete_lock_for_archived_files' ) )
             self._delete_lock_reinbox_deletees_after_archive_delete.setChecked( self._new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_archive_delete' ) )
             self._delete_lock_reinbox_deletees_after_duplicate_filter.setChecked( self._new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_duplicate_filter' ) )
@@ -1801,6 +1866,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Remove files from view when they are moved to another local file domain: ', self._remove_local_domain_moved_files ) )
             rows.append( ( 'Number of hours a file can be in the trash before being deleted: ', self._trash_max_age ) )
             rows.append( ( 'Maximum size of trash (MB): ', self._trash_max_size ) )
+            rows.append( ( 'ADVANCED: Do not do chmod when copying files', self._do_not_do_chmod_mode ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self, rows )
             
@@ -1906,6 +1972,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetBoolean( 'remove_local_domain_moved_files', self._remove_local_domain_moved_files.isChecked() )
             HC.options[ 'trash_max_age' ] = self._trash_max_age.GetValue()
             HC.options[ 'trash_max_size' ] = self._trash_max_size.GetValue()
+            
+            self._new_options.SetBoolean( 'do_not_do_chmod_mode', self._do_not_do_chmod_mode.isChecked() )
             
             self._new_options.SetBoolean( 'only_show_delete_from_all_local_domains_when_filtering', self._only_show_delete_from_all_local_domains_when_filtering.isChecked() )
             
@@ -2744,7 +2812,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( '  Put it at the top:', self._show_local_files_on_page_chooser_at_top ) )
             rows.append( ( 'When closing the current tab, move focus: ', self._close_page_focus_goes ) )
             rows.append( ( 'Confirm when closing any page: ', self._confirm_all_page_closes ) )
-            rows.append( ( 'Confirm when closing a non-empty downloader page: ', self._confirm_non_empty_downloader_page_close ) )
+            rows.append( ( 'Confirm when closing a non-empty importer page: ', self._confirm_non_empty_downloader_page_close ) )
             rows.append( ( 'BUGFIX: Force \'hide page\' signal when creating a new page: ', self._force_hide_page_signal_on_new_page ) )
             
             gridbox = ClientGUICommon.WrapInGrid( self._opening_and_closing_panel, rows )
@@ -3218,17 +3286,51 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             #
             
-            self._duplicates_panel = ClientGUICommon.StaticBox( self, 'potential duplicates search', can_expand = True, start_expanded = False )
+            self._potential_duplicates_panel = ClientGUICommon.StaticBox( self, 'potential duplicates search', can_expand = True, start_expanded = False )
             
-            self._maintain_similar_files_duplicate_pairs_during_idle = QW.QCheckBox( self._duplicates_panel )
+            self._maintain_similar_files_duplicate_pairs_during_idle = QW.QCheckBox( self._potential_duplicates_panel )
             
-            self._potential_duplicates_search_work_time = ClientGUITime.TimeDeltaWidget( self._duplicates_panel, min = 0.1, seconds = True, milliseconds = True )
+            self._maintain_similar_files_duplicate_pairs_during_active = QW.QCheckBox( self._potential_duplicates_panel )
+            
+            self._potential_duplicates_search_work_time_idle = ClientGUITime.TimeDeltaWidget( self._potential_duplicates_panel, min = 0.02, seconds = True, milliseconds = True )
             tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Potential search operates on a work-rest cycle. This setting determines how long it should work for in each work packet. Actual work time will normally be a little larger than this, and on large databases the minimum work time may be upwards of several seconds.'
-            self._potential_duplicates_search_work_time.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            self._potential_duplicates_search_work_time_idle.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            self._potential_duplicates_search_rest_percentage = ClientGUICommon.BetterSpinBox( self._duplicates_panel, min = 0, max = 100000 )
+            self._potential_duplicates_search_rest_percentage_idle = ClientGUICommon.BetterSpinBox( self._potential_duplicates_panel, min = 0, max = 100000 )
             tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Potential search operates on a work-rest cycle. This setting determines how long it should wait before starting a new work packet, as a percentage of the last work time.'
-            self._potential_duplicates_search_rest_percentage.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            self._potential_duplicates_search_rest_percentage_idle.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._potential_duplicates_search_work_time_active = ClientGUITime.TimeDeltaWidget( self._potential_duplicates_panel, min = 0.02, seconds = True, milliseconds = True )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Potential search operates on a work-rest cycle. This setting determines how long it should work for in each work packet. Actual work time will normally be a little larger than this, and on large databases the minimum work time may be upwards of several seconds.'
+            self._potential_duplicates_search_work_time_active.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._potential_duplicates_search_rest_percentage_active = ClientGUICommon.BetterSpinBox( self._potential_duplicates_panel, min = 0, max = 100000 )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Potential search operates on a work-rest cycle. This setting determines how long it should wait before starting a new work packet, as a percentage of the last work time.'
+            self._potential_duplicates_search_rest_percentage_active.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            #
+            
+            self._duplicates_auto_resolution_panel = ClientGUICommon.StaticBox( self, 'duplicates auto-resolution', can_expand = True, start_expanded = False )
+            
+            self._duplicates_auto_resolution_during_idle = QW.QCheckBox( self._duplicates_auto_resolution_panel )
+            
+            self._duplicates_auto_resolution_during_active = QW.QCheckBox( self._duplicates_auto_resolution_panel )
+            
+            self._duplicates_auto_resolution_work_time_idle = ClientGUITime.TimeDeltaWidget( self._duplicates_auto_resolution_panel, min = 0.1, seconds = True, milliseconds = True )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Duplicates auto-resolution operates on a work-rest cycle. This setting determines how long it should work for in each work packet. Actual work time will normally be a little larger than this, and when it hits large files it may be upwards of several seconds.'
+            self._duplicates_auto_resolution_work_time_idle.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._duplicates_auto_resolution_rest_percentage_idle = ClientGUICommon.BetterSpinBox( self._duplicates_auto_resolution_panel, min = 0, max = 100000 )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Duplicates auto-resolution operates on a work-rest cycle. This setting determines how long it should wait before starting a new work packet, as a percentage of the last work time.'
+            self._duplicates_auto_resolution_rest_percentage_idle.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._duplicates_auto_resolution_work_time_active = ClientGUITime.TimeDeltaWidget( self._duplicates_auto_resolution_panel, min = 0.1, seconds = True, milliseconds = True )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Duplicates auto-resolution operates on a work-rest cycle. This setting determines how long it should work for in each work packet. Actual work time will normally be a little larger than this, and when it hits large files it may be upwards of several seconds.'
+            self._duplicates_auto_resolution_work_time_active.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            
+            self._duplicates_auto_resolution_rest_percentage_active = ClientGUICommon.BetterSpinBox( self._duplicates_auto_resolution_panel, min = 0, max = 100000 )
+            tt = 'DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING. Duplicates auto-resolution operates on a work-rest cycle. This setting determines how long it should wait before starting a new work packet, as a percentage of the last work time.'
+            self._duplicates_auto_resolution_rest_percentage_active.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             #
             
@@ -3311,8 +3413,20 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._tag_display_processing_rest_percentage_work_hard.setValue( self._new_options.GetInteger( 'tag_display_processing_rest_percentage_work_hard' ) )
             
             self._maintain_similar_files_duplicate_pairs_during_idle.setChecked( self._new_options.GetBoolean( 'maintain_similar_files_duplicate_pairs_during_idle' ) )
-            self._potential_duplicates_search_work_time.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'potential_duplicates_search_work_time_ms' ) ) )
-            self._potential_duplicates_search_rest_percentage.setValue( self._new_options.GetInteger( 'potential_duplicates_search_rest_percentage' ) )
+            self._maintain_similar_files_duplicate_pairs_during_active.setChecked( self._new_options.GetBoolean( 'maintain_similar_files_duplicate_pairs_during_active' ) )
+            
+            self._potential_duplicates_search_work_time_idle.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'potential_duplicates_search_work_time_ms_idle' ) ) )
+            self._potential_duplicates_search_rest_percentage_idle.setValue( self._new_options.GetInteger( 'potential_duplicates_search_rest_percentage_idle' ) )
+            self._potential_duplicates_search_work_time_active.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'potential_duplicates_search_work_time_ms_active' ) ) )
+            self._potential_duplicates_search_rest_percentage_active.setValue( self._new_options.GetInteger( 'potential_duplicates_search_rest_percentage_active' ) )
+            
+            self._duplicates_auto_resolution_during_idle.setChecked( self._new_options.GetBoolean( 'duplicates_auto_resolution_during_idle' ) )
+            self._duplicates_auto_resolution_during_active.setChecked( self._new_options.GetBoolean( 'duplicates_auto_resolution_during_active' ) )
+            
+            self._duplicates_auto_resolution_work_time_idle.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'duplicates_auto_resolution_work_time_ms_idle' ) ) )
+            self._duplicates_auto_resolution_rest_percentage_idle.setValue( self._new_options.GetInteger( 'duplicates_auto_resolution_rest_percentage_idle' ) )
+            self._duplicates_auto_resolution_work_time_active.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'duplicates_auto_resolution_work_time_ms_active' ) ) )
+            self._duplicates_auto_resolution_rest_percentage_active.setValue( self._new_options.GetInteger( 'duplicates_auto_resolution_rest_percentage_active' ) )
             
             self._deferred_table_delete_work_time_idle.SetValue( HydrusTime.SecondiseMSFloat( self._new_options.GetInteger( 'deferred_table_delete_work_time_ms_idle' ) ) )
             self._deferred_table_delete_rest_percentage_idle.setValue( self._new_options.GetInteger( 'deferred_table_delete_rest_percentage_idle' ) )
@@ -3451,19 +3565,41 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             #
             
-            message = 'The search for potential duplicate file pairs (as on the duplicates page) can keep up to date automatically in idle time and shutdown.'
+            message = 'The discovery of new potential duplicate file pairs (as on the duplicates page, preparation tab) can run automatically.'
             
-            self._duplicates_panel.Add( ClientGUICommon.BetterStaticText( self._duplicates_panel, label = message ), CC.FLAGS_EXPAND_PERPENDICULAR )
+            self._potential_duplicates_panel.Add( ClientGUICommon.BetterStaticText( self._potential_duplicates_panel, label = message ), CC.FLAGS_EXPAND_PERPENDICULAR )
             
             rows = []
             
-            rows.append( ( 'Search for potential duplicates in idle time/shutdown: ', self._maintain_similar_files_duplicate_pairs_during_idle ) )
-            rows.append( ( '"Idle" ideal work packet time: ', self._potential_duplicates_search_work_time ) )
-            rows.append( ( '"Idle" rest time percentage: ', self._potential_duplicates_search_rest_percentage ) )
+            rows.append( ( 'Search for potential duplicates in "idle" time: ', self._maintain_similar_files_duplicate_pairs_during_idle ) )
+            rows.append( ( '"Idle" ideal work packet time: ', self._potential_duplicates_search_work_time_idle ) )
+            rows.append( ( '"Idle" rest time percentage: ', self._potential_duplicates_search_rest_percentage_idle ) )
+            rows.append( ( 'Search for potential duplicates in "normal" time: ', self._maintain_similar_files_duplicate_pairs_during_active ) )
+            rows.append( ( '"Normal" ideal work packet time: ', self._potential_duplicates_search_work_time_active ) )
+            rows.append( ( '"Normal" rest time percentage: ', self._potential_duplicates_search_rest_percentage_active ) )
             
-            gridbox = ClientGUICommon.WrapInGrid( self._duplicates_panel, rows )
+            gridbox = ClientGUICommon.WrapInGrid( self._potential_duplicates_panel, rows )
             
-            self._duplicates_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+            self._potential_duplicates_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+            
+            #
+            
+            message = 'The search, testing, and resolution work of duplicates auto-resolution rules (as on the duplicates page, auto-resolution tab) runs automatically in the background.'
+            
+            self._duplicates_auto_resolution_panel.Add( ClientGUICommon.BetterStaticText( self._duplicates_auto_resolution_panel, label = message ), CC.FLAGS_EXPAND_PERPENDICULAR )
+            
+            rows = []
+            
+            rows.append( ( 'Work duplicates auto-resolution in "idle" time: ', self._duplicates_auto_resolution_during_idle ) )
+            rows.append( ( '"Idle" ideal work packet time: ', self._duplicates_auto_resolution_work_time_idle ) )
+            rows.append( ( '"Idle" rest time percentage: ', self._duplicates_auto_resolution_rest_percentage_idle ) )
+            rows.append( ( 'Work duplicates auto-resolution in "normal" time: ', self._duplicates_auto_resolution_during_active ) )
+            rows.append( ( '"Normal" ideal work packet time: ', self._duplicates_auto_resolution_work_time_active ) )
+            rows.append( ( '"Normal" rest time percentage: ', self._duplicates_auto_resolution_rest_percentage_active ) )
+            
+            gridbox = ClientGUICommon.WrapInGrid( self._duplicates_auto_resolution_panel, rows )
+            
+            self._duplicates_auto_resolution_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
             #
             
@@ -3492,7 +3628,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             QP.AddToLayout( vbox, self._file_maintenance_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, self._repository_processing_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, self._tag_display_processing_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-            QP.AddToLayout( vbox, self._duplicates_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+            QP.AddToLayout( vbox, self._potential_duplicates_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+            QP.AddToLayout( vbox, self._duplicates_auto_resolution_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, self._deferred_table_delete_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             vbox.addStretch( 0 )
             
@@ -3565,38 +3702,48 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._new_options.SetInteger( 'file_maintenance_active_throttle_files', file_maintenance_active_throttle_files )
             self._new_options.SetInteger( 'file_maintenance_active_throttle_time_delta', file_maintenance_active_throttle_time_delta )
             
-            self._new_options.SetInteger( 'repository_processing_work_time_ms_very_idle', int( self._repository_processing_work_time_very_idle.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'repository_processing_work_time_ms_very_idle', HydrusTime.MillisecondiseS( self._repository_processing_work_time_very_idle.GetValue() ) )
             self._new_options.SetInteger( 'repository_processing_rest_percentage_very_idle', self._repository_processing_rest_percentage_very_idle.value() )
             
-            self._new_options.SetInteger( 'repository_processing_work_time_ms_idle', int( self._repository_processing_work_time_idle.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'repository_processing_work_time_ms_idle', HydrusTime.MillisecondiseS( self._repository_processing_work_time_idle.GetValue() ) )
             self._new_options.SetInteger( 'repository_processing_rest_percentage_idle', self._repository_processing_rest_percentage_idle.value() )
             
-            self._new_options.SetInteger( 'repository_processing_work_time_ms_normal', int( self._repository_processing_work_time_normal.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'repository_processing_work_time_ms_normal', HydrusTime.MillisecondiseS( self._repository_processing_work_time_normal.GetValue() ) )
             self._new_options.SetInteger( 'repository_processing_rest_percentage_normal', self._repository_processing_rest_percentage_normal.value() )
             
             self._new_options.SetBoolean( 'tag_display_maintenance_during_idle', self._tag_display_maintenance_during_idle.isChecked() )
             self._new_options.SetBoolean( 'tag_display_maintenance_during_active', self._tag_display_maintenance_during_active.isChecked() )
             
-            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_idle', int( self._tag_display_processing_work_time_idle.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_idle', HydrusTime.MillisecondiseS( self._tag_display_processing_work_time_idle.GetValue() ) )
             self._new_options.SetInteger( 'tag_display_processing_rest_percentage_idle', self._tag_display_processing_rest_percentage_idle.value() )
             
-            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_normal', int( self._tag_display_processing_work_time_normal.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_normal', HydrusTime.MillisecondiseS( self._tag_display_processing_work_time_normal.GetValue() ) )
             self._new_options.SetInteger( 'tag_display_processing_rest_percentage_normal', self._tag_display_processing_rest_percentage_normal.value() )
             
-            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_work_hard', int( self._tag_display_processing_work_time_work_hard.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'tag_display_processing_work_time_ms_work_hard', HydrusTime.MillisecondiseS( self._tag_display_processing_work_time_work_hard.GetValue() ) )
             self._new_options.SetInteger( 'tag_display_processing_rest_percentage_work_hard', self._tag_display_processing_rest_percentage_work_hard.value() )
             
             self._new_options.SetBoolean( 'maintain_similar_files_duplicate_pairs_during_idle', self._maintain_similar_files_duplicate_pairs_during_idle.isChecked() )
-            self._new_options.SetInteger( 'potential_duplicates_search_work_time_ms', int( self._potential_duplicates_search_work_time.GetValue() * 1000 ) )
-            self._new_options.SetInteger( 'potential_duplicates_search_rest_percentage', self._potential_duplicates_search_rest_percentage.value() )
+            self._new_options.SetInteger( 'potential_duplicates_search_work_time_ms_idle', HydrusTime.MillisecondiseS( self._potential_duplicates_search_work_time_idle.GetValue() ) )
+            self._new_options.SetInteger( 'potential_duplicates_search_rest_percentage_idle', self._potential_duplicates_search_rest_percentage_idle.value() )
+            self._new_options.SetBoolean( 'maintain_similar_files_duplicate_pairs_during_active', self._maintain_similar_files_duplicate_pairs_during_active.isChecked() )
+            self._new_options.SetInteger( 'potential_duplicates_search_work_time_ms_active', HydrusTime.MillisecondiseS( self._potential_duplicates_search_work_time_active.GetValue() ) )
+            self._new_options.SetInteger( 'potential_duplicates_search_rest_percentage_active', self._potential_duplicates_search_rest_percentage_active.value() )
             
-            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_idle', int( self._deferred_table_delete_work_time_idle.GetValue() * 1000 ) )
+            self._new_options.SetBoolean( 'duplicates_auto_resolution_during_idle', self._duplicates_auto_resolution_during_idle.isChecked() )
+            self._new_options.SetInteger( 'duplicates_auto_resolution_work_time_ms_idle', HydrusTime.MillisecondiseS( self._duplicates_auto_resolution_work_time_idle.GetValue() ) )
+            self._new_options.SetInteger( 'duplicates_auto_resolution_rest_percentage_idle', self._duplicates_auto_resolution_rest_percentage_idle.value() )
+            self._new_options.SetBoolean( 'duplicates_auto_resolution_during_active', self._duplicates_auto_resolution_during_active.isChecked() )
+            self._new_options.SetInteger( 'duplicates_auto_resolution_work_time_ms_active', HydrusTime.MillisecondiseS( self._duplicates_auto_resolution_work_time_active.GetValue() ) )
+            self._new_options.SetInteger( 'duplicates_auto_resolution_rest_percentage_active', self._duplicates_auto_resolution_rest_percentage_active.value() )
+            
+            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_idle', HydrusTime.MillisecondiseS( self._deferred_table_delete_work_time_idle.GetValue() ) )
             self._new_options.SetInteger( 'deferred_table_delete_rest_percentage_idle', self._deferred_table_delete_rest_percentage_idle.value() )
             
-            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_normal', int( self._deferred_table_delete_work_time_normal.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_normal', HydrusTime.MillisecondiseS( self._deferred_table_delete_work_time_normal.GetValue() ) )
             self._new_options.SetInteger( 'deferred_table_delete_rest_percentage_normal', self._deferred_table_delete_rest_percentage_normal.value() )
             
-            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_work_hard', int( self._deferred_table_delete_work_time_work_hard.GetValue() * 1000 ) )
+            self._new_options.SetInteger( 'deferred_table_delete_work_time_ms_work_hard', HydrusTime.MillisecondiseS( self._deferred_table_delete_work_time_work_hard.GetValue() ) )
             self._new_options.SetInteger( 'deferred_table_delete_rest_percentage_work_hard', self._deferred_table_delete_rest_percentage_work_hard.value() )
             
         
@@ -3611,15 +3758,18 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             #
             
-            window_panel = ClientGUICommon.StaticBox( self, 'window' )
+            focus_panel = ClientGUICommon.StaticBox( self, 'closing focus' )
             
-            self._focus_media_tab_on_viewer_close_if_possible = QW.QCheckBox( window_panel )
-            self._focus_media_tab_on_viewer_close_if_possible.setToolTip( ClientGUIFunctions.WrapToolTip( 'If the search page you opened a media viewer from is still open, re-focus it upon media viewer close. Useful if you use multiple media viewers launched from different pages. There is also a shortcut action to perform this on an individual basis.' ) )
+            self._focus_media_tab_on_viewer_close_if_possible = QW.QCheckBox( focus_panel )
+            self._focus_media_tab_on_viewer_close_if_possible.setToolTip( ClientGUIFunctions.WrapToolTip( 'If the search page you opened a media viewer from is still open, navigate back to it upon media viewer close. Useful if you use multiple media viewers launched from different pages. There is also a shortcut action to perform this on an individual basis.' ) )
             
-            self._focus_media_thumb_on_viewer_close = QW.QCheckBox( window_panel )
+            self._focus_media_thumb_on_viewer_close = QW.QCheckBox( focus_panel )
             self._focus_media_thumb_on_viewer_close.setToolTip( ClientGUIFunctions.WrapToolTip( 'When you close a Media Viewer, it normally tells the original search page to change the current thumbnail selection to whatever you closed the media viewer on. If you prefer this not to happen, uncheck this!' ) )
             
-            self._activate_main_gui_on_viewer_close = QW.QCheckBox( window_panel )
+            self._activate_main_gui_on_focusing_viewer_close = QW.QCheckBox( focus_panel )
+            self._activate_main_gui_on_focusing_viewer_close.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will "activate" the Main GUI Window when any Media Viewer closes with with a "focusing" action, either because you set the options above, or, more importantly, if they are set off above but you do it using a shortcut. This will bring the Main GUI to the front and give it keyboard focus. Try this if you regularly use multiple viewers and need fine control over the focus stack.' ) )
+            
+            self._activate_main_gui_on_viewer_close = QW.QCheckBox( focus_panel )
             self._activate_main_gui_on_viewer_close.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will "activate" the Main GUI Window when any Media Viewer closes, which should bring it to the front and give it keyboard focus. Try this if your OS is playing funny games with focus when a media viewer closes.' ) )
             
             #
@@ -3669,6 +3819,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._focus_media_tab_on_viewer_close_if_possible.setChecked( self._new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ) )
             self._focus_media_thumb_on_viewer_close.setChecked( self._new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ) )
+            self._activate_main_gui_on_focusing_viewer_close.setChecked( self._new_options.GetBoolean( 'activate_main_gui_on_focusing_viewer_close' ) )
             self._activate_main_gui_on_viewer_close.setChecked( self._new_options.GetBoolean( 'activate_main_gui_on_viewer_close' ) )
             
             self._animated_scanbar_height.setValue( self._new_options.GetInteger( 'animated_scanbar_height' ) )
@@ -3696,13 +3847,14 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             rows = []
             
-            rows.append( ( 'Re-focus original search page when closing the media viewer: ', self._focus_media_tab_on_viewer_close_if_possible ) )
-            rows.append( ( 'Tell original search page to select exit media when closing the media viewer: ', self._focus_media_thumb_on_viewer_close ) )
-            rows.append( ( 'DEBUG: Activate Main GUI when closing the media viewer: ', self._activate_main_gui_on_viewer_close ) )
+            rows.append( ( 'When closing the media viewer, re-select original search page: ', self._focus_media_tab_on_viewer_close_if_possible ) )
+            rows.append( ( 'When closing the media viewer, tell original search page to select exit media: ', self._focus_media_thumb_on_viewer_close ) )
+            rows.append( ( 'ADVANCED: When closing the media viewer with the above focusing options, activate Main GUI: ', self._activate_main_gui_on_focusing_viewer_close ) )
+            rows.append( ( 'DEBUG: When closing the media viewer at any time, activate Main GUI: ', self._activate_main_gui_on_viewer_close ) )
             
-            gridbox = ClientGUICommon.WrapInGrid( window_panel, rows )
+            gridbox = ClientGUICommon.WrapInGrid( focus_panel, rows )
             
-            window_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+            focus_panel.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
             rows = []
             
@@ -3735,9 +3887,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             vbox = QP.VBoxLayout()
             
-            QP.AddToLayout( vbox, window_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, media_viewer_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, slideshow_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+            QP.AddToLayout( vbox, focus_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             vbox.addStretch( 0 )
             
             self.setLayout( vbox )
@@ -3769,6 +3921,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             self._new_options.SetBoolean( 'focus_media_tab_on_viewer_close_if_possible', self._focus_media_tab_on_viewer_close_if_possible.isChecked() )
             self._new_options.SetBoolean( 'focus_media_thumb_on_viewer_close', self._focus_media_thumb_on_viewer_close.isChecked() )
+            self._new_options.SetBoolean( 'activate_main_gui_on_focusing_viewer_close', self._activate_main_gui_on_focusing_viewer_close.isChecked() )
             self._new_options.SetBoolean( 'activate_main_gui_on_viewer_close', self._activate_main_gui_on_viewer_close.isChecked() )
             
             self._new_options.SetBoolean( 'disallow_media_drags_on_duration_media', self._disallow_media_drags_on_duration_media.isChecked() )
@@ -3897,12 +4050,12 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             rows = []
             
-            rows.append( ( 'Duplicate tags hover-window information in the background of the viewer:', self._draw_tags_hover_in_media_viewer_background ) )
+            rows.append( ( 'Draw tags hover-window information in the background of the viewer:', self._draw_tags_hover_in_media_viewer_background ) )
             rows.append( ( 'Do not pop-in tags hover-window on mouseover:', self._disable_tags_hover_in_media_viewer ) )
-            rows.append( ( 'Duplicate top hover-window information in the background of the viewer:', self._draw_top_hover_in_media_viewer_background ) )
-            rows.append( ( 'Duplicate top-right hover-window information in the background of the viewer:', self._draw_top_right_hover_in_media_viewer_background ) )
+            rows.append( ( 'Draw top hover-window information in the background of the viewer:', self._draw_top_hover_in_media_viewer_background ) )
+            rows.append( ( 'Draw top-right hover-window information in the background of the viewer:', self._draw_top_right_hover_in_media_viewer_background ) )
             rows.append( ( 'Do not pop-in top-right hover-window on mouseover:', self._disable_top_right_hover_in_media_viewer ) )
-            rows.append( ( 'Duplicate notes hover-window information in the background of the viewer:', self._draw_notes_hover_in_media_viewer_background ) )
+            rows.append( ( 'Draw notes hover-window information in the background of the viewer:', self._draw_notes_hover_in_media_viewer_background ) )
             rows.append( ( 'Draw bottom-right index text in the background of the viewer:', self._draw_bottom_right_index_in_media_viewer_background ) )
             rows.append( ( 'Swap in common resolution labels:', self._use_nice_resolution_strings ) )
             
@@ -3918,7 +4071,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Show file service add times: ', self._file_info_line_consider_file_services_import_times_interesting ) )
             rows.append( ( 'Show file trash times: ', self._file_info_line_consider_trash_time_interesting ) )
             rows.append( ( 'Show file trash reasons: ', self._file_info_line_consider_trash_reason_interesting ) )
-            rows.append( ( 'Hide uninteresting modified times: :', self._hide_uninteresting_modified_time ) )
+            rows.append( ( 'Hide uninteresting modified times: ', self._hide_uninteresting_modified_time ) )
             
             top_hover_summary_gridbox = ClientGUICommon.WrapInGrid( top_hover_summary_panel, rows )
             
@@ -3945,6 +4098,11 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             vbox = QP.VBoxLayout()
             
+            label = 'Hover windows are the pop-in panels in the Media Viewers. You typically have tags on the left, file info up top, and ratings, notes, and sometimes duplicate controls down the right.'
+            st = ClientGUICommon.BetterStaticText( self, label = label )
+            st.setWordWrap( True )
+            
+            QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, media_canvas_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, top_hover_summary_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
             QP.AddToLayout( vbox, preview_hovers_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -4008,9 +4166,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._mpv_loop_playlist_instead_of_file = QW.QCheckBox( media_panel )
             self._mpv_loop_playlist_instead_of_file.setToolTip( ClientGUIFunctions.WrapToolTip( 'Try this if you get "too many events queued" error in mpv.' ) )
             
-            self._stop_mpv_on_media_transition = QW.QCheckBox( media_panel )
-            self._stop_mpv_on_media_transition.setToolTip( ClientGUIFunctions.WrapToolTip( 'Try this if you get laggy mpv when changing media near the end of the current media.' ) )
-            
             self._do_not_setgeometry_on_an_mpv = QW.QCheckBox( media_panel )
             self._do_not_setgeometry_on_an_mpv.setToolTip( ClientGUIFunctions.WrapToolTip( 'Try this if X11 crashes when you zoom an mpv window.' ) )
             
@@ -4058,7 +4213,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             system_panel = ClientGUICommon.StaticBox( self, 'system' )
             
-            self._mpv_conf_path = QP.FilePickerCtrl( system_panel, starting_directory = os.path.join( HC.STATIC_DIR, 'mpv-conf' ) )
+            self._mpv_conf_path = QP.FilePickerCtrl( system_panel, starting_directory = HydrusStaticDir.GetStaticPath( 'mpv-conf' ) )
             
             self._use_system_ffmpeg = QW.QCheckBox( system_panel )
             self._use_system_ffmpeg.setToolTip( ClientGUIFunctions.WrapToolTip( 'FFMPEG is used for file import metadata parsing and the native animation viewer. Check this to always default to the system ffmpeg in your path, rather than using any static ffmpeg in hydrus\'s bin directory. (requires restart)' ) )
@@ -4093,7 +4248,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._animation_start_position.setValue( int( HC.options['animation_start_position'] * 100.0 ) )
             self._always_loop_animations.setChecked( self._new_options.GetBoolean( 'always_loop_gifs' ) )
             self._mpv_loop_playlist_instead_of_file.setChecked( self._new_options.GetBoolean( 'mpv_loop_playlist_instead_of_file' ) )
-            self._stop_mpv_on_media_transition.setChecked( self._new_options.GetBoolean( 'stop_mpv_on_media_transition' ) )
             self._do_not_setgeometry_on_an_mpv.setChecked( self._new_options.GetBoolean( 'do_not_setgeometry_on_an_mpv' ) )
             self._draw_transparency_checkerboard_media_canvas.setChecked( self._new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas' ) )
             
@@ -4140,7 +4294,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows.append( ( 'Preview Viewer default zoom:', self._preview_default_zoom_type_override ) )
             rows.append( ( 'Start animations this % in:', self._animation_start_position ) )
             rows.append( ( 'Always Loop Animations:', self._always_loop_animations ) )
-            rows.append( ( 'TEST: Stop mpv before media transition:', self._stop_mpv_on_media_transition ) )
             rows.append( ( 'DEBUG: Loop Playlist instead of Loop File in mpv:', self._mpv_loop_playlist_instead_of_file ) )
             rows.append( ( 'LINUX DEBUG: Do not allow combined setGeometry on mpv window:', self._do_not_setgeometry_on_an_mpv ) )
             rows.append( ( 'Draw image transparency as checkerboard:', self._draw_transparency_checkerboard_media_canvas ) )
@@ -4151,6 +4304,13 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             media_panel.Add( filetype_handling_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
             
             #
+            
+            label = 'MPV loads up the "mpv.conf" file in your database directory. Feel free to edit that file in place any time--it is reloaded in hydrus every time you ok this options dialog. Or, you can overwrite it from another path here.\n\nNote, though, that applying a new mpv.conf will not "reset/undo" any options that are now ommitted in the new file. If you want to remove a line, edit/update the mpv.conf and then restart the client.'
+            
+            st = ClientGUICommon.BetterStaticText( system_panel, label = label )
+            st.setWordWrap( True )
+            
+            system_panel.Add( st, CC.FLAGS_EXPAND_PERPENDICULAR )
             
             rows = []
             
@@ -4378,7 +4538,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             HC.options[ 'animation_start_position' ] = self._animation_start_position.value() / 100.0
             self._new_options.SetBoolean( 'always_loop_gifs', self._always_loop_animations.isChecked() )
-            self._new_options.SetBoolean( 'stop_mpv_on_media_transition', self._stop_mpv_on_media_transition.isChecked() )
             self._new_options.SetBoolean( 'mpv_loop_playlist_instead_of_file', self._mpv_loop_playlist_instead_of_file.isChecked() )
             self._new_options.SetBoolean( 'do_not_setgeometry_on_an_mpv', self._do_not_setgeometry_on_an_mpv.isChecked() )
             self._new_options.SetBoolean( 'draw_transparency_checkerboard_media_canvas', self._draw_transparency_checkerboard_media_canvas.isChecked() )
@@ -4560,9 +4719,9 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             media_viewer_rating_panel = ClientGUICommon.StaticBox( self, 'media viewer' )
             
             self._media_viewer_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( media_viewer_rating_panel, min = 1.0, max = 255.0 )
-            self._media_viewer_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set size in pixels for like, numerical, and inc/dec rating icons for clicking on. This will be used for both width and height of the square icons. If you want to set the size of ratings icons in thumbnails, check the \'thumbnails\' options page.' ) )
-            self._media_viewer_rating_incdec_width_px = ClientGUICommon.BetterDoubleSpinBox( media_viewer_rating_panel, min = 2.0, max = 255.0 )
-            self._media_viewer_rating_incdec_width_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set width in pixels for inc/dec rectangles in the media viewer. The height will be half of this, and it is limited to be between twice and half of the normal ratings icons sizes. If you want to set the size of ratings icons in thumbnails, check the \'thumbnails\' options page.' ) )
+            self._media_viewer_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set size in pixels for like, numerical, and inc/dec rating icons for clicking on. This will be used for both width and height of the square icons.' ) )
+            self._media_viewer_rating_incdec_height_px = ClientGUICommon.BetterDoubleSpinBox( media_viewer_rating_panel, min = 2.0, max = 255.0 )
+            self._media_viewer_rating_incdec_height_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set height in pixels for inc/dec rectangles in the media viewer. Width will be dynamic based on the rating. It is limited to be between twice and half of the normal ratings icons sizes.' ) )
             
             
             thumbnail_ratings_panel = ClientGUICommon.StaticBox( self, 'thumbnails' )
@@ -4574,12 +4733,12 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._draw_thumbnail_rating_background.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             self._draw_thumbnail_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( thumbnail_ratings_panel, min = 1.0, max = thumbnail_width )
-            tt = 'This is the size of any rating icons shown in pixels. It will be square, so this is both the width and height. This only sets it for display on thumbnails, if you want to change the size of icons in the media viewer check the \'media viewer\' options page.'
+            tt = 'This is the size of any rating icons shown in pixels. It will be square, so this is both the width and height.'
             self._draw_thumbnail_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            self._draw_thumbnail_rating_incdec_width_px = ClientGUICommon.BetterDoubleSpinBox( thumbnail_ratings_panel, min = 2.0, max = thumbnail_width )
+            self._draw_thumbnail_rating_incdec_height_px = ClientGUICommon.BetterDoubleSpinBox( thumbnail_ratings_panel, min = 2.0, max = thumbnail_width )
             tt = 'This is the width of the inc/dec rating buttons in pixels. Height is 1/2 this. Limited to a range around the rating icon sizes.'
-            self._draw_thumbnail_rating_incdec_width_px.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+            self._draw_thumbnail_rating_incdec_height_px.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
             self._draw_thumbnail_numerical_ratings_collapsed_always = QW.QCheckBox( thumbnail_ratings_panel )
             tt = 'If this is checked, all numerical ratings will show collapsed in thumbnails (\'2/10 ▲\' instead of \'▲▲▼▼▼▼▼▼▼▼\') regardless of the per-service setting.'
@@ -4591,8 +4750,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._preview_window_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( preview_window_rating_panel, min = 1.0, max = 255.0 )
             self._preview_window_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set size in pixels for like and numerical rating icons for clicking on in the preview window.' ) )
             
-            self._preview_window_rating_incdec_width_px  = ClientGUICommon.BetterDoubleSpinBox( preview_window_rating_panel, min = 2.0, max = 255.0 )
-            self._preview_window_rating_incdec_width_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set width in pixels for inc/dec rectangles in the preview window. The height will be half of this, and it is limited to be between twice and half of the normal ratings icons sizes.' ) )
+            self._preview_window_rating_incdec_height_px  = ClientGUICommon.BetterDoubleSpinBox( preview_window_rating_panel, min = 2.0, max = 255.0 )
+            self._preview_window_rating_incdec_height_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set height in pixels for inc/dec rectangles in the preview window. Width will be dynamic based on the rating. It is limited to be between twice and half of the normal ratings icons sizes.' ) )
             
             
             manage_ratings_popup_panel = ClientGUICommon.StaticBox( self, 'dialogs' )
@@ -4600,8 +4759,8 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             self._dialog_rating_icon_size_px = ClientGUICommon.BetterDoubleSpinBox( manage_ratings_popup_panel, min = 6.0, max = 128.0 )
             self._dialog_rating_icon_size_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set size in pixels for like and numerical rating icons for clicking on in the \'manage ratings\' dialog.' ) )
             
-            self._dialog_rating_incdec_width_px = ClientGUICommon.BetterDoubleSpinBox( manage_ratings_popup_panel, min = 12.0, max = 128.0 )
-            self._dialog_rating_incdec_width_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set width in pixels for inc/dec rectangles in the \'manage ratings\' dialog. The height will be half of this, and it is limited to be between twice and half of the normal ratings icons sizes.' ) )
+            self._dialog_rating_incdec_height_px = ClientGUICommon.BetterDoubleSpinBox( manage_ratings_popup_panel, min = 12.0, max = 128.0 )
+            self._dialog_rating_incdec_height_px.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set height in pixels for inc/dec rectangles in the \'manage ratings\' dialog.  Width will be dynamic based on the rating. It is limited to be between twice and half of the normal ratings icons sizes.' ) )
             
             #clamp inc/dec rectangles to min 0.5 and max 2x rating stars px for rating size stuff
             self._media_viewer_rating_icon_size_px.editingFinished.connect( self._icon_size_changed )
@@ -4611,25 +4770,25 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             #
             
             self._media_viewer_rating_icon_size_px.setValue( self._new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
-            self._media_viewer_rating_incdec_width_px.setValue( self._new_options.GetFloat( 'media_viewer_rating_incdec_width_px' ) )
+            self._media_viewer_rating_incdec_height_px.setValue( self._new_options.GetFloat( 'media_viewer_rating_incdec_height_px' ) )
             
             self._draw_thumbnail_rating_background.setChecked( self._new_options.GetBoolean( 'draw_thumbnail_rating_background' ) )
             self._draw_thumbnail_numerical_ratings_collapsed_always.setChecked( self._new_options.GetBoolean( 'draw_thumbnail_numerical_ratings_collapsed_always' ) )
             self._draw_thumbnail_rating_icon_size_px.setValue( self._new_options.GetFloat( 'draw_thumbnail_rating_icon_size_px' ) )
-            self._draw_thumbnail_rating_incdec_width_px.setValue( self._new_options.GetFloat( 'thumbnail_rating_incdec_width_px' )  )
+            self._draw_thumbnail_rating_incdec_height_px.setValue( self._new_options.GetFloat( 'thumbnail_rating_incdec_height_px' )  )
             
             self._preview_window_rating_icon_size_px.setValue( self._new_options.GetFloat( 'preview_window_rating_icon_size_px' ) )
-            self._preview_window_rating_incdec_width_px.setValue( self._new_options.GetFloat( 'preview_window_rating_incdec_width_px' ) )
+            self._preview_window_rating_incdec_height_px.setValue( self._new_options.GetFloat( 'preview_window_rating_incdec_height_px' ) )
             
             self._dialog_rating_icon_size_px.setValue( self._new_options.GetFloat( 'dialog_rating_icon_size_px' ) )
-            self._dialog_rating_incdec_width_px.setValue( self._new_options.GetFloat( 'dialog_rating_incdec_width_px' ) )
+            self._dialog_rating_incdec_height_px.setValue( self._new_options.GetFloat( 'dialog_rating_incdec_height_px' ) )
             
             #
             
             rows = []
             
             rows.append( ( 'Media viewer like/dislike and numerical rating icon size:', self._media_viewer_rating_icon_size_px ) )
-            rows.append( ( 'Media viewer inc/dec rating icon width:', self._media_viewer_rating_incdec_width_px ) )
+            rows.append( ( 'Media viewer inc/dec rating icon height:', self._media_viewer_rating_incdec_height_px ) )
             
             media_viewer_rating_gridbox = ClientGUICommon.WrapInGrid( media_viewer_rating_panel, rows )
             media_viewer_rating_panel.Add( media_viewer_rating_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
@@ -4637,7 +4796,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'Preview window like/dislike and numerical rating icon size:', self._preview_window_rating_icon_size_px ) )
-            rows.append( ( 'Preview window inc/dec rating icon width:', self._preview_window_rating_incdec_width_px ) )
+            rows.append( ( 'Preview window inc/dec rating icon height:', self._preview_window_rating_incdec_height_px ) )
             
             preview_hovers_gridbox = ClientGUICommon.WrapInGrid( preview_window_rating_panel, rows )
             preview_window_rating_panel.Add( preview_hovers_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
@@ -4645,7 +4804,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'Thumbnail like/dislike and numerical rating icon size: ', self._draw_thumbnail_rating_icon_size_px ) )
-            rows.append( ( 'Thumbnail inc/dec rating width: ', self._draw_thumbnail_rating_incdec_width_px ) )
+            rows.append( ( 'Thumbnail inc/dec rating height: ', self._draw_thumbnail_rating_incdec_height_px ) )
             rows.append( ( 'Give thumbnail ratings a flat background: ', self._draw_thumbnail_rating_background ) )
             rows.append( ( 'Always draw thumbnail numerical ratings collapsed: ', self._draw_thumbnail_numerical_ratings_collapsed_always ) )
             
@@ -4655,7 +4814,7 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             rows = []
             
             rows.append( ( 'Dialogs like/dislike and numerical rating icon size:', self._dialog_rating_icon_size_px ) )
-            rows.append( ( 'Dialogs inc/dec rating width:', self._dialog_rating_incdec_width_px ) )
+            rows.append( ( 'Dialogs inc/dec rating height:', self._dialog_rating_incdec_height_px ) )
             
             manage_ratings_gridbox = ClientGUICommon.WrapInGrid( manage_ratings_popup_panel, rows )
             
@@ -4687,35 +4846,35 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             new_value = self._media_viewer_rating_icon_size_px.value()
             
-            self._media_viewer_rating_incdec_width_px.setMaximum( new_value * 2 )
-            self._media_viewer_rating_incdec_width_px.setMinimum( new_value * 0.5 )
+            self._media_viewer_rating_incdec_height_px.setMaximum( new_value * 2 )
+            self._media_viewer_rating_incdec_height_px.setMinimum( new_value * 0.5 )
             
             new_value = self._preview_window_rating_icon_size_px.value()
             
-            self._preview_window_rating_incdec_width_px.setMaximum( new_value * 2 )
-            self._preview_window_rating_incdec_width_px.setMinimum( new_value * 0.5 )
+            self._preview_window_rating_incdec_height_px.setMaximum( new_value * 2 )
+            self._preview_window_rating_incdec_height_px.setMinimum( new_value * 0.5 )
             
             new_value = self._draw_thumbnail_rating_icon_size_px.value()
             
-            self._draw_thumbnail_rating_incdec_width_px.setMaximum( new_value * 2 )
-            self._draw_thumbnail_rating_incdec_width_px.setMinimum( new_value * 0.5 )
+            self._draw_thumbnail_rating_incdec_height_px.setMaximum( new_value * 2 )
+            self._draw_thumbnail_rating_incdec_height_px.setMinimum( new_value * 0.5 )
             
         
         def UpdateOptions( self ):
             
             self._new_options.SetFloat( 'media_viewer_rating_icon_size_px', self._media_viewer_rating_icon_size_px.value() )
-            self._new_options.SetFloat( 'media_viewer_rating_incdec_width_px', self._media_viewer_rating_incdec_width_px.value() )
+            self._new_options.SetFloat( 'media_viewer_rating_incdec_height_px', self._media_viewer_rating_incdec_height_px.value() )
             
             self._new_options.SetBoolean( 'draw_thumbnail_rating_background', self._draw_thumbnail_rating_background.isChecked() )
             self._new_options.SetBoolean( 'draw_thumbnail_numerical_ratings_collapsed_always', self._draw_thumbnail_numerical_ratings_collapsed_always.isChecked() )
             self._new_options.SetFloat( 'draw_thumbnail_rating_icon_size_px', self._draw_thumbnail_rating_icon_size_px.value() )
-            self._new_options.SetFloat( 'thumbnail_rating_incdec_width_px', self._draw_thumbnail_rating_incdec_width_px.value() )
+            self._new_options.SetFloat( 'thumbnail_rating_incdec_height_px', self._draw_thumbnail_rating_incdec_height_px.value() )
             
             self._new_options.SetFloat( 'preview_window_rating_icon_size_px', self._preview_window_rating_icon_size_px.value() )
-            self._new_options.SetFloat( 'preview_window_rating_incdec_width_px', self._preview_window_rating_incdec_width_px.value() )
+            self._new_options.SetFloat( 'preview_window_rating_incdec_height_px', self._preview_window_rating_incdec_height_px.value() )
             
             self._new_options.SetFloat( 'dialog_rating_icon_size_px', self._dialog_rating_icon_size_px.value() )
-            self._new_options.SetFloat( 'dialog_rating_incdec_width_px', self._dialog_rating_incdec_width_px.value() )
+            self._new_options.SetFloat( 'dialog_rating_incdec_height_px', self._dialog_rating_incdec_height_px.value() )
             
         
     
@@ -5293,11 +5452,13 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             
             QP.AddToLayout( vbox, self._help_label, CC.FLAGS_EXPAND_PERPENDICULAR )
             
-            text = 'The current styles are what your Qt has available, the stylesheets are what .css and .qss files are currently in install_dir/static/qss.'
+            text = 'The current styles are what your Qt has available, the stylesheets are what .css and .qss files are currently in install_dir/static/qss or db_dir/static/qss (if you make one).'
             text += '\n' * 2
-            text += 'If you run from source and you select e621, Paper_Dark, or another stylesheet that includes external (svg) assets, you must make sure that your CWD is the hydrus install folder when you boot.'
+            text += 'If you run from source and select e621, or Paper_Dark stylesheets, which include external (svg) assets, you must make sure that your CWD is the hydrus install folder when you boot the program. For a custom QSS in your db_dir that uses external assets, you must edit the .QSS so it uses absolute path names.'
             
             st = ClientGUICommon.BetterStaticText( self, label = text )
+            
+            st.setWordWrap( True )
             
             QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
             

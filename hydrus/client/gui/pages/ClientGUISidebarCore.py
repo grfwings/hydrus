@@ -169,11 +169,12 @@ class Sidebar( QW.QScrollArea ):
         self.setWidgetResizable( True )
         #self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         #self.setLineWidth( 2 )
-        #self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
+        self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         
         self._page_manager = page_manager
         
+        # page here should be a data object not the UI widget, or an interface, to provide the various 'Get/AppendMediaResults' and such. the future version of MediaList
         self._page = page
         self._page_key = self._page_manager.GetVariable( 'page_key' )
         
@@ -193,8 +194,6 @@ class Sidebar( QW.QScrollArea ):
             
         
         self._media_collect_widget = ClientGUIMediaResultsPanelSortCollect.MediaCollectControl( self, media_collect = media_collect )
-        
-        self._media_collect_widget.ListenForNewOptions()
         
         if self.SHOW_COLLECT:
             

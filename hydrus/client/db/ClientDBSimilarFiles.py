@@ -8,6 +8,7 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusDBBase
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
 
@@ -20,8 +21,16 @@ from hydrus.client.db import ClientDBServices
 
 class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
     
-    def __init__( self, cursor: sqlite3.Cursor, modules_services: ClientDBServices.ClientDBMasterServices, modules_hashes: ClientDBMaster.ClientDBMasterHashes, modules_files_storage: ClientDBFilesStorage.ClientDBFilesStorage ):
+    def __init__(
+        self,
+        cursor: sqlite3.Cursor,
+        cursor_transaction_wrapper: HydrusDBBase.DBCursorTransactionWrapper,
+        modules_services: ClientDBServices.ClientDBMasterServices,
+        modules_hashes: ClientDBMaster.ClientDBMasterHashes,
+        modules_files_storage: ClientDBFilesStorage.ClientDBFilesStorage
+    ):
         
+        self._cursor_transaction_wrapper = cursor_transaction_wrapper
         self.modules_services = modules_services
         self.modules_hashes = modules_hashes
         self.modules_files_storage = modules_files_storage
@@ -127,6 +136,8 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
                         
                         self._Execute( 'INSERT OR IGNORE INTO shape_maintenance_branch_regen ( phash_id ) VALUES ( ? );', ( ancestor_id, ) )
                         
+                        self._cursor_transaction_wrapper.pub_after_job( 'notify_new_shape_search_branch_maintenance_work' )
+                        
                         # we only do this for the eldest ancestor, as the eventual rebalancing will affect all children
                         
                         an_ancestor_is_unbalanced = True
@@ -150,6 +161,26 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         self._Execute( 'INSERT OR REPLACE INTO shape_vptree ( phash_id, parent_id, radius, inner_id, inner_population, outer_id, outer_population ) VALUES ( ?, ?, ?, ?, ?, ?, ? );', ( perceptual_hash_id, parent_id, radius, inner_id, inner_population, outer_id, outer_population ) )
         
         self._ClearPerceptualHashesFromVPTreeNodeCache( ( perceptual_hash_id, ) )
+        
+    
+    def _DeltaShapeSearchCacheNumbers( self, searched_distance, delta ):
+        
+        # hydev's first UPSERT, 2025-09-14
+        self._Execute( 'INSERT INTO shape_search_cache_numbers ( searched_distance, count ) VALUES ( ?, ? ) ON CONFLICT( searched_distance ) DO UPDATE SET count = count + ?;', ( searched_distance, delta, delta ) )
+        
+        self._cursor_transaction_wrapper.pub_after_job( 'notify_new_shape_search_cache_numbers' )
+        
+    
+    def _DeltaShapeSearchCacheNumbersRemoveFile( self, hash_id: int ):
+        
+        result = self._Execute( 'SELECT searched_distance FROM shape_search_cache WHERE hash_id = ?;', ( hash_id, ) ).fetchone()
+        
+        if result is not None:
+            
+            ( searched_distance, ) = result
+            
+            self._DeltaShapeSearchCacheNumbers( searched_distance, -1 )
+            
         
     
     def _GenerateBranch( self, job_status, parent_id, perceptual_hash_id, perceptual_hash, children ):
@@ -279,6 +310,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             'main.shape_vptree' : ( 'CREATE TABLE IF NOT EXISTS {} ( phash_id INTEGER PRIMARY KEY, parent_id INTEGER, radius INTEGER, inner_id INTEGER, inner_population INTEGER, outer_id INTEGER, outer_population INTEGER );', 536 ),
             'main.shape_maintenance_branch_regen' : ( 'CREATE TABLE IF NOT EXISTS {} ( phash_id INTEGER PRIMARY KEY );', 536 ),
             'main.shape_search_cache' : ( 'CREATE TABLE IF NOT EXISTS {} ( hash_id INTEGER PRIMARY KEY, searched_distance INTEGER );', 451 ),
+            'main.shape_search_cache_numbers' : ( 'CREATE TABLE IF NOT EXISTS {} ( searched_distance INTEGER PRIMARY KEY, count INTEGER );', 639 ),
             'main.pixel_hash_map' : ( 'CREATE TABLE IF NOT EXISTS {} ( hash_id INTEGER, pixel_hash_id INTEGER, PRIMARY KEY ( hash_id, pixel_hash_id ) );', 465 )
         }
         
@@ -618,14 +650,18 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         
         if self._GetRowCount() > 0:
             
+            self._DeltaShapeSearchCacheNumbersRemoveFile( hash_id )
+            
             # yes, replace--these files' phashes have just changed, so we want to search again with this new data
-            self._Execute( 'REPLACE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, None ) )
+            self._Execute( 'REPLACE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, -1 ) )
             
         else:
             
             # emergency backstop to ensure we do add this to the system in the case of a weird re-association gap
-            self._Execute( 'INSERT OR IGNORE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, None ) )
+            self._Execute( 'INSERT OR IGNORE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, -1 ) )
             
+        
+        self._DeltaShapeSearchCacheNumbers( -1, 1 )
         
         return perceptual_hash_ids
         
@@ -639,11 +675,13 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         
         self._ExecuteMany( 'DELETE FROM shape_perceptual_hash_map WHERE phash_id = ? AND hash_id = ?;', ( ( perceptual_hash_id, hash_id ) for perceptual_hash_id in perceptual_hash_ids ) )
         
-        useful_perceptual_hash_ids = { perceptual_hash for ( perceptual_hash, ) in self._Execute( 'SELECT phash_id FROM shape_perceptual_hash_map WHERE phash_id IN ' + HydrusData.SplayListForDB( perceptual_hash_ids ) + ';' ) }
+        useful_perceptual_hash_ids = { perceptual_hash for ( perceptual_hash, ) in self._Execute( 'SELECT phash_id FROM shape_perceptual_hash_map WHERE phash_id IN ' + HydrusLists.SplayListForDB( perceptual_hash_ids ) + ';' ) }
         
         useless_perceptual_hash_ids = perceptual_hash_ids.difference( useful_perceptual_hash_ids )
         
         self._ExecuteMany( 'INSERT OR IGNORE INTO shape_maintenance_branch_regen ( phash_id ) VALUES ( ? );', ( ( perceptual_hash_id, ) for perceptual_hash_id in useless_perceptual_hash_ids ) )
+        
+        self._cursor_transaction_wrapper.pub_after_job( 'notify_new_shape_search_branch_maintenance_work' )
         
     
     def FileIsInSystem( self, hash_id ):
@@ -655,7 +693,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
     
     def GetMaintenanceStatus( self ):
         
-        searched_distances_to_count = collections.Counter( dict( self._Execute( 'SELECT searched_distance, COUNT( * ) FROM shape_search_cache GROUP BY searched_distance;' ) ) )
+        searched_distances_to_count = collections.Counter( dict( self._Execute( 'SELECT searched_distance, count FROM shape_search_cache_numbers;' ) ) )
         
         return searched_distances_to_count
         
@@ -663,6 +701,24 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
     def GetHashIdsToPixelHashes( self, hash_ids_table_name: str ):
         
         return dict( self._Execute( f'SELECT {hash_ids_table_name}.hash_id, hash FROM {hash_ids_table_name} CROSS JOIN pixel_hash_map ON ( {hash_ids_table_name}.hash_id = pixel_hash_map.hash_id ) CROSS JOIN hashes ON ( pixel_hash_map.pixel_hash_id = hashes.hash_id );' ) )
+        
+    
+    def GetSomeHashIdsToSimilarSearch( self, search_distance, num_to_get ):
+        
+        # ok we have the classic problem here of the low-cardinality column not being nicely indexable
+        # we're solving it this time not with table sharding but partial covering indices
+        # this is hacky as anything but it checks live and works so let's go
+        
+        magic_index_name = f'shape_search_cache_partial_index_less_than_{search_distance}'
+        
+        if not self._ActualIndexExists( magic_index_name ):
+            
+            self._Execute( f'CREATE INDEX {magic_index_name} ON shape_search_cache ( searched_distance, hash_id ) WHERE searched_distance < {search_distance};' )
+            
+            self._Execute( 'ANALYZE shape_search_cache;' )
+            
+        
+        return self._STL( self._Execute( 'SELECT hash_id FROM shape_search_cache WHERE searched_distance < ?;', ( search_distance, ) ).fetchmany( num_to_get ) )
         
     
     def GetTablesAndColumnsThatUseDefinitions( self, content_type: int ) -> list[ tuple[ str, str ] ]:
@@ -680,111 +736,67 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         return []
         
     
-    def MaintainTree( self, maintenance_mode = HC.MAINTENANCE_FORCED, job_status = None, stop_time = None ):
+    def MaintainTree( self, work_period = None ):
         
-        time_started = HydrusTime.GetNow()
-        pub_job_status = False
-        job_status_pubbed = False
-        
-        if job_status is None:
+        if work_period is not None:
             
-            job_status = ClientThreading.JobStatus( maintenance_mode = maintenance_mode, cancellable = True )
+            stop_time = HydrusTime.GetNowFloat() + work_period
             
-            pub_job_status = True
+        else:
+            
+            stop_time = None
             
         
-        try:
+        fake_job_status = ClientThreading.JobStatus()
+        
+        work_to_do = self._Execute( 'SELECT phash_id FROM shape_maintenance_branch_regen;' ).fetchone() is not None
+        
+        while work_to_do:
             
-            job_status.SetStatusTitle( 'similar files metadata maintenance' )
+            # temp perceptual hashes to tree
+            result = self._Execute( 'SELECT phash_id FROM shape_maintenance_branch_regen CROSS JOIN shape_vptree USING ( phash_id ) ORDER BY inner_population + outer_population DESC;' ).fetchone()
             
-            rebalance_perceptual_hash_ids = self._STL( self._Execute( 'SELECT phash_id FROM shape_maintenance_branch_regen;' ) )
-            
-            num_to_do = len( rebalance_perceptual_hash_ids )
-            
-            while len( rebalance_perceptual_hash_ids ) > 0:
+            if result is None:
                 
-                if pub_job_status and not job_status_pubbed and HydrusTime.TimeHasPassed( time_started + 5 ):
-                    
-                    CG.client_controller.pub( 'modal_message', job_status )
-                    
-                    job_status_pubbed = True
-                    
+                # looks like there are only orphan branches in the regen cache, so clear it now and exit
+                self._Execute( 'DELETE FROM shape_maintenance_branch_regen;' )
                 
-                ( i_paused, should_quit ) = job_status.WaitIfNeeded()
+                work_to_do = False
                 
-                should_stop = CG.client_controller.ShouldStopThisWork( maintenance_mode, stop_time = stop_time )
+                return work_to_do
                 
-                if should_quit or should_stop:
-                    
-                    return
-                    
+            else:
                 
-                num_done = num_to_do - len( rebalance_perceptual_hash_ids )
-                
-                text = 'rebalancing similar file metadata - ' + HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do )
-                
-                CG.client_controller.frame_splash_status.SetSubtext( text )
-                job_status.SetStatusText( text )
-                job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
-                
-                with self._MakeTemporaryIntegerTable( rebalance_perceptual_hash_ids, 'phash_id' ) as temp_table_name:
-                    
-                    # temp perceptual hashes to tree
-                    result = self._Execute( 'SELECT phash_id FROM {} CROSS JOIN shape_vptree USING ( phash_id ) ORDER BY inner_population + outer_population DESC;'.format( temp_table_name ) ).fetchone()
-                    
-                    if result is None:
-                        
-                        self._Execute( 'DELETE FROM shape_maintenance_branch_regen;' )
-                        
-                        return
-                        
-                    else:
-                        
-                        ( biggest_perceptual_hash_id, ) = result
-                        
-                    
-                
-                try:
-                    
-                    self._RegenerateBranch( job_status, biggest_perceptual_hash_id )
-                    
-                except:
-                    
-                    HydrusData.ShowText( 'It looks like similar files maintenance had trouble regenerating a branch of the search tree! You should try _database->regenerate->similar files search tree_, and if that still produces errors, let hydev know.' )
-                    
-                    raise
-                    
-                
-                rebalance_perceptual_hash_ids = self._STL( self._Execute( 'SELECT phash_id FROM shape_maintenance_branch_regen;' ) )
+                ( biggest_perceptual_hash_id, ) = result
                 
             
-        finally:
+            try:
+                
+                self._RegenerateBranch( fake_job_status, biggest_perceptual_hash_id )
+                
+            except:
+                
+                HydrusData.ShowText( 'It looks like similar files maintenance had trouble regenerating a branch of the search tree! You should try _database->regenerate->similar files search tree_, and if that still produces errors, let hydev know.' )
+                
+                raise
+                
             
-            job_status.SetStatusText( 'done!' )
-            job_status.DeleteVariable( 'popup_gauge_1' )
-            job_status.DeleteStatusText( 2 ) # used in the regenbranch call
+            if stop_time is not None and HydrusTime.TimeHasPassedFloat( stop_time ):
+                
+                return work_to_do
+                
             
-            job_status.FinishAndDismiss( 5 )
+            work_to_do = self._Execute( 'SELECT phash_id FROM shape_maintenance_branch_regen;' ).fetchone() is not None
             
+        
+        return work_to_do
         
     
-    def MaintenanceDue( self ):
+    def RegenerateSearchCacheNumbers( self ):
         
-        new_options = CG.client_controller.new_options
+        self._Execute( 'DELETE FROM shape_search_cache_numbers;' )
         
-        if new_options.GetBoolean( 'maintain_similar_files_duplicate_pairs_during_idle' ):
-            
-            search_distance = new_options.GetInteger( 'similar_files_duplicate_pairs_search_distance' )
-            
-            ( count, ) = self._Execute( 'SELECT COUNT( * ) FROM ( SELECT 1 FROM shape_search_cache WHERE searched_distance IS NULL or searched_distance < ? LIMIT 100 );', ( search_distance, ) ).fetchone()
-            
-            if count >= 100:
-                
-                return True
-                
-            
-        
-        return False
+        self._Execute( 'INSERT INTO shape_search_cache_numbers ( searched_distance, count ) SELECT searched_distance, COUNT( * ) FROM shape_search_cache GROUP BY searched_distance;' )
         
     
     def RegenerateTree( self ):
@@ -878,7 +890,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             
             job_status.SetStatusText( HydrusNumbers.ToHumanInt( len( all_nodes ) ) + ' leaves found, now regenerating' )
             
-            ( root_id, root_perceptual_hash ) = self._PopBestRootNode( all_nodes ) #HydrusData.RandomPop( all_nodes )
+            ( root_id, root_perceptual_hash ) = self._PopBestRootNode( all_nodes ) #HydrusLists.RandomPop( all_nodes )
             
             self._GenerateBranch( job_status, None, root_id, root_perceptual_hash, all_nodes )
             
@@ -887,7 +899,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         finally:
             
             job_status.SetStatusText( 'done!' )
-            job_status.DeleteStatusText( 2 )
+            job_status.DeleteStatusText( level = 2 )
             
             job_status.FinishAndDismiss( 5 )
             
@@ -895,7 +907,16 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
     
     def ResetSearch( self, hash_ids ):
         
-        self._ExecuteMany( 'UPDATE shape_search_cache SET searched_distance = NULL WHERE hash_id = ?;', ( ( hash_id, ) for hash_id in hash_ids ) )
+        self._ExecuteMany( 'UPDATE shape_search_cache SET searched_distance = ? WHERE hash_id = ?;', ( ( -1, hash_id ) for hash_id in hash_ids ) )
+        
+        self.RegenerateSearchCacheNumbers()
+        
+    
+    def ResetSearchForAll( self ):
+        
+        self._Execute( 'UPDATE shape_search_cache SET searched_distance = ?;', ( -1, ) )
+        
+        self.RegenerateSearchCacheNumbers()
         
     
     def SearchFile( self, hash_id: int, max_hamming_distance: int ) -> list:
@@ -924,7 +945,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             similar_hash_ids_and_distances.extend( self.SearchPerceptualHashes( perceptual_hashes, max_hamming_distance ) )
             
         
-        similar_hash_ids_and_distances = HydrusData.DedupeList( similar_hash_ids_and_distances )
+        similar_hash_ids_and_distances = HydrusLists.DedupeList( similar_hash_ids_and_distances )
         
         return similar_hash_ids_and_distances
         
@@ -940,7 +961,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             similar_hash_ids_and_distances.extend( [ ( pixel_dupe_hash_id, 0 ) for pixel_dupe_hash_id in pixel_dupe_hash_ids ] )
             
         
-        similar_hash_ids_and_distances = HydrusData.DedupeList( similar_hash_ids_and_distances )
+        similar_hash_ids_and_distances = HydrusLists.DedupeList( similar_hash_ids_and_distances )
         
         return similar_hash_ids_and_distances
         
@@ -1129,7 +1150,7 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             similar_hash_ids_and_distances.extend( similar_hash_ids_to_distances.items() )
             
         
-        similar_hash_ids_and_distances = HydrusData.DedupeList( similar_hash_ids_and_distances )
+        similar_hash_ids_and_distances = HydrusLists.DedupeList( similar_hash_ids_and_distances )
         
         return similar_hash_ids_and_distances
         
@@ -1144,7 +1165,11 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
         
         if count > 1:
             
-            self._Execute( 'REPLACE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, None ) )
+            self._DeltaShapeSearchCacheNumbersRemoveFile( hash_id )
+            
+            self._Execute( 'REPLACE INTO shape_search_cache ( hash_id, searched_distance ) VALUES ( ?, ? );', ( hash_id, -1 ) )
+            
+            self._DeltaShapeSearchCacheNumbers( -1, 1 )
             
         
     
@@ -1163,7 +1188,18 @@ class ClientDBSimilarFiles( ClientDBModule.ClientDBModule ):
             
         
     
+    def SetSearchStatus( self, hash_id, search_distance ):
+        
+        self._DeltaShapeSearchCacheNumbersRemoveFile( hash_id )
+        
+        self._Execute( 'UPDATE shape_search_cache SET searched_distance = ? WHERE hash_id = ?;', ( search_distance, hash_id ) )
+        
+        self._DeltaShapeSearchCacheNumbers( search_distance, 1 )
+        
+    
     def StopSearchingFile( self, hash_id ):
+        
+        self._DeltaShapeSearchCacheNumbersRemoveFile( hash_id )
         
         self._Execute( 'DELETE FROM shape_search_cache WHERE hash_id = ?;', ( hash_id, ) )
         

@@ -110,7 +110,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             if service_key == default_tag_service_key:
                 
                 # Py 3.11/PyQt6 6.5.0/two tabs/total tab characters > ~12/select second tab during init = first tab disappears bug
-                QP.CallAfter( self._tag_services.setCurrentWidget, page )
+                CG.client_controller.CallAfter( self._tag_services, self._tag_services.setCurrentWidget, page )
                 
             
         
@@ -127,7 +127,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         
         self.widget().setLayout( vbox )
         
-        QP.CallAfter( self._tag_services.currentChanged.connect, self.EventServiceChanged )
+        CG.client_controller.CallAfter( self._tag_services, self._tag_services.currentChanged.connect, self.EventServiceChanged )
         
         if self._canvas_key is not None:
             
@@ -138,7 +138,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         
         self._UpdatePageTabNames()
         
-        QP.CallAfter( self._SetSearchFocus )
+        CG.client_controller.CallAfter( self, self._SetSearchFocus )
         
     
     def _GetContentUpdatePackages( self ):
@@ -405,38 +405,38 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             
             self._remove_tags = ClientGUICommon.BetterButton( self._tags_box_sorter, text, self._RemoveTagsButton )
             
-            self._copy_button = ClientGUICommon.BetterBitmapButton( self._tags_box_sorter, CC.global_pixmaps().copy, self._Copy )
+            self._copy_button = ClientGUICommon.IconButton( self._tags_box_sorter, CC.global_icons().copy, self._Copy )
             self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy selected tags to the clipboard. If none are selected, copies all.' ) )
             
             self._show_deleted = False
             
-            menu_items = []
+            menu_template_items = []
             
             check_manager = ClientGUICommon.CheckboxManagerOptions( 'allow_remove_on_manage_tags_input' )
             
-            menu_items.append( ( 'check', 'allow remove/petition result on tag input for already existing tag', 'If checked, inputting a tag that already exists will try to remove it.', check_manager ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'allow remove/petition result on tag input for already existing tag', 'If checked, inputting a tag that already exists will try to remove it.', check_manager ) )
             
             check_manager = ClientGUICommon.CheckboxManagerOptions( 'yes_no_on_remove_on_manage_tags' )
             
-            menu_items.append( ( 'check', 'confirm remove/petition tags on explicit delete actions', 'If checked, clicking the remove/petition tags button (or hitting the deleted key on the list) will first confirm the action with a yes/no dialog.', check_manager ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'confirm remove/petition tags on explicit delete actions', 'If checked, clicking the remove/petition tags button (or hitting the deleted key on the list) will first confirm the action with a yes/no dialog.', check_manager ) )
             
             check_manager = ClientGUICommon.CheckboxManagerOptions( 'ac_select_first_with_count' )
             
-            menu_items.append( ( 'check', 'select the first tag result with actual count', 'If checked, when results come in, the typed entry, if it has no count, will be skipped.', check_manager ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'select the first tag result with actual count', 'If checked, when results come in, the typed entry, if it has no count, will be skipped.', check_manager ) )
             
             check_manager = ClientGUICommon.CheckboxManagerCalls( self._FlipShowDeleted, lambda: self._show_deleted )
             
-            menu_items.append( ( 'check', 'show deleted', 'Show deleted tags, if any.', check_manager ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'show deleted', 'Show deleted tags, if any.', check_manager ) )
             
-            menu_items.append( ( 'separator', 0, 0, 0 ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
             
-            menu_items.append( ( 'normal', 'migrate tags for these files', 'Migrate the tags for the files used to launch this manage tags panel.', self._MigrateTags ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'migrate tags for these files', 'Migrate the tags for the files used to launch this manage tags panel.', self._MigrateTags ) )
             
             if not self._i_am_local_tag_service and self._service.HasPermission( HC.CONTENT_TYPE_ACCOUNTS, HC.PERMISSION_ACTION_MODERATE ):
                 
-                menu_items.append( ( 'separator', 0, 0, 0 ) )
+                menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
                 
-                menu_items.append( ( 'normal', 'modify users who added the selected tags', 'Modify the users who added the selected tags.', self._ModifyMappers ) )
+                menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'modify users who added the selected tags', 'Modify the users who added the selected tags.', self._ModifyMappers ) )
                 
             
             self._incremental_tagging_button = ClientGUICommon.BetterButton( self._tags_box_sorter, HC.UNICODE_PLUS_OR_MINUS, self._DoIncrementalTagging )
@@ -446,7 +446,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             width = ClientGUIFunctions.ConvertTextToPixelWidth( self._incremental_tagging_button, 5 )
             self._incremental_tagging_button.setFixedWidth( width )
             
-            self._cog_button = ClientGUIMenuButton.MenuBitmapButton( self._tags_box_sorter, CC.global_pixmaps().cog, menu_items )
+            self._cog_button = ClientGUIMenuButton.CogIconButton( self._tags_box_sorter, menu_template_items )
             
             #
             
@@ -948,12 +948,12 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
                 
                 frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( tlw, 'migrate tags' )
                 
-                panel = ClientGUIMigrateTags.MigrateTagsPanel( frame, self._tag_service_key, hashes )
+                panel = ClientGUIMigrateTags.MigrateTagsPanel( frame, tag_service_key, hashes )
                 
                 frame.SetPanel( panel )
                 
             
-            QP.CallAfter( do_it, self._tag_service_key, hashes )
+            CG.client_controller.CallAfter( self, do_it, self._tag_service_key, hashes )
             
             self.OK()
             

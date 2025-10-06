@@ -339,7 +339,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         #
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 20, height_num_chars ) )
+        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 10, height_num_chars ) )
         
         self._listbox.setMinimumWidth( width )
         self._listbox.setMinimumHeight( height )
@@ -769,15 +769,15 @@ class AddEditDeleteListBox( QW.QWidget ):
     
     def AddDefaultsButton( self, defaults_callable ):
         
-        import_menu_items = []
+        import_menu_template_items = []
         
         all_call = HydrusData.Call( self._AddAllDefaults, defaults_callable )
         some_call = HydrusData.Call( self._AddSomeDefaults, defaults_callable )
         
-        import_menu_items.append( ( 'normal', 'add them all', 'Load all the defaults.', all_call ) )
-        import_menu_items.append( ( 'normal', 'select from a list', 'Load some of the defaults.', some_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'add them all', 'Load all the defaults.', all_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'select from a list', 'Load some of the defaults.', some_call ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'add defaults', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'add defaults', import_menu_template_items )
         
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -786,28 +786,28 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         self._permitted_object_types = tuple( permitted_object_types )
         
-        export_menu_items = []
+        export_menu_template_items = []
         
-        export_menu_items.append( ( 'normal', 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
-        export_menu_items.append( ( 'normal', 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
         
         all_objs_are_named = False not in ( issubclass( o, HydrusSerialisable.SerialisableBaseNamed ) for o in self._permitted_object_types )
         
         if all_objs_are_named:
             
-            export_menu_items.append( ( 'normal', 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
+            export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
             
         
-        import_menu_items = []
+        import_menu_template_items = []
         
-        import_menu_items.append( ( 'normal', 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
-        import_menu_items.append( ( 'normal', 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         self._enabled_only_on_selection_buttons.append( button )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         button = ClientGUICommon.BetterButton( self, 'duplicate', self._Duplicate )
@@ -883,7 +883,7 @@ class QueueListBox( QW.QWidget ):
         self._down_button = ClientGUICommon.BetterButton( self, '\u2193', self._Down )
         
         self._add_button = ClientGUICommon.BetterButton( self, 'add', self._Add )
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit', self._Edit )
         
         self._enabled_only_on_selection_buttons = []
@@ -931,7 +931,7 @@ class QueueListBox( QW.QWidget ):
         
         #
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 20, height_num_chars ) )
+        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 10, height_num_chars ) )
         
         self._listbox.setMinimumWidth( width )
         self._listbox.setMinimumHeight( height )
@@ -1353,28 +1353,28 @@ class QueueListBox( QW.QWidget ):
         
         self._permitted_object_types = tuple( permitted_object_types )
         
-        export_menu_items = []
+        export_menu_template_items = []
         
-        export_menu_items.append( ( 'normal', 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
-        export_menu_items.append( ( 'normal', 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
         
         all_objs_are_named = False not in ( issubclass( o, HydrusSerialisable.SerialisableBaseNamed ) for o in self._permitted_object_types )
         
         if all_objs_are_named:
             
-            export_menu_items.append( ( 'normal', 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
+            export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
             
         
-        import_menu_items = []
+        import_menu_template_items = []
         
-        import_menu_items.append( ( 'normal', 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
-        import_menu_items.append( ( 'normal', 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_EXPAND_BOTH_WAYS )
         self._enabled_only_on_selection_buttons.append( button )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         button = ClientGUICommon.BetterButton( self, 'duplicate', self._Duplicate )
@@ -1458,7 +1458,7 @@ class ListBox( QW.QScrollArea ):
         
         self._height_num_chars = height_num_chars
         self._minimum_height_num_chars = 8
-        self._max_height_num_chars = None
+        self._maximum_height_num_chars = None
         
         self._num_rows_per_page = 0
         
@@ -1712,7 +1712,7 @@ class ListBox( QW.QScrollArea ):
         
         if not with_counts:
             
-            copyable_tag_strings = HydrusData.DedupeList( copyable_tag_strings )
+            copyable_tag_strings = HydrusLists.DedupeList( copyable_tag_strings )
             
         
         return copyable_tag_strings
@@ -4496,7 +4496,7 @@ class ListBoxTagsDisplayCapable( ListBoxTags ):
             
             terms_to_info = { term : None for term in to_lookup }
             
-            for batch_to_lookup in HydrusLists.SplitListIntoChunks( to_lookup, 500 ):
+            for ( num_done, num_to_do, batch_to_lookup ) in HydrusLists.SplitListIntoChunksRich( to_lookup, 500 ):
                 
                 tags_to_terms = { term.GetTag() : term for term in batch_to_lookup }
                 

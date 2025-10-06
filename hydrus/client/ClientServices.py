@@ -11,7 +11,7 @@ import typing
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
@@ -1680,11 +1680,6 @@ class ServiceRepository( ServiceRestricted ):
         CG.client_controller.frame_splash_status.SetText( popup_message, print_to_log = False )
         job_status.SetStatusText( popup_message, 2 )
         
-        if HG.profile_mode:
-            
-            CG.client_controller.PrintProfile( popup_message )
-            
-        
     
     def _SyncDownloadMetadata( self ):
         
@@ -1792,11 +1787,11 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( i, update_hash ) in enumerate( update_hashes ):
                     
-                    status = 'update ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, len( update_hashes ) )
+                    status = HydrusNumbers.ValueRangeToPrettyString( i, len( update_hashes ) )
                     
                     CG.client_controller.frame_splash_status.SetText( status, print_to_log = False )
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( update_hashes ) ) )
+                    job_status.SetGauge( i, len( update_hashes ) )
                     
                     with self._lock:
                         
@@ -1922,7 +1917,7 @@ class ServiceRepository( ServiceRestricted ):
                     
                 
                 job_status.SetStatusText( 'finished' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
             finally:
                 
@@ -1990,16 +1985,16 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( definition_hash, content_types ) in definition_hashes_and_content_types:
                     
-                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done + 1, num_updates_to_do )
+                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done, num_updates_to_do )
                     
-                    splash_title = '{} sync: processing updates {}'.format( self._name, progress_string )
+                    splash_title = '{} sync: processing updates: {}'.format( self._name, progress_string )
                     
                     CG.client_controller.frame_splash_status.SetTitleText( splash_title, clear_undertexts = False, print_to_log = False )
                     
-                    status = 'processing {}'.format( progress_string )
+                    status = 'processing: {}'.format( progress_string )
                     
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_updates_done, num_updates_to_do ) )
+                    job_status.SetGauge( num_updates_done, num_updates_to_do )
                     
                     try:
                         
@@ -2049,25 +2044,25 @@ class ServiceRepository( ServiceRestricted ):
                         
                         if CG.client_controller.CurrentlyVeryIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_very_idle' ) / 100
                             
                         elif CG.client_controller.CurrentlyIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_idle' ) / 100
                             
                         else:
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_normal' ) / 100
                             
                         
                         start_time = HydrusTime.GetNowPrecise()
                         
-                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_definitions', self._service_key, definition_hash, iterator_dict, content_types, job_status, work_time )
+                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_definitions', self._service_key, definition_hash, iterator_dict, content_types, job_status, expected_work_period )
                         
-                        time_it_took = HydrusTime.GetNowPrecise() - start_time
+                        actual_work_period = HydrusTime.GetNowPrecise() - start_time
                         
                         rows_done_in_this_update += num_rows_done
                         total_definition_rows_completed += num_rows_done
@@ -2086,7 +2081,7 @@ class ServiceRepository( ServiceRestricted ):
                             return
                             
                         
-                        reasonable_work_time = min( 5 * work_time, time_it_took )
+                        reasonable_work_time = min( 5 * expected_work_period, actual_work_period )
                         
                         time.sleep( reasonable_work_time * rest_ratio )
                         
@@ -2119,16 +2114,16 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( content_hash, content_types ) in content_hashes_and_content_types:
                     
-                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done + 1, num_updates_to_do )
+                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done, num_updates_to_do )
                     
-                    splash_title = '{} sync: processing updates {}'.format( self._name, progress_string )
+                    splash_title = '{} sync: processing updates: {}'.format( self._name, progress_string )
                     
                     CG.client_controller.frame_splash_status.SetTitleText( splash_title, clear_undertexts = False, print_to_log = False )
                     
-                    status = 'processing {}'.format( progress_string )
+                    status = 'processing: {}'.format( progress_string )
                     
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_updates_done, num_updates_to_do ) )
+                    job_status.SetGauge( num_updates_done, num_updates_to_do )
                     
                     try:
                         
@@ -2177,8 +2172,8 @@ class ServiceRepository( ServiceRestricted ):
                     
                     if HC.CONTENT_TYPE_MAPPINGS in content_types:
                         
-                        iterator_dict[ 'new_mappings' ] = HydrusData.SmoothOutMappingIterator( content_update.GetNewMappings(), 50 )
-                        iterator_dict[ 'deleted_mappings' ] = HydrusData.SmoothOutMappingIterator( content_update.GetDeletedMappings(), 50 )
+                        iterator_dict[ 'new_mappings' ] = HydrusLists.SmoothOutMappingIterator( content_update.GetNewMappings(), 50 )
+                        iterator_dict[ 'deleted_mappings' ] = HydrusLists.SmoothOutMappingIterator( content_update.GetDeletedMappings(), 50 )
                         
                     
                     if HC.CONTENT_TYPE_TAG_PARENTS in content_types:
@@ -2199,25 +2194,25 @@ class ServiceRepository( ServiceRestricted ):
                         
                         if CG.client_controller.CurrentlyVeryIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_very_idle' ) / 100
                             
                         elif CG.client_controller.CurrentlyIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_idle' ) / 100
                             
                         else:
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_normal' ) / 100
                             
                         
                         start_time = HydrusTime.GetNowPrecise()
                         
-                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_content', self._service_key, content_hash, iterator_dict, content_types, job_status, work_time )
+                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_content', self._service_key, content_hash, iterator_dict, content_types, job_status, expected_work_period )
                         
-                        time_it_took = HydrusTime.GetNowPrecise() - start_time
+                        actual_work_period = HydrusTime.GetNowPrecise() - start_time
                         
                         rows_done_in_this_update += num_rows_done
                         total_content_rows_completed += num_rows_done
@@ -2236,7 +2231,7 @@ class ServiceRepository( ServiceRestricted ):
                             return
                             
                         
-                        reasonable_work_time = min( 5 * work_time, time_it_took )
+                        reasonable_work_time = min( 5 * expected_work_period, actual_work_period )
                         
                         time.sleep( reasonable_work_time * rest_ratio )
                         
@@ -2298,8 +2293,8 @@ class ServiceRepository( ServiceRestricted ):
                 
             
             job_status.DeleteStatusText()
-            job_status.DeleteStatusText( 2 )
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteStatusText( level = 2 )
+            job_status.DeleteGauge()
             
             job_status.FinishAndDismiss( 3 )
             
@@ -2738,11 +2733,11 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( i, thumbnail_hash ) in enumerate( thumbnail_hashes ):
                     
-                    status = 'thumbnail ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_to_do )
+                    status = HydrusNumbers.ValueRangeToPrettyString( i, num_to_do )
                     
                     CG.client_controller.frame_splash_status.SetText( status, print_to_log = False )
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( i + 1, num_to_do ) )
+                    job_status.SetGauge( i, num_to_do )
                     
                     with self._lock:
                         
@@ -2794,7 +2789,7 @@ class ServiceRepository( ServiceRestricted ):
                     
                 
                 job_status.SetStatusText( 'finished' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
             finally:
                 
@@ -2998,8 +2993,8 @@ class ServiceIPFS( ServiceRemote ):
                     return
                     
                 
-                job_status.SetStatusText( 'ensuring files are pinned: ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, len( hashes ) ) )
-                job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( hashes ) ) )
+                job_status.SetStatusText( 'ensuring files are pinned: ' + HydrusNumbers.ValueRangeToPrettyString( i, len( hashes ) ) )
+                job_status.SetGauge( i, len( hashes ) )
                 
                 media_result = CG.client_controller.Read( 'media_result', hash )
                 
@@ -3042,7 +3037,7 @@ class ServiceIPFS( ServiceRemote ):
                 
             
             job_status.SetStatusText( 'creating directory' )
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             dag_json_encoded = json.dumps( dag_object )
             
@@ -3093,7 +3088,7 @@ class ServiceIPFS( ServiceRemote ):
             
         finally:
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             job_status.Finish()
             

@@ -3,7 +3,6 @@ import typing
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
@@ -11,10 +10,8 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
-from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIDialogsQuick
-from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.pages import ClientGUIPageManager
@@ -24,6 +21,7 @@ from hydrus.client.gui.pages import ClientGUIMediaResultsPanelThumbnails
 from hydrus.client.gui.pages import ClientGUISidebarCore
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
@@ -42,11 +40,21 @@ class SystemHashLockPanel( ClientGUICommon.StaticBox ):
         self._unlock_button = ClientGUICommon.BetterButton( self, 'initialising', self.unlockSearch.emit )
         self._unlock_button.setToolTip( ClientGUIFunctions.WrapToolTip( desc_tt ) )
         
-        self._cog_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().cog, self._ShowCogMenu )
-        
         self._syncs_new = syncs_new
         self._syncs_removes = syncs_removes
         self._num_files = num_files
+        
+        menu_template_items = []
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls( self._FlipSyncsNew, lambda: self._syncs_new )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'update when files added to page', 'If this is checked, then the underlying system:hash behind this page will add new files that are added here.', check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls( self._FlipSyncsRemoves, lambda: self._syncs_removes )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'update when files removed from page', 'If this is checked, then the underlying system:hash behind this page will remove files that are removed from here. If you want to remove files temporarily and then re-run the query to get them back again, uncheck this.', check_manager ) )
+        
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self, menu_template_items )
         
         hbox = QP.HBoxLayout()
         
@@ -70,16 +78,6 @@ class SystemHashLockPanel( ClientGUICommon.StaticBox ):
         self._syncs_removes = not self._syncs_removes
         
         self.newSettings.emit()
-        
-    
-    def _ShowCogMenu( self ):
-        
-        menu = ClientGUIMenus.GenerateMenu( self )
-        
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'update when files added to page', 'If this is checked, then the underlying system:hash behind this page will add new files that are added here.', self._syncs_new, self._FlipSyncsNew )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'update when files removed from page', 'If this is checked, then the underlying system:hash behind this page will remove files that are removed from here. If you want to remove files temporarily and then re-run the query to get them back again, uncheck this.', self._syncs_removes, self._FlipSyncsRemoves )
-        
-        CGC.core().PopupMenu( self._cog_button, menu )
         
     
     def _UpdateLabel( self ):
@@ -458,7 +456,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             existing_lock_hashes = self._GetExistingLockHashes()
             
-            updated_hashes = HydrusData.DedupeList( existing_lock_hashes + hashes )
+            updated_hashes = HydrusLists.DedupeList( existing_lock_hashes + hashes )
             
             self._UpdateSystemLockFiles( updated_hashes )
             
@@ -573,7 +571,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         if len( initial_predicates ) > 0 and not file_search_context.IsComplete():
             
-            QP.CallAfter( self.RefreshQuery )
+            CG.client_controller.CallAfter( self, self.RefreshQuery )
             
         
     
@@ -611,7 +609,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         media_results = []
         
-        for sub_query_hash_ids in HydrusLists.SplitListIntoChunks( query_hash_ids, QUERY_CHUNK_SIZE ):
+        for ( num_done, num_to_do, sub_query_hash_ids ) in HydrusLists.SplitListIntoChunksRich( query_hash_ids, QUERY_CHUNK_SIZE ):
             
             if query_job_status.IsCancelled():
                 
@@ -622,7 +620,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             media_results.extend( more_media_results )
             
-            CG.client_controller.pub( 'set_num_query_results', page_key, len( media_results ), len( query_hash_ids ) )
+            CG.client_controller.pub( 'set_num_query_results', page_key, num_done, num_to_do )
             
             CG.client_controller.WaitUntilViewFree()
             
@@ -633,7 +631,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         page_manager.SetDirty()
         
-        QP.CallAfter( qt_code )
+        CG.client_controller.CallAfter( self, qt_code )
         
     
     def REPEATINGPageUpdate( self ):

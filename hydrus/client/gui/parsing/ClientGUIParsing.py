@@ -49,13 +49,13 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._network_engine = network_engine
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_SHARING )
         
-        menu_items.append( ( 'normal', 'open the downloader sharing help', 'Open the help page for sharing downloaders in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the downloader sharing help', 'Open the help page for sharing downloaders in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -490,13 +490,13 @@ class EditContentParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_CONTENT_PARSERS_CONTENT_PARSERS )
         
-        menu_items.append( ( 'normal', 'open the content parsers help', 'Open the help page for content parsers in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the content parsers help', 'Open the help page for content parsers in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1165,13 +1165,13 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_PAGE_PARSERS_PAGE_PARSERS )
         
-        menu_items.append( ( 'normal', 'open the page parser help', 'Open the help page for page parsers in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the page parser help', 'Open the help page for page parsers in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1555,10 +1555,24 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
                 example_data = 'fetch failed: {}'.format( e ) + '\n' * 2 + stuff_read
                 
             
-            QP.CallAfter( qt_tidy_up, example_data, example_bytes, error )
+            CG.client_controller.CallAfter( self, qt_tidy_up, example_data, example_bytes, error )
             
         
-        url = ClientNetworkingFunctions.EnsureURLIsEncoded( self._test_url.text() )
+        raw_url = self._test_url.text().strip()
+        
+        if raw_url == '':
+            
+            example_urls = self._example_urls.GetData()
+            
+            if len( example_urls ) > 0:
+                
+                self._test_url.setText( example_urls[0] )
+                
+            
+            return
+            
+        
+        url = ClientNetworkingFunctions.EnsureURLIsEncoded( raw_url )
         referral_url = self._test_referral_url.text()
         
         if referral_url == '':

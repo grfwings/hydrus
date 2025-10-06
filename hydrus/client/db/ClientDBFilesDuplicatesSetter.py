@@ -33,21 +33,13 @@ class ClientDBFilesDuplicatesSetter( ClientDBModule.ClientDBModule ):
     
     def SetDuplicatePairStatus( self, pair_infos ):
         
+        # TODO: This guy should now take a list of DuplicatePairDecisionDuplicatesAction!!! get rid of this tuple!
+        
         for ( duplicate_type, hash_a, hash_b, content_update_packages ) in pair_infos:
             
             for content_update_package in content_update_packages:
                 
                 self.modules_content_updates.ProcessContentUpdatePackage( content_update_package )
-                
-            
-            if duplicate_type == HC.DUPLICATE_WORSE:
-                
-                # this is probably never going to run, since we are rigorous about doing this higher above, in order to get content_update_package good
-                # but we'll have it for safety!
-                
-                ( hash_a, hash_b ) = ( hash_b, hash_a )
-                
-                duplicate_type = HC.DUPLICATE_BETTER
                 
             
             hash_id_a = self.modules_hashes_local_cache.GetHashId( hash_a )

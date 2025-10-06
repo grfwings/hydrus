@@ -256,7 +256,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         CG.client_controller.pub( 'message', job_status )
         
     
-    def _SyncQueries( self, job_status ):
+    def _SyncQueries( self, job_status: ClientThreading.JobStatus ):
         
         self._have_made_an_initial_sync_bandwidth_notification = False
         
@@ -298,7 +298,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         for ( i, query_header ) in enumerate( query_headers ):
             
-            status_prefix = 'synchronising'
+            status_prefix = f'synchronising ({HydrusNumbers.ValueRangeToPrettyString( i, num_queries )})'
             
             query_name = query_header.GetHumanName()
             
@@ -307,7 +307,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                 status_prefix += ' "' + query_name + '"'
                 
             
-            status_prefix += ' (' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_queries ) + ')'
+            job_status.SetGauge( i, num_queries )
             
             try:
                 
@@ -630,6 +630,9 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             # -------------------------------------------------------
                             # ----------------------
                             
+                            # Note there's another thing to consider, with Pixiv and other multi-file-per-post sites, where the AAAAA 'already in db' are separated in the file log by child posts
+                            # I'm solving this with better culling tech
+                            
                             num_already_in_urls_we_have_seen_so_far = total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache_in_this_call
                             most_of_our_stuff = num_master_file_seeds_at_start * 0.95
                             
@@ -921,7 +924,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
             
         
     
-    def _WorkOnQueriesFiles( self, job_status ):
+    def _WorkOnQueriesFiles( self, job_status: ClientThreading.JobStatus ):
         
         self._file_error_count = 0
         
@@ -935,18 +938,17 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
             
             query_name = query_header.GetHumanName()
             
-            text_1 = 'downloading files'
+            text_1 = f'syncing files ({HydrusNumbers.ValueRangeToPrettyString( i, num_queries )})'
             query_summary_name = self._name
             
             if query_name != self._name:
                 
-                text_1 += ' for "' + query_name + '"'
+                text_1 += ' "' + query_name + '"'
                 query_summary_name += ': ' + query_name
                 
             
-            text_1 += ' (' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_queries ) + ')'
-            
             job_status.SetStatusText( text_1 )
+            job_status.SetGauge( i, num_queries )
             
             try:
                 
@@ -982,8 +984,9 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         job_status.DeleteFiles()
         job_status.DeleteStatusText()
-        job_status.DeleteStatusText( 2 )
-        job_status.DeleteVariable( 'popup_gauge_2' )
+        job_status.DeleteStatusText( level = 2 )
+        job_status.DeleteGauge()
+        job_status.DeleteGauge( level = 2 )
         
     
     def _WorkOnQueriesFilesCanDoWork( self ):
@@ -1058,14 +1061,14 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                         HydrusData.ShowText( 'Query "' + query_name + '" can do no more file work due to running out of unknown urls.' )
                         
                     
-                    break
+                    break # not a cancel, a simple break to stop
                     
                 
                 if job_status.IsCancelled():
                     
                     self._DelayWork( 300, 'recently cancelled' )
                     
-                    break
+                    raise HydrusExceptions.CancelledException( 'User Cancelled!' )
                     
                 
                 p1 = not self._CanDoWorkNow()
@@ -1109,7 +1112,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             
                         
                     
-                    break
+                    raise HydrusExceptions.CancelledException( 'Stopping work early!' )
                     
                 
                 try:
@@ -1123,9 +1126,9 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     human_num_urls = num_urls - starting_num_done
                     human_num_done = num_done - starting_num_done
                     
-                    x_out_of_y = 'file ' + HydrusNumbers.ValueRangeToPrettyString( human_num_done + 1, human_num_urls ) + ': '
+                    x_out_of_y = 'files ' + HydrusNumbers.ValueRangeToPrettyString( human_num_done, human_num_urls ) + ': '
                     
-                    job_status.SetVariable( 'popup_gauge_2', ( human_num_done, human_num_urls ) )
+                    job_status.SetGauge( human_num_done, human_num_urls, level = 2 )
                     
                     def status_hook( text ):
                         

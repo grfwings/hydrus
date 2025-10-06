@@ -160,7 +160,7 @@ class CanvasFrame( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindow
                 
             elif action == CAC.SIMPLE_GLOBAL_PROFILE_MODE_FLIP:
                 
-                CG.client_controller.FlipProfileMode()
+                CG.client_controller.gui.FlipProfileMode( 'db' )
                 
             elif action == CAC.SIMPLE_GLOBAL_FORCE_ANIMATION_SCANBAR_SHOW:
                 
@@ -182,6 +182,12 @@ class CanvasFrame( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindow
     def minimumSizeHint( self ):
         
         return QC.QSize( 240, 180 )
+        
+    
+    def sizeHint( self ):
+        
+        # TODO: you should be able to delete or alter this in some nice way when you move to a proper layout for this guy
+        return QC.QSize( 1280, 720 )
         
     
     def SetCanvas( self, canvas_window: ClientGUICanvas.CanvasWithHovers ):

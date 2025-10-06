@@ -6,6 +6,7 @@ import typing
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTags
 
 from hydrus.client import ClientConstants as CC
@@ -93,7 +94,9 @@ def GetFilesInfoPredicates( system_predicates: ClientSearchFileSearchContext.Fil
             
         else:
             
-            files_info_predicates.append( f'( ( mime IN {HydrusData.SplayListForDB( mimes )} AND NOT EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND forced_mime NOT IN {HydrusData.SplayListForDB( mimes )} ) ) OR EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND mime IN {HydrusData.SplayListForDB( mimes )} ) )' )
+            mimes_splayed = HydrusLists.SplayListForDB( mimes )
+            
+            files_info_predicates.append( f'( ( mime IN {mimes_splayed} AND NOT EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND forced_mime NOT IN {mimes_splayed} ) ) OR EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND mime IN {mimes_splayed} ) )' )
             
         
     
@@ -287,7 +290,7 @@ class ClientDBFilesSearchTags( ClientDBModule.ClientDBModule ):
                 cancelled_hook = job_status.IsCancelled
                 
             
-            for group_of_hash_ids in HydrusData.SplitIteratorIntoChunks( hash_ids, BLOCK_SIZE ):
+            for group_of_hash_ids in HydrusLists.SplitIteratorIntoChunks( hash_ids, BLOCK_SIZE ):
                 
                 with self._MakeTemporaryIntegerTable( group_of_hash_ids, 'hash_id' ) as hash_ids_table_name:
                     
@@ -1433,11 +1436,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
             # for now we'll check current domain
             # if domain is deleted, we search deletion time
             
-            if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE in system_pred_type_to_timestamp_ranges_ms:
+            if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME in system_pred_type_to_timestamp_ranges_ms:
                 
                 import_timestamp_predicates = []
                 
-                timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE ]
+                timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME ]
                 
                 if '>' in timestamp_ranges_ms:
                     
@@ -2731,7 +2734,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     desired_canvas_types = CG.client_controller.new_options.GetIntegerList( 'file_viewing_stats_interesting_canvas_types' )
                     
-                    desired_canvas_types_splayed = HydrusData.SplayListForDB( desired_canvas_types )
+                    desired_canvas_types_splayed = HydrusLists.SplayListForDB( desired_canvas_types )
                     
                     if sort_data == CC.SORT_FILES_BY_MEDIA_VIEWS:
                         

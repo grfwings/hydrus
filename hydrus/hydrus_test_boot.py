@@ -1,17 +1,32 @@
 #!/usr/bin/env python3
 
-from hydrus.client.gui import QtInit
-from hydrus.client.gui import QtPorting as QP
-from qtpy import QtWidgets as QW
+try:
+    
+    # For Russian and Polish and some other 24-hour-only systems, it is highly important this happens before Qt and mpv get their teeth into things
+    # it establishes some timezone cache that requires the locale to be clean
+    # I don't know if it needs to be before locale.setlocale, but I know that it works if it does
+    import dateparser
+    
+except:
+    
+    pass
+    
 
 import locale
 
 try: locale.setlocale( locale.LC_ALL, '' )
 except: pass
 
+from hydrus.client.gui import QtInit
+from qtpy import QtWidgets as QW
+
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
+
+from hydrus.core import HydrusStaticDir
+
+HydrusStaticDir.USE_USER_STATIC_DIR = False
 
 from hydrus.test import TestController
 
@@ -44,7 +59,7 @@ def boot():
         QtInit.MonkeyPatchMissingMethods()
         app = QW.QApplication( sys.argv )
         
-        app.call_after_catcher = QP.CallAfterEventCatcher( app )
+        from hydrus.client.gui import ClientGUICallAfter
         
         try:
             
@@ -61,7 +76,7 @@ def boot():
                 controller.Run( win )
                 
             
-            QP.CallAfter( do_it )
+            controller.CallAfter( win, do_it )
             
             app.exec_()
             

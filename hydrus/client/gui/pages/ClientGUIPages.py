@@ -323,7 +323,7 @@ class Page( QW.QWidget ):
             
         except HydrusExceptions.VetoException as e:
             
-            message = '{} Are you sure you want to close it?'.format( str( e ) )
+            message = f'Close "{self.GetName()}"?\n\n{e}'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -337,7 +337,7 @@ class Page( QW.QWidget ):
         
         if not user_was_asked and CG.client_controller.new_options.GetBoolean( 'confirm_all_page_closes' ):
             
-            message = 'Are you sure you want to close this page?'
+            message = f'Close "{self.GetName()}"?'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -422,7 +422,7 @@ class Page( QW.QWidget ):
             hashes = list( self._initial_hashes )
             hashes.extend( ( media_result.GetHash() for media_result in self._pre_initialisation_media_results ) )
             
-            hashes = HydrusData.DedupeList( hashes )
+            hashes = HydrusLists.DedupeList( hashes )
             
             return hashes
             
@@ -454,7 +454,7 @@ class Page( QW.QWidget ):
         return self._page_manager.GetPageName()
         
     
-    def GetNameForMenu( self ) -> str:
+    def GetNameForMenu( self, elide = True ) -> str:
         
         name_for_menu = self.GetName()
         
@@ -470,7 +470,7 @@ class Page( QW.QWidget ):
             name_for_menu = '{} - {}'.format( name_for_menu, HydrusNumbers.ValueRangeToPrettyString( num_value, num_range ) )
             
         
-        return HydrusText.ElideText( name_for_menu, 32, elide_center = True )
+        return HydrusText.ElideText( name_for_menu, 32, elide_center = True ) if elide else name_for_menu
         
     
     def GetNumFileSummary( self ):
@@ -787,7 +787,7 @@ class Page( QW.QWidget ):
         
         if HC.options[ 'hide_preview' ]:
             
-            QP.CallAfter( QP.Unsplit, self._search_preview_split, self._preview_panel )
+            CG.client_controller.CallAfter( self, QP.Unsplit, self._search_preview_split, self._preview_panel )
             
         
     
@@ -820,13 +820,13 @@ class Page( QW.QWidget ):
             
         
         controller = CG.client_controller
-        initial_hashes = HydrusData.DedupeList( self._initial_hashes )
+        initial_hashes = HydrusLists.DedupeList( self._initial_hashes )
         
         def work_callable():
             
             initial_media_results = []
             
-            for group_of_initial_hashes in HydrusLists.SplitListIntoChunks( initial_hashes, 64 ):
+            for ( num_done, num_to_do, group_of_initial_hashes ) in HydrusLists.SplitListIntoChunksRich( initial_hashes, 64 ):
                 
                 more_media_results = controller.Read( 'media_results', group_of_initial_hashes )
                 
@@ -836,7 +836,7 @@ class Page( QW.QWidget ):
                 
                 controller.CallAfterQtSafe( self, 'setting status bar loading string', qt_code_status, status )
                 
-                QP.CallAfter( qt_code_status, status )
+                CG.client_controller.CallAfter( self, qt_code_status, status )
                 
             
             hashes_to_media_results = { media_result.GetHash() : media_result for media_result in initial_media_results }
@@ -1344,7 +1344,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             hashes.extend( page.GetHashes() )
             
         
-        hashes = HydrusData.DedupeList( hashes )
+        hashes = HydrusLists.DedupeList( hashes )
         
         message = f'This will collect the {HydrusNumbers.ToHumanInt(len(hashes))} files in view in the {HydrusNumbers.ToHumanInt(len(closees))} pages and place them, in current order, in a single new search page.'
         message += '\n\n'
@@ -1988,8 +1988,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             if can_go_right:
                 
-                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages from here to the right', 'Gather all the files from here to the right and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index, 1 )
-                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages to the right', 'Gather all the files from the right of here and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index + 1, 1 )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages from here to the right', 'Gather all the files from here to the right and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages to the right', 'Gather all the files from the right of here and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index + 1 )
                 
             
             ClientGUIMenus.AppendMenu( menu, collapse_menu, 'collapse to a single page' )
@@ -2223,7 +2223,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             statement = ConvertReasonsAndPagesToStatement( reasons_and_pages )
             
-            message = 'Are you sure you want to close this page of pages?'
+            message = f'Close "{self.GetName()}"?'
             message += '\n' * 2
             message += statement
             
@@ -2235,7 +2235,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if not user_was_asked and CG.client_controller.new_options.GetBoolean( 'confirm_all_page_closes' ) and not for_session_close:
             
-            message = 'Are you sure you want to close this page of pages?'
+            message = f'Close "{self.GetName()}"?'
             
             num_pages_held = self.GetNumPagesHeld()
             
@@ -2492,7 +2492,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             hashes.extend( page.GetHashes() )
             
         
-        hashes = HydrusData.DedupeList( hashes )
+        hashes = HydrusLists.DedupeList( hashes )
         
         return hashes
         
@@ -2507,7 +2507,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self._name
         
     
-    def GetNameForMenu( self ) -> str:
+    def GetNameForMenu( self, elide = True ) -> str:
         
         name_for_menu = self.GetName()
         
@@ -2523,7 +2523,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             name_for_menu = '{} - {}'.format( name_for_menu, HydrusNumbers.ValueRangeToPrettyString( num_value, num_range ) )
             
         
-        return HydrusText.ElideText( name_for_menu, 32, elide_center = True )
+        return HydrusText.ElideText( name_for_menu, 32, elide_center = True ) if elide else name_for_menu
         
     
     def GetNumFileSummary( self ):
@@ -3574,6 +3574,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
         CG.client_controller.gui.RefreshStatusBar()
+        CG.client_controller.gui.RefreshPageHistoryMenu()
         
         self._previous_page_index = index
         
@@ -3703,3 +3704,67 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         pass
         
+    
+
+class PagesHistory( collections.OrderedDict ):
+    
+    def __init__( self ):
+        
+        collections.OrderedDict.__init__( self )
+        
+    
+    def AddPage( self, page: Page ):
+        
+        page_key = page.GetPageKey()
+        page_name = page.GetNameForMenu( elide = False )
+        
+        self.AddEntry( page_key, page_name )
+        
+    
+    def AddEntry( self, page_key: bytes, page_name: str ):
+        
+        if page_key in self:
+            
+            self.pop( page_key )
+            
+        
+        self[ page_key ] = page_name
+        
+    
+    def CleanPages( self, existing_pages_list ):
+        
+        for page_key in list( self.keys() ):
+            
+            if page_key not in existing_pages_list:
+                
+                self.pop( page_key )
+                
+            
+        
+    
+    def GetHistory( self ):
+        
+        return list( self.items() )
+        
+    
+    def RemoveEntry( self, page: Page ):
+        
+        self.RemoveEntry( page.GetPageKey() )
+        
+    
+    def RemoveEntry( self, page_key: bytes ):
+        
+        if page_key in self:
+            
+            self.pop( page_key )
+            
+        
+    
+    def TriggerEntry( self, page_key: bytes ):
+        
+        if page_key in self:
+            
+            CG.client_controller.gui.ShowPage( page_key )
+            
+        
+    

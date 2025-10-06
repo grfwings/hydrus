@@ -1363,11 +1363,11 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             num_jobs_done = vr_status[ 'num_jobs_done' ]
             
-            status_text = '{}'.format( HydrusNumbers.ValueRangeToPrettyString( num_jobs_done, total_num_jobs_to_do ) )
+            status_text = HydrusNumbers.ValueRangeToPrettyString( num_jobs_done, total_num_jobs_to_do )
             
             job_status.SetStatusText( status_text )
             
-            job_status.SetVariable( 'popup_gauge_1', ( num_jobs_done, total_num_jobs_to_do ) )
+            job_status.SetGauge( num_jobs_done, total_num_jobs_to_do )
             
             add_extra_comments_to_job_status( job_status )
             
@@ -1413,7 +1413,22 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
                     
-                    media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                    try:
+                        
+                        media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                        
+                    except KeyError:
+                        
+                        message = 'There appears to be a problem with your file metadata store. Some files that were supposed to be undergoing maintenance did not return the correct metadata. Extra information has been printed to the log; please let hydev know.'
+                        
+                        HydrusData.Print( message )
+                        HydrusData.Print( 'Desired hashes:' )
+                        HydrusData.Print( '\n'.join( sorted( [ h.hex() for h in hashes ] ) ) )
+                        HydrusData.Print( 'Received hashes:' )
+                        HydrusData.Print( '\n'.join( sorted( [ h.hex() for h in hashes_to_media_results.keys() ] ) ) )
+                        
+                        raise Exception( message )
+                        
                     
                     with self._lock:
                         
@@ -1427,7 +1442,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 job_status.SetStatusText( 'done!' )
                 
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
                 job_status.FinishAndDismiss( 5 )
                 
@@ -1588,7 +1603,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             job_status.SetStatusText( status_text )
             
-            job_status.SetVariable( 'popup_gauge_1', ( num_jobs_done, total_num_jobs_to_do ) )
+            job_status.SetGauge( num_jobs_done, total_num_jobs_to_do )
             
             add_extra_comments_to_job_status( job_status )
             
@@ -1615,7 +1630,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             job_status.SetStatusText( 'done!' )
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             job_status.FinishAndDismiss( 5 )
             

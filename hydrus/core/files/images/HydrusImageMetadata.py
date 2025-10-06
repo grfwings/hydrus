@@ -121,7 +121,36 @@ def GetJPEGQuantizationQualityEstimate( pil_image: PILImage.Image ):
         
         quality /= len( table_arrays )
         
-        if quality >= 3400:
+        # ok we are going to do some exponential magic here
+        # 422 is roughly 0.92 in the arithmetic 'visual quality' scale of 444
+        # 420 is 0.85
+        # 'other' is going to be 0.75
+        # we want to splay that number to our inverse exponential quality metric
+        # typically we'd do multiply and simple to-the-power-of, but since a higher score here is lower quality, we divide/invert instead
+        # basically:
+        #
+        # score_arithmetic = ln( x )
+        # score_arithmetic /= 0.92
+        # x_modified = e^score_arithmetic
+        #
+        # which is equivalent to:
+        #
+        # x ^ (1/0.92)
+        
+        try:
+            
+            subsampling_value = GetJpegSubsamplingRaw( pil_image )
+            
+            quality = quality ** ( 1 / subsampling_quality_lookup[ subsampling_value ] )
+            
+        except:
+            
+            pass
+            
+        
+        # this used to be ad-hoc but it was fairly exponential, now I made it 0.7 ratio for every step
+        
+        if quality >= 2800:
             
             label = 'very low'
             
@@ -141,11 +170,11 @@ def GetJPEGQuantizationQualityEstimate( pil_image: PILImage.Image ):
             
             label = 'medium high'
             
-        elif quality >= 400:
+        elif quality >= 480:
             
             label = 'high'
             
-        elif quality >= 200:
+        elif quality >= 330:
             
             label = 'very high'
             
@@ -160,19 +189,47 @@ def GetJPEGQuantizationQualityEstimate( pil_image: PILImage.Image ):
     return ( 'unknown', None )
     
 
-def GetJpegSubsampling( pil_image: PILImage.Image ) -> str:
+# these first three line up with PIL, so don't change them
+SUBSAMPLING_444 = 0
+SUBSAMPLING_422 = 1
+SUBSAMPLING_420 = 2
+SUBSAMPLING_UNKNOWN = 3
+SUBSAMPLING_GREYSCALE = 4
+
+# broad relative quality of a particular subsampling against another
+subsampling_quality_lookup = {
+    SUBSAMPLING_444 : 1.00,
+    SUBSAMPLING_422 : 0.93,
+    SUBSAMPLING_420 : 0.83,
+    SUBSAMPLING_UNKNOWN : 0.75,
+    SUBSAMPLING_GREYSCALE : 0.967 # through the power of experimental magic, comparing RGB vs L greyscale conversions and relative quantization table strength, I have determined this is ok
+}
+
+subsampling_str_lookup = {
+    SUBSAMPLING_444 : '4:4:4',
+    SUBSAMPLING_422 : '4:2:2',
+    SUBSAMPLING_420 : '4:2:0',
+    SUBSAMPLING_UNKNOWN : 'unknown',
+    SUBSAMPLING_GREYSCALE : 'greyscale (no subsampling)'
+}
+
+def GetJpegSubsamplingRaw( pil_image: PILImage.Image ) -> int:
+    
+    if pil_image.mode == 'L':
+        
+        return SUBSAMPLING_GREYSCALE
+        
     
     from PIL import JpegImagePlugin
     
     result = JpegImagePlugin.get_sampling( pil_image )
     
-    subsampling_str_lookup = {
-        0 : '4:4:4',
-        1 : '4:2:2',
-        2 : '4:2:0'
-    }
+    if result not in ( 0, 1, 2 ):
+        
+        return SUBSAMPLING_UNKNOWN
+        
     
-    return subsampling_str_lookup.get( result, 'unknown' )
+    return result
     
 
 def HasEXIF( pil_image: PILImage.Image ) -> bool:

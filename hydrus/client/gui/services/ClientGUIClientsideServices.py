@@ -8,6 +8,7 @@ from qtpy import QtGui as QG
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
@@ -57,18 +58,18 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 25, model, delete_key_callback = self._Delete, activation_callback = self._Edit)
         
-        menu_items = []
+        menu_template_items = []
         
         for service_type in HC.ADDREMOVABLE_SERVICES:
             
             service_string = HC.service_string_lookup[ service_type ]
             
-            menu_items.append( ( 'normal', service_string, 'Add a new {}.'.format( service_string ), HydrusData.Call( self._Add, service_type ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( service_string, 'Add a new {}.'.format( service_string ), HydrusData.Call( self._Add, service_type ) ) )
             
         
         # TODO: wrap this list in a panel and improve these buttons' "enabled logic"
         
-        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_items = menu_items )
+        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_template_items )
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit', self._Edit )
         self._delete_button = ClientGUICommon.BetterButton( self, 'delete', self._Delete )
         
@@ -581,11 +582,11 @@ class EditServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
                 
                 network_job.WaitUntilDone()
                 
-                QP.CallAfter( qt_done, 'Looks good!' )
+                CG.client_controller.CallAfter( self, qt_done, 'Looks good!' )
                 
             except HydrusExceptions.NetworkException as e:
                 
-                QP.CallAfter( qt_done, 'Problem with that address: ' + str(e) )
+                CG.client_controller.CallAfter( self, qt_done, 'Problem with that address: ' + str(e) )
                 
             
         
@@ -1448,13 +1449,13 @@ class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
         
         super().__init__( parent, 'rating shape' )
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_RATINGS )
         
-        menu_items.append( ( 'normal', 'open the ratings help', 'Open the help page for ratings.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the ratings help', 'Open the help page for ratings.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help -->', object_name = 'HydrusIndeterminate' )
         
@@ -1728,7 +1729,7 @@ class ReviewServicePanel( QW.QWidget ):
         
         self._service_key_button = ClientGUICommon.BetterButton( self, 'copy service key', CG.client_controller.pub, 'clipboard', 'text', service.GetServiceKey().hex() )
         
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().refresh, self._RefreshButton )
+        self._refresh_button = ClientGUICommon.IconButton( self, CC.global_icons().refresh, self._RefreshButton )
         
         service_type = self._service.GetServiceType()
         
@@ -1862,12 +1863,6 @@ class ReviewServicePanel( QW.QWidget ):
             
             update_speed_string = ''
             
-            content_update_index_string = 'content row ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
-            
-            job_status.SetStatusText( content_update_index_string + 'committing' + update_speed_string )
-            
-            job_status.SetVariable( 'popup_gauge_1', ( c_u_p_total_weight_processed, c_u_p_num_rows ) )
-            
             for ( content_updates, weight ) in content_update_package.IterateContentUpdateChunks():
                 
                 ( i_paused, should_quit ) = job_status.WaitIfNeeded()
@@ -1879,11 +1874,11 @@ class ReviewServicePanel( QW.QWidget ):
                     return
                     
                 
-                content_update_index_string = 'content row ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
+                content_update_index_string = 'content ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
                 
                 job_status.SetStatusText( content_update_index_string + 'committing' + update_speed_string )
                 
-                job_status.SetVariable( 'popup_gauge_1', ( c_u_p_total_weight_processed, c_u_p_num_rows ) )
+                job_status.SetGauge( c_u_p_total_weight_processed, c_u_p_num_rows )
                 
                 precise_timestamp = HydrusTime.GetNowPrecise()
                 
@@ -1898,7 +1893,7 @@ class ReviewServicePanel( QW.QWidget ):
                 c_u_p_total_weight_processed += weight
                 
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             self._service.SyncThumbnails( job_status )
             
@@ -1983,12 +1978,12 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
         permissions_list_panel.SetListCtrl( self._permissions_list )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'manually', 'Enter the details of the share manually.', self._AddManually ) )
-        menu_items.append( ( 'normal', 'from api request', 'Listen for an access permission request from an external program via the API.', self._AddFromAPI ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'manually', 'Enter the details of the share manually.', self._AddManually ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from api request', 'Listen for an access permission request from an external program via the API.', self._AddFromAPI ) )
         
-        permissions_list_panel.AddMenuButton( 'add', menu_items )
+        permissions_list_panel.AddMenuButton( 'add', menu_template_items )
         permissions_list_panel.AddButton( 'edit', self._Edit, enabled_only_on_single_selection = True )
         permissions_list_panel.AddButton( 'duplicate', self._Duplicate, enabled_only_on_selection = True )
         permissions_list_panel.AddButton( 'delete', self._Delete, enabled_only_on_selection = True )
@@ -2360,7 +2355,7 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
             text = '{} files and {} thumbnails are awaiting physical deletion from file storage.'.format( HydrusNumbers.ToHumanInt( num_files ), HydrusNumbers.ToHumanInt( num_thumbnails ) )
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfter( self, qt_code, text )
         
     
 class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
@@ -2432,7 +2427,7 @@ class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
             text += ' - ' + HydrusNumbers.ToHumanInt( num_deleted_files ) + ' deleted files'
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfter( self, qt_code, text )
         
     
 class ReviewServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
@@ -2568,7 +2563,7 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         self._rule_widgets = []
         
-        self._network_sync_paused_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pause, self._PausePlayNetworkSync )
+        self._network_sync_paused_button = ClientGUICommon.IconButton( self, CC.global_icons().pause, self._PausePlayNetworkSync )
         self._network_sync_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play account sync' ) )
         
         self._refresh_account_button = ClientGUICommon.BetterButton( self, 'refresh account', self._RefreshAccount )
@@ -2664,11 +2659,11 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         if self._service.IsPausedNetworkSync():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._network_sync_paused_button, CC.global_pixmaps().play )
+            self._network_sync_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._network_sync_paused_button, CC.global_pixmaps().pause )
+            self._network_sync_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         #
@@ -2725,23 +2720,23 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             self._copy_account_key_button.setEnabled( True )
             
         
-        menu_items = []
+        menu_template_items = []
         
         p_s = account_type.GetPermissionStrings()
         
         if len( p_s ) == 0:
             
-            menu_items.append( ( 'label', 'can only download', 'can only download', None ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemLabel( 'can only download', 'can only download' ) )
             
         else:
             
             for s in p_s:
                 
-                menu_items.append( ( 'label', s, s, None ) )
+                menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemLabel( s, s ) )
                 
             
         
-        self._permissions_button.SetMenuItems( menu_items )
+        self._permissions_button.SetMenuItems( menu_template_items )
         
     
     def _RefreshAccount( self ):
@@ -2831,18 +2826,18 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._download_progress = ClientGUICommon.TextAndGauge( self._network_panel )
         
-        self._update_downloading_paused_button = ClientGUICommon.BetterBitmapButton( self._network_panel, CC.global_pixmaps().pause, self._PausePlayUpdateDownloading )
+        self._update_downloading_paused_button = ClientGUICommon.IconButton( self._network_panel, CC.global_icons().pause, self._PausePlayUpdateDownloading )
         self._update_downloading_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play update downloading' ) )
         
         self._service_info_button = ClientGUICommon.BetterButton( self._network_panel, 'fetch service info', self._FetchServiceInfo )
         
         self._sync_remote_now_button = ClientGUICommon.BetterButton( self._network_panel, 'download now', self._SyncRemoteNow )
         
-        reset_menu_items = []
+        reset_menu_template_items = []
         
-        reset_menu_items.append( ( 'normal', 'do a full metadata resync', 'Resync all update information.', self._DoAFullMetadataResync ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'do a full metadata resync', 'Resync all update information.', self._DoAFullMetadataResync ) )
         
-        self._reset_downloading_button = ClientGUIMenuButton.MenuButton( self._network_panel, 'reset downloading', reset_menu_items )
+        self._reset_downloading_button = ClientGUIMenuButton.MenuButton( self._network_panel, 'reset downloading', reset_menu_template_items )
         
         self._export_updates_button = ClientGUICommon.BetterButton( self._network_panel, 'export updates', self._ExportUpdates )
         
@@ -2850,7 +2845,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._processing_panel = ClientGUICommon.StaticBox( self, 'processing sync', can_expand = True, start_expanded = False )
         
-        self._update_processing_paused_button = ClientGUICommon.BetterBitmapButton( self._processing_panel, CC.global_pixmaps().pause, self._PausePlayUpdateProcessing )
+        self._update_processing_paused_button = ClientGUICommon.IconButton( self._processing_panel, CC.global_icons().pause, self._PausePlayUpdateProcessing )
         self._update_processing_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play all update processing' ) )
         
         self._processing_definitions_progress = ClientGUICommon.TextAndGauge( self._processing_panel )
@@ -2865,7 +2860,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             processing_progress = ClientGUICommon.TextAndGauge( self._processing_panel )
             
-            processing_paused_button = ClientGUICommon.BetterBitmapButton( self._processing_panel, CC.global_pixmaps().pause, self._PausePlayUpdateProcessing, content_type )
+            processing_paused_button = ClientGUICommon.IconButton( self._processing_panel, CC.global_icons().pause, self._PausePlayUpdateProcessing, content_type )
             processing_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play update processing for {}'.format( HC.content_type_string_lookup[ content_type ] ) ) )
             
             self._content_types_to_gauges_and_buttons[ content_type ] = ( processing_progress, processing_paused_button )
@@ -2877,16 +2872,16 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._sync_processing_now_button = ClientGUICommon.BetterButton( self._processing_panel, 'process now', self._SyncProcessingNow )
         
-        reset_menu_items = []
+        reset_menu_template_items = []
         
-        reset_menu_items.append( ( 'normal', 'fill in definition gaps', 'Reprocess all definitions.', self._ReprocessDefinitions ) )
-        reset_menu_items.append( ( 'normal', 'fill in content gaps', 'Reprocess all content.', self._ReprocessContent ) )
-        reset_menu_items.append( ( 'separator', None, None, None ) )
-        reset_menu_items.append( ( 'normal', 'delete and reprocess specific content', 'Reset some of the repository\'s content.', self._ResetProcessing ) )
-        reset_menu_items.append( ( 'separator', None, None, None ) )
-        reset_menu_items.append( ( 'normal', 'wipe all database data and reprocess', 'Reset entire repository.', self._Reset ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'fill in definition gaps', 'Reprocess all definitions.', self._ReprocessDefinitions ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'fill in content gaps', 'Reprocess all content.', self._ReprocessContent ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'delete and reprocess specific content', 'Reset some of the repository\'s content.', self._ResetProcessing ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'wipe all database data and reprocess', 'Reset entire repository.', self._Reset ) )
         
-        self._reset_processing_button = ClientGUIMenuButton.MenuButton( self, 'reset processing', reset_menu_items )
+        self._reset_processing_button = ClientGUIMenuButton.MenuButton( self, 'reset processing', reset_menu_template_items )
         
         #
         
@@ -3050,8 +3045,8 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                                 
                             finally:
                                 
-                                job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i + 1, num_to_do ) )
-                                job_status.SetVariable( 'popup_gauge_1', ( i, num_to_do ) )
+                                job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i, num_to_do ) )
+                                job_status.SetGauge( i, num_to_do )
                                 
                             
                         
@@ -3059,7 +3054,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                         
                     finally:
                         
-                        job_status.DeleteVariable( 'popup_gauge_1' )
+                        job_status.DeleteGauge()
                         
                         job_status.Finish()
                         
@@ -3067,7 +3062,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfter( self, qt_done )
                 
             
         
@@ -3164,11 +3159,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         if self._service.IsPausedUpdateDownloading():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_downloading_paused_button, CC.global_pixmaps().play )
+            self._update_downloading_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_downloading_paused_button, CC.global_pixmaps().pause )
+            self._update_downloading_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         #
@@ -3184,11 +3179,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         if all_processing_paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_processing_paused_button, CC.global_pixmaps().play )
+            self._update_processing_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_processing_paused_button, CC.global_pixmaps().pause )
+            self._update_processing_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         for ( gauge, button ) in self._content_types_to_gauges_and_buttons.values():
@@ -3202,11 +3197,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             if self._service.IsPausedUpdateProcessing( content_type ):
                 
-                ClientGUIFunctions.SetBitmapButtonBitmap( button, CC.global_pixmaps().play )
+                button.SetIconSmart( CC.global_icons().play )
                 
             else:
                 
-                ClientGUIFunctions.SetBitmapButtonBitmap( button, CC.global_pixmaps().pause )
+                button.SetIconSmart( CC.global_icons().pause )
                 
             
         
@@ -3547,7 +3542,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         is_mostly_caught_up = service.IsMostlyCaughtUp()
         
-        QP.CallAfter( qt_code, num_local_updates, num_updates, content_types_to_num_processed_updates, content_types_to_num_updates, is_mostly_caught_up )
+        CG.client_controller.CallAfter( self, qt_code, num_local_updates, num_updates, content_types_to_num_processed_updates, content_types_to_num_updates, is_mostly_caught_up )
         
     
 
@@ -3703,7 +3698,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfter( self, qt_done )
                 
             
         
@@ -3739,7 +3734,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfter( self, qt_done )
                 
             
         
@@ -3786,7 +3781,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         ipfs_shares = CG.client_controller.Read( 'service_directories', service.GetServiceKey() )
         
-        QP.CallAfter( qt_code, ipfs_shares )
+        CG.client_controller.CallAfter( self, qt_code, ipfs_shares )
         
     
 
@@ -3802,14 +3797,14 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         self._rating_info_st = ClientGUICommon.BetterStaticText( self )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'for deleted files', 'delete all set ratings for files that have since been deleted', HydrusData.Call(  self._ClearRatings, 'delete_for_deleted_files', 'deleted files' ) ) )
-        menu_items.append( ( 'normal', 'for all non-local files', 'delete all set ratings for files that are not in this client right now', HydrusData.Call( self._ClearRatings, 'delete_for_non_local_files', 'non-local files' ) ) )
-        menu_items.append( ( 'separator', None, None, None ) )
-        menu_items.append( ( 'normal', 'for all files', 'delete all set ratings for all files', HydrusData.Call( self._ClearRatings, 'delete_for_all_files', 'ALL FILES' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for deleted files', 'delete all set ratings for files that have since been deleted', HydrusData.Call(  self._ClearRatings, 'delete_for_deleted_files', 'deleted files' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for all non-local files', 'delete all set ratings for files that are not in this client right now', HydrusData.Call( self._ClearRatings, 'delete_for_non_local_files', 'non-local files' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for all files', 'delete all set ratings for all files', HydrusData.Call( self._ClearRatings, 'delete_for_all_files', 'ALL FILES' ) ) )
         
-        self._clear_deleted = ClientGUIMenuButton.MenuButton( self, 'clear ratings', menu_items )
+        self._clear_deleted = ClientGUIMenuButton.MenuButton( self, 'clear ratings', menu_template_items )
         
         #
         
@@ -3876,7 +3871,7 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         text = HydrusNumbers.ToHumanInt( num_files ) + ' files are rated'
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfter( self, qt_code, text )
         
     
 
@@ -3959,7 +3954,7 @@ class ReviewServiceTagSubPanel( ClientGUICommon.StaticBox ):
             text += ' - ' + HydrusNumbers.ToHumanInt( num_deleted_mappings ) + ' deleted mappings'
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfter( self, qt_code, text )
         
     
 
@@ -4009,7 +4004,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
                 
                 hashes = CG.client_controller.Read( 'trash_hashes' )
                 
-                for group_of_hashes in HydrusData.SplitIteratorIntoChunks( hashes, 16 ):
+                for group_of_hashes in HydrusLists.SplitIteratorIntoChunks( hashes, 16 ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, group_of_hashes )
                     
@@ -4084,7 +4079,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
         
         num_files = service_info[ HC.SERVICE_INFO_NUM_FILES ]
         
-        QP.CallAfter( qt_code, num_files )
+        CG.client_controller.CallAfter( self, qt_code, num_files )
         
     
 class ReviewServicesPanel( ClientGUIScrolledPanels.ReviewPanel ):

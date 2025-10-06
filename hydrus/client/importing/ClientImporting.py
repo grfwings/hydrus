@@ -65,6 +65,7 @@ def ConvertParsedPostsToFileSeeds( parsed_posts: list[ ClientParsingResults.Pars
     
     return file_seeds
     
+
 def GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ):
     
     def network_job_presentation_context_factory( network_job ):
@@ -233,8 +234,8 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
             break
             
         
-        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i + 1, len( urls ) ) )
-        job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( urls ) ) )
+        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i, len( urls ) ) )
+        job_status.SetGauge( i, len( urls ) )
         
         file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
         
@@ -286,7 +287,7 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
             
         finally:
             
-            job_status.DeleteStatusText( 2 )
+            job_status.DeleteStatusText( level = 2 )
             
         
     
@@ -321,7 +322,7 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
         job_status.SetFiles( presentation_hashes, 'downloads' )
         
     
-    job_status.DeleteVariable( 'popup_gauge_1' )
+    job_status.DeleteGauge()
     
     job_status.Finish()
     

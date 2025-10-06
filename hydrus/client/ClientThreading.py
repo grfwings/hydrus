@@ -4,6 +4,7 @@ import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
 
@@ -110,7 +111,10 @@ class JobStatus( object ):
         
         with self._variable_lock:
             
-            self._urls.append( url )
+            if url not in self._urls:
+                
+                self._urls.append( url )
+                
             
         
     
@@ -126,6 +130,11 @@ class JobStatus( object ):
         self.DeleteVariable( 'attached_files' )
         
     
+    def DeleteGauge( self, level = 1 ):
+        
+        self.DeleteVariable( f'popup_gauge_{level}' )
+        
+    
     def DeleteNetworkJob( self ):
         
         self.DeleteVariable( 'network_job' )
@@ -133,7 +142,7 @@ class JobStatus( object ):
     
     def DeleteStatusText( self, level = 1 ):
         
-        self.DeleteVariable( 'status_text_{}'.format( level ) )
+        self.DeleteVariable( f'status_text_{level}' )
         
     
     def DeleteStatusTitle( self ):
@@ -220,6 +229,11 @@ class JobStatus( object ):
                 return None
                 
             
+        
+    
+    def GetGauge( self, level = 1 ) -> typing.Optional[ tuple[ typing.Optional[ int ], typing.Optional[ int ] ] ]:
+        
+        return self.GetIfHasVariable( f'popup_gauge_{level}' )
         
     
     def GetKey( self ):
@@ -326,10 +340,15 @@ class JobStatus( object ):
             
         else:
             
-            hashes = HydrusData.DedupeList( list( hashes ) )
+            hashes = HydrusLists.DedupeList( list( hashes ) )
             
             self.SetVariable( 'attached_files', ( hashes, label ) )
             
+        
+    
+    def SetGauge( self, num_done: typing.Optional[ int ], num_to_do: typing.Optional[ int ], level = 1 ):
+        
+        self.SetVariable( f'popup_gauge_{level}', ( num_done, num_to_do ) )
         
     
     def SetNetworkJob( self, network_job ):
@@ -629,7 +648,8 @@ class QtAwareJob( HydrusThreading.SingleJob ):
             self.Work()
             
         
-        QP.CallAfter( qt_code )
+        # yo if you change this, alter how profile_mode (ui) works
+        CG.client_controller.CallAfter( self._window, qt_code )
         
     
     def _MyWindowDead( self ):
@@ -654,6 +674,7 @@ class QtAwareJob( HydrusThreading.SingleJob ):
         return self._MyWindowDead()
         
     
+
 class QtAwareRepeatingJob( HydrusThreading.RepeatingJob ):
     
     PRETTY_CLASS_NAME = 'repeating UI job'
@@ -679,7 +700,8 @@ class QtAwareRepeatingJob( HydrusThreading.RepeatingJob ):
     
     def _BootWorker( self ):
         
-        QP.CallAfter( self._QTWork )
+        # yo if you change this, alter how profile_mode (ui) works
+        CG.client_controller.CallAfter( self._window, self._QTWork )
         
     
     def _MyWindowDead( self ):

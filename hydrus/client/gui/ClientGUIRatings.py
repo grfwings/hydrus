@@ -46,174 +46,227 @@ PAD_PX = round( ClientGUIPainterShapes.PAD_PX )
 
 def DrawIncDec( painter: QG.QPainter, x, y, service_key, rating_state, rating, size: QC.QSize = INCDEC_SIZE, pad_size: QC.QSize = None ):
     
-    if rating is None:
+    painter.save()
+    
+    try:
         
-        rating = 0
+        if rating is None:
+            
+            rating = 0
+            
+        if pad_size is None:
+            
+            pad_size = QC.QSize( round( min( size.width() / PAD_PX, PAD_PX ) ), PAD_PX ) #allow X pad to go smaller, Y pad as normal
+            
         
-    if pad_size is None:
+        text = HydrusNumbers.ToHumanInt( rating )
         
-        pad_size = QC.QSize( round( min( size.width() / PAD_PX, PAD_PX ) ), PAD_PX ) #allow X pad to go smaller, Y pad as normal
+        original_font = painter.font()
         
-    
-    text = HydrusNumbers.ToHumanInt( rating )
-    
-    original_font = painter.font()
-    
-    incdec_font = painter.font()
-    
-    incdec_font.setPixelSize( int( size.height() - 1 ) if size.height() > 8 else int( size.height() ) )
-    
-    incdec_font.setStyleHint( QG.QFont.StyleHint.Monospace )
-    
-    painter.setFont( incdec_font )
-    
-    if rating_state == ClientRatings.SET:
+        incdec_font = painter.font()
         
-        colour_rating_state = ClientRatings.LIKE
+        incdec_font.setPixelSize( int( size.height() - 1 ) if size.height() > 8 else int( size.height() ) )
         
-    else:
+        incdec_font.setStyleHint( QG.QFont.StyleHint.Monospace )
         
-        colour_rating_state = ClientRatings.MIXED
+        painter.setFont( incdec_font )
         
-    
-    ( pen_colour, brush_colour ) = GetPenAndBrushColours( service_key, colour_rating_state )
-    
-    painter.setPen( pen_colour )
-    painter.setBrush( brush_colour )
-    
-    painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, False )
-    
-    # star_type = ClientRatings.StarType( ClientRatings.SQUARE, None )
-    # ClientGUIPainterShapes.DrawShape( painter, star_type, x, y, size.width(), size.height() )
-    
-    #switch back to qt rect draw to avoid extra overhead and bypass some pads since we don't customize these yet
-    painter.drawRect( QC.QRect( x, y, size.width(), size.height() ) )
-    
-    #
-    text_pos = QC.QPoint( x - 1, y + 1 )
-    
-    if incdec_font.pixelSize() > 8:
+        if rating_state == ClientRatings.SET:
+            
+            colour_rating_state = ClientRatings.LIKE
+            
+        else:
+            
+            colour_rating_state = ClientRatings.MIXED
+            
         
-        painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
+        ( pen_colour, brush_colour ) = GetPenAndBrushColours( service_key, colour_rating_state )
         
-        text_pos = QC.QPoint( x - 1, y )
+        painter.setPen( pen_colour )
+        painter.setBrush( brush_colour )
         
-    
-    text_rect = QC.QRect( text_pos, size - QC.QSize( 1, 1 ) )
-    
-    painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter, text )
-    
-    painter.setFont( original_font )
+        painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, False )
+        
+        # star_type = ClientRatings.StarType( ClientRatings.SQUARE, None )
+        # ClientGUIPainterShapes.DrawShape( painter, star_type, x, y, size.width(), size.height() )
+        
+        #switch back to qt rect draw to avoid extra overhead and bypass some pads since we don't customize these yet
+        painter.drawRect( QC.QRect( x, y, size.width(), size.height() ) )
+        
+        #
+        text_pos = QC.QPoint( x - 1, y + 1 )
+        
+        if incdec_font.pixelSize() > 8:
+            
+            painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
+            
+            text_pos = QC.QPoint( x - 1, y )
+            
+        
+        text_rect = QC.QRect( text_pos, size - QC.QSize( 1, 1 ) )
+        
+        painter.drawText( text_rect, QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter, text )
+        
+        painter.setFont( original_font )
+        
+    finally:
+        
+        painter.restore()
+        
     
 
 def DrawLike( painter: QG.QPainter, x, y, service_key, rating_state, size: QC.QSize = STAR_SIZE ):
     
-    painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
-    
-    star_type = ClientRatings.GetStarType( service_key )
-    
-    ( pen_colour, brush_colour ) = GetPenAndBrushColours( service_key, rating_state )
-    
-    painter.setPen( QG.QPen( pen_colour ) )
-    painter.setBrush( QG.QBrush( brush_colour ) )
-    
-    ClientGUIPainterShapes.DrawShape( painter, star_type, x, y, size.width(), size.height() )
-    
-
-def DrawNumerical( painter: QG.QPainter, x: int, y: int, service_key, rating_state, rating, size: QC.QSize = STAR_SIZE, pad_px = None, draw_collapsed = False ):
+    painter.save()
     
     try:
         
-        service = CG.client_controller.services_manager.GetService( service_key )
+        painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
         
-        if pad_px is None:
+        star_type = ClientRatings.GetStarType( service_key )
+        
+        ( pen_colour, brush_colour ) = GetPenAndBrushColours( service_key, rating_state )
+        
+        painter.setPen( QG.QPen( pen_colour ) )
+        painter.setBrush( QG.QBrush( brush_colour ) )
+        
+        ClientGUIPainterShapes.DrawShape( painter, star_type, x, y, size.width(), size.height() )
+        
+    finally:
+        
+        painter.restore()
+        
+    
+
+def DrawNumerical( painter: QG.QPainter, x: int, y: int, service_key, rating_state, rating, size: QC.QSize = STAR_SIZE, pad_px = None, draw_collapsed = False, text_pen_colour = None ):
+    
+    painter.save()
+    
+    try:
+        
+        try:
             
-            pad_px = service.GetCustomPad()
+            service = CG.client_controller.services_manager.GetService( service_key )
             
-        
-        draw_fractional_beside = service.GetShowFractionBesideStars()
-        
-    except HydrusExceptions.DataMissing:
-        
-        pad_px = ClientGUIPainterShapes.PAD_PX
-        
-        draw_fractional_beside = False
-        
-    
-    painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
-    
-    ( star_type, stars ) = GetStars( service_key, rating_state, rating )
-    
-    x_delta = 0
-    x_step = size.width() + pad_px
-    
-    if draw_collapsed or draw_fractional_beside == ClientRatings.DRAW_ON_LEFT:
-        
-        original_font = painter.font()
-        
-        numeric_font = painter.font()
-        
-        numeric_font.setPixelSize( int( size.height() - 1 ) )
-        
-        painter.setFont( numeric_font )
-        
-        painter.setPen( QG.QPen( stars[0][1] ) )
-        painter.setBrush( QG.QBrush( stars[0][2] ) )
-        
-        text = GetNumericalFractionText( rating_state, stars )
-        
-        metrics = QG.QFontMetrics( numeric_font )
-        text_size = metrics.size( 0, text )
-        
-        painter.drawText( QC.QRectF( round( x - ClientGUIPainterShapes.PAD_PX / 2 ), round( y - ClientGUIPainterShapes.PAD_PX ), text_size.width(), text_size.height() ), text )
-        
-        painter.setFont( original_font )
-        
-        x_delta += text_size.width() + 1
-        
-    
-    #draw 1 'like' star in collapsed state
-    if draw_collapsed:
-        
-        ClientGUIPainterShapes.DrawShape( painter, star_type, x + x_delta, y, size.width(), size.height() )
-        
-    else:
-        
-        for ( num_stars, pen_colour, brush_colour ) in stars:
-            
-            painter.setPen( QG.QPen( pen_colour ) )
-            painter.setBrush( QG.QBrush( brush_colour ) )
-            
-            for i in range( num_stars ):
+            if pad_px is None:
                 
-                ClientGUIPainterShapes.DrawShape( painter, star_type, x + x_delta, y, size.width(), size.height() )
-                
-                x_delta += x_step
+                pad_px = service.GetCustomPad()
                 
             
+            draw_fractional_beside = service.GetShowFractionBesideStars()
+            
+        except HydrusExceptions.DataMissing:
+            
+            pad_px = ClientGUIPainterShapes.PAD_PX
+            
+            draw_fractional_beside = False
+            
         
-        if draw_fractional_beside == ClientRatings.DRAW_ON_RIGHT:
+        painter.setRenderHint( QG.QPainter.RenderHint.Antialiasing, True )
+        
+        ( star_type, stars ) = GetStars( service_key, rating_state, rating )
+        
+        x_delta = 0
+        x_step = size.width() + pad_px
+        
+        if draw_collapsed or draw_fractional_beside == ClientRatings.DRAW_ON_LEFT:
             
-            original_font = painter.font()
+            painter.save()
             
-            numeric_font = painter.font()
+            try:
+                
+                numeric_font = painter.font()
+                
+                numeric_font.setPixelSize( int( size.height() - 1 ) )
+                
+                painter.setFont( numeric_font )
+                
+                if text_pen_colour is not None:
+                    
+                    painter.setPen( QG.QPen( text_pen_colour ) )
+                    
+                
+                text = GetNumericalFractionText( rating_state, stars )
+                
+                metrics = QG.QFontMetrics( numeric_font )
+                text_size = metrics.size( 0, text )
+                
+                painter.drawText( QC.QRectF( round( x - ClientGUIPainterShapes.PAD_PX / 2 ), round( y - ClientGUIPainterShapes.PAD_PX ), text_size.width(), text_size.height() ), text )
+                
+                x_delta += text_size.width() + 1
+                
+            finally:
+                
+                painter.restore()
+                
             
-            numeric_font.setPixelSize( int( size.height() - 1 ) )
-            
-            painter.setFont( numeric_font )
+        
+        #draw 1 'like' star in collapsed state
+        if draw_collapsed:
             
             painter.setPen( QG.QPen( stars[0][1] ) )
             painter.setBrush( QG.QBrush( stars[0][2] ) )
             
-            text = GetNumericalFractionText( rating_state, stars )
+            ClientGUIPainterShapes.DrawShape( painter, star_type, x + x_delta, y, size.width(), size.height() )
             
-            metrics = QG.QFontMetrics( numeric_font )
-            text_size = metrics.size( 0, text )
+        else:
             
-            painter.drawText( QC.QRectF( round( x + x_delta - pad_px + ClientGUIPainterShapes.PAD_PX / 2 ), round( y - ClientGUIPainterShapes.PAD_PX ), text_size.width(), text_size.height() ), text )
+            painter.save()
             
-            painter.setFont( original_font )
+            try:
+                
+                for ( num_stars, pen_colour, brush_colour ) in stars:
+                    
+                    painter.setPen( QG.QPen( pen_colour ) )
+                    painter.setBrush( QG.QBrush( brush_colour ) )
+                    
+                    for i in range( num_stars ):
+                        
+                        ClientGUIPainterShapes.DrawShape( painter, star_type, x + x_delta, y, size.width(), size.height() )
+                        
+                        x_delta += x_step
+                        
+                    
+                
+            finally:
+                
+                painter.restore()
+                
             
+            if draw_fractional_beside == ClientRatings.DRAW_ON_RIGHT:
+                
+                painter.save()
+                
+                try:
+                    
+                    numeric_font = painter.font()
+                    
+                    numeric_font.setPixelSize( int( size.height() - 1 ) )
+                    
+                    painter.setFont( numeric_font )
+                    
+                    if text_pen_colour is not None:
+                        
+                        painter.setPen( QG.QPen( text_pen_colour ) )
+                        
+                    
+                    text = GetNumericalFractionText( rating_state, stars )
+                    
+                    metrics = QG.QFontMetrics( numeric_font )
+                    text_size = metrics.size( 0, text )
+                    
+                    painter.drawText( QC.QRectF( round( x + x_delta - pad_px + ClientGUIPainterShapes.PAD_PX / 2 ), round( y - ClientGUIPainterShapes.PAD_PX ), text_size.width(), text_size.height() ), text )
+                    
+                finally:
+                    
+                    painter.restore()
+                    
+                
+            
+        
+    finally:
+        
+        painter.restore()
         
     
 
@@ -222,32 +275,51 @@ def GetIconSize( canvas_type, service_type = ClientGUICommon.HC.LOCAL_RATING_LIK
     if canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
         
         rating_icon_size_px = CG.client_controller.new_options.GetFloat( 'media_viewer_rating_icon_size_px' )
-        rating_incdec_width_px = CG.client_controller.new_options.GetFloat( 'media_viewer_rating_incdec_width_px' )
+        rating_incdec_height_px = CG.client_controller.new_options.GetFloat( 'media_viewer_rating_incdec_height_px' )
         
     elif canvas_type == CC.CANVAS_PREVIEW:
         
         rating_icon_size_px = CG.client_controller.new_options.GetFloat( 'preview_window_rating_icon_size_px' )
-        rating_incdec_width_px = CG.client_controller.new_options.GetFloat( 'preview_window_rating_incdec_width_px' )
+        rating_incdec_height_px = CG.client_controller.new_options.GetFloat( 'preview_window_rating_incdec_height_px' )
         
     elif canvas_type == CC.CANVAS_DIALOG:
         
         rating_icon_size_px = CG.client_controller.new_options.GetFloat( 'dialog_rating_icon_size_px' )
-        rating_incdec_width_px = CG.client_controller.new_options.GetFloat( 'dialog_rating_incdec_width_px' )
+        rating_incdec_height_px = CG.client_controller.new_options.GetFloat( 'dialog_rating_incdec_height_px' )
         
     else:
         
         rating_icon_size_px = CG.client_controller.new_options.GetFloat( 'draw_thumbnail_rating_icon_size_px' )
-        rating_incdec_width_px = CG.client_controller.new_options.GetFloat( 'thumbnail_rating_incdec_width_px' )
+        rating_incdec_height_px = CG.client_controller.new_options.GetFloat( 'thumbnail_rating_incdec_height_px' )
         
     
     if service_type == ClientGUICommon.HC.LOCAL_RATING_INCDEC:
         
-        return QC.QSize( round( rating_incdec_width_px ), round( rating_incdec_width_px / 2 ) )
+        return QC.QSize( round( rating_incdec_height_px * 2 ), round( rating_incdec_height_px ) )
         
     else:
         
         return QC.QSize( round( rating_icon_size_px ), round( rating_icon_size_px ) )
         
+    
+
+def GetIncDecSize( box_height, rating_number ) -> QC.QSize:
+    
+    box_width = box_height * 2
+    
+    if rating_number is not None and rating_number > 0:
+        
+        digits = len( str( rating_number ) )
+        
+        if digits > 3:
+            
+            box_width += ( box_height - 1 ) * ( digits - ( 2 + ( digits / 3 ) ) ) 
+            #the below increases the padding drastically with more digits, the above has a constant pad
+            #more dramatic indent for bigger numbers seems sometimes better visually, but let's tend towards saving space
+            #box_width += ( box_height - 1 ) * ( digits - 3 )
+            
+        
+    return QC.QSize( round( box_width ), round( box_height ) )
     
 
 def GetNumericalFractionText( rating_state, stars ):
@@ -517,6 +589,8 @@ class RatingIncDec( QW.QWidget ):
                     
                     dlg.SetPanel( panel )
                     
+                    control.setFocus()
+                    
                     if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
                         new_rating = control.value()
@@ -562,11 +636,16 @@ class RatingIncDec( QW.QWidget ):
         self._UpdateTooltip()
         
     
+    def sizeHint( self ):
+        
+        return QC.QSize( self._icon_size.width(), self._icon_size.height() + STAR_PAD.height() )
+        
+    
     def UpdateSize( self ):
         
-        self._icon_size = GetIconSize( self._canvas_type, ClientGUICommon.HC.LOCAL_RATING_INCDEC )
+        self._icon_size = GetIncDecSize( GetIconSize( self._canvas_type, ClientGUICommon.HC.LOCAL_RATING_INCDEC ).height(), self._rating )
         
-        self.setMinimumSize( QC.QSize( self._icon_size.width(), self._icon_size.height() + STAR_PAD.height() ) )
+        self.updateGeometry()
         
         self.update()
         
@@ -604,6 +683,8 @@ class RatingIncDecDialog( RatingIncDec ):
         
         self._SetRating( rating )
         
+        self.UpdateSize()
+        
     
     def SetRatingState( self, rating_state, rating ):
         
@@ -613,6 +694,8 @@ class RatingIncDecDialog( RatingIncDec ):
         self.update()
         
         self._UpdateTooltip()
+        
+        self.UpdateSize()
         
     
 
@@ -1094,11 +1177,11 @@ class RatingNumericalDialog( RatingNumericalControl ):
         
         if self.isEnabled():
             
-            DrawNumerical( painter, 1, round( PAD_PX / 2 ), self._service_key, self._rating_state, self._rating, self._icon_size )
+            DrawNumerical( painter, 1, round( PAD_PX / 2 ), self._service_key, self._rating_state, self._rating, size = self._icon_size )
             
         else:
             
-            DrawNumerical( painter, 1, round( PAD_PX / 2 ), self._service_key, ClientRatings.NULL, 0.0, self._icon_size )
+            DrawNumerical( painter, 1, round( PAD_PX / 2 ), self._service_key, ClientRatings.NULL, 0.0, size = self._icon_size )
             
         
         self.UpdateSize()

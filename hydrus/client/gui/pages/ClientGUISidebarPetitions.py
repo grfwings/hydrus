@@ -13,6 +13,7 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusTime
@@ -1332,7 +1333,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                             
                             HydrusData.ShowText( 'That account id was not found!' )
                             
-                            QP.CallAfter( qt_draw, [] )
+                            CG.client_controller.CallAfter( self, qt_draw, [] )
                             
                             return
                             
@@ -1341,11 +1342,11 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
                 num_petition_info = response[ 'num_petitions' ]
                 
-                QP.CallAfter( qt_draw, num_petition_info )
+                CG.client_controller.CallAfter( self, qt_draw, num_petition_info )
                 
             finally:
                 
-                QP.CallAfter( qt_reset )
+                CG.client_controller.CallAfter( self, qt_reset )
                 
             
         
@@ -1549,8 +1550,8 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
             
         
-        copyable_items_a = HydrusData.DedupeList( copyable_items_a )
-        copyable_items_b = HydrusData.DedupeList( copyable_items_b )
+        copyable_items_a = HydrusLists.DedupeList( copyable_items_a )
+        copyable_items_b = HydrusLists.DedupeList( copyable_items_b )
         
         if len( copyable_items_a ) + len( copyable_items_b ) > 0:
             
@@ -1625,7 +1626,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
     
     def Start( self ):
         
-        QP.CallAfter( self._StartFetchNumPetitions )
+        CG.client_controller.CallAfter( self, self._StartFetchNumPetitions )
         
     
     def THREADPetitionFetcherAndUploader( self, work_lock: threading.Lock, service: ClientServices.ServiceRepository ):
@@ -1852,7 +1853,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                                     
                                 
                                 job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
-                                job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
+                                job_status.SetGauge( num_done, num_to_do )
                                 
                             
                             if outgoing_petition.GetPetitionHeader() in cached_fake_petition_headers_to_petitions:

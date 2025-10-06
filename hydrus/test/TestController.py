@@ -8,7 +8,6 @@ import unittest
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
-from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -33,8 +32,9 @@ from hydrus.client.caches import ClientCaches
 from hydrus.client.duplicates import ClientDuplicatesAutoResolution
 from hydrus.client.files import ClientFilesManager
 from hydrus.client.files import ClientFilesPhysical
-from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui import ClientGUICallAfter
 from hydrus.client.gui import ClientGUISplash
+from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListManager
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.metadata import ClientTagsHandling
@@ -139,6 +139,7 @@ class MockServicesManager( object ):
         return service_key in self._service_keys_to_services
         
     
+
 class FakeWebSessionManager():
     
     def EnsureLoggedIn( self, name ):
@@ -151,6 +152,7 @@ class FakeWebSessionManager():
         return { 'session_cookie' : 'blah' }
         
     
+
 class TestFrame( QW.QWidget ):
     
     def __init__( self ):
@@ -168,6 +170,7 @@ class TestFrame( QW.QWidget ):
         
         self.show()
         
+    
 
 only_run = None
 
@@ -180,6 +183,8 @@ class Controller( object ):
         self.only_run = only_run
         self.run_finished = False
         self.was_successful = False
+        
+        self.call_after_catcher = ClientGUICallAfter.CallAfterEventCatcher( QW.QApplication.instance() )
         
         self._test_db = None
         
@@ -359,8 +364,7 @@ class Controller( object ):
         self.locale = QC.QLocale() # Very important to init this here and keep it non garbage collected
         
         CC.GlobalPixmaps()
-        
-        self.frame_icon_pixmap = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'hydrus_32_non-transparent.png' ) )
+        CC.GlobalIcons()
         
     
     def pub( self, topic, *args, **kwargs ):
@@ -414,7 +418,7 @@ class Controller( object ):
         
         job_status = ClientThreading.JobStatus( cancellable = True, cancel_on_shutdown = False )
         
-        QP.CallAfter( qt_code, win, job_status )
+        self.CallAfter( win, qt_code, win, job_status )
         
         while not job_status.IsDone():
             
@@ -454,9 +458,14 @@ class Controller( object ):
     
     CallToThreadLongRunning = CallToThread
     
+    def CallAfter( self, qobject: QC.QObject, func, *args, **kwargs ):
+        
+        ClientGUICallAfter.CallAfter( self.call_after_catcher, qobject, func, *args, **kwargs )
+        
+    
     def CallAfterQtSafe( self, window, label, func, *args, **kwargs ):
         
-        self.CallLaterQtSafe( window, 0, label, func, *args, **kwargs )
+        self.CallAfter( window, func, *args, **kwargs )
         
     
     def CallLater( self, initial_delay, func, *args, **kwargs ):
@@ -590,6 +599,11 @@ class Controller( object ):
         return self._server_files_dir
         
     
+    def GetMainGUI( self ):
+        
+        return self.win
+        
+    
     def GetMainTLW( self ):
         
         return self.win
@@ -634,6 +648,10 @@ class Controller( object ):
         
     
     def ImportURLFromAPI( self, url, filterable_tags, additional_service_keys_to_tags, destination_page_name, destination_page_key, show_destination_page, destination_location_context ):
+        
+        from hydrus.client.networking import ClientNetworkingFunctions
+        
+        ClientNetworkingFunctions.CheckLooksLikeAFullURL( url )
         
         normalised_url = self.network_engine.domain_manager.NormaliseURL( url, for_server = True )
         
@@ -921,7 +939,7 @@ class Controller( object ):
                 
             finally:
                 
-                QP.CallAfter( self.win.deleteLater )
+                self.CallAfter( self.win, self.win.deleteLater )
                 
             
         

@@ -17,7 +17,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientDuplicatesComparisonStatements
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
@@ -44,7 +44,7 @@ from hydrus.client.metadata import ClientRatings
 
 class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
 
-    def __init__( self, parent, service_key, canvas_key, icon_pad: QC.QSize = None, canvas_type = CC.CANVAS_PREVIEW ):
+    def __init__( self, parent: "CanvasHoverFrameTopRight", service_key, canvas_key, icon_pad: QC.QSize = None, canvas_type = CC.CANVAS_PREVIEW ):
         
         super().__init__( parent, service_key, canvas_type )
         
@@ -60,6 +60,7 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         self._hashes = set()
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
+        CG.client_controller.sub( self, 'NotifyNewOptions', 'notify_new_options' )
         
     
     def _Draw( self, painter ):
@@ -70,18 +71,11 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         
         if self._current_media is not None:
             
-            icon_size = ClientGUIRatings.GetIconSize( self._canvas_type, HC.LOCAL_RATING_INCDEC )
+            self._iconsize =  ClientGUIRatings.GetIncDecSize( ClientGUIRatings.GetIconSize( self._canvas_type, HC.LOCAL_RATING_INCDEC ).height(), self._rating )
             
-            ClientGUIRatings.DrawIncDec( painter, self._iconpad.width(), self._iconpad.height(), self._service_key, self._rating_state, self._rating, icon_size )
+            ClientGUIRatings.DrawIncDec( painter, self._iconpad.width(), self._iconpad.height(), self._service_key, self._rating_state, self._rating, self._iconsize )
             
-            if self._iconsize != icon_size:
-                
-                self._iconsize = icon_size
-                self.UpdateSize()
-                
-                self._panel.hide()
-                self._panel.DoRegularHideShow()
-                
+            self.UpdateSize()
             
         
     
@@ -100,6 +94,13 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
     def ClearMedia( self ):
         
         self.SetMedia( None )
+        
+    
+    def NotifyNewOptions( self ):
+        
+        self._iconsize =  ClientGUIRatings.GetIncDecSize( ClientGUIRatings.GetIconSize( self._canvas_type, HC.LOCAL_RATING_INCDEC ).height(), self._rating )
+        
+        self._panel.DoRegularHideShow()
         
     
     def ProcessContentUpdatePackage( self, content_update_package: ClientContentUpdates.ContentUpdatePackage ):
@@ -152,6 +153,8 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
         
         self.update()
         
+        self.UpdateSize()
+        
         self._UpdateTooltip()    
         
     
@@ -165,7 +168,7 @@ class RatingIncDecCanvas( ClientGUIRatings.RatingIncDec ):
 
 class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
     
-    def __init__( self, parent, service_key, canvas_key, canvas_type ):
+    def __init__( self, parent: "CanvasHoverFrameTopRight", service_key, canvas_key, canvas_type ):
         
         super().__init__( parent, service_key, canvas_type )
         
@@ -296,7 +299,7 @@ class RatingLikeCanvas( ClientGUIRatings.RatingLike ):
 
 class RatingNumericalCanvas( ClientGUIRatings.RatingNumericalControl ):
 
-    def __init__( self, parent, service_key, canvas_key, canvas_type = CC.CANVAS_PREVIEW ):
+    def __init__( self, parent: "CanvasHoverFrameTopRight", service_key, canvas_key, canvas_type = CC.CANVAS_PREVIEW ):
         
         super().__init__( parent, service_key, canvas_type )
         
@@ -339,7 +342,7 @@ class RatingNumericalCanvas( ClientGUIRatings.RatingNumericalControl ):
             
             icon_size = ClientGUIRatings.GetIconSize( self._canvas_type, HC.LOCAL_RATING_NUMERICAL )
             
-            ClientGUIRatings.DrawNumerical( painter, round( ClientGUIPainterShapes.PAD_PX / 2 ), round( ClientGUIPainterShapes.PAD_PX / 2 ), self._service_key, self._rating_state, self._rating, icon_size )
+            ClientGUIRatings.DrawNumerical( painter, round( ClientGUIPainterShapes.PAD_PX / 2 ), round( ClientGUIPainterShapes.PAD_PX / 2 ), self._service_key, self._rating_state, self._rating, size = icon_size )
             
             if self._iconsize != icon_size:
                 
@@ -674,8 +677,6 @@ class CanvasHoverFrame( QW.QFrame ):
         
         mouse_over_important_descendant = self._MouseOverImportantDescendant()
         
-        dialog_is_open = ClientGUIFunctions.DialogIsOpenAndIAmNotItsChild( self )
-        
         mouse_is_near_animation_bar = self._my_canvas.MouseIsNearAnimationBar()
         
         mouse_is_over_something_else_important = mouse_is_near_animation_bar
@@ -692,8 +693,8 @@ class CanvasHoverFrame( QW.QFrame ):
         
         hide_focus_is_good = focus_is_good or current_focus_tlw is None # don't hide if focus is either gone to another problem or temporarily sperging-out due to a click-transition or similar
         
-        ready_to_show = not self._is_currently_up and in_position and not mouse_is_over_something_else_important and focus_is_good and not dialog_is_open and not menu_open and not mouse_is_over_a_dominant_hover
-        ready_to_hide = self._is_currently_up and not menu_open and not mouse_over_important_descendant and ( not in_position or dialog_is_open or not hide_focus_is_good or mouse_is_over_a_dominant_hover )
+        ready_to_show = not self._is_currently_up and in_position and not mouse_is_over_something_else_important and focus_is_good and not menu_open and not mouse_is_over_a_dominant_hover
+        ready_to_hide = self._is_currently_up and not menu_open and not mouse_over_important_descendant and ( not in_position or not hide_focus_is_good or mouse_is_over_a_dominant_hover )
         
         def get_logic_report_string():
             
@@ -706,7 +707,6 @@ class CanvasHoverFrame( QW.QFrame ):
             tuples.append( ( 'ideal winsize: ', ( my_ideal_width, my_ideal_height ) ) )
             tuples.append( ( 'in position: ', in_position ) )
             tuples.append( ( 'menu open: ', menu_open ) )
-            tuples.append( ( 'dialog open: ', dialog_is_open ) )
             tuples.append( ( 'mouse near animation bar: ', mouse_is_near_animation_bar ) )
             tuples.append( ( 'focus is good: ', focus_is_good ) )
             tuples.append( ( 'current focus tlw: ', current_focus_tlw ) )
@@ -818,7 +818,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         QP.AddToLayout( vbox, self._info_text, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self.setLayout( vbox )
-
+        
         self._window_always_on_top = False #can set this with a global option if you want
 
         self._window_show_title_bar = True #should always start on
@@ -856,7 +856,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         my_width = my_size.width()
         my_height = my_size.height()
         
-        my_ideal_width = max( int( parent_width * TOP_HOVER_PROPORTION ), self.sizeHint().width() )
+        my_ideal_width = int( parent_width * TOP_HOVER_PROPORTION )
         
         my_ideal_height = self.sizeHint().height()
         
@@ -880,22 +880,22 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
     
     def _PopulateCenterButtons( self ):
         
-        self._archive_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().archive, self._Archive )
+        self._archive_button = ClientGUICommon.IconButton( self, CC.global_icons().archive, self._Archive )
         self._archive_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._trash_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
+        self._trash_button = ClientGUICommon.IconButton( self, CC.global_icons().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._trash_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send to trash' ) )
         self._trash_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._delete_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().trash_delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
+        self._delete_button = ClientGUICommon.IconButton( self, CC.global_icons().trash_delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._delete_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'delete completely' ) )
         self._delete_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._undelete_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().undelete, CG.client_controller.pub, 'canvas_undelete', self._canvas_key )
+        self._undelete_button = ClientGUICommon.IconButton( self, CC.global_icons().undelete, CG.client_controller.pub, 'canvas_undelete', self._canvas_key )
         self._undelete_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'undelete' ) )
         self._undelete_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._show_embedded_metadata_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().page_with_text, self._ShowFileEmbeddedMetadata )
+        self._show_embedded_metadata_button = ClientGUICommon.IconButton( self, CC.global_icons().page_with_text, self._ShowFileEmbeddedMetadata )
         self._show_embedded_metadata_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_center_hbox, self._archive_button, CC.FLAGS_CENTER_PERPENDICULAR )
@@ -916,21 +916,21 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         self._zoom_text = ClientGUICommon.BetterStaticText( self, 'zoom' )
         
-        zoom_in = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_in, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_IN_VIEWER_CENTER ) )
+        zoom_in = ClientGUICommon.IconButton( self, CC.global_icons().zoom_in, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_IN_VIEWER_CENTER ) )
         zoom_in.SetToolTipWithShortcuts( 'zoom in', CAC.SIMPLE_ZOOM_IN )
         zoom_in.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        zoom_out = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_out, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_OUT_VIEWER_CENTER ) )
+        zoom_out = ClientGUICommon.IconButton( self, CC.global_icons().zoom_out, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ZOOM_OUT_VIEWER_CENTER ) )
         zoom_out.SetToolTipWithShortcuts( 'zoom out', CAC.SIMPLE_ZOOM_OUT )
         zoom_out.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        zoom_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER ) )
+        zoom_switch = ClientGUICommon.IconButton( self, CC.global_icons().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER ) )
         zoom_switch.SetToolTipWithShortcuts( 'zoom switch', CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM )
-        #zoom_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER ) )
+        #zoom_switch = ClientGUICommon.IconButton( self, CC.global_icons().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER ) )
         #zoom_switch.SetToolTipWithShortcuts( 'zoom switch3', CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER )
         zoom_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        zoom_options = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().zoom_cog, self._ShowZoomOptionsMenu )
+        zoom_options = ClientGUICommon.IconButton( self, CC.global_icons().zoom_cog, self._ShowZoomOptionsMenu )
         zoom_options.setToolTip( ClientGUIFunctions.WrapToolTip( 'advanced zoom' ) )
         zoom_options.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -941,19 +941,19 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
             self._volume_control.hide()
             
         
-        shortcuts = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().keyboard, self._ShowShortcutMenu )
+        shortcuts = ClientGUICommon.IconButton( self, CC.global_icons().keyboard, self._ShowShortcutMenu )
         shortcuts.setToolTip( ClientGUIFunctions.WrapToolTip( 'shortcuts' ) )
         shortcuts.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        view_options = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().eye, self._ShowViewOptionsMenu )
+        view_options = ClientGUICommon.IconButton( self, CC.global_icons().eye, self._ShowViewOptionsMenu )
         view_options.setToolTip( ClientGUIFunctions.WrapToolTip( 'view options' ) )
         view_options.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        window_drag_button = ClientGUICommon.BetterBitmapWindowDragButton( self, CC.global_pixmaps().move, self._ShowWindowResizeOptionsMenu, self.parentWidget().window() )
+        window_drag_button = ClientGUICommon.WindowDragButton( self, CC.global_icons().move, self._ShowWindowResizeOptionsMenu, self.parentWidget().window() )
         window_drag_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'click and drag from here to move the window' ) )
         window_drag_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        fullscreen_switch = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().fullscreen_switch, CG.client_controller.pub, 'canvas_fullscreen_switch', self._canvas_key )
+        fullscreen_switch = ClientGUICommon.IconButton( self, CC.global_icons().fullscreen_switch, CG.client_controller.pub, 'canvas_fullscreen_switch', self._canvas_key )
         fullscreen_switch.setToolTip( ClientGUIFunctions.WrapToolTip( 'fullscreen switch' ) )
         fullscreen_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -962,18 +962,17 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
             fullscreen_switch.hide()
             
         
-        open_externally = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().open_externally, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM ) )
+        open_externally = ClientGUICommon.IconButton( self, CC.global_icons().open_externally, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM ) )
         open_externally.SetToolTipWithShortcuts( 'open externally', CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM )
         open_externally.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        drag_button = QW.QPushButton( self )
-        drag_button.setIcon( QG.QIcon( CC.global_pixmaps().drag ) )
-        drag_button.setIconSize( CC.global_pixmaps().drag.size() )
+        right_click_call = HydrusData.Call( self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_FOCUS_TAB_AND_MEDIA ) )
+        
+        drag_button = ClientGUICommon.IconButtonMultiClickable( self, CC.global_icons().drag, self.DragButtonHit, right_click_call )
         drag_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'drag from here to export file' ) )
-        drag_button.pressed.connect( self.DragButtonHit )
         drag_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        close = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
+        close = ClientGUICommon.IconButton( self, CC.global_icons().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
         close.setToolTip( ClientGUIFunctions.WrapToolTip( 'close' ) )
         close.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -996,12 +995,12 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         
         if self._current_media.HasInbox():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._archive_button, CC.global_pixmaps().archive )
+            self._archive_button.SetIconSmart( CC.global_icons().archive )
             self._archive_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'archive' ) )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._archive_button, CC.global_pixmaps().to_inbox )
+            self._archive_button.SetIconSmart( CC.global_icons().to_inbox )
             
             self._archive_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'return to inbox' ) )
             
@@ -1423,7 +1422,7 @@ class CanvasHoverFrameTopArchiveDeleteFilter( CanvasHoverFrameTop ):
     
     def _PopulateLeftButtons( self ):
         
-        self._back_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_BACK ) )
+        self._back_button = ClientGUICommon.IconButton( self, CC.global_icons().position_previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_BACK ) )
         self._back_button.SetToolTipWithShortcuts( 'back', CAC.SIMPLE_ARCHIVE_DELETE_FILTER_BACK )
         self._back_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1431,7 +1430,7 @@ class CanvasHoverFrameTopArchiveDeleteFilter( CanvasHoverFrameTop ):
         
         CanvasHoverFrameTop._PopulateLeftButtons( self )
         
-        self._skip_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().next_bmp, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_SKIP ) )
+        self._skip_button = ClientGUICommon.IconButton( self, CC.global_icons().position_next, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_ARCHIVE_DELETE_FILTER_SKIP ) )
         self._skip_button.SetToolTipWithShortcuts( 'skip', CAC.SIMPLE_ARCHIVE_DELETE_FILTER_SKIP )
         self._skip_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1440,7 +1439,7 @@ class CanvasHoverFrameTopArchiveDeleteFilter( CanvasHoverFrameTop ):
     
     def _ResetArchiveButton( self ):
         
-        ClientGUIFunctions.SetBitmapButtonBitmap( self._archive_button, CC.global_pixmaps().archive )
+        self._archive_button.SetIconSmart( CC.global_icons().archive )
         self._archive_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'archive' ) )
         
     
@@ -1448,13 +1447,13 @@ class CanvasHoverFrameTopNavigable( CanvasHoverFrameTop ):
     
     def _PopulateLeftButtons( self ):
         
-        self._previous_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_PREVIOUS ) )
+        self._previous_button = ClientGUICommon.IconButton( self, CC.global_icons().position_previous, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_PREVIOUS ) )
         self._previous_button.SetToolTipWithShortcuts( 'previous', CAC.SIMPLE_VIEW_PREVIOUS )
         self._previous_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._index_text = ClientGUICommon.BetterStaticText( self, 'index' )
         
-        self._next_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().next_bmp, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
+        self._next_button = ClientGUICommon.IconButton( self, CC.global_icons().position_next, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
         self._next_button.SetToolTipWithShortcuts( 'next', CAC.SIMPLE_VIEW_NEXT )
         self._next_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1467,7 +1466,7 @@ class CanvasHoverFrameTopDuplicatesFilter( CanvasHoverFrameTopNavigable ):
     
     def _PopulateLeftButtons( self ):
         
-        self._first_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
+        self._first_button = ClientGUICommon.IconButton( self, CC.global_icons().position_first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
         self._first_button.SetToolTipWithShortcuts( 'go back a pair', CAC.SIMPLE_DUPLICATE_FILTER_BACK )
         self._first_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1475,7 +1474,7 @@ class CanvasHoverFrameTopDuplicatesFilter( CanvasHoverFrameTopNavigable ):
         
         CanvasHoverFrameTopNavigable._PopulateLeftButtons( self )
         
-        self._last_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
+        self._last_button = ClientGUICommon.IconButton( self, CC.global_icons().position_last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
         self._last_button.SetToolTipWithShortcuts( 'show a different pair', CAC.SIMPLE_DUPLICATE_FILTER_SKIP )
         self._last_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1508,11 +1507,12 @@ class CanvasHoverFrameTopDuplicatesFilter( CanvasHoverFrameTopNavigable ):
         CGC.core().PopupMenu( self, menu )
         
     
+
 class CanvasHoverFrameTopNavigableList( CanvasHoverFrameTopNavigable ):
     
     def _PopulateLeftButtons( self ):
         
-        self._first_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_FIRST ) )
+        self._first_button = ClientGUICommon.IconButton( self, CC.global_icons().position_first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_FIRST ) )
         self._first_button.SetToolTipWithShortcuts( 'first', CAC.SIMPLE_VIEW_FIRST )
         self._first_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -1520,13 +1520,62 @@ class CanvasHoverFrameTopNavigableList( CanvasHoverFrameTopNavigable ):
         
         CanvasHoverFrameTopNavigable._PopulateLeftButtons( self )
         
-        self._last_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_LAST ) )
+        self._last_button = ClientGUICommon.IconButton( self, CC.global_icons().position_last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_LAST ) )
         self._last_button.SetToolTipWithShortcuts( 'last', CAC.SIMPLE_VIEW_LAST )
         self._last_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         QP.AddToLayout( self._top_left_hbox, self._last_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
+        left_click_call = HydrusData.Call( self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_RANDOM ) )
+        right_click_call = HydrusData.Call( self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_UNDO_RANDOM ) )
+        
+        self._random_button = ClientGUICommon.IconButtonMultiClickable( self, CC.global_icons().position_random, left_click_call, right_click_call )
+        
+        self._random_button.setToolTip( 'random - right-click to undo showing random media' )
+        self._random_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
+        
+        QP.AddToLayout( self._top_left_hbox, self._random_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        
     
+
+
+class InboxIconClickFilter( QC.QObject ):
+    
+    def __init__( self, parent, click_callable ):
+        
+        super().__init__( parent )
+        
+        self._click_callable = click_callable
+        
+    
+    def eventFilter( self, watched, event ):
+        
+        try:
+            
+            if event.type() == QC.QEvent.Type.MouseButtonPress:
+                
+                event = typing.cast( QG.QMouseEvent, event )
+                
+                if event.button() == QC.Qt.MouseButton.LeftButton:
+                    
+                    self._click_callable()
+                    
+                    return True
+                    
+                
+            
+        except Exception as e:
+            
+            HydrusData.ShowException( e )
+            
+            return True
+            
+        
+        return False
+        
+    
+
+
 class CanvasHoverFrameTopRight( CanvasHoverFrame ):
     
     def __init__( self, parent, my_canvas, top_hover: CanvasHoverFrameTop, canvas_key ):
@@ -1543,8 +1592,10 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
         
         self._icon_panel = QW.QWidget( self )
         
-        self._trash_icon = ClientGUICommon.BufferedWindowIcon( self._icon_panel, CC.global_pixmaps().trash )
-        self._inbox_icon = ClientGUICommon.BufferedWindowIcon( self._icon_panel, CC.global_pixmaps().inbox, click_callable = self._Archive )
+        self._trash_icon = QW.QLabel( self._icon_panel, pixmap = CC.global_icons().trash.pixmap( 16, 16 ) )
+        self._inbox_icon = QW.QLabel( self._icon_panel, pixmap = CC.global_icons().inbox.pixmap( 16, 16 ) )
+        
+        self._inbox_icon.installEventFilter( InboxIconClickFilter( self, self._Archive ) )
         
         icon_hbox = QP.HBoxLayout( spacing = 0 )
         
@@ -1730,7 +1781,6 @@ class CanvasHoverFrameTopRight( CanvasHoverFrame ):
                 
             return ( should_resize, ideal_size, ideal_position )
             
-        
         elif canvas_type == CC.CANVAS_PREVIEW and CG.client_controller.new_options.GetBoolean( 'preview_window_hover_top_right_shows_popup' ):
             
             preview_size = self.parentWidget().size()
@@ -2216,55 +2266,57 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
     
     showPairInPage = QC.Signal()
     
-    def __init__( self, parent: QW.QWidget, my_canvas: QW.QWidget, canvas_key: bytes ):
+    def __init__( self, parent: QW.QWidget, my_canvas: QW.QWidget, canvas_key: bytes, show_approve_deny = False ):
         
         super().__init__( parent, my_canvas, canvas_key )
         
         self._always_on_top = True
         
+        self._show_approve_deny = show_approve_deny
+        
         self._current_index_string = ''
         
         self._comparison_media = None
         
-        self._show_in_a_page_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().fullscreen_switch, self.showPairInPage.emit )
+        self._show_in_a_page_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self.showPairInPage.emit )
         self._show_in_a_page_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send pair to the duplicates media page, for later processing' ) )
         self._show_in_a_page_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._trash_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
+        self._trash_button = ClientGUICommon.IconButton( self, CC.global_icons().delete, CG.client_controller.pub, 'canvas_delete', self._canvas_key )
         self._trash_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'send to trash' ) )
         self._trash_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'this is better\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_BETTER ) ) )
-        menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'same quality\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_SAME_QUALITY ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'this is better\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_BETTER ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'same quality\'', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_SAME_QUALITY ) ) )
         
         if CG.client_controller.new_options.GetBoolean( 'advanced_mode' ):
             
-            menu_items.append( ( 'normal', 'edit duplicate metadata merge options for \'alternates\' (advanced!)', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_ALTERNATE ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit duplicate metadata merge options for \'alternates\' (advanced!)', 'edit what content is merged when you filter files', HydrusData.Call( self._EditMergeOptions, HC.DUPLICATE_ALTERNATE ) ) )
             
         
-        menu_items.append( ( 'separator', None, None, None ) )
-        menu_items.append( ( 'normal', 'edit background lighten/darken switch intensity', 'edit how much the background will brighten or darken as you switch between the pair', self._EditBackgroundSwitchIntensity ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'edit background lighten/darken switch intensity', 'edit how much the background will brighten or darken as you switch between the pair', self._EditBackgroundSwitchIntensity ) )
         
-        self._cog_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().cog, menu_items )
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self, menu_template_items )
         self._cog_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        close_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
+        close_button = ClientGUICommon.IconButton( self, CC.global_icons().stop, CG.client_controller.pub, 'canvas_close', self._canvas_key )
         close_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'close filter' ) )
         close_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._back_a_pair = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
+        self._back_a_pair = ClientGUICommon.IconButton( self, CC.global_icons().position_first, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_BACK ) )
         self._back_a_pair.SetToolTipWithShortcuts( 'go back a pair', CAC.SIMPLE_DUPLICATE_FILTER_BACK )
         self._back_a_pair.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._index_text = ClientGUICommon.BetterStaticText( self, 'index' )
         
-        self._next_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pair, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
+        self._next_button = ClientGUICommon.IconButton( self, CC.global_icons().pair, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_VIEW_NEXT ) )
         self._next_button.SetToolTipWithShortcuts( 'next', CAC.SIMPLE_VIEW_NEXT )
         self._next_button.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        self._skip_a_pair = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
+        self._skip_a_pair = ClientGUICommon.IconButton( self, CC.global_icons().position_last, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_SKIP ) )
         self._skip_a_pair.SetToolTipWithShortcuts( 'show a different pair', CAC.SIMPLE_DUPLICATE_FILTER_SKIP )
         self._skip_a_pair.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
@@ -2272,13 +2324,23 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         dupe_boxes = []
         
+        if self._show_approve_deny:
+            
+            dupe_commands = []
+            
+            dupe_commands.append( ( 'approve', 'Approve this pair for the original auto-resolution rule.', CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_APPROVE_AUTO_RESOLUTION ) ) )
+            dupe_commands.append( ( 'deny', 'Deny this pair for the original auto-resolution rule.', CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_DENY_AUTO_RESOLUTION ) ) )
+            
+            dupe_boxes.append( ( 'auto-resolution', dupe_commands ) )
+            
+        
         dupe_commands = []
         
         dupe_commands.append( ( 'this is better, and delete the other', 'Set that the current file you are looking at is better than the other in the pair, and set the other file to be deleted.', CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_AND_DELETE_OTHER ) ) )
         dupe_commands.append( ( 'this is better, but keep both', 'Set that the current file you are looking at is better than the other in the pair, but keep both files.', CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_BUT_KEEP_BOTH ) ) )
         dupe_commands.append( ( 'they are the same quality', 'Set that the two files are duplicates of very similar quality.', CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_DUPLICATE_FILTER_EXACTLY_THE_SAME ) ) )
         
-        dupe_boxes.append( ( 'they are duplicates', dupe_commands ) )
+        dupe_boxes.append( ( 'set as duplicates', dupe_commands ) )
         
         dupe_commands = []
         
@@ -2319,11 +2381,16 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         QP.AddToLayout( self._comparison_statements_vbox, self._comparison_statement_score_summary, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        self._comparison_statement_names = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'jpeg_quality', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration', 'a_and_b_are_visual_duplicates' ]
+        self._comparison_statement_names_fast = [ 'filesize', 'resolution', 'ratio', 'mime', 'num_tags', 'time_imported', 'pixel_duplicates', 'has_transparency', 'exif_data', 'embedded_metadata', 'icc_profile', 'has_audio', 'duration' ]
+        self._comparison_statement_names_slow = ['jpeg_subsampling', 'jpeg_quality', 'a_and_b_are_visual_duplicates' ]
+        
+        self._total_score_fast = 0
+        self._total_score_slow = 0
+        self._they_are_pixel_duplicates = False
         
         self._comparison_statements_sts = {}
         
-        for name in self._comparison_statement_names:
+        for name in self._comparison_statement_names_fast + self._comparison_statement_names_slow:
             
             panel = QW.QWidget( self )
             
@@ -2345,7 +2412,8 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             QP.AddToLayout( self._comparison_statements_vbox, panel, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
             
         
-        self._comparison_statement_updater = self._InitialiseComparisonStatementUpdater()
+        self._comparison_statement_updater_fast = self._InitialiseComparisonStatementUpdaterFast()
+        self._comparison_statement_updater_slow = self._InitialiseComparisonStatementUpdaterSlow()
         
         #
         
@@ -2377,6 +2445,23 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         
         CG.client_controller.sub( self, 'SetDuplicatePair', 'canvas_new_duplicate_pair' )
         CG.client_controller.sub( self, 'SetIndexString', 'canvas_new_index_string' )
+        
+    
+    def _BlankStatementsBeforePopulation( self, names ):
+        
+        for name in names:
+            
+            ( panel, st ) = self._comparison_statements_sts[ name ]
+            
+            if panel.isVisible():
+                
+                current_text = st.text()
+                
+                num_newlines = current_text.count( '\n' )
+                
+                st.setText( num_newlines * '\n' )
+                
+            
         
     
     def _EditBackgroundSwitchIntensity( self ):
@@ -2476,23 +2561,13 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
         return ( should_resize, ideal_size, ideal_position )
         
     
-    def _InitialiseComparisonStatementUpdater( self ):
+    def _InitialiseComparisonStatementUpdaterFast( self ):
         
         def loading_callable():
             
             self._comparison_statement_score_summary.setText( '' )
             
-            for ( panel, st ) in self._comparison_statements_sts.values():
-                
-                if panel.isVisible():
-                    
-                    current_text = st.text()
-                    
-                    num_newlines = current_text.count( '\n' )
-                    
-                    st.setText( num_newlines * '\n' )
-                    
-                
+            self._BlankStatementsBeforePopulation( self._comparison_statement_names_fast )
             
             # no resize here! we don't want any possible flicker mate
             
@@ -2511,7 +2586,53 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             ( current_media_result, comparison_media_result ) = args
             
-            statements_and_scores = ClientDuplicates.GetDuplicateComparisonStatements( current_media_result, comparison_media_result )
+            ( statements_and_scores, they_are_pixel_duplicates ) = ClientDuplicatesComparisonStatements.GetDuplicateComparisonStatementsFast( current_media_result, comparison_media_result )
+            
+            return ( statements_and_scores, they_are_pixel_duplicates )
+            
+        
+        def publish_callable( result ):
+            
+            ( statements_and_scores, they_are_pixel_duplicates ) = result
+            
+            self._they_are_pixel_duplicates = they_are_pixel_duplicates
+            
+            self._total_score_fast = sum( ( score for ( statement, score ) in statements_and_scores.values() ) )
+            
+            self._UpdateTotalScore( finished = False )
+            
+            self._PopulateStatements( statements_and_scores, self._comparison_statement_names_fast )
+            
+            self._comparison_statement_updater_slow.update()
+            
+        
+        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
+        
+    
+    def _InitialiseComparisonStatementUpdaterSlow( self ):
+        
+        def loading_callable():
+            
+            self._BlankStatementsBeforePopulation( self._comparison_statement_names_slow )
+            
+            # no resize here! we don't want any possible flicker mate
+            
+        
+        def pre_work_callable():
+            
+            if self._current_media is None or self._comparison_media is None:
+                
+                raise HydrusExceptions.CancelledException()
+                
+            
+            return ( self._current_media.GetMediaResult(), self._comparison_media.GetMediaResult(), self._they_are_pixel_duplicates )
+            
+        
+        def work_callable( args ):
+            
+            ( current_media_result, comparison_media_result, they_are_pixel_duplicates ) = args
+            
+            statements_and_scores = ClientDuplicatesComparisonStatements.GetDuplicateComparisonStatementsSlow( current_media_result, comparison_media_result, they_are_pixel_duplicates )
             
             return statements_and_scores
             
@@ -2520,91 +2641,118 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             
             statements_and_scores = result
             
-            total_score = sum( ( score for ( statement, score ) in statements_and_scores.values() ) )
+            self._total_score_slow = sum( ( score for ( statement, score ) in statements_and_scores.values() ) )
             
-            if total_score > 0:
-                
-                text = 'score: +' + HydrusNumbers.ToHumanInt( total_score )
-                object_name = 'HydrusValid'
-                
-            elif total_score < 0:
-                
-                text = 'score: ' + HydrusNumbers.ToHumanInt( total_score )
-                object_name = 'HydrusInvalid'
-                
-            else:
-                
-                text = 'no score difference'
-                object_name = 'HydrusIndeterminate'
-                
+            self._UpdateTotalScore( finished = True )
             
-            self._comparison_statement_score_summary.setText( text )
-            
-            self._comparison_statement_score_summary.setObjectName( object_name )
-            
-            self._comparison_statement_score_summary.style().polish( self._comparison_statement_score_summary )
-            
-            for name in self._comparison_statement_names:
-                
-                ( panel, st ) = self._comparison_statements_sts[ name ]
-                
-                got_data = name in statements_and_scores
-                
-                show_panel = got_data
-                
-                panel.setVisible( show_panel )
-                
-                if got_data:
-                    
-                    ( statement, score ) = statements_and_scores[ name ]
-                    
-                    st.setText( statement )
-                    
-                    if score > 0:
-                        
-                        object_name = 'HydrusValid'
-                        
-                    elif score < 0:
-                        
-                        object_name = 'HydrusInvalid'
-                        
-                    else:
-                        
-                        object_name = 'HydrusIndeterminate'
-                        
-                    
-                    st.setObjectName( object_name )
-                    
-                    st.style().polish( st )
-                    
-                    if name == 'a_and_b_are_visual_duplicates':
-                        
-                        tt = f'{statement}\n\nThis uses a custom visual inspection algorithm to try to differentiate resizes/re-encodes vs recolours/alternates. It is pretty good and you can generally trust it. On edge cases, it intentionally errs on the side of false negative.'
-                        st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
-                        
-                    else:
-                        
-                        st.setToolTip( ClientGUIFunctions.WrapToolTip( statement ) )
-                        
-                    
-                
-                # hackery dackery doo
-                st.updateGeometry()
-                panel.updateGeometry()
-                
-            
-            # some more hackery dackery doo, along with the updateGeometry forced calls above
-            # might be able to remove this if and when the layout chain here is cleaned up all the way to the window()
-            self._comparison_statements_vbox.invalidate()
-            self._comparison_statements_vbox.activate()
-            
-            # minimumsize is not immediately updated without this
-            self.layout().activate()
-            
-            self._SizeAndPosition()
+            self._PopulateStatements( statements_and_scores, self._comparison_statement_names_slow )
             
         
         return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
+        
+    
+    def _PopulateStatements( self, statements_and_scores, names ):
+        
+        for name in names:
+            
+            ( panel, st ) = self._comparison_statements_sts[ name ]
+            
+            got_data = name in statements_and_scores
+            
+            show_panel = got_data
+            
+            panel.setVisible( show_panel )
+            
+            if got_data:
+                
+                ( statement, score ) = statements_and_scores[ name ]
+                
+                st.setText( statement )
+                
+                if score > 0:
+                    
+                    object_name = 'HydrusValid'
+                    
+                elif score < 0:
+                    
+                    object_name = 'HydrusInvalid'
+                    
+                else:
+                    
+                    object_name = 'HydrusIndeterminate'
+                    
+                
+                st.setObjectName( object_name )
+                
+                st.style().polish( st )
+                
+                if name == 'a_and_b_are_visual_duplicates':
+                    
+                    tt = f'{statement}\n\nThis uses a custom visual inspection algorithm to try to differentiate resizes/re-encodes vs recolours/alternates. It is pretty good and you can generally trust it. On edge cases, it intentionally errs on the side of false negative.'
+                    st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+                    
+                elif name == 'jpeg_subsampling':
+                    
+                    tt = f'{statement}\n\nTo save space, jpegs can encode colour data at a lower resolution than light intensity. This is called "subsampling". You do not notice it much, but it does affect image quality, and you generally want to select the higher resolution of subsampling as the "better" of any pair. There are complicated situations where a jpeg can be subsampled and then saved again at a higher quality level (and this is one of the ways you can have a jpeg that is bloated but looks no better), but in general, know that bigger numbers are better:\n\n4:4:4 > 4:2:2 > 4:2:0.\n\nAnything that counts as "unknown" is probably worse. Truly greyscale jpegs (i.e. 8 bits per pixel) have no colour and thus no subsampling.'
+                    st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+                    
+                elif name == 'jpeg_quality':
+                    
+                    tt = f'{statement}\n\nThis is an estimate based on metadata within the jpeg header. It is not perfect, but it is generally reliable. It will be tricked by a low quality file that is re-saved at a higher quality level.'
+                    st.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+                    
+                else:
+                    
+                    st.setToolTip( ClientGUIFunctions.WrapToolTip( statement ) )
+                    
+                
+            
+            # hackery dackery doo
+            st.updateGeometry()
+            panel.updateGeometry()
+            
+        
+        # some more hackery dackery doo, along with the updateGeometry forced calls above
+        # might be able to remove this if and when the layout chain here is cleaned up all the way to the window()
+        self._comparison_statements_vbox.invalidate()
+        self._comparison_statements_vbox.activate()
+        
+        # minimumsize is not immediately updated without this
+        self.layout().activate()
+        
+        self._SizeAndPosition()
+        
+    
+    def _UpdateTotalScore( self, finished = True ):
+        
+        total_score = self._total_score_fast + self._total_score_slow
+        
+        if total_score > 0:
+            
+            text = 'score: +' + HydrusNumbers.ToHumanInt( total_score )
+            object_name = 'HydrusValid'
+            
+        elif total_score < 0:
+            
+            text = 'score: ' + HydrusNumbers.ToHumanInt( total_score )
+            object_name = 'HydrusInvalid'
+            
+        else:
+            
+            text = 'no score difference'
+            object_name = 'HydrusIndeterminate'
+            
+        
+        if not finished:
+            
+            text += HC.UNICODE_ELLIPSIS
+            
+        
+        self._comparison_statement_score_summary.setText( text )
+        
+        self._comparison_statement_score_summary.setObjectName( object_name )
+        
+        self._comparison_statement_score_summary.style().polish( self._comparison_statement_score_summary )
         
     
     def SetDuplicatePair( self, canvas_key, shown_media, comparison_media ):
@@ -2614,9 +2762,13 @@ class CanvasHoverFrameRightDuplicates( CanvasHoverFrame ):
             self._current_media = shown_media
             self._comparison_media = comparison_media
             
+            self._total_score_fast = 0
+            self._total_score_slow = 0
+            self._they_are_pixel_duplicates = False
+            
             self._EnableDisableButtons()
             
-            self._comparison_statement_updater.update()
+            self._comparison_statement_updater_fast.update()
             
             # minimumsize is not immediately updated without this
             self.layout().activate()

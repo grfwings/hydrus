@@ -770,7 +770,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
             
             self._Execute( 'ATTACH ":memory:" AS mem;' )
             
-        except HydrusExceptions.DBAccessException as e:
+        except HydrusExceptions.DBAccessException:
             
             raise
             
@@ -1042,11 +1042,11 @@ class HydrusDB( HydrusDBBase.DBBase ):
         
         for filename in self._db_filenames.values():
             
-            path = os.path.join( self._db_dir, filename )
+            db_path = os.path.join( self._db_dir, filename )
             
-            if os.path.exists( path ):
+            if os.path.exists( db_path ):
                 
-                total += os.path.getsize( path )
+                total += os.path.getsize( db_path )
                 
             
         
@@ -1150,11 +1150,11 @@ class HydrusDB( HydrusDBBase.DBBase ):
                         HydrusData.ShowText( summary )
                         
                     
-                    if HG.profile_mode:
+                    if HydrusProfiling.IsProfileMode( 'db' ):
                         
                         summary = 'Profiling db job: ' + job.ToString()
                         
-                        HydrusProfiling.Profile( summary, 'self._ProcessJob( job )', globals(), locals(), min_duration_ms = HG.db_profile_min_job_time_ms )
+                        HydrusProfiling.Profile( summary, HydrusData.Call( self._ProcessJob, job ), min_duration_ms = HG.db_profile_min_job_time_ms )
                         
                     else:
                         

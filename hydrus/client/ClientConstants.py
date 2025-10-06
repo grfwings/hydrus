@@ -3,6 +3,7 @@ import os
 from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
+from hydrus.core import HydrusStaticDir
 
 #
 
@@ -548,7 +549,7 @@ class GlobalPixmaps( object ):
     
     def __init__( self ):
         
-        self._Initialise()
+        self._Reinitialise()
         
     
     @staticmethod
@@ -562,106 +563,108 @@ class GlobalPixmaps( object ):
         return GlobalPixmaps.my_instance
         
     
-    def _Initialise( self ):
+    def _Reinitialise( self ):
         
         # These probably *could* be created even before QApplication is constructed, but it can't hurt to wait until that's done.
         
-        self.bold = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_bold.png' ) )
-        self.italic = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_italic.png' ) )
-        self.underline = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_underline.png' ) )
+        self.bold = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_bold.png' ) )
+        self.italic = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_italic.png' ) )
+        self.underline = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_underline.png' ) )
         
-        self.align_left = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_align_left.png' ) )
-        self.align_center = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_align_center.png' ) )
-        self.align_right = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_align_right.png' ) )
-        self.align_justify = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_align_justify.png' ) )
+        self.align_left = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_align_left.png' ) )
+        self.align_center = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_align_center.png' ) )
+        self.align_right = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_align_right.png' ) )
+        self.align_justify = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_align_justify.png' ) )
         
-        self.indent_less = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_indent_remove.png' ) )
-        self.indent_more = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'text_indent.png' ) )
+        self.indent_less = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_indent_remove.png' ) )
+        self.indent_more = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'text_indent.png' ) )
         
-        self.font = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'font.png' ) )
-        self.colour = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'color_swatch.png' ) )
+        self.font = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'font.png' ) )
+        self.colour = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'color_swatch.png' ) )
         
-        self.link = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'link.png' ) )
-        self.link_break = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'link_break.png' ) )
+        self.link = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'link.png' ) )
+        self.link_break = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'link_break.png' ) )
         
-        self.drag = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'drag.png' ) )
+        self.drag = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'drag.png' ) )
         
-        self.transparent = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'transparent.png' ) )
-        self.downloading = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'downloading.png' ) )
-        self.file_repository = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'file_repository_small.png' ) )
-        self.file_repository_pending = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'file_repository_pending_small.png' ) )
-        self.file_repository_petitioned = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'file_repository_petitioned_small.png' ) )
-        self.ipfs = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'ipfs_small.png' ) )
-        self.ipfs_pending = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'ipfs_pending_small.png' ) )
-        self.ipfs_petitioned = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'ipfs_petitioned_small.png' ) )
+        self.transparent = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'transparent.png' ) )
+        self.downloading = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'downloading.png' ) )
+        self.file_repository = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'file_repository_small.png' ) )
+        self.file_repository_pending = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'file_repository_pending_small.png' ) )
+        self.file_repository_petitioned = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'file_repository_petitioned_small.png' ) )
+        self.ipfs = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'ipfs_small.png' ) )
+        self.ipfs_pending = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'ipfs_pending_small.png' ) )
+        self.ipfs_petitioned = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'ipfs_petitioned_small.png' ) )
         
-        self.collection = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'collection.png' ) )
-        self.inbox = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'inbox.png' ) )
-        self.trash = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'trash.png' ) )
+        self.collection = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'collection.png' ) )
+        self.inbox = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'inbox.png' ) )
+        self.trash = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'trash.png' ) )
         
-        self.refresh = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'refresh.png' ) )
-        self.archive = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'archive.png' ) )
-        self.to_inbox = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'to_inbox.png' ) )
-        self.delete = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'trash.png' ) )
-        self.trash_delete = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'delete.png' ) )
-        self.undelete = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'undelete.png' ) )
-        self.zoom_in = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_in.png' ) )
-        self.zoom_out = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_out.png' ) )
-        self.zoom_switch = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_switch.png' ) )
-        self.zoom_cog = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'zoom_cog.png' ) )
-        self.eye = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'eye.png' ) )
-        self.fullscreen_switch = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'fullscreen_switch.png' ) )
-        self.open_externally = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'open_externally.png' ) )
-        self.move = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'move.png' ) )
-        self.move_cursor = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'move32x.png' ) )
+        self.refresh = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'refresh.png' ) )
+        self.archive = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'archive.png' ) )
+        self.to_inbox = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'to_inbox.png' ) )
+        self.delete = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'trash.png' ) )
+        self.trash_delete = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'delete.png' ) )
+        self.undelete = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'undelete.png' ) )
+        self.zoom_in = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'zoom_in.png' ) )
+        self.zoom_out = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'zoom_out.png' ) )
+        self.zoom_switch = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'zoom_switch.png' ) )
+        self.zoom_cog = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'zoom_cog.png' ) )
+        self.eye = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'eye.png' ) )
+        self.fullscreen_switch = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'fullscreen_switch.png' ) )
+        self.open_externally = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'open_externally.png' ) )
+        self.move = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'move.png' ) )
+        self.move_cursor = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'move32x.png' ) )
         
-        self.dump_ok = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'dump_ok.png' ) )
-        self.dump_recoverable = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'dump_recoverable.png' ) )
-        self.dump_fail = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'dump_fail.png' ) )
+        self.dump_ok = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'dump_ok.png' ) )
+        self.dump_recoverable = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'dump_recoverable.png' ) )
+        self.dump_fail = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'dump_fail.png' ) )
         
-        self.cog = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'cog.png' ) )
-        self.family = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'family.png' ) )
-        self.keyboard = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'keyboard.png' ) )
-        self.help = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'help.png' ) )
+        self.cog = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'cog.png' ) )
+        self.family = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'family.png' ) )
+        self.keyboard = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'keyboard.png' ) )
+        self.help = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'help.png' ) )
         
-        self.check = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'check.png' ) )
-        self.pause = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'pause.png' ) )
-        self.play = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'play.png' ) )
-        self.stop = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'stop.png' ) )
+        self.check = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'check.png' ) )
+        self.pause = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'pause.png' ) )
+        self.play = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'play.png' ) )
+        self.stop = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'stop.png' ) )
         
-        self.sound = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'sound.png' ) )
-        self.mute = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'mute.png' ) )
+        self.sound = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'sound.png' ) )
+        self.mute = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'mute.png' ) )
         
-        self.notes = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'notes.png' ) )
+        self.notes = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'notes.png' ) )
         
-        self.file_pause = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'file_pause.png' ) )
-        self.file_play = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'file_play.png' ) )
-        self.gallery_pause = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'gallery_pause.png' ) )
-        self.gallery_play = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'gallery_play.png' ) )
+        self.file_pause = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'file_pause.png' ) )
+        self.file_play = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'file_play.png' ) )
+        self.gallery_pause = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'gallery_pause.png' ) )
+        self.gallery_play = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'gallery_play.png' ) )
         
-        self.highlight = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'highlight.png' ) )
-        self.clear_highlight = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'clear_highlight.png' ) )
+        self.highlight = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'highlight.png' ) )
+        self.clear_highlight = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'clear_highlight.png' ) )
         
-        self.lock = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'lock.png' ) )
-        self.lock_open = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'lock_open.png' ) )
+        self.lock = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'lock.png' ) )
+        self.lock_open = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'lock_open.png' ) )
         
-        self.star = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'star.png' ) )
+        self.star = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'star.png' ) )
         
-        #self.listctrl = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'listctrl.png' ) )
+        #self.listctrl = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'listctrl.png' ) )
         
-        self.page_with_text = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'page_with_text.png' ) )
+        self.page_with_text = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'page_with_text.png' ) )
         
-        self.copy = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'copy.png' ) )
-        self.paste = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'paste.png' ) )
+        self.copy = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'copy.png' ) )
+        self.paste = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'paste.png' ) )
         
-        self.eight_chan = QG.QPixmap( os.path.join( HC.STATIC_DIR, '8chan.png' ) )
+        self.eight_chan = QG.QPixmap( HydrusStaticDir.GetStaticPath( '8chan.png' ) )
         
-        self.first = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'first.png' ) )
-        self.previous = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'previous.png' ) )
-        self.next_bmp = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'next.png' ) )
-        self.last = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'last.png' ) )
-        self.pair = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'pair.png' ) )
+        self.pair = QG.QPixmap( HydrusStaticDir.GetStaticPath( 'pair.png' ) )
         
+    
+    def Reload( self ):
+        
+        self._Reinitialise()
+        
+    
 
 global_pixmaps = GlobalPixmaps.instance
 
@@ -673,7 +676,7 @@ class GlobalIcons( object ):
         
         self.user_icons = {}
         
-        self._Initialise()
+        self._Reinitialise()
         
     
     @staticmethod
@@ -687,35 +690,146 @@ class GlobalIcons( object ):
         return GlobalIcons.my_instance
         
     
-    def _Initialise( self ):
+    def _GetSVGOrPNGPathIcon( self, name ) -> QG.QIcon:
         
-        self.hydrus = QG.QIcon( os.path.join( HC.STATIC_DIR, 'hydrus_black_square.svg' ) )
-        self.github = QG.QIcon( os.path.join( HC.STATIC_DIR, 'github.svg' ) )
-        self.x = QG.QIcon( os.path.join( HC.STATIC_DIR, 'x.svg' ) )
-        self.tumblr = QG.QIcon( os.path.join( HC.STATIC_DIR, 'tumblr.svg' ) )
-        self.discord = QG.QIcon( os.path.join( HC.STATIC_DIR, 'discord.svg' ) )
-        self.patreon = QG.QIcon( os.path.join( HC.STATIC_DIR, 'patreon.svg' ) )
+        return QG.QIcon( HydrusStaticDir.GetStaticIconPath( name ) )
+        
+    
+    def _Reinitialise( self ):
+        
+        self.hydrus_frame = self._GetSVGOrPNGPathIcon( 'hydrus_32_non-transparent' )
+        self.hydrus_system_tray = self._GetSVGOrPNGPathIcon( 'hydrus_non-transparent' )
+        
+        self.bold = self._GetSVGOrPNGPathIcon( 'text_bold' )
+        self.italic = self._GetSVGOrPNGPathIcon( 'text_italic' )
+        self.underline = self._GetSVGOrPNGPathIcon( 'text_underline' )
+        
+        self.align_left = self._GetSVGOrPNGPathIcon( 'text_align_left' )
+        self.align_center = self._GetSVGOrPNGPathIcon( 'text_align_center' )
+        self.align_right = self._GetSVGOrPNGPathIcon( 'text_align_right' )
+        self.align_justify = self._GetSVGOrPNGPathIcon( 'text_align_justify' )
+        
+        self.indent_less = self._GetSVGOrPNGPathIcon( 'text_indent_remove' )
+        self.indent_more = self._GetSVGOrPNGPathIcon( 'text_indent' )
+        
+        self.font = self._GetSVGOrPNGPathIcon( 'font' )
+        self.colour = self._GetSVGOrPNGPathIcon( 'color_swatch' )
+        
+        self.link = self._GetSVGOrPNGPathIcon( 'link' )
+        self.link_break = self._GetSVGOrPNGPathIcon( 'link_break' )
+        
+        self.drag = self._GetSVGOrPNGPathIcon( 'drag' )
+        
+        self.transparent = self._GetSVGOrPNGPathIcon( 'transparent' )
+        self.downloading = self._GetSVGOrPNGPathIcon( 'downloading' )
+        self.file_repository = self._GetSVGOrPNGPathIcon( 'file_repository_small' )
+        self.file_repository_pending = self._GetSVGOrPNGPathIcon( 'file_repository_pending_small' )
+        self.file_repository_petitioned = self._GetSVGOrPNGPathIcon( 'file_repository_petitioned_small' )
+        self.ipfs = self._GetSVGOrPNGPathIcon( 'ipfs_small' )
+        self.ipfs_pending = self._GetSVGOrPNGPathIcon( 'ipfs_pending_small' )
+        self.ipfs_petitioned = self._GetSVGOrPNGPathIcon( 'ipfs_petitioned_small' )
+        
+        self.collection = self._GetSVGOrPNGPathIcon( 'collection' )
+        self.inbox = self._GetSVGOrPNGPathIcon( 'inbox' )
+        self.trash = self._GetSVGOrPNGPathIcon( 'trash' )
+        
+        self.refresh = self._GetSVGOrPNGPathIcon( 'refresh' )
+        self.archive = self._GetSVGOrPNGPathIcon( 'archive' )
+        self.to_inbox = self._GetSVGOrPNGPathIcon( 'to_inbox' )
+        self.delete = self._GetSVGOrPNGPathIcon( 'trash' )
+        self.trash_delete = self._GetSVGOrPNGPathIcon( 'delete' )
+        self.undelete = self._GetSVGOrPNGPathIcon( 'undelete' )
+        self.zoom_in = self._GetSVGOrPNGPathIcon( 'zoom_in' )
+        self.zoom_out = self._GetSVGOrPNGPathIcon( 'zoom_out' )
+        self.zoom_switch = self._GetSVGOrPNGPathIcon( 'zoom_switch' )
+        self.zoom_cog = self._GetSVGOrPNGPathIcon( 'zoom_cog' )
+        self.eye = self._GetSVGOrPNGPathIcon( 'eye' )
+        self.open_externally = self._GetSVGOrPNGPathIcon( 'open_externally' )
+        self.move = self._GetSVGOrPNGPathIcon( 'move' )
+        self.move_cursor = self._GetSVGOrPNGPathIcon( 'move32x' )
+        
+        self.dump_ok = self._GetSVGOrPNGPathIcon( 'dump_ok' )
+        self.dump_recoverable = self._GetSVGOrPNGPathIcon( 'dump_recoverable' )
+        self.dump_fail = self._GetSVGOrPNGPathIcon( 'dump_fail' )
+        
+        self.family = self._GetSVGOrPNGPathIcon( 'family' )
+        self.keyboard = self._GetSVGOrPNGPathIcon( 'keyboard' )
+        self.help = self._GetSVGOrPNGPathIcon( 'help' )
+        
+        self.check = self._GetSVGOrPNGPathIcon( 'check' )
+        self.pause = self._GetSVGOrPNGPathIcon( 'pause' )
+        self.play = self._GetSVGOrPNGPathIcon( 'play' )
+        self.stop = self._GetSVGOrPNGPathIcon( 'stop' )
+        
+        self.sound = self._GetSVGOrPNGPathIcon( 'sound' )
+        self.mute = self._GetSVGOrPNGPathIcon( 'mute' )
+        
+        self.notes = self._GetSVGOrPNGPathIcon( 'notes' )
+        
+        self.file_pause = self._GetSVGOrPNGPathIcon( 'file_pause' )
+        self.file_play = self._GetSVGOrPNGPathIcon( 'file_play' )
+        self.gallery_pause = self._GetSVGOrPNGPathIcon( 'gallery_pause' )
+        self.gallery_play = self._GetSVGOrPNGPathIcon( 'gallery_play' )
+        
+        self.highlight = self._GetSVGOrPNGPathIcon( 'highlight' )
+        self.clear_highlight = self._GetSVGOrPNGPathIcon( 'clear_highlight' )
+        
+        self.lock = self._GetSVGOrPNGPathIcon( 'lock' )
+        self.lock_open = self._GetSVGOrPNGPathIcon( 'lock_open' )
+        
+        #self.listctrl = self._GetSVGOrPNGPathIcon( 'listctrl' )
+        
+        self.page_with_text = self._GetSVGOrPNGPathIcon( 'page_with_text' )
+        
+        self.copy = self._GetSVGOrPNGPathIcon( 'copy' )
+        self.paste = self._GetSVGOrPNGPathIcon( 'paste' )
+        
+        self.eight_chan = self._GetSVGOrPNGPathIcon( '8chan' )
+        
+        self.pair = self._GetSVGOrPNGPathIcon( 'pair' )
+        
+        self.hydrus_black_square = self._GetSVGOrPNGPathIcon( 'hydrus_black_square' )
+        self.github = self._GetSVGOrPNGPathIcon( 'github' )
+        self.x = self._GetSVGOrPNGPathIcon( 'x' )
+        self.tumblr = self._GetSVGOrPNGPathIcon( 'tumblr' )
+        self.discord = self._GetSVGOrPNGPathIcon( 'discord' )
+        self.patreon = self._GetSVGOrPNGPathIcon( 'patreon' )
+        
+        # svgs I've done:
+        
+        self.cog = self._GetSVGOrPNGPathIcon( 'cog' )
+        self.retry = self._GetSVGOrPNGPathIcon( 'retry' )
+        self.star = self._GetSVGOrPNGPathIcon( 'star' )
+        
+        self.position_first = self._GetSVGOrPNGPathIcon( 'position_first' )
+        self.position_previous = self._GetSVGOrPNGPathIcon( 'position_previous' )
+        self.position_next = self._GetSVGOrPNGPathIcon( 'position_next' )
+        self.position_last = self._GetSVGOrPNGPathIcon( 'position_last' )
+        self.position_random = self._GetSVGOrPNGPathIcon( 'position_random' )
+        
+        self.fullscreen_switch = self._GetSVGOrPNGPathIcon( 'fullscreen_switch' )
         
         self.RefreshUserIcons()
+        
+    
+    def Reload( self ):
+        
+        self._Reinitialise()
         
     
     def RefreshUserIcons( self ):
         
         self.user_icons = {}
         
-        user_icon_dir = os.path.join( HC.STATIC_DIR, 'star_shapes' )
-
-        if os.path.exists( user_icon_dir ):
+        for path in HydrusStaticDir.ListStaticDirFilePaths( 'star_shapes' ):
             
-            for filename in os.listdir( user_icon_dir ):
+            ( d, filename ) = os.path.split( path )
+            
+            if filename.lower().endswith( '.svg' ):
                 
-                if filename.lower().endswith( '.svg' ):
-                    
-                    name = os.path.splitext( filename )[0]
-                    path = os.path.join( user_icon_dir, filename )
-                    
-                    self.user_icons[ name ] = QG.QIcon( path )
-                    
+                name = os.path.splitext( filename )[0]
+                
+                self.user_icons[ name ] = QG.QIcon( path )
                 
             
         

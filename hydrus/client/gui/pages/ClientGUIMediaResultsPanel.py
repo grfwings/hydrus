@@ -21,6 +21,7 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientServices
+from hydrus.client import ClientThreading
 from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.gui import ClientGUIDialogsManage
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -187,10 +188,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_frame.SetCanvas( canvas_window )
             
-            canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
-            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
-            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
-            
+            self._ConnectCanvasWindowSignals( canvas_window )
             
         
     
@@ -199,6 +197,23 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         media = self._GetSelectedFlatMedia()
         
         ClientGUIMediaModalActions.ClearDeleteRecord( self, media )
+        
+    
+    def _ConnectCanvasWindowSignals( self, canvas_window: ClientGUICanvas.Canvas ):
+        
+        if isinstance( canvas_window, ClientGUICanvas.CanvasMediaList ):
+            
+            canvas_window.exitFocusMedia.connect( self.NotifyFocusedMediaFromCanvasExiting )
+            
+            canvas_window.exitFocusMediaForced.connect( self.SetFocusedMedia )
+            
+            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
+            
+        
+        if isinstance( canvas_window, ClientGUICanvas.CanvasWithHovers ):
+            
+            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
+            
         
     
     def _Delete( self, file_service_key = None, only_those_in_file_service_key = None ):
@@ -245,10 +260,31 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         def do_it( content_update_packages ):
             
-            for content_update_package in content_update_packages:
+            display_time = HydrusTime.GetNow() + 3
+            message_pubbed = False
+            
+            job_status = ClientThreading.JobStatus() # not cancellable, this stuff isn't a nice mix
+            
+            job_status.SetStatusTitle( 'deleting files' )
+            # no text, the content update packages are not always a nice mix
+            
+            num_to_do = len( content_update_packages )
+            
+            for ( i, content_update_package ) in enumerate( content_update_packages ):
+                
+                job_status.SetGauge( i, num_to_do )
+                
+                if not message_pubbed and HydrusTime.TimeHasPassed( display_time ):
+                    
+                    CG.client_controller.pub( 'message', job_status )
+                    
+                    message_pubbed = True
+                    
                 
                 CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
                 
+            
+            job_status.FinishAndDismiss()
             
         
         CG.client_controller.CallToThread( do_it, content_update_packages )
@@ -904,16 +940,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_frame.SetCanvas( canvas_window )
             
-            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
-
-            if CG.client_controller.new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ):
-                
-                canvas_window.exitFocusMedia.connect( self.SetFocusedMediaAndFocusTab )
-                
-            else:
-                
-                canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
-                
+            self._ConnectCanvasWindowSignals( canvas_window )
             
         
     
@@ -1307,6 +1334,15 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             self._RemoveMediaByHashes( hashes )
             
+        
+    
+    def _RemoveMediaByHashes( self, hashes ):
+        
+        # even though this guy eventually calls _RemoveMediaDirectly and thus filesRemoved, this doesn't happen when a collection removes a file internally
+        
+        super()._RemoveMediaByHashes( hashes )
+        
+        self.filesRemoved.emit( list( hashes ) )
         
     
     def _RemoveMediaDirectly( self, singleton_media, collected_media ):
@@ -1812,7 +1848,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         if self._focused_media is not None:
             
             publish_media = self._focused_media.GetDisplayMedia()
-
+            
+        
         if publish_media is None:
             
             self.focusMediaCleared.emit()
@@ -1967,6 +2004,33 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     def LaunchMediaViewerOn( self, media ):
         
         self._LaunchMediaViewer( media )
+        
+    
+    def NotifyFocusedMediaFromCanvasExiting( self, media ):
+        
+        do_activate_window_test = False
+        
+        if CG.client_controller.new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ):
+            
+            if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
+                
+                CG.client_controller.gui.ShowPage( self._page_key )
+                
+            
+            do_activate_window_test = True
+            
+        
+        if CG.client_controller.new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ):
+            
+            self.SetFocusedMedia( media )
+            
+            do_activate_window_test = True
+            
+        
+        if do_activate_window_test and CG.client_controller.new_options.GetBoolean( 'activate_main_gui_on_focusing_viewer_close' ):
+            
+            self.activateWindow()
+            
         
     
     def PageHidden( self ):
@@ -2613,18 +2677,6 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     def SetFocusedMedia( self, media ):
         
         pass
-        
-    
-    def SetFocusedMediaAndFocusTab( self, media ):
-        
-        if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
-            
-            CG.client_controller.gui.ShowPage( self._page_key )
-
-            self.SetFocusedMedia( media )
-            
-            self._PublishSelectionChange()
-            
         
     
     def get_hmrp_background( self ):

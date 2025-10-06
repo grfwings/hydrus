@@ -36,6 +36,7 @@ from hydrus.client.importing.options import TagImportOptions
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
+from hydrus.client.networking import ClientNetworkingFunctions
 
 # TODO: ok the general plan here is to move rich panels to topical gui.xxx modules
 # this new gui.panels is going to be for basic panel template stuff
@@ -721,7 +722,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self.widget().setLayout( vbox )
         
-        QP.CallAfter( self._SetFocus )
+        CG.client_controller.CallAfter( self, self._SetFocus )
         
     
     def _GetExistingSharedFileDeletionReason( self ):
@@ -878,9 +879,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 text = template.format( file_desc, deletee_service.GetName() )
                 
-                chunks_of_hashes = HydrusLists.SplitListIntoChunks( hashes, 64 )
-                
-                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
+                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( hashes, 16 ) ]
                 
                 content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( deletee_file_service_key, content_update ) for content_update in content_updates ]
                 
@@ -899,9 +898,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     h = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY in m.GetLocationsManager().GetCurrent() ]
                     
-                    chunks_of_hashes = HydrusLists.SplitListIntoChunks( h, 64 )
-                    
-                    content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
+                    content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( h, 16 ) ]
                     
                     content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( deletee_file_service_key, content_update ) for content_update in content_updates ]
                     
@@ -977,9 +974,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 text = 'Permanently delete {}?'.format( suffix )
                 
-                chunks_of_hashes = HydrusLists.SplitListIntoChunks( hashes, 64 )
-                
-                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
+                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( hashes, 16 ) ]
                 
                 content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update ) for content_update in content_updates ]
                 
@@ -1016,7 +1011,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     text = 'Permanently delete these ' + HydrusNumbers.ToHumanInt( num_to_delete ) + ' files and do not save a deletion record?'
                     
                 
-                chunks_of_hashes = list( HydrusLists.SplitListIntoChunks( hashes, 64 ) ) # iterator, so list it to use it more than once, jej
+                chunks_of_hashes = list( HydrusLists.SplitListIntoChunks( hashes, 16 ) ) # iterator, so list it to use it more than once, jej
                 
                 content_update_packages = []
                 
@@ -1353,10 +1348,10 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit current name', self._EditName )
         self._delete_button = ClientGUICommon.BetterButton( self, 'delete current note', self._DeleteNote )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy all notes to the clipboard.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste from a copy from another notes dialog.' ) )
         
         #
@@ -2150,10 +2145,10 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
         self._url_input = QW.QLineEdit( self )
         self._url_input.installEventFilter( ClientGUICommon.TextCatchEnterEventFilter( self._url_input, self.AddURL ) )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy selected URLs to the clipboard, or all URLs if none are selected.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste URLs from the clipboard.' ) )
         
         self._urls_to_add = set()
@@ -2211,6 +2206,8 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             try:
                 
+                ClientNetworkingFunctions.CheckLooksLikeAFullURL( url )
+                
                 normalised_url = CG.client_controller.network_engine.domain_manager.NormaliseURL( url, for_server = True )
                 
                 normalised_urls.append( normalised_url )
@@ -2239,7 +2236,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             normalised_urls.extend( weird_urls )
             
         
-        normalised_urls = HydrusData.DedupeList( normalised_urls )
+        normalised_urls = HydrusLists.DedupeList( normalised_urls )
         
         for normalised_url in normalised_urls:
             

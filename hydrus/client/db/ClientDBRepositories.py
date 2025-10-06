@@ -411,7 +411,7 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
             ( min_unregistered_update_index, ) = result
             
         
-        predicate_phrase = 'processed = ? AND content_type IN {}'.format( HydrusData.SplayListForDB( content_types_to_process ) )
+        predicate_phrase = 'processed = ? AND content_type IN {}'.format( HydrusLists.SplayListForDB( content_types_to_process ) )
         
         if min_unregistered_update_index is not None:
             
@@ -643,13 +643,13 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
             
         
     
-    def ProcessRepositoryDefinitions( self, service_key: bytes, definition_hash: bytes, definition_iterator_dict, content_types, job_status, work_time ):
+    def ProcessRepositoryDefinitions( self, service_key: bytes, definition_hash: bytes, definition_iterator_dict, content_types, job_status, work_period ):
         
         # ignore content_types for now
         
         service_id = self.modules_services.GetServiceId( service_key )
         
-        precise_time_to_stop = HydrusTime.GetNowPrecise() + work_time
+        precise_time_to_stop = HydrusTime.GetNowPrecise() + work_period
         
         ( hash_id_map_table_name, tag_id_map_table_name ) = GenerateRepositoryDefinitionTableNames( service_id )
         

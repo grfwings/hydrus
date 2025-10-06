@@ -124,7 +124,30 @@ def GenerateExportFilename( destination_directory, media, terms, file_index, do_
         filename = re.sub( '/+', '/', filename )
         
     
-    filename = HydrusPaths.SanitizePathForExport( destination_directory, filename )
+    if CG.client_controller.new_options.GetBoolean( 'always_apply_ntfs_export_filename_rules' ):
+        
+        force_ntfs_rules = True
+        
+    else:
+        
+        fst = HydrusPaths.GetFileSystemType( destination_directory )
+        
+        if fst is None:
+            
+            force_ntfs_rules = False
+            
+        else:
+            
+            fst_lower = fst.lower()
+            
+            if fst_lower.startswith( 'fuse.' ):
+                
+                fst_lower = fst_lower[ 5 : ]
+                
+            
+            force_ntfs_rules = fst_lower in ( 'ntfs', 'exfat', 'vfat', 'msdos', 'fat', 'fat32', 'cifs', 'smbfs', 'fuseblk' )
+            
+        
     
     #
     
@@ -137,24 +160,24 @@ def GenerateExportFilename( destination_directory, media, terms, file_index, do_
         filename = filename[ : - len( ext ) ]
         
     
+    path_character_limit = CG.client_controller.new_options.GetNoneableInteger( 'export_path_character_limit' )
+    dirname_character_limit = CG.client_controller.new_options.GetNoneableInteger( 'export_dirname_character_limit' )
     filename_character_limit = CG.client_controller.new_options.GetInteger( 'export_filename_character_limit' )
     
     ( subdirs, true_filename ) = os.path.split( filename )
     
-    if len( subdirs ) > 0:
+    if true_filename == '':
         
-        true_destination_directory = os.path.join( destination_directory, subdirs )
+        hash = media.GetHash()
         
-    else:
-        
-        true_destination_directory = destination_directory
+        true_filename = hash.hex()
         
     
-    filename_elided = HydrusPaths.ElideFilenameSafely( true_filename, filename_character_limit, true_destination_directory, ext_suffix = ext )
+    ( subdirs_elided, filename_elided ) = HydrusPaths.ElideFilenameSafely( destination_directory, subdirs, true_filename, ext, path_character_limit, dirname_character_limit, filename_character_limit, force_ntfs_rules )
     
-    if len( subdirs ) > 0:
+    if len( subdirs_elided ) > 0:
         
-        filename_elided = os.path.join( subdirs, filename_elided )
+        filename_elided = os.path.join( subdirs_elided, filename_elided )
         
     
     if do_not_use_filenames is not None:
@@ -290,7 +313,7 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_EXPORT_FOLDER
     SERIALISABLE_NAME = 'Export Folder'
-    SERIALISABLE_VERSION = 8
+    SERIALISABLE_VERSION = 9
     
     def __init__(
         self,
@@ -302,7 +325,7 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         file_search_context = None,
         metadata_routers = None,
         run_regularly = True,
-        period = 3600,
+        period = 3600 * 24,
         phrase = None,
         last_checked = 0,
         run_now = False,
@@ -347,6 +370,8 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         self._run_now = run_now
         self._last_error = last_error
         self._show_working_popup = show_working_popup
+        self._overwrite_sidecars_on_next_run = False
+        self._always_overwrite_sidecars = False
         
     
     def _GetSerialisableInfo( self ):
@@ -367,7 +392,9 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             self._last_checked,
             self._run_now,
             self._last_error,
-            self._show_working_popup
+            self._show_working_popup,
+            self._overwrite_sidecars_on_next_run,
+            self._always_overwrite_sidecars
         )
         
     
@@ -386,7 +413,9 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             self._last_checked,
             self._run_now,
             self._last_error,
-            self._show_working_popup
+            self._show_working_popup,
+            self._overwrite_sidecars_on_next_run,
+            self._always_overwrite_sidecars
         ) = serialisable_info
         
         if self._export_type == HC.EXPORT_FOLDER_TYPE_SYNCHRONISE:
@@ -495,9 +524,65 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                 run_regularly = False
                 
             
-            new_serialisable_info = ( path, export_type, delete_from_client_after_export, export_symlinks, serialisable_file_search_context, serialisable_metadata_routers, run_regularly, period, phrase, last_checked, run_now, last_error, show_working_popup )
+            new_serialisable_info = (
+                path,
+                export_type,
+                delete_from_client_after_export,
+                export_symlinks,
+                serialisable_file_search_context,
+                serialisable_metadata_routers,
+                run_regularly,
+                period,
+                phrase,
+                last_checked,
+                run_now,
+                last_error,
+                show_working_popup
+            )
             
             return ( 8, new_serialisable_info )
+            
+        
+        if version == 8:
+            
+            (
+                path,
+                export_type,
+                delete_from_client_after_export,
+                export_symlinks,
+                serialisable_file_search_context,
+                serialisable_metadata_routers,
+                run_regularly,
+                period,
+                phrase,
+                last_checked,
+                run_now,
+                last_error,
+                show_working_popup
+            ) = old_serialisable_info
+            
+            overwrite_sidecars_on_next_run = False
+            always_overwrite_sidecars = False
+            
+            new_serialisable_info = (
+                path,
+                export_type,
+                delete_from_client_after_export,
+                export_symlinks,
+                serialisable_file_search_context,
+                serialisable_metadata_routers,
+                run_regularly,
+                period,
+                phrase,
+                last_checked,
+                run_now,
+                last_error,
+                show_working_popup,
+                overwrite_sidecars_on_next_run,
+                always_overwrite_sidecars
+            )
+            
+            return ( 9, new_serialisable_info )
             
         
     
@@ -509,9 +594,9 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         
         CHUNK_SIZE = 256
         
-        for ( i, block_of_hash_ids ) in enumerate( HydrusLists.SplitListIntoChunks( query_hash_ids, 256 ) ):
+        for ( num_done, num_to_do, block_of_hash_ids ) in HydrusLists.SplitListIntoChunksRich( query_hash_ids, CHUNK_SIZE ):
             
-            job_status.SetStatusText( 'searching: {}'.format( HydrusNumbers.ValueRangeToPrettyString( i * CHUNK_SIZE, len( query_hash_ids ) ) ) )
+            job_status.SetStatusText( 'searching: {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) ) )
             
             if job_status.IsCancelled():
                 
@@ -544,6 +629,7 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         sync_paths = set()
         
         sidecar_paths_that_did_not_exist_before_this_run = set()
+        sidecar_paths_that_did_exist_before_this_run = set()
         
         client_files_manager = CG.client_controller.client_files_manager
         
@@ -665,12 +751,30 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                     
                     sidecar_path = metadata_exporter.GetExportPath( dest_path )
                     
-                    if not os.path.exists( sidecar_path ):
+                    if os.path.exists( sidecar_path ):
+                        
+                        if sidecar_path not in sidecar_paths_that_did_not_exist_before_this_run:
+                            
+                            if sidecar_path not in sidecar_paths_that_did_exist_before_this_run:
+                                
+                                sidecar_paths_that_did_exist_before_this_run.add( sidecar_path )
+                                
+                                if self._overwrite_sidecars_on_next_run or self._always_overwrite_sidecars:
+                                    
+                                    # ok this is the first time we have seen this guy. let's do a full delete so we can recreate from scratch
+                                    # it is tempting to try for an 'update' instead of overwrite, but let's KISS
+                                    # note non-recycling delete
+                                    HydrusPaths.DeletePath( sidecar_path )
+                                    
+                                
+                            
+                        
+                    else:
                         
                         sidecar_paths_that_did_not_exist_before_this_run.add( sidecar_path )
                         
                     
-                    if sidecar_path in sidecar_paths_that_did_not_exist_before_this_run:
+                    if sidecar_path in sidecar_paths_that_did_not_exist_before_this_run or self._overwrite_sidecars_on_next_run or self._always_overwrite_sidecars:
                         
                         metadata_router.Work( media_result, dest_path )
                         
@@ -749,16 +853,14 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             
             CHUNK_SIZE = 64
             
-            chunks_of_media_results = HydrusLists.SplitListIntoChunks( my_files_media_results, CHUNK_SIZE )
-            
-            for ( i, chunk_of_media_results ) in enumerate( chunks_of_media_results ):
+            for ( num_done, num_to_do, chunk_of_media_results ) in HydrusLists.SplitListIntoChunksRich( my_files_media_results, CHUNK_SIZE ):
                 
                 if job_status.IsCancelled():
                     
                     return
                     
                 
-                job_status.SetStatusText( 'deleting: {}'.format( HydrusNumbers.ValueRangeToPrettyString( i * CHUNK_SIZE, len( my_files_media_results ) ) ) )
+                job_status.SetStatusText( 'deleting: {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) ) )
                 
                 content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { media_result.GetHash() for media_result in chunk_of_media_results }, reason = reason )
                 
@@ -836,12 +938,18 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         finally:
             
             self._last_checked = HydrusTime.GetNow()
+            self._overwrite_sidecars_on_next_run = False
             self._run_now = False
             
             CG.client_controller.WriteSynchronous( 'serialisable', self )
             
             job_status.FinishAndDismiss()
             
+        
+    
+    def GetAlwaysOverwriteSidecars( self ):
+        
+        return self._always_overwrite_sidecars
         
     
     def GetLastError( self ) -> str:
@@ -854,9 +962,24 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         return self._metadata_routers
         
     
+    def GetOverwriteSidecarsOnNextRun( self ):
+        
+        return self._overwrite_sidecars_on_next_run
+        
+    
     def RunNow( self ):
         
         self._run_now = True
+        
+    
+    def SetAlwaysOverwriteSidecars( self, always_overwrite_sidecars: bool ):
+        
+        self._always_overwrite_sidecars = always_overwrite_sidecars
+        
+    
+    def SetOverwriteSidecarsOnNextRun( self, overwrite_sidecars_on_next_run: bool ):
+        
+        self._overwrite_sidecars_on_next_run = overwrite_sidecars_on_next_run
         
     
     def ShowWorkingPopup( self ) -> bool:
@@ -869,4 +992,5 @@ class ExportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         return ( self._name, self._path, self._export_type, self._delete_from_client_after_export, self._export_symlinks, self._file_search_context, self._run_regularly, self._period, self._phrase, self._last_checked, self._run_now )
         
     
+
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_EXPORT_FOLDER ] = ExportFolder

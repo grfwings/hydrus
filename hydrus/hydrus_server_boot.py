@@ -55,6 +55,7 @@ try:
     argparser.add_argument( '--db_synchronous_override', type = int, choices = range(4), help = 'override SQLite Synchronous PRAGMA (default=2)' )
     argparser.add_argument( '--no_db_temp_files', action='store_true', help = 'run db temp operations entirely in memory' )
     argparser.add_argument( '--boot_debug', action='store_true', help = 'print additional bootup information to the log' )
+    argparser.add_argument( '--no_user_static_dir', action='store_true', help = 'do not allow a static dir in the db dir to override the install static dir contents' )
     argparser.add_argument( '--profile_mode', action='store_true', help = 'start the server with profile mode on' )
     argparser.add_argument( '--no_wal', action='store_true', help = 'OBSOLETE: run using TRUNCATE db journaling' )
     argparser.add_argument( '--db_memory_journaling', action='store_true', help = 'OBSOLETE: run using MEMORY db journaling (DANGEROUS)' )
@@ -115,8 +116,16 @@ try:
     
     HG.boot_debug = result.boot_debug
     
-    HG.profile_mode = result.profile_mode
-    HG.profile_start_time = HydrusTime.GetNow()
+    from hydrus.core import HydrusStaticDir
+    
+    HydrusStaticDir.USE_USER_STATIC_DIR = not result.no_user_static_dir
+    
+    if result.profile_mode:
+        
+        from hydrus.core import HydrusProfiling
+        
+        HydrusProfiling.StartProfileMode( 'db' )
+        
     
     if result.temp_dir is not None:
         

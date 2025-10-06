@@ -7,6 +7,7 @@ from hydrus.core import HydrusData
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.db import ClientDBMaintenance
@@ -14,15 +15,26 @@ from hydrus.client.db import ClientDBModule
 from hydrus.client.db import ClientDBSerialisable
 from hydrus.client.db import ClientDBServices
 from hydrus.client.duplicates import ClientDuplicatesAutoResolution
+from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 
 def GenerateResolutionActionedPairsTableName( rule_id: int ) -> str:
     
     return f'duplicate_files_auto_resolution_actioned_{rule_id}'
     
 
+def GenerateResolutionDeclinedPairsTableName( rule_id: int ) -> str:
+    
+    return f'duplicate_files_auto_resolution_declined_{rule_id}'
+    
+
 def GenerateResolutionPendingActionsPairsTableName( rule_id: int ) -> str:
     
     return f'duplicate_files_auto_resolution_pending_actions_{rule_id}'
+    
+
+def GenerateAutoResolutionQueueTableName( rule_id: int, status: int ):
+    
+    return GenerateAutoResolutionQueueTableNames( rule_id )[ status ]
     
 
 def GenerateAutoResolutionQueueTableNames( rule_id: int ) -> dict[ int, str ]:
@@ -35,12 +47,13 @@ def GenerateAutoResolutionQueueTableNames( rule_id: int ) -> dict[ int, str ]:
         ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED,
         ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED,
         ClientDuplicatesAutoResolution.DUPLICATE_STATUS_DOES_NOT_MATCH_SEARCH,
-        ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
-        ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED
+        ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST
     ):
         
         results[ status ] = f'{table_core}_{status}'
         
+    
+    results[ ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED ] = GenerateResolutionDeclinedPairsTableName( rule_id )
     
     results[ ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION ] = GenerateResolutionPendingActionsPairsTableName( rule_id )
     
@@ -97,172 +110,36 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
         
-        self._Execute( f'INSERT OR IGNORE INTO {statuses_to_table_names[ dest_status ]} ( smaller_media_id, larger_media_id ) SELECT smaller_media_id, larger_media_id FROM {statuses_to_table_names[ source_status ]};' )
+        if dest_status == ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED:
+            
+            now_ms = HydrusTime.GetNowMS()
+            
+            self._Execute( f'INSERT OR IGNORE INTO {statuses_to_table_names[ dest_status ]} ( smaller_media_id, larger_media_id, timestamp_ms ) SELECT smaller_media_id, larger_media_id, ? FROM {statuses_to_table_names[ source_status ]};', ( now_ms, ) )
+            
+        else:
+            
+            self._Execute( f'INSERT OR IGNORE INTO {statuses_to_table_names[ dest_status ]} ( smaller_media_id, larger_media_id ) SELECT smaller_media_id, larger_media_id FROM {statuses_to_table_names[ source_status ]};' )
+            
         
         num_added = self._GetRowCount()
         
         if num_added > 0:
             
-            self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, dest_status ) )
+            self._UpdateRuleCount( rule_id, dest_status, num_added )
             
         
         self._Execute( f'DELETE FROM {statuses_to_table_names[ source_status ]};' )
         
-        self._Execute( 'REPLACE INTO duplicates_files_auto_resolution_rule_count_cache ( rule_id, status, status_count ) VALUES ( ?, ?, ? );', ( rule_id, source_status, 0 ) )
+        self._SetRuleCount( rule_id, source_status, 0 )
         
     
     def _Reinit( self ):
         
         self._rule_ids_to_rules = { rule.GetId() : rule for rule in self.modules_serialisable.GetJSONDumpNamed( HydrusSerialisable.SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_RULE ) }
         
-        self._have_initialised_rules = True
+        # now build out our count cache as needed and attach
         
-    
-    def _RemovePairsFromQueues( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, pairs: collections.abc.Collection ):
-        
-        rule_id = rule.GetId()
-        
-        statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
-        
-        for ( status, table_name ) in statuses_to_table_names.items():
-            
-            self._ExecuteMany(
-                f'DELETE FROM {table_name} WHERE smaller_media_id = ? AND larger_media_id = ?;',
-                pairs
-            )
-            
-            num_deleted = self._GetRowCount()
-            
-            if num_deleted > 0:
-                
-                self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count - ? WHERE rule_id = ? AND status = ?;', ( num_deleted, rule_id, status ) )
-                
-            
-        
-    
-    def _ResetRuleSearchProgress( self, rule_id: int ):
-        
-        for status in [
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_DOES_NOT_MATCH_SEARCH,
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED,
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION
-        ]:
-            
-            self._MovePairsAcrossQueues( rule_id, status, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED )
-            
-        
-    
-    def _ResetRuleTestProgress( self, rule_id: int ):
-        
-        for status in [
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
-            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION
-        ]:
-            
-            self._MovePairsAcrossQueues( rule_id, status, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED )
-            
-        
-    
-    def DeleteAllPotentialDuplicatePairs( self ):
-        
-        # either dissolve or merge or manual removal from all potential pairs for a search reset or something
-        
-        if not self._have_initialised_rules:
-            
-            self._Reinit()
-            
-        
-        for ( rule_id, resolution_rule ) in self._rule_ids_to_rules.items():
-            
-            statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
-            
-            for ( status, table_name ) in statuses_to_table_names.items():
-                
-                self._Execute( f'DELETE FROM {table_name};' )
-                
-            
-        
-        self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
-        
-        CG.client_controller.duplicates_auto_resolution_manager.Wake()
-        
-    
-    def GetActionedPairs( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, fetch_limit = None ):
-        
-        if not self._have_initialised_rules:
-            
-            self._Reinit()
-            
-        
-        rule_id = rule.GetId()
-        
-        actioned_table_name = GenerateResolutionActionedPairsTableName( rule_id )
-        
-        if fetch_limit is None:
-            
-            hash_id_pairs_with_data = self._Execute( f'SELECT hash_id_a, hash_id_b, duplicate_type, timestamp_ms FROM {actioned_table_name} ORDER BY timestamp_ms DESC;' ).fetchall()
-            
-        else:
-            
-            hash_id_pairs_with_data = self._Execute( f'SELECT hash_id_a, hash_id_b, duplicate_type, timestamp_ms FROM {actioned_table_name} ORDER BY timestamp_ms DESC LIMIT ?;', ( fetch_limit, ) ).fetchall()
-            
-        
-        return hash_id_pairs_with_data
-        
-    
-    def GetMatchingUntestedPair( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ):
-        
-        if not self._have_initialised_rules:
-            
-            self._Reinit()
-            
-        
-        rule_id = rule.GetId()
-        
-        if rule_id not in self._rule_ids_to_rules:
-            
-            return None
-            
-        
-        statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
-        
-        table_name = statuses_to_table_names[ ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED ]
-        
-        return self._Execute( f'SELECT smaller_media_id, larger_media_id FROM {table_name};' ).fetchone()
-        
-    
-    def GetPendingActionPairs( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, fetch_limit = None ):
-        
-        if not self._have_initialised_rules:
-            
-            self._Reinit()
-            
-        
-        rule_id = rule.GetId()
-        
-        pending_actions_table_name = GenerateResolutionPendingActionsPairsTableName( rule_id )
-        
-        if fetch_limit is None:
-            
-            hash_id_pairs = self._Execute( f'SELECT hash_id_a, hash_id_b FROM {pending_actions_table_name};' ).fetchall()
-            
-        else:
-            
-            hash_id_pairs = self._Execute( f'SELECT hash_id_a, hash_id_b FROM {pending_actions_table_name} LIMIT ?;', ( fetch_limit, ) ).fetchall()
-            
-        
-        return hash_id_pairs
-        
-    
-    def GetRulesWithCounts( self ) -> list[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ]:
-        
-        if not self._have_initialised_rules:
-            
-            self._Reinit()
-            
-        
-        result = collections.defaultdict( collections.Counter )
+        rules_to_counters = collections.defaultdict( collections.Counter )
         
         rows = self._Execute( 'SELECT rule_id, status, status_count FROM duplicates_files_auto_resolution_rule_count_cache;' ).fetchall()
         
@@ -270,7 +147,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
             
             rule = self._rule_ids_to_rules[ rule_id ]
             
-            result[ rule ][ status ] = status_count
+            rules_to_counters[ rule ][ status ] = status_count
             
         
         found_data = { ( rule_id, status ) for ( rule_id, status, status_count ) in rows }
@@ -318,7 +195,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                     
                     ( status_count, ) = self._Execute( f'SELECT COUNT( * ) FROM {table_name};' ).fetchone()
                     
-                    result[ rule ][ status ] = status_count
+                    rules_to_counters[ rule ][ status ] = status_count
                     
                     insert_rows.append(
                         ( rule_id, status, status_count )
@@ -329,12 +206,203 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
             self._ExecuteMany( 'INSERT OR IGNORE INTO duplicates_files_auto_resolution_rule_count_cache ( rule_id, status, status_count ) VALUES ( ?, ?, ? );', insert_rows )
             
         
-        for ( rule, counts ) in result.items():
+        for ( rule, counts ) in rules_to_counters.items():
             
             rule.SetCountsCache( counts )
             
         
-        return list( result.keys() )
+        # rules now have counts and we will always update them the same time as the count_cache table, or in extreme delete cases, reinit here
+        # count is now synced
+        
+        self._have_initialised_rules = True
+        
+    
+    def _RemovePairsFromQueues( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, pairs: collections.abc.Collection ):
+        
+        rule_id = rule.GetId()
+        
+        statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
+        
+        for ( status, table_name ) in statuses_to_table_names.items():
+            
+            self._ExecuteMany(
+                f'DELETE FROM {table_name} WHERE smaller_media_id = ? AND larger_media_id = ?;',
+                pairs
+            )
+            
+            num_deleted = self._GetRowCount()
+            
+            if num_deleted > 0:
+                
+                self._UpdateRuleCount( rule_id, status, - num_deleted )
+                
+            
+        
+    
+    def _ResetRuleSearchProgress( self, rule_id: int ):
+        
+        for status in [
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_DOES_NOT_MATCH_SEARCH,
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED,
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION
+        ]:
+            
+            self._MovePairsAcrossQueues( rule_id, status, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED )
+            
+        
+    
+    def _ResetRuleTestProgress( self, rule_id: int ):
+        
+        for status in [
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
+            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION
+        ]:
+            
+            self._MovePairsAcrossQueues( rule_id, status, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED )
+            
+        
+    
+    def _SetRuleCount( self, rule_id: int, status: int, count: int ):
+        
+        self._Execute( 'REPLACE INTO duplicates_files_auto_resolution_rule_count_cache ( rule_id, status, status_count ) VALUES ( ?, ?, ? );', ( rule_id, status, count ) )
+        
+        rule = self._rule_ids_to_rules[ rule_id ]
+        
+        rule.SetCount( status, count )
+        
+    
+    def _UpdateRuleCount( self, rule_id: int, status: int, delta: int ):
+        
+        self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( delta, rule_id, status ) )
+        
+        rule = self._rule_ids_to_rules[ rule_id ]
+        
+        rule.UpdateCount( status, delta )
+        
+    
+    def DeleteAllPotentialDuplicatePairs( self ):
+        
+        # either dissolve or merge or manual removal from all potential pairs for a search reset or something
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        for ( rule_id, resolution_rule ) in self._rule_ids_to_rules.items():
+            
+            statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
+            
+            for ( status, table_name ) in statuses_to_table_names.items():
+                
+                self._Execute( f'DELETE FROM {table_name};' )
+                
+            
+        
+        self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
+        
+        self._Reinit()
+        
+        CG.client_controller.duplicates_auto_resolution_manager.Wake()
+        
+    
+    def GetActionedPairs( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, fetch_limit = None ):
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        rule_id = rule.GetId()
+        
+        actioned_table_name = GenerateResolutionActionedPairsTableName( rule_id )
+        
+        if fetch_limit is None:
+            
+            hash_id_pairs_with_data = self._Execute( f'SELECT hash_id_a, hash_id_b, duplicate_type, timestamp_ms FROM {actioned_table_name} ORDER BY timestamp_ms DESC;' ).fetchall()
+            
+        else:
+            
+            hash_id_pairs_with_data = self._Execute( f'SELECT hash_id_a, hash_id_b, duplicate_type, timestamp_ms FROM {actioned_table_name} ORDER BY timestamp_ms DESC LIMIT ?;', ( fetch_limit, ) ).fetchall()
+            
+        
+        return hash_id_pairs_with_data
+        
+    
+    def GetDeclinedPairs( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, fetch_limit = None ):
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        rule_id = rule.GetId()
+        
+        declined_table_name = GenerateResolutionDeclinedPairsTableName( rule_id )
+        
+        if fetch_limit is None:
+            
+            media_id_pairs_with_data = self._Execute( f'SELECT smaller_media_id, larger_media_id, timestamp_ms FROM {declined_table_name} ORDER BY timestamp_ms DESC;' ).fetchall()
+            
+        else:
+            
+            media_id_pairs_with_data = self._Execute( f'SELECT smaller_media_id, larger_media_id, timestamp_ms FROM {declined_table_name} ORDER BY timestamp_ms DESC LIMIT ?;', ( fetch_limit, ) ).fetchall()
+            
+        
+        return media_id_pairs_with_data
+        
+    
+    def GetMatchingUntestedPair( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ):
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        rule_id = rule.GetId()
+        
+        if rule_id not in self._rule_ids_to_rules:
+            
+            return None
+            
+        
+        table_name = GenerateAutoResolutionQueueTableName( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED )
+        
+        return self._Execute( f'SELECT smaller_media_id, larger_media_id FROM {table_name};' ).fetchone()
+        
+    
+    def GetPendingActionPairs( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, fetch_limit = None ):
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        rule_id = rule.GetId()
+        
+        pending_actions_table_name = GenerateResolutionPendingActionsPairsTableName( rule_id )
+        
+        if fetch_limit is None:
+            
+            hash_id_pairs = self._Execute( f'SELECT hash_id_a, hash_id_b FROM {pending_actions_table_name};' ).fetchall()
+            
+        else:
+            
+            hash_id_pairs = self._Execute( f'SELECT hash_id_a, hash_id_b FROM {pending_actions_table_name} LIMIT ?;', ( fetch_limit, ) ).fetchall()
+            
+        
+        return hash_id_pairs
+        
+    
+    def GetRulesWithCounts( self ) -> list[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ]:
+        
+        if not self._have_initialised_rules:
+            
+            self._Reinit()
+            
+        
+        return list( self._rule_ids_to_rules.values() )
         
     
     def GetUnsearchedPairsAndDistances( self, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule, limit = None ):
@@ -351,18 +419,18 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
             return []
             
         
-        statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
-        
-        table_name = statuses_to_table_names[ ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED ]
+        table_name = GenerateAutoResolutionQueueTableName( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED )
         
         if limit is None:
             
-            return self._Execute( f'SELECT smaller_media_id, larger_media_id, distance FROM {table_name} CROSS JOIN potential_duplicate_pairs USING ( smaller_media_id, larger_media_id );' ).fetchall()
+            result = self._Execute( f'SELECT smaller_media_id, larger_media_id, distance FROM {table_name} CROSS JOIN potential_duplicate_pairs USING ( smaller_media_id, larger_media_id );' ).fetchall()
             
         else:
             
-            return self._Execute( f'SELECT smaller_media_id, larger_media_id, distance FROM {table_name} CROSS JOIN potential_duplicate_pairs USING ( smaller_media_id, larger_media_id ) LIMIT ?;', ( limit, ) ).fetchall()
+            result = self._Execute( f'SELECT smaller_media_id, larger_media_id, distance FROM {table_name} CROSS JOIN potential_duplicate_pairs USING ( smaller_media_id, larger_media_id ) LIMIT ?;', ( limit, ) ).fetchall()
             
+        
+        return ClientPotentialDuplicatesSearchContext.PotentialDuplicateIdPairsAndDistances( result )
         
     
     def GetTablesAndColumnsThatUseDefinitions( self, content_type: int ) -> list[ tuple[ str, str ] ]:
@@ -408,7 +476,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         if num_added > 0:
             
-            self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_ACTIONED ) )
+            self._UpdateRuleCount( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_ACTIONED, num_added )
             
         
     
@@ -466,7 +534,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                     
                     if num_added > 0:
                         
-                        self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED ) )
+                        self._UpdateRuleCount( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED, num_added )
                         
                         HydrusData.Print( f'During auto-resolution potential pair-sync, added {HydrusNumbers.ToHumanInt( num_added )} pairs for rule {resolution_rule.GetName()}, ({rule_id}).' )
                         
@@ -489,7 +557,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                         
                         if num_deleted > 0:
                             
-                            self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count - ? WHERE rule_id = ? AND status = ?;', ( num_deleted, rule_id, status ) )
+                            self._UpdateRuleCount( rule_id, status, - num_deleted )
                             
                             HydrusData.Print( f'During auto-resolution potential pair-sync, deleted {HydrusNumbers.ToHumanInt( num_deleted )} pairs for rule {resolution_rule.GetName()} ({rule_id}), status {status} ({ClientDuplicatesAutoResolution.duplicate_status_str_lookup[ status ]}).' )
                             
@@ -501,6 +569,8 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
             
         
         self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
+        
+        self._Reinit()
         
         if all_were_good:
             
@@ -553,21 +623,21 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
         
+        self._Reinit()
+        
         if all_were_good:
             
             HydrusData.ShowText( 'All the duplicates auto-resolution rules looked good--no orphans!' )
             
-        
-        self._Reinit()
         
     
     def MaintenanceRegenNumbers( self ):
         
         self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
         
-        HydrusData.ShowText( 'Cached auto-resolution numbers cleared!' )
-        
         self._Reinit()
+        
+        HydrusData.ShowText( 'Cached auto-resolution numbers cleared!' )
         
     
     def NotifyNewPotentialDuplicatePairsAdded( self, pairs_added ):
@@ -619,7 +689,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                     
                     if num_added > 0:
                         
-                        self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED ) )
+                        self._UpdateRuleCount( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED, num_added )
                         
                         any_added = True
                         
@@ -629,7 +699,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         if any_added:
             
-            CG.client_controller.duplicates_auto_resolution_manager.Wake()
+            CG.client_controller.duplicates_auto_resolution_manager.WakeIfNotWorking()
             
         
     
@@ -660,7 +730,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                 
                 if num_deleted > 0:
                     
-                    self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count - ? WHERE rule_id = ? AND status = ?;', ( num_deleted, rule_id, status ) )
+                    self._UpdateRuleCount( rule_id, status, - num_deleted )
                     
                     any_removed = True
                     
@@ -669,7 +739,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         if any_removed:
             
-            CG.client_controller.duplicates_auto_resolution_manager.Wake()
+            CG.client_controller.duplicates_auto_resolution_manager.WakeIfNotWorking()
             
         
     
@@ -696,7 +766,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                 
                 if num_deleted > 0:
                     
-                    self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count - ? WHERE rule_id = ? AND status = ?;', ( num_deleted, rule_id, status ) )
+                    self._UpdateRuleCount( rule_id, status, - num_deleted )
                     
                     any_removed = True
                     
@@ -750,7 +820,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         if num_added > 0:
             
-            self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION ) )
+            self._UpdateRuleCount( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_PASSED_TEST_READY_TO_ACTION, num_added )
             
         
     
@@ -765,23 +835,33 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
         
         rule_id = rule.GetId()
         
-        statuses_to_table_names = GenerateAutoResolutionQueueTableNames( rule_id )
+        table_name = GenerateAutoResolutionQueueTableName( rule_id, status_to_set )
         
-        table_name = statuses_to_table_names[ status_to_set ]
-        
-        self._ExecuteMany(
-            f'INSERT OR IGNORE INTO {table_name} ( smaller_media_id, larger_media_id ) VALUES ( ?, ? );',
-            pairs
-        )
+        if status_to_set == ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED:
+            
+            now_ms = HydrusTime.GetNowMS()
+            
+            self._ExecuteMany(
+                f'INSERT OR IGNORE INTO {table_name} ( smaller_media_id, larger_media_id, timestamp_ms ) VALUES ( ?, ?, ? );',
+                [ ( smaller_media_id, larger_media_id, now_ms ) for ( smaller_media_id, larger_media_id ) in pairs ]
+            )
+            
+        else:
+            
+            self._ExecuteMany(
+                f'INSERT OR IGNORE INTO {table_name} ( smaller_media_id, larger_media_id ) VALUES ( ?, ? );',
+                pairs
+            )
+            
         
         num_added = self._GetRowCount()
         
         if num_added > 0:
             
-            self._Execute( 'UPDATE duplicates_files_auto_resolution_rule_count_cache SET status_count = status_count + ? WHERE rule_id = ? AND status = ?;', ( num_added, rule_id, status_to_set ) )
+            self._UpdateRuleCount( rule_id, status_to_set, num_added )
             
         
-        CG.client_controller.duplicates_auto_resolution_manager.Wake()
+        CG.client_controller.duplicates_auto_resolution_manager.WakeIfNotWorking()
         
     
     def SetRules( self, rules_to_set: collections.abc.Collection[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ], master_potential_duplicate_pairs_table_name = 'potential_duplicate_pairs' ):
@@ -863,6 +943,12 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                     self._CreateIndex( table_name, [ 'hash_id_a' ] )
                     self._CreateIndex( table_name, [ 'hash_id_b' ] )
                     
+                elif status == ClientDuplicatesAutoResolution.DUPLICATE_STATUS_USER_DECLINED:
+                    
+                    self._Execute( f'CREATE TABLE IF NOT EXISTS {table_name} ( smaller_media_id INTEGER, larger_media_id INTEGER, timestamp_ms INTEGER, PRIMARY KEY ( smaller_media_id, larger_media_id ) );' )
+                    
+                    self._CreateIndex( table_name, [ 'timestamp_ms' ] )
+                    
                 else:
                     
                     self._Execute( f'CREATE TABLE IF NOT EXISTS {table_name} ( smaller_media_id INTEGER, larger_media_id INTEGER, PRIMARY KEY ( smaller_media_id, larger_media_id ) );' )
@@ -887,7 +973,7 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
             
             num_added = self._GetRowCount()
             
-            self._Execute( 'REPLACE INTO duplicates_files_auto_resolution_rule_count_cache ( rule_id, status, status_count ) VALUES ( ?, ?, ? );', ( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED, num_added ) )
+            self._SetRuleCount( rule_id, ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED, num_added )
             
         
         for rule_id in rule_ids_to_update:
@@ -916,6 +1002,11 @@ class ClientDBFilesDuplicatesAutoResolutionStorage( ClientDBModule.ClientDBModul
                 
             
         
+        # fix up any borked counts that the dialog/caller messed around with
+        self._Reinit()
+        
         CG.client_controller.duplicates_auto_resolution_manager.Wake()
+        
+        CG.client_controller.pub( 'notify_duplicates_auto_resolution_new_rules' )
         
     

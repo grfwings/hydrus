@@ -125,6 +125,38 @@ class ThumbnailPairListModel( QC.QAbstractTableModel ):
         self.endInsertRows()
         
     
+    def GetMediaResultPairsStartingAtIndex( self, row: int ):
+        
+        # wraparound list fetch
+        
+        we_hit_our_index = False
+        second_half = []
+        first_half = []
+        
+        for ( i, r ) in enumerate( self._data_rows ):
+            
+            if i == row:
+                
+                we_hit_our_index = True
+                
+            
+            media_result_pair = ( r[0], r[1] )
+            
+            if we_hit_our_index:
+                
+                first_half.append( media_result_pair )
+                
+            else:
+                
+                second_half.append( media_result_pair )
+                
+            
+        
+        result = first_half + second_half
+        
+        return result
+        
+    
     def GetMediaResultPair( self, row: int ):
         
         r = self._data_rows[ row ]
@@ -270,6 +302,66 @@ class ThumbnailPairListModelPendingAutoResolutionAction( ThumbnailPairListModel 
                 
                 self.dataChanged.emit( top_left, bottom_right, [ QC.Qt.ItemDataRole.DisplayRole ] )
                 
+            
+        
+    
+
+class ThumbnailPairListModelDeclinedAutoResolutionAction( ThumbnailPairListModel ):
+    
+    def columnCount(self, parent = QC.QModelIndex() ):
+        
+        return 3
+        
+    
+    def data( self, index: QC.QModelIndex, role: QC.Qt.ItemDataRole.DisplayRole ):
+        
+        if not index.isValid():
+            
+            return None
+            
+        
+        row = index.row()
+        col = index.column()
+        
+        if role == QC.Qt.ItemDataRole.DisplayRole:
+            
+            if col == 2:
+                
+                timestamp_ms = self._data_rows[ row ][ col ]
+                
+                timestamp = HydrusTime.SecondiseMS( timestamp_ms )
+                
+                s = HydrusTime.TimestampToPrettyTime( timestamp )
+                s += '\n'
+                s += HydrusTime.TimestampToPrettyTimeDelta( timestamp, force_no_iso = True )
+                
+                return s
+                
+            
+        
+        return super().data( index, role )
+        
+    
+    def headerData( self, section: int, orientation: QC.Qt.Orientation, role = QC.Qt.ItemDataRole.DisplayRole ):
+        
+        if orientation == QC.Qt.Orientation.Horizontal and role == QC.Qt.ItemDataRole.DisplayRole:
+            
+            if section == 0:
+                
+                return '1'
+                
+            elif section == 1:
+                
+                return '2'
+                
+            else:
+                
+                return 'time'
+                
+            
+        else:
+            
+            return super().headerData( section, orientation, role = role )
             
         
     
@@ -426,6 +518,18 @@ class ThumbnailPairListReviewPendingPreviewAutoResolutionAction( ThumbnailPairLi
     def __init__( self, parent, rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ):
         
         super().__init__( parent, ThumbnailPairListModelPendingAutoResolutionAction( rule, False ) )
+        
+        self.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
+        
+    
+
+class ThumbnailPairListDeclinedAutoResolutionAction( ThumbnailPairList ):
+    
+    MIN_NUM_ROWS_HEIGHT = 4
+    
+    def __init__( self, parent ):
+        
+        super().__init__( parent, ThumbnailPairListModelDeclinedAutoResolutionAction() )
         
         self.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
         
