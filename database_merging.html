@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://hydrusnetwork.github.io/hydrus/reducing_lag.html">
+        <link rel="canonical" href="https://hydrusnetwork.github.io/hydrus/database_merging.html">
       
       
-        <link rel="prev" href="advanced.html">
+        <link rel="prev" href="database_migration.html">
       
       
-        <link rel="next" href="database_migration.html">
+        <link rel="next" href="custom_assets.html">
       
       
       <link rel="icon" href="assets/favicon.svg">
@@ -24,7 +24,7 @@
     
     
       
-        <title>Reducing Lag - hydrus network</title>
+        <title>Database Merging - hydrus network</title>
       
     
     
@@ -72,7 +72,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#reducing_lag_1" class="md-skip">
+        <a href="#what_do_you_want" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Reducing Lag
+              Database Merging
             
           </span>
         </div>
@@ -1122,32 +1122,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    Reducing Lag
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="reducing_lag.html" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="reducing_lag.html" class="md-nav__link">
         
   
   
@@ -1158,62 +1136,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#intro" class="md-nav__link">
-    <span class="md-ellipsis">
-      hydrus is cpu and hdd hungry
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#maintenance_and_processing" class="md-nav__link">
-    <span class="md-ellipsis">
-      maintenance and processing
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reducing_lag" class="md-nav__link">
-    <span class="md-ellipsis">
-      reducing search and general gui lag
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#profiles" class="md-nav__link">
-    <span class="md-ellipsis">
-      finally - profiles
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1246,10 +1168,30 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="database_merging.html" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Database Merging
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="database_merging.html" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1260,6 +1202,69 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what_do_you_want" class="md-nav__link">
+    <span class="md-ellipsis">
+      what do you want?
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simple_file_import" class="md-nav__link">
+    <span class="md-ellipsis">
+      simple file import
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file_exports" class="md-nav__link">
+    <span class="md-ellipsis">
+      file exports
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating_many_tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      migrating many tags
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#perfect_preservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      perfect preservation
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2294,8 +2299,6 @@
   
   
   
-    
-  
   
     <label class="md-nav__title" for="__toc">
       <span class="md-nav__icon md-icon"></span>
@@ -2304,36 +2307,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#intro" class="md-nav__link">
+  <a href="#what_do_you_want" class="md-nav__link">
     <span class="md-ellipsis">
-      hydrus is cpu and hdd hungry
+      what do you want?
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance_and_processing" class="md-nav__link">
+  <a href="#simple_file_import" class="md-nav__link">
     <span class="md-ellipsis">
-      maintenance and processing
+      simple file import
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#reducing_lag" class="md-nav__link">
+  <a href="#file_exports" class="md-nav__link">
     <span class="md-ellipsis">
-      reducing search and general gui lag
+      file exports
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#profiles" class="md-nav__link">
+  <a href="#migrating_many_tags" class="md-nav__link">
     <span class="md-ellipsis">
-      finally - profiles
+      migrating many tags
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#perfect_preservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      perfect preservation
     </span>
   </a>
   
@@ -2355,7 +2367,7 @@
 
 
   
-    <a href="https://github.com/hydrusnetwork/hydrus/edit/master/docs/reducing_lag.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/hydrusnetwork/hydrus/edit/master/docs/database_merging.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -2363,32 +2375,44 @@
   
 
 
-<h1 id="reducing_lag_1">reducing lag<a class="headerlink" href="#reducing_lag_1" title="Permanent link">&para;</a></h1>
-<h2 id="intro">hydrus is cpu and hdd hungry<a class="headerlink" href="#intro" title="Permanent link">&para;</a></h2>
-<p>The hydrus client manages a lot of complicated data and gives you a lot of power over it. To add millions of files and tags to its database, and then to perform difficult searches over that information, it needs to use a lot of CPU time and hard drive time--sometimes in small laggy blips, and occasionally in big 100% CPU chunks. I don't put training wheels or limiters on the software either, so if you search for 300,000 files, the client will try to fetch that many.</p>
-<p>Furthermore, I am just one unprofessional guy dealing with a lot of legacy code from when I was even worse at programming. I am always working to reduce lag and other inconveniences, and improve UI feedback when many things are going on, but there is still a lot for me to do.</p>
-<p>In general, the client works best on snappy computers with low-latency hard drives where it does not have to constantly compete with other CPU- or HDD- heavy programs. Running hydrus on your games computer is no problem at all, but if you leave the client on all the time, then make sure under the options it is set not to do idle work while your CPU is busy, so your games can run freely. Similarly, if you run two clients on the same computer, you should have them set to work at different times, because if they both try to process 500,000 tags at once on the same hard drive, they will each slow to a crawl.</p>
-<p>If you run on an HDD, keeping it defragged is very important, and good practice for all your programs anyway. Make sure you know what this is and that you do it.</p>
-<h2 id="maintenance_and_processing">maintenance and processing<a class="headerlink" href="#maintenance_and_processing" title="Permanent link">&para;</a></h2>
-<p>I have attempted to offload most of the background maintenance of the client (which typically means repository processing and internal database defragging) to time when you are not using the client. This can either be 'idle time' or 'shutdown time'. The calculations for what these exactly mean are customisable in <em>file-&gt;options-&gt;maintenance and processing</em>.</p>
-<p>If you run a quick computer, you likely don't have to change any of these options. Repositories will synchronise and the database will stay fairly optimal without you even noticing the work that is going on. This is especially true if you leave your client on all the time.</p>
-<p>If you have an old, slower computer though, or if your hard drive is high latency, make sure these options are set for whatever is best for your situation. Turning off idle time completely is often helpful as some older computers are slow to even recognise--mid task--that you want to use the client again, or take too long to abandon a big task half way through. If you set your client to only do work on shutdown, then you can control exactly when that happens.</p>
-<h2 id="reducing_lag">reducing search and general gui lag<a class="headerlink" href="#reducing_lag" title="Permanent link">&para;</a></h2>
-<p>Searching for tags via the autocomplete dropdown and searching for files in general can sometimes take a very long time. It depends on many things. In general, the more predicates (tags and system:something) you have active for a search, and the more specific they are, the faster it will be.</p>
-<p>You can also look at <em>file-&gt;options-&gt;speed and memory</em>. Increasing the autocomplete thresholds under <em>tags-&gt;manage tag display and search</em> is also often helpful. You can even force autocompletes to only fetch results when you manually ask for them.</p>
-<p>Having lots of thumbnails open or downloads running can slow many things down. Check the 'pages' menu to see your current session weight. If it is about 50,000, or you have individual pages with more than 10,000 files or download URLs, try cutting down a bit.</p>
-<h2 id="profiles">finally - profiles<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h2>
-<p>If something is running slow for you, I can almost always speed it up or at least improve the way it schedules that chunk of work. However, figuring out exactly why something is running slow or holding up the UI is tricky and sometimes particular to one client. I can guess what might be running inefficiently from reports, but what I really need to be sure is a <em>profile</em>, which drills down into every function of a job, counting how many times they are called and timing how long they take. A profile for a single call looks like <a href="profile_example.txt">this</a>.</p>
-<p>So, please let me know:</p>
+  <h1>Database Merging</h1>
+
+<p>If you have been running multiple clients and would like to merge the files and metadata from one to another, there are several options. Choosing which to use depends on what you want to preserve and how many things you have to move.</p>
+<p>Unfortunately, hydrus does not have an excellent way to tell one client to automatically and universally suck the contents of another yet. You will be setting up a general job of 'export everything from source' and then 'import everything to new client'.</p>
+<p>You may wish to review the <a href="database_migration.html">database migration</a> help so you are familiar with hydrus's high-level database and file storage structure.</p>
+<h3 id="what_do_you_want">what do you want?<a class="headerlink" href="#what_do_you_want" title="Permanent link">&para;</a></h3>
+<p>Before you start, think about what you want to preserve. In my experience, this is what most people care about:</p>
 <ul>
-<li>The general steps to reproduce the problem (e.g. "Running system:numtags&gt;4 is ridiculously slow on its own on 'all known tags'.")</li>
-<li>Your client's approximate overall size (e.g. "500k files, and it syncs to the PTR.")</li>
-<li>The type of hard drive you are running hydrus from. (e.g. "A 2TB 7200rpm drive that is 20% full. I regularly defrag it.")</li>
-<li>Any <em>profiles</em> you have collected.</li>
+<li>The files</li>
+<li>Tags for them</li>
+<li>archive/inbox status</li>
+<li>ratings</li>
 </ul>
-<p>You can generate a profile by hitting <em>help-&gt;debug-&gt;profiling-&gt;profile mode</em>, which tells the client to generate profile information for almost all of its behind the scenes jobs. There are now multiple profile modes. I recommend you try "db" to start with. These modes can be spammy, so don't leave one on for a very long time (you can turn it off by hitting the help menu entry again).</p>
-<p>Turn on a profile mode, do the thing that runs slow for you (importing a file, fetching some tags, whatever), and then check your database folder (most likely <em>install_dir/db</em>) for a new 'client profile (type) - DATE.log' file. This file will be filled with several sets of tables with timing information. Please send that whole file to me, or if it is too large, cut what seems important. It should not contain any personal information, but feel free to look through it.</p>
-<p>There are several ways to <a href="contact.html">contact me</a>.</p>
+<p>And sometimes URLs.</p>
+<p>Stuff like archive or import timestamps can be nice to keep, but it is pretty fiddly to set it all up, so only go for this if it is worth it.</p>
+<h2 id="simple_file_import">simple file import<a class="headerlink" href="#simple_file_import" title="Permanent link">&para;</a></h2>
+<p>If you just want to move some files across, no metadata preservation, I recommend simply drag-and-dropping the 256 'fxx' folders in your old database's 'client_files' folder onto your new client, and telling it to import everything. If you sync with the PTR on the source, the file parser will tell you several of the files did not parse; no worries, these are the PTR update files and you can ignore them.</p>
+<p>If you have hundreds of thousands or millions of files, break the 256 'fxx' folders into smaller batches that your destination client can handle. Most computers start to get laggy somewhere around 10-50k files per import.</p>
+<h2 id="file_exports">file exports<a class="headerlink" href="#file_exports" title="Permanent link">&para;</a></h2>
+<p>If you only want a subset of your files, or if you want to attach some metadata, we will be looking at export the files from the source to a new folder, and then importing from there.</p>
+<p>You have two options:</p>
+<ul>
+<li>For a smaller number of files, load them up in a normal search page and do <code>ctrl+a-&gt;share-&gt;export files</code>.</li>
+<li>For very large numbers of files, set up an <em>export folder</em> under the <code>file</code> menu.</li>
+</ul>
+<p>If you want to attach metadata, export the files with <a href="advanced_sidecars.html">sidecars</a> and then import them to the destination by parsing those sidecars. The sidecar system cannot handle everything, and it is not super user friendly, but it can do a bunch of stuff with some work. Do a test on 10 files first to make sure you have it all correct before you fire off a megajob of 300,000.</p>
+<p>If you want to preserve inbox/archive status, a good solution here is just to do this whole migration in two jobs--once for <code>system:inbox</code>, then for <code>system:archive</code>. For the archive job, set up the 'file import options' to archive everything on import, or just <code>ctrl+a-&gt;F7</code>.</p>
+<p>Like with the export, if you have a simple job, run it through the manual import process, but if you have a complicated or large job, look into an temporary import folder. Generally speaking, very large jobs run faster without having to do UI stuff like thumbnail drawing and updating, so an import folder or export folder is always going to handle bigger things better.</p>
+<h2 id="migrating_many_tags">migrating many tags<a class="headerlink" href="#migrating_many_tags" title="Permanent link">&para;</a></h2>
+<p>If you only want to migrate tags, or you have millions of tags and would rather something faster or more powerful than sidecars, look at <code>tags-&gt;migrate tags</code>. You can choose to export your tags from the source to a Hydrus Tag Archive (HTA), which is an external file that holds all the info hydrus needs to apply a tag to a file, and then on the destination, the same dialog allows you to pull tags from an HTA.</p>
+<p>The source will look something like this:</p>
+<p><a href="images/database_merging_hta_source.png"><img alt="" src="images/database_merging_hta_source.png" /></a></p>
+<p>And the destination like this:</p>
+<p><a href="images/database_merging_hta_dest.png"><img alt="" src="images/database_merging_hta_dest.png" /></a></p>
+<p>Note that I have set 'all known files with tags' as the domain in both source and destination. It isn't super important, but setting that rather than 'my files' means you don't have to worry about which order you do the file/tag import to the destination, and it covers a bit more data from the source for deleted files and stuff.</p>
+<h2 id="perfect_preservation">perfect preservation<a class="headerlink" href="#perfect_preservation" title="Permanent link">&para;</a></h2>
+<p>I would like to add a 'eat this client' wizard to the program one day that will have sophisticated service interrogation and UI for defining content sources and destinations. Something like 'migrate tags' but for all content types. I'd also like 'universal' sidecar templates that you can setup with one click. Unfortunately we aren't there yet.</p>
+<p>If you want to preserve as much as possible in a clever way, or just something that isn't covered by sidecars, like duplicate file relations, your best bet is writing your own script that uses the <a href="client_api.html">Client API</a>.</p>
 
 
 
@@ -2409,7 +2433,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="September 17, 2025 20:58:44 UTC">September 17, 2025</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-date" title="October 1, 2025 21:05:10 UTC">October 1, 2025</span>
   </span>
 
     
