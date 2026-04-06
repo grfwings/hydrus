@@ -12,7 +12,6 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -63,7 +62,7 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOWNLOADER_EXPORT.ID, self._ConvertContentToDisplayTuple, self._ConvertContentToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 14, model, use_simple_delete = True )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 12, model, use_simple_delete = True )
         
         self._listctrl.Sort()
         
@@ -416,7 +415,7 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
                     
                     parsers_to_include.add( parser )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -1028,7 +1027,7 @@ class EditContentParsersPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CONTENT_PARSERS.ID, self._ConvertContentParserToDisplayTuple, self._ConvertContentParserToSortTuple )
         
-        self._content_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( content_parsers_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._content_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( content_parsers_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         content_parsers_panel.SetListCtrl( self._content_parsers )
         
@@ -1227,6 +1226,8 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._example_urls = ClientGUIListBoxes.AddEditDeleteListBox( example_urls_panel, 6, str, self._AddExampleURL, self._EditExampleURL )
         
+        self._example_urls.AddSimpleCopyPasteTextButtons()
+        
         #
         
         formula_panel = QW.QWidget( edit_notebook )
@@ -1245,7 +1246,7 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSIDIARY_PAGE_PARSERS.ID, self._ConvertSubPageParserToDisplayTuple, self._ConvertSubPageParserToSortTuple )
         
-        self._subsidiary_page_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( subsidiary_page_parsers_panel, 4, model, use_simple_delete = True, activation_callback = self._EditSubPageParser )
+        self._subsidiary_page_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( subsidiary_page_parsers_panel, 4, model, use_simple_delete = True, activation_callback = self._EditSubPageParser, max_height_num_chars = 12 )
         
         subsidiary_page_parsers_panel.SetListCtrl( self._subsidiary_page_parsers )
         
@@ -1542,7 +1543,7 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     stuff_read = network_job.GetContentText()
                     
-                except:
+                except Exception as e:
                     
                     stuff_read = 'no response'
                     
@@ -1700,7 +1701,7 @@ class EditParsersPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PARSERS.ID, self._ConvertParserToDisplayTuple, self._ConvertParserToSortTuple )
         
-        self._parsers = ClientGUIListCtrl.BetterListCtrlTreeView( parsers_panel, 20, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._parsers = ClientGUIListCtrl.BetterListCtrlTreeView( parsers_panel, 24, model, use_simple_delete = True, activation_callback = self._Edit )
         
         parsers_panel.SetListCtrl( self._parsers )
         
@@ -1709,8 +1710,6 @@ class EditParsersPanel( ClientGUIScrolledPanels.EditPanel ):
         parsers_panel.AddDeleteButton()
         parsers_panel.AddSeparator()
         parsers_panel.AddImportExportButtons( ( ClientParsing.PageParser, ), self._AddParser )
-        parsers_panel.AddSeparator()
-        parsers_panel.AddDefaultsButton( ClientDefaults.GetDefaultParsers, self._AddParser )
         
         #
         

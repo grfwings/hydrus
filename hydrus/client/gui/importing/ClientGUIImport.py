@@ -24,7 +24,7 @@ from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.importing import ClientGUIFileSeedCache
 from hydrus.client.gui.importing import ClientGUIGallerySeedLog
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
@@ -38,9 +38,10 @@ from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIRegex
 from hydrus.client.importing import ClientImporting
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.importing.options import NoteImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import FilenameTaggingOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import NoteImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientMetadataMigrationExporters
 from hydrus.client.metadata import ClientMetadataMigrationImporters
@@ -170,7 +171,7 @@ class FilenameTaggingOptionsPanel( QW.QWidget ):
             
             # pull from an options default
             
-            filename_tagging_options = TagImportOptions.FilenameTaggingOptions()
+            filename_tagging_options = FilenameTaggingOptions.FilenameTaggingOptions()
             
         
         super().__init__( parent )
@@ -203,7 +204,7 @@ class FilenameTaggingOptionsPanel( QW.QWidget ):
     
     def GetFilenameTaggingOptions( self ):
         
-        filename_tagging_options = TagImportOptions.FilenameTaggingOptions()
+        filename_tagging_options = FilenameTaggingOptions.FilenameTaggingOptions()
         
         self._advanced_panel.UpdateFilenameTaggingOptions( filename_tagging_options )
         self._simple_panel.UpdateFilenameTaggingOptions( filename_tagging_options )
@@ -256,7 +257,7 @@ class FilenameTaggingOptionsPanel( QW.QWidget ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_QUICK_NAMESPACES.ID, self._ConvertQuickRegexDataToDisplayTuple, self._ConvertQuickRegexDataToSortTuple )
             
-            self._quick_namespaces_list = ClientGUIListCtrl.BetterListCtrlTreeView( quick_namespaces_listctrl_panel, 4, model, use_simple_delete = True, activation_callback = self.EditQuickNamespaces )
+            self._quick_namespaces_list = ClientGUIListCtrl.BetterListCtrlTreeView( quick_namespaces_listctrl_panel, 4, model, use_simple_delete = True, activation_callback = self.EditQuickNamespaces, max_height_num_chars = 12 )
             
             quick_namespaces_listctrl_panel.SetListCtrl( self._quick_namespaces_list )
             
@@ -824,6 +825,7 @@ class FilenameTaggingOptionsPanel( QW.QWidget ):
             
         
     
+
 class EditLocalImportFilenameTaggingPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def __init__( self, parent, paths ):
@@ -965,7 +967,7 @@ class EditLocalImportFilenameTaggingPanel( ClientGUIScrolledPanels.EditPanel ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PATHS_TO_TAGS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
             
-            self._paths_list = ClientGUIListCtrl.BetterListCtrlTreeView( self, 10, model )
+            self._paths_list = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model )
             
             self._paths_list.selectionModel().selectionChanged.connect( self.EventItemSelected )
             
@@ -1080,7 +1082,7 @@ class EditLocalImportFilenameTaggingPanel( ClientGUIScrolledPanels.EditPanel ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PATHS_TO_TAGS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
             
-            self._paths_list = ClientGUIListCtrl.BetterListCtrlTreeView( self, 10, model )
+            self._paths_list = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model )
             
             allowed_importer_classes = [ ClientMetadataMigrationImporters.SingleFileMetadataImporterTXT, ClientMetadataMigrationImporters.SingleFileMetadataImporterJSON ]
             allowed_exporter_classes = [ ClientMetadataMigrationExporters.SingleFileMetadataExporterMediaTags, ClientMetadataMigrationExporters.SingleFileMetadataExporterMediaNotes, ClientMetadataMigrationExporters.SingleFileMetadataExporterMediaURLs, ClientMetadataMigrationExporters.SingleFileMetadataExporterMediaTimestamps ]
@@ -1272,7 +1274,7 @@ class EditFilenameTaggingOptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
             tags = filename_tagging_options.GetTags( self._service_key, example_path_input )
             
-        except:
+        except Exception as e:
             
             tags = [ 'could not parse' ]
             
@@ -1316,7 +1318,7 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
     
     def __init__( self, parent, page_key, name = 'gallery query' ):
         
-        super().__init__( parent, name )
+        super().__init__( parent, name, start_expanded = True, can_expand = True )
         
         self._page_key = page_key
         
@@ -1351,18 +1353,18 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
         self._file_limit.valueChanged.connect( self.EventFileLimit )
         self._file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'stop searching the gallery once this many files has been reached' ) )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
-        tag_import_options = TagImportOptions.TagImportOptions( is_default = True )
+        tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( is_default = True )
         
-        note_import_options = NoteImportOptions.NoteImportOptions()
+        note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
         note_import_options.SetIsDefault( True )
         
         show_downloader_options = True
         allow_default_selection = True
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetFileImportOptions( file_import_options )
         self._import_options_button.SetTagImportOptions( tag_import_options )
@@ -1410,7 +1412,7 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
         CG.client_controller.gui.RegisterUIUpdateWindow( self )
         
     
-    def _SetFileImportOptions( self, file_import_options: FileImportOptions.FileImportOptions ):
+    def _SetFileImportOptions( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ):
         
         if self._gallery_import is not None:
             
@@ -1418,7 +1420,7 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
             
         
     
-    def _SetNoteImportOptions( self, note_import_options: NoteImportOptions.NoteImportOptions ):
+    def _SetNoteImportOptions( self, note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy ):
         
         if self._gallery_import is not None:
             
@@ -1426,7 +1428,7 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
             
         
     
-    def _SetTagImportOptions( self, tag_import_options: TagImportOptions.TagImportOptions ):
+    def _SetTagImportOptions( self, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy ):
         
         if self._gallery_import is not None:
             
@@ -1584,17 +1586,120 @@ class GalleryImportPanel( ClientGUICommon.StaticBox ):
             
         
     
+
+def SelectGUGKeyAndName( win: QW.QWidget, gug_key_and_name, for_new_sub = False ):
+    
+    domain_manager = CG.client_controller.network_engine.domain_manager
+    
+    # maybe relegate to hidden page and something like "(does not work)" if no gallery url class match
+    
+    # will be None for missing entries
+    my_gug = domain_manager.GetGUG( gug_key_and_name )
+    
+    gugs = list( domain_manager.GetGUGs() )
+    gug_keys_to_display = domain_manager.GetGUGKeysToDisplay()
+    
+    if len( gugs ) == 0:
+        
+        if for_new_sub:
+            
+            message = 'Hey, you do not have any downloaders set up in this client, so you cannot create a new subscription yet!'
+            
+        else:
+            
+            message = 'Hey, you do not have any downloaders set up in this client, so there is nothing to select!'
+            
+        
+        message += '\n\n'
+        message += 'Check the _network->downloaders_ menu to find downloaders made by users.'
+        
+        ClientGUIDialogsMessage.ShowWarning( win, message )
+        
+        raise HydrusExceptions.CancelledException()
+        
+    
+    gugs.sort( key = lambda g: g.GetName() )
+    
+    functional_gugs = []
+    non_functional_gugs = []
+    
+    for gug in gugs:
+        
+        if gug.IsFunctional():
+            
+            functional_gugs.append( gug )
+            
+        else:
+            
+            non_functional_gugs.append( gug )
+            
+        
+    
+    choice_tuples = [ ( gug.GetName(), gug ) for gug in functional_gugs if gug.GetGUGKey() in gug_keys_to_display ]
+    
+    second_choice_tuples = [ ( gug.GetName(), gug ) for gug in functional_gugs if gug.GetGUGKey() not in gug_keys_to_display ]
+    
+    if len( second_choice_tuples ) > 0:
+        
+        choice_tuples.append( ( f'--other galleries{HC.UNICODE_ELLIPSIS}', -1 ) )
+        
+    
+    non_functional_choice_tuples = []
+    
+    if len( non_functional_gugs ) > 0:
+        
+        for gug in non_functional_gugs:
+            
+            s = gug.GetName()
+            
+            try:
+                
+                gug.CheckFunctional()
+                
+            except HydrusExceptions.ParseException as e:
+                
+                s = '{} ({})'.format( gug.GetName(), e )
+                
+            
+            non_functional_choice_tuples.append( ( s, gug ) )
+            
+        
+        choice_tuples.append( ( f'--non-functional galleries{HC.UNICODE_ELLIPSIS}', -2 ) )
+        
+    
+    gug = ClientGUIDialogsQuick.SelectFromList( win, 'select gallery', choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
+    
+    
+    if gug == -1:
+        
+        gug = ClientGUIDialogsQuick.SelectFromList( win, 'select gallery', second_choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
+        
+    elif gug == -2:
+        
+        gug = ClientGUIDialogsQuick.SelectFromList( win, 'select gallery', non_functional_choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
+        
+    
+    gug_key_and_name = gug.GetGUGKeyAndName()
+    
+    return gug_key_and_name
+    
+
 class GUGKeyAndNameSelector( ClientGUICommon.BetterButton ):
     
-    def __init__( self, parent, gug_key_and_name, update_callable = None ):
+    valueChanged = QC.Signal()
+    
+    def __init__( self, parent, gug_key_and_name: tuple[ bytes, str ] | None = None, update_callable = None ):
         
         super().__init__( parent, 'gallery selector', self._Edit )
         
-        gug = CG.client_controller.network_engine.domain_manager.GetGUG( gug_key_and_name )
-        
-        if gug is not None:
+        if gug_key_and_name is not None:
             
-            gug_key_and_name = gug.GetGUGKeyAndName()
+            gug = CG.client_controller.network_engine.domain_manager.GetGUG( gug_key_and_name )
+            
+            if gug is not None:
+                
+                gug_key_and_name = gug.GetGUGKeyAndName()
+                
             
         
         self._gug_key_and_name = gug_key_and_name
@@ -1605,116 +1710,40 @@ class GUGKeyAndNameSelector( ClientGUICommon.BetterButton ):
     
     def _Edit( self ):
         
-        domain_manager = CG.client_controller.network_engine.domain_manager
-        
-        # maybe relegate to hidden page and something like "(does not work)" if no gallery url class match
-        
-        my_gug = domain_manager.GetGUG( self._gug_key_and_name )
-        
-        gugs = list( domain_manager.GetGUGs() )
-        gug_keys_to_display = domain_manager.GetGUGKeysToDisplay()
-        
-        gugs.sort( key = lambda g: g.GetName() )
-        
-        functional_gugs = []
-        non_functional_gugs = []
-        
-        for gug in gugs:
-            
-            if gug.IsFunctional():
-                
-                functional_gugs.append( gug )
-                
-            else:
-                
-                non_functional_gugs.append( gug )
-                
-            
-        
-        choice_tuples = [ ( gug.GetName(), gug ) for gug in functional_gugs if gug.GetGUGKey() in gug_keys_to_display ]
-        
-        second_choice_tuples = [ ( gug.GetName(), gug ) for gug in functional_gugs if gug.GetGUGKey() not in gug_keys_to_display ]
-        
-        if len( second_choice_tuples ) > 0:
-            
-            choice_tuples.append( ( f'--other galleries{HC.UNICODE_ELLIPSIS}', -1 ) )
-            
-        
-        non_functional_choice_tuples = []
-        
-        if len( non_functional_gugs ) > 0:
-            
-            for gug in non_functional_gugs:
-                
-                s = gug.GetName()
-                
-                try:
-                    
-                    gug.CheckFunctional()
-                    
-                except HydrusExceptions.ParseException as e:
-                    
-                    s = '{} ({})'.format( gug.GetName(), e )
-                    
-                
-                non_functional_choice_tuples.append( ( s, gug ) )
-                
-            
-            choice_tuples.append( ( f'--non-functional galleries{HC.UNICODE_ELLIPSIS}', -2 ) )
-            
-        
         try:
             
-            gug = ClientGUIDialogsQuick.SelectFromList( self, 'select gallery', choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
+            gug_key_and_name = SelectGUGKeyAndName( self, self._gug_key_and_name )
             
         except HydrusExceptions.CancelledException:
             
             return
             
         
-        if gug == -1:
-            
-            try:
-                
-                gug = ClientGUIDialogsQuick.SelectFromList( self, 'select gallery', second_choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
-                
-            except HydrusExceptions.CancelledException:
-                
-                return
-                
-            
-        elif gug == -2:
-            
-            try:
-                
-                gug = ClientGUIDialogsQuick.SelectFromList( self, 'select gallery', non_functional_choice_tuples, value_to_select = my_gug, sort_tuples = False, allow_insta_one_item_select = False )
-                
-            except HydrusExceptions.CancelledException:
-                
-                return
-                
-            
-        
-        gug_key_and_name = gug.GetGUGKeyAndName()
-        
         self._SetValue( gug_key_and_name )
         
     
     def _SetLabel( self ):
         
-        label = self._gug_key_and_name[1]
-        
-        gug = CG.client_controller.network_engine.domain_manager.GetGUG( self._gug_key_and_name )
-        
-        if gug is None:
+        if self._gug_key_and_name is None or self._gug_key_and_name[1] == '':
             
-            label = 'not found: ' + label
+            label = 'no downloader set'
+            
+        else:
+            
+            label = self._gug_key_and_name[1]
+            
+            gug = CG.client_controller.network_engine.domain_manager.GetGUG( self._gug_key_and_name )
+            
+            if gug is None:
+                
+                label = 'not found: ' + label
+                
             
         
         self.setText( label )
         
     
-    def _SetValue( self, gug_key_and_name ):
+    def _SetValue( self, gug_key_and_name: tuple[ bytes, str ] | None ):
         
         self._gug_key_and_name = gug_key_and_name
         
@@ -1725,24 +1754,34 @@ class GUGKeyAndNameSelector( ClientGUICommon.BetterButton ):
             self._update_callable( gug_key_and_name )
             
         
+        self.valueChanged.emit()
+        
     
     def GetValue( self ):
         
-        return self._gug_key_and_name
+        if self._gug_key_and_name is None or self._gug_key_and_name[1] == '':
+            
+            return None
+            
+        else:
+            
+            return self._gug_key_and_name
+            
         
     
-    def SetValue( self, gug_key_and_name ):
+    def SetValue( self, gug_key_and_name: tuple[ bytes, str ] | None ):
         
         self._SetValue( gug_key_and_name )
         
     
+
 class WatcherReviewPanel( ClientGUICommon.StaticBox ):
     
     importOptionsChanged = QC.Signal()
     
     def __init__( self, parent, page_key, name = 'watcher' ):
         
-        super().__init__( parent, name )
+        super().__init__( parent, name, start_expanded = True, can_expand = True )
         
         self._page_key = page_key
         self._watcher = None
@@ -1787,18 +1826,18 @@ class WatcherReviewPanel( ClientGUICommon.StaticBox ):
         
         self._checker_download_control = ClientGUINetworkJobControl.NetworkJobControl( checker_panel )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
-        tag_import_options = TagImportOptions.TagImportOptions( is_default = True )
+        tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( is_default = True )
         
-        note_import_options = NoteImportOptions.NoteImportOptions()
+        note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
         note_import_options.SetIsDefault( True )
         
         show_downloader_options = True
         allow_default_selection = True
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetFileImportOptions( file_import_options )
         self._import_options_button.SetTagImportOptions( tag_import_options )

@@ -15,6 +15,7 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -52,13 +53,13 @@ def GetRetryIgnoredParam( window ):
         ( 'retry all', None, 'retry all' ),
         ( 'retry 403s', '^403', 'retry all 403s' ),
         ( 'retry 404s', '^404', 'retry all 404s' ),
-        ( 'retry blacklisted', 'blacklisted!$', 'retry all blacklisted' )
+        ( 'retry blacklisted', 'blacklisted!$', 'retry all blacklisted' ),
     ]
     
-    return ClientGUIDialogsQuick.SelectFromListButtons( window, 'select what to retry', choice_tuples )
+    result = ClientGUIDialogsQuick.SelectFromListButtons( window, 'select what to retry', choice_tuples )
     
-
-# TODO: I pulled this stuff out of the button to share it with the panel. TBH anything without Qt may be better as be FSC methods
+    return result
+    
 
 def GetExportableSourcesString( file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
     
@@ -68,6 +69,7 @@ def GetExportableSourcesString( file_seed_cache: ClientImportFileSeeds.FileSeedC
     
     return '\n'.join( sources )
     
+
 def GetSourcesFromSourcesString( sources_string ):
     
     sources = HydrusText.DeserialiseNewlinedTexts( sources_string )
@@ -132,7 +134,7 @@ def ImportFromClipboard( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds
 
 def ImportFromPNG( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
     
-    with QP.FileDialog( win, 'select the png with the sources', wildcard = 'PNG (*.png)' ) as dlg:
+    with ClientGUIDialogsFiles.FileDialog( win, 'select the png with the sources', wildcard = 'PNG (*.png)' ) as dlg:
         
         if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
@@ -392,7 +394,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SEED_CACHE.ID, self._ConvertFileSeedToDisplayTuple, self._ConvertFileSeedToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 30, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
         
         #
         
@@ -425,7 +427,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
             pretty_file_seed_index = HydrusNumbers.ToHumanInt( file_seed_index )
             
-        except:
+        except Exception as e:
             
             pretty_file_seed_index = '--'
             
@@ -470,7 +472,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
             file_seed_index = self._file_seed_cache.GetFileSeedIndex( file_seed )
             
-        except:
+        except Exception as e:
             
             file_seed_index = -1
             
@@ -828,6 +830,18 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         file_seeds = self._list_ctrl.GetData( only_selected = True )
         
+        def qt_once_done():
+            
+            self.setEnabled( True )
+            
+            for file_seed in file_seeds:
+                
+                file_seed.SetStatus( status_to_set )
+                
+            
+            self._file_seed_cache.NotifyFileSeedsUpdated( file_seeds )
+            
+        
         if status_to_set == CC.STATUS_UNKNOWN:
             
             deleted_and_clearable_file_seeds = [ file_seed for file_seed in file_seeds if file_seed.IsDeleted() and file_seed.HasHash() ]
@@ -848,17 +862,23 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                     
-                    CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+                    self.setEnabled( False )
+                    
+                    def do_it():
+                        
+                        CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+                        
+                        CG.client_controller.CallAfterQtSafe( self, qt_once_done )
+                        
+                    
+                    CG.client_controller.CallToThread( do_it )
+                    
+                    return
                     
                 
             
         
-        for file_seed in file_seeds:
-            
-            file_seed.SetStatus( status_to_set )
-            
-        
-        self._file_seed_cache.NotifyFileSeedsUpdated( file_seeds )
+        qt_once_done()
         
     
     def _ShowSelectionInNewPage( self ):

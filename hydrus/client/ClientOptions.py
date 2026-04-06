@@ -13,13 +13,16 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.duplicates import ClientDuplicates
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileFilteringImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import LocationImportOptions
+from hydrus.client.importing.options import PrefetchImportOptions
 
 class ClientOptions( HydrusSerialisable.SerialisableBase ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS
     SERIALISABLE_NAME = 'Client Options'
-    SERIALISABLE_VERSION = 6
+    SERIALISABLE_VERSION = 7
     
     def __init__( self ):
         
@@ -50,8 +53,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         else:
             
-            video_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE
-            audio_action = CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON
+            video_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER
+            audio_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER
             
             video_zoom_info = ( CC.MEDIA_VIEWER_SCALE_100, CC.MEDIA_VIEWER_SCALE_TO_CANVAS, CC.MEDIA_VIEWER_SCALE_TO_CANVAS, CC.MEDIA_VIEWER_SCALE_TO_CANVAS, True, CC.ZOOM_LANCZOS4, CC.ZOOM_AREA )
             
@@ -84,6 +87,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         media_view[ HC.APPLICATION_PSD ] = ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, media_start_paused, media_start_with_embed, CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON, preview_start_paused, preview_start_with_embed, image_zoom_info )
 
         media_view[ HC.APPLICATION_KRITA ] = ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, media_start_paused, media_start_with_embed, CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON, preview_start_paused, preview_start_with_embed, image_zoom_info )
+        
+        media_view[ HC.IMAGE_OPENRASTER ] = ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, media_start_paused, media_start_with_embed, CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON, preview_start_paused, preview_start_with_embed, image_zoom_info )
         
         media_view[ HC.ANIMATION_WEBP ] = ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, media_start_paused, media_start_with_embed, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, preview_start_paused, preview_start_with_embed, gif_zoom_info )
         
@@ -167,7 +172,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'page_drag_change_tab_with_shift' : True,
             'wheel_scrolls_tab_bar' : False,
             'remove_local_domain_moved_files' : False,
-            'anchor_and_hide_canvas_drags' : HC.PLATFORM_WINDOWS,
+            'anchor_canvas_drags' : not HC.PLATFORM_MACOS,
+            'hide_canvas_drags' : not HC.PLATFORM_MACOS,
             'touchscreen_canvas_drags_unanchor' : False,
             'import_page_progress_display' : True,
             'rename_page_of_pages_on_pick_new' : False,
@@ -264,6 +270,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'fade_sibling_connector' : True,
             'use_custom_sibling_connector_colour' : False,
             'hide_uninteresting_modified_time' : True,
+            'hover_windows_need_window_focus_to_pop_in' : True,
             'draw_tags_hover_in_media_viewer_background' : True,
             'draw_top_hover_in_media_viewer_background' : True,
             'draw_top_right_hover_in_media_viewer_background' : True,
@@ -273,6 +280,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'draw_bottom_right_index_in_media_viewer_background' : True,
             'disable_tags_hover_in_media_viewer': False,
             'disable_top_right_hover_in_media_viewer': False,
+            'disable_notes_hover_in_media_viewer': False,
             'media_viewer_window_always_on_top': False,
             'media_viewer_lock_current_zoom_type': False,
             'media_viewer_lock_current_zoom': False,
@@ -333,6 +341,20 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'manage_tags_show_deleted_mappings' : False,
             'mpv_destruction_test' : False,
             'hover_window_duplicates_always_on_top' : True,
+            'animated_scanbar_pop_in_requires_focus' : True,
+            'slideshows_progress_randomly' : False,
+            'archive_delete_commit_panel_delays_multiple_delete_choices' : True,
+            'always_start_media_viewers_always_on_top' : False,
+            'always_start_media_viewers_frameless' : False,
+            'qt_media_player_opengl_test' : False,
+            'persist_media_window_qt_media_player' : False,
+            'persist_media_window_mpv' : False,
+            'maintain_trash_in_normal_time' : True,
+            'deferred_file_deletes_in_normal_time' : True,
+            'qt_media_player_no_audio_device' : False,
+            'import_options_simple_mode' : True,
+            'qt_media_player_null_audio_on_silent_media' : False,
+            'mpv_null_audio_on_silent_media' : False,
         }
         
         #
@@ -392,7 +414,6 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         note_import_options = NoteImportOptions.NoteImportOptions()
         
-        note_import_options.SetIsDefault( False )
         note_import_options.SetGetNotes( True )
         note_import_options.SetExtendExistingNoteIfPossible( True )
         note_import_options.SetConflictResolution( NoteImportOptions.NOTE_IMPORT_CONFLICT_RENAME )
@@ -412,7 +433,6 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         note_import_options = NoteImportOptions.NoteImportOptions()
         
-        note_import_options.SetIsDefault( False )
         note_import_options.SetGetNotes( True )
         note_import_options.SetExtendExistingNoteIfPossible( True )
         note_import_options.SetConflictResolution( NoteImportOptions.NOTE_IMPORT_CONFLICT_RENAME )
@@ -432,6 +452,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         from hydrus.core.files.images import HydrusImageHandling
         from hydrus.core.files.images import HydrusImageColours
         from hydrus.client.metadata import ClientTags
+        from hydrus.client.importing.options import ImportOptionsContainer
         
         self._dictionary[ 'integers' ] = {
             'notebook_tab_alignment' : CC.DIRECTION_UP,
@@ -508,8 +529,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'animated_scanbar_nub_width' : 10,
             'domain_network_infrastructure_error_number' : 3,
             'domain_network_infrastructure_error_time_delta' : 600,
-            'ac_read_list_height_num_chars' : 21,
+            'ac_read_list_height_num_chars' : 22,
             'ac_write_list_height_num_chars' : 11,
+            'active_search_predicates_height_num_chars' : 6,
             'system_busy_cpu_percent' : 50,
             'human_bytes_sig_figs' : 3,
             'ms_to_wait_between_physical_file_deletes' : 600,
@@ -550,6 +572,8 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'page_nav_history_max_entries' : 100,
             'tag_list_tag_display_type_sidebar' : ClientTags.TAG_DISPLAY_SELECTION_LIST,
             'tag_list_tag_display_type_media_viewer_hover' : ClientTags.TAG_DISPLAY_SINGLE_MEDIA,
+            'command_palette_num_chars_for_results_threshold' : 1,
+            'last_selected_import_options_container_panel_options_type' : ImportOptionsContainer.IMPORT_OPTIONS_TYPE_TAGS
         }
         
         self._dictionary[ 'floats' ] = {
@@ -617,7 +641,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         #
         
         self._dictionary[ 'noneable_strings' ] = {
-            'favourite_file_lookup_script' : 'gelbooru md5',
+            'favourite_file_lookup_script' : None,
             'suggested_tags_layout' : 'notebook',
             'backup_path' : None,
             'web_browser_path' : None,
@@ -631,7 +655,10 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'last_advanced_file_deletion_reason' : None,
             'last_advanced_file_deletion_special_action' : None,
             'sibling_connector_custom_namespace_colour' : 'system',
-            'or_connector_custom_namespace_colour' : 'system'
+            'or_connector_custom_namespace_colour' : 'system',
+            'qt_media_player_preferred_audio_device_name' : None,
+            'qt_media_player_preferred_audio_device_id_hex' : None,
+            'mpv_preferred_audio_device' : None,
         }
         
         self._dictionary[ 'strings' ] = {
@@ -645,7 +672,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'thumbnail_scroll_rate' : '1.0',
             'pause_character' : '\u23F8',
             'stop_character' : '\u23F9',
-            'default_gug_name' : 'safebooru tag search',
+            'default_gug_name' : '',
             'has_audio_label' : '\U0001F50A',
             'has_duration_label' : ' \u23F5 ',
             'discord_dnd_filename_pattern' : '{hash}',
@@ -784,22 +811,18 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         self._dictionary[ 'default_file_import_options' ] = HydrusSerialisable.SerialisableDictionary()
         
-        from hydrus.client.importing.options import FileImportOptions
+        from hydrus.client.importing.options import FileImportOptionsLegacy
         
-        exclude_deleted = True
-        preimport_hash_check_type = FileImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
-        preimport_url_check_type = FileImportOptions.DO_CHECK
-        preimport_url_check_looks_for_neighbour_spam = True
-        allow_decompression_bombs = True
-        min_size = None
-        max_size = None
-        max_gif_size = None
-        min_resolution = None
-        max_resolution = None
+        prefetch_import_options = PrefetchImportOptions.PrefetchImportOptions()
         
-        automatic_archive = False
-        associate_primary_urls = True
-        associate_source_urls = True
+        prefetch_import_options.SetPreImportHashCheckType( PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE )
+        prefetch_import_options.SetPreImportURLCheckType( PrefetchImportOptions.DO_CHECK )
+        prefetch_import_options.SetPreImportURLCheckLooksForNeighbourSpam( True )
+        
+        file_filtering_import_options = FileFilteringImportOptions.FileFilteringImportOptions()
+        
+        file_filtering_import_options.SetAllowsDecompressionBombs( True )
+        file_filtering_import_options.SetExcludesDeleted( True )
         
         from hydrus.client.importing.options import PresentationImportOptions
         
@@ -807,22 +830,27 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         presentation_import_options.SetPresentationStatus( PresentationImportOptions.PRESENTATION_STATUS_NEW_ONLY )
         
-        quiet_file_import_options = FileImportOptions.FileImportOptions()
+        location_import_options = LocationImportOptions.LocationImportOptions()
         
-        quiet_file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
-        quiet_file_import_options.SetPreImportURLCheckLooksForNeighbourSpam( preimport_url_check_looks_for_neighbour_spam )
-        quiet_file_import_options.SetPostImportOptions( automatic_archive, associate_primary_urls, associate_source_urls )
+        location_import_options.SetAutomaticallyArchives( False )
+        location_import_options.SetShouldAssociatePrimaryURLs( True )
+        location_import_options.SetShouldAssociateSourceURLs( True )
+        location_import_options.SetDestinationLocationContext( ClientLocation.LocationContext.STATICCreateSimple( CC.LOCAL_FILE_SERVICE_KEY ) )
+        
+        quiet_file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
+        
+        quiet_file_import_options.SetPrefetchImportOptions( prefetch_import_options )
+        quiet_file_import_options.SetFileFilteringImportOptions( file_filtering_import_options )
+        quiet_file_import_options.SetLocationImportOptions( location_import_options )
         quiet_file_import_options.SetPresentationImportOptions( presentation_import_options )
-        quiet_file_import_options.SetDestinationLocationContext( ClientLocation.LocationContext.STATICCreateSimple( CC.LOCAL_FILE_SERVICE_KEY ) )
         
         self._dictionary[ 'default_file_import_options' ][ 'quiet' ] = quiet_file_import_options
         
-        loud_file_import_options = FileImportOptions.FileImportOptions()
+        loud_file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         
-        loud_file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
-        loud_file_import_options.SetPreImportURLCheckLooksForNeighbourSpam( preimport_url_check_looks_for_neighbour_spam )
-        loud_file_import_options.SetPostImportOptions( automatic_archive, associate_primary_urls, associate_source_urls )
-        loud_file_import_options.SetDestinationLocationContext( ClientLocation.LocationContext.STATICCreateSimple( CC.LOCAL_FILE_SERVICE_KEY ) )
+        loud_file_import_options.SetPrefetchImportOptions( prefetch_import_options )
+        loud_file_import_options.SetFileFilteringImportOptions( file_filtering_import_options )
+        loud_file_import_options.SetLocationImportOptions( location_import_options )
         
         self._dictionary[ 'default_file_import_options' ][ 'loud' ] = loud_file_import_options
         
@@ -996,7 +1024,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
                         p = a_p
                         
                     
-                except:
+                except Exception as e:
                     
                     p = a_p
                     
@@ -1131,6 +1159,33 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             return ( 6, new_serialisable_info )
             
         
+        if version == 6:
+            
+            loaded_dictionary = HydrusSerialisable.CreateFromSerialisableTuple( old_serialisable_info )
+            
+            if 'media_view' in loaded_dictionary:
+                
+                for ( mime, ( media_show_action, media_start_paused, media_start_with_embed, preview_show_action, preview_start_paused, preview_start_with_embed, zoom_info ) ) in list( loaded_dictionary[ 'media_view' ].items() ):
+                    
+                    if media_show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER_VIDEO_WIDGET:
+                        
+                        media_show_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER
+                        
+                    
+                    if preview_show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER_VIDEO_WIDGET:
+                        
+                        preview_show_action = CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER
+                        
+                    
+                    loaded_dictionary[ 'media_view' ][ mime ] = ( media_show_action, media_start_paused, media_start_with_embed, preview_show_action, preview_start_paused, preview_start_with_embed, zoom_info )
+                    
+                
+            
+            new_serialisable_info = loaded_dictionary.GetSerialisableTuple()
+            
+            return ( 7, new_serialisable_info )
+            
+        
     
     def ClearCustomDefaultSystemPredicates( self, predicate_type = None, comparable_predicate = None ):
         
@@ -1243,11 +1298,11 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetDefaultFileImportOptions( self, options_type ) -> FileImportOptions.FileImportOptions:
+    def GetDefaultFileImportOptions( self, options_type ) -> FileImportOptionsLegacy.FileImportOptionsLegacy:
         
         with self._lock:
             
-            if options_type == FileImportOptions.IMPORT_TYPE_LOUD:
+            if options_type == FileImportOptionsLegacy.IMPORT_TYPE_LOUD:
                 
                 key = 'loud'
                 
@@ -1278,7 +1333,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
                     location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                     
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -1870,7 +1925,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         with self._lock:
             
-            if options_type == FileImportOptions.IMPORT_TYPE_LOUD:
+            if options_type == FileImportOptionsLegacy.IMPORT_TYPE_LOUD:
                 
                 key = 'loud'
                 

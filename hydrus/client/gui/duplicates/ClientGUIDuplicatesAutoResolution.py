@@ -1,6 +1,5 @@
 import collections.abc
 import threading
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -66,7 +65,7 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_EDIT_DUPLICATES_AUTO_RESOLUTION_RULES.ID, self._ConvertRuleToDisplayTuple, self._ConvertRuleToSortTuple )
         
-        self._duplicates_auto_resolution_rules = ClientGUIListCtrl.BetterListCtrlTreeView( self._duplicates_auto_resolution_rules_panel, 12, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._duplicates_auto_resolution_rules = ClientGUIListCtrl.BetterListCtrlTreeView( self._duplicates_auto_resolution_rules_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         self._duplicates_auto_resolution_rules_panel.SetListCtrl( self._duplicates_auto_resolution_rules )
         
@@ -200,7 +199,7 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
     
     def _Edit( self ):
         
-        duplicates_auto_resolution_rule: typing.Optional[ ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule ] = self._duplicates_auto_resolution_rules.GetTopSelectedData()
+        duplicates_auto_resolution_rule: ClientDuplicatesAutoResolution.DuplicatesAutoResolutionRule | None = self._duplicates_auto_resolution_rules.GetTopSelectedData()
         
         if duplicates_auto_resolution_rule is None:
             
@@ -508,7 +507,7 @@ class EditDuplicatesAutoResolutionRulePanel( ClientGUIScrolledPanels.EditPanel )
 
 class EditPairActionsWidget( ClientGUICommon.StaticBox ):
     
-    def __init__( self, parent, action: int, delete_a: bool, delete_b: bool, duplicates_content_merge_options: typing.Optional[ ClientDuplicates.DuplicateContentMergeOptions ] ):
+    def __init__( self, parent, action: int, delete_a: bool, delete_b: bool, duplicates_content_merge_options: ClientDuplicates.DuplicateContentMergeOptions | None ):
         
         super().__init__( parent, 'pair actions' )
         
@@ -625,9 +624,61 @@ class EditPairActionsWidget( ClientGUICommon.StaticBox ):
         
     
 
-class EditPairComparatorOneFilePanel( ClientGUIScrolledPanels.EditPanel ):
+class EditPairComparatorOneFileHardcodedPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile ):
+    def __init__( self, parent, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileHardcoded ):
+        
+        super().__init__( parent )
+        
+        self._looking_at = ClientGUICommon.BetterChoice( self )
+        
+        self._looking_at.addItem( 'A will match', ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
+        self._looking_at.addItem( 'B will match', ClientDuplicatesAutoResolutionComparators.LOOKING_AT_B )
+        self._looking_at.addItem( 'either will match', ClientDuplicatesAutoResolutionComparators.LOOKING_AT_EITHER )
+        
+        self._comparator_type = ClientGUICommon.BetterChoice( self )
+        
+        for comparator_type in [
+            ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_ONE_FILE_JPEG_IS_PROGRESSIVE,
+            ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_ONE_FILE_JPEG_IS_NOT_PROGRESSIVE,
+        ]:
+            
+            self._comparator_type.addItem( ClientDuplicatesAutoResolutionComparators.hardcoded_comparator_type_one_file_str_lookup[ comparator_type ], comparator_type )
+            
+        
+        #
+        
+        self._looking_at.SetValue( pair_comparator.GetLookingAt() )
+        self._comparator_type.SetValue( pair_comparator.GetComparatorType() )
+        
+        #
+        
+        vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( vbox, self._looking_at, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, self._comparator_type, CC.FLAGS_EXPAND_PERPENDICULAR )
+        vbox.addStretch( 0 )
+        
+        self.widget().setLayout( vbox )
+        
+    
+    def GetValue( self ):
+        
+        looking_at = self._looking_at.GetValue()
+        comparator_type = self._comparator_type.GetValue()
+        
+        pair_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileHardcoded()
+        
+        pair_comparator.SetLookingAt( looking_at )
+        pair_comparator.SetComparatorType( comparator_type )
+        
+        return pair_comparator
+        
+    
+
+class EditPairComparatorOneFileMetadataConditionalPanel( ClientGUIScrolledPanels.EditPanel ):
+    
+    def __init__( self, parent, pair_comparator: ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional ):
         
         super().__init__( parent )
         
@@ -664,7 +715,7 @@ class EditPairComparatorOneFilePanel( ClientGUIScrolledPanels.EditPanel ):
         looking_at = self._looking_at.GetValue()
         metadata_conditional = self._metadata_conditional.GetValue()
         
-        pair_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+        pair_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
         
         pair_comparator.SetLookingAt( looking_at )
         pair_comparator.SetMetadataConditional( metadata_conditional )
@@ -685,17 +736,18 @@ class EditComparatorList( ClientGUIListBoxes.AddEditDeleteListBox ):
     def _AddComparator( self ):
         
         choice_tuples = [
-            ( 'test A or B', ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile(), 'A comparator that tests one file at a time using system predicates.' ),
+            ( 'test A or B using search terms', ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional(), 'A comparator that tests one file at a time using system predicates.' ),
+            ( 'test A or B using other file info', ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileHardcoded(), 'A comparator that tests one file at a time using a special routine.' ),
             ( 'test A against B using file info', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo(), 'A comparator that performs a number test on the width, filesize, etc.. of A vs B.' ),
             ( 'test if A and B are visual duplicates', ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeVisualDuplicates( acceptable_confidence = ClientVisualData.VISUAL_DUPLICATES_RESULT_ALMOST_CERTAINLY ), 'A comparator that examines the differences in the images\' shape and colour to determine if they are visual duplicates.' )
         ]
         
         additional_comparators = [
-            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME ), 'A comparator that tests if the two files share the same filetype.' ),
-            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_DIFFERS ), 'A comparator that tests if the two files have different filetype.' ),
-            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_A_HAS_CLEARLY_BETTER_JPEG_QUALITY ), 'A comparator that tests if A has a non-trivially higher apparent jpeg quality than B. The difference corresponds to about one label-step of quality as you see in the duplicate filter. If either file is not a jpeg, it fails.' ),
-            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of EXIF data.' ),
-            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of ICC Profile data.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_FILETYPE_SAME ), 'A comparator that tests if the two files share the same filetype.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_FILETYPE_DIFFERS ), 'A comparator that tests if the two files have different filetype.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_A_HAS_CLEARLY_BETTER_JPEG_QUALITY ), 'A comparator that tests if A has a non-trivially higher apparent jpeg quality than B. The difference corresponds to about one label-step of quality as you see in the duplicate filter. If either file is not a jpeg, it fails.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_HAS_EXIF_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of EXIF data.' ),
+            ( ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_HAS_ICC_PROFILE_SAME ), 'A comparator that tests if the two files either both have or both do not have some amount of ICC Profile data.' ),
         ]
         
         choice_tuples.extend(
@@ -724,9 +776,13 @@ class EditComparatorList( ClientGUIListBoxes.AddEditDeleteListBox ):
     
     def _EditComparator( self, comparator: ClientDuplicatesAutoResolutionComparators.PairComparator ):
         
-        if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile ):
+        if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional ):
             
-            title = 'edit one-file comparator'
+            title = 'edit one-file metadata conditional comparator'
+            
+        elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileHardcoded ):
+            
+            title = 'edit one-file hardcoded comparator'
             
         elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
             
@@ -755,9 +811,13 @@ class EditComparatorList( ClientGUIListBoxes.AddEditDeleteListBox ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, title ) as dlg:
             
-            if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile ):
+            if isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional ):
                 
-                panel = EditPairComparatorOneFilePanel( dlg, comparator )
+                panel = EditPairComparatorOneFileMetadataConditionalPanel( dlg, comparator )
+                
+            elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileHardcoded ):
+                
+                panel = EditPairComparatorOneFileHardcodedPanel( dlg, comparator )
                 
             elif isinstance( comparator, ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeFileInfo ):
                 
@@ -1154,7 +1214,7 @@ class EditPairComparatorRelativeFileinfoPanel( ClientGUIScrolledPanels.EditPanel
             
             text = value.GetSummary()
             
-        except:
+        except Exception as e:
             
             text = 'Could not calculate current value!'
             
@@ -1367,7 +1427,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_REVIEW_DUPLICATES_AUTO_RESOLUTION_RULES.ID, self._ConvertRuleToDisplayTuple, self._ConvertRuleToSortTuple )
         
-        self._duplicates_auto_resolution_rules = ClientGUIListCtrl.BetterListCtrlTreeView( self._duplicates_auto_resolution_rules_panel, 6, model, use_simple_delete = True, activation_callback = self._ReviewActions )
+        self._duplicates_auto_resolution_rules = ClientGUIListCtrl.BetterListCtrlTreeView( self._duplicates_auto_resolution_rules_panel, 6, model, use_simple_delete = True, activation_callback = self._ReviewActions, max_height_num_chars = 24 )
         
         self._duplicates_auto_resolution_rules_panel.SetListCtrl( self._duplicates_auto_resolution_rules )
         
@@ -1685,12 +1745,6 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
                 
             
             self._duplicates_auto_resolution_rules.SetData( rules )
-            
-            ideal_rows = len( rules )
-            ideal_rows = max( 4, ideal_rows )
-            ideal_rows = min( ideal_rows, 24 )
-            
-            self._duplicates_auto_resolution_rules.ForceHeight( ideal_rows )
             
         
         return ClientGUIAsync.AsyncQtUpdater( 'review auto-resolution rules fetch', self, loading_callable, work_callable, publish_callable )

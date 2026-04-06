@@ -1,6 +1,5 @@
 import collections.abc
 import json
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -60,7 +59,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOMAIN_MODIFIED_TIMESTAMPS.ID, self._ConvertDomainToDomainModifiedDisplayTuple, self._ConvertDomainToDomainModifiedSortTuple )
         
-        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp )
+        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, 4, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp, max_height_num_chars = 12 )
         
         self._domain_modified_list_ctrl_panel.SetListCtrl( self._domain_modified_list_ctrl )
         
@@ -76,7 +75,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SERVICE_TIMESTAMPS.ID, self._ConvertDataRowToFileServiceDisplayTuple, self._ConvertDataRowToFileServiceSortTuple )
         
-        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, 8, model, activation_callback = self._EditFileServiceTimestamp )
+        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, 4, model, activation_callback = self._EditFileServiceTimestamp, max_height_num_chars = 12 )
         
         self._file_services_list_ctrl_panel.SetListCtrl( self._file_services_list_ctrl )
         
@@ -929,7 +928,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         self._file_modified_time_warning_st.setVisible( False )
         
     
-    def GetFileModifiedUpdateData( self ) -> typing.Optional[ tuple[ collections.abc.Collection[ bytes ], int, int ] ]:
+    def GetFileModifiedUpdateData( self ) -> tuple[ collections.abc.Collection[ bytes ], int, int ] | None:
         
         for ( hashes, timestamp_data, step_ms ) in self._GetValidTimestampDatas( only_changes = True ):
             

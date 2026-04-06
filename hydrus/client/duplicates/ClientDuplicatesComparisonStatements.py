@@ -577,27 +577,39 @@ def populate_jpeg_quality_storage( jpeg_hash ):
         
         subsampling = HydrusImageMetadata.SUBSAMPLING_UNKNOWN
         quality_result = ( 'unknown', None )
+        progressive = False
         
         try:
             
             raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
             
-            subsampling = HydrusImageMetadata.GetJpegSubsamplingRaw( raw_pil_image )
+            try:
+                
+                subsampling = HydrusImageMetadata.GetJpegSubsamplingRaw( raw_pil_image )
+                
+                quality_result = HydrusImageMetadata.GetJPEGQuantizationQualityEstimate( raw_pil_image )
+                
+                progressive = 'progression' in raw_pil_image.info
+                
+            finally:
+                
+                raw_pil_image.close()
+                
             
-            quality_result = HydrusImageMetadata.GetJPEGQuantizationQualityEstimate( raw_pil_image )
-            
-        except:
+        except Exception as e:
             
             pass
             
         
         ( quality_label, quality ) = quality_result
         
-        jpeg_quality = JpegQuality( subsampling, quality_label, quality )
+        jpeg_quality = JpegQuality( subsampling, quality_label, quality, progressive )
         
         jpeg_quality_storage.AddData( jpeg_hash, jpeg_quality )
         
     
+
+HAVE_SHOWN_VISUAL_DUPLICATES_ERROR = False
 
 def GetDuplicateComparisonStatementsSlow( shown_media_result: ClientMediaResult.MediaResult, comparison_media_result: ClientMediaResult.MediaResult, they_are_pixel_duplicates: bool ):
     
@@ -736,9 +748,16 @@ def GetDuplicateComparisonStatementsSlow( shown_media_result: ClientMediaResult.
                 
             except Exception as e:
                 
-                HydrusData.ShowException( e, do_wait = False )
+                global HAVE_SHOWN_VISUAL_DUPLICATES_ERROR
                 
-                HydrusData.ShowText( 'The "A and B are visual duplicates" test threw an error! Please let hydev know the details.' )
+                if not HAVE_SHOWN_VISUAL_DUPLICATES_ERROR:
+                    
+                    HAVE_SHOWN_VISUAL_DUPLICATES_ERROR = True
+                    
+                    HydrusData.ShowText( 'The "A and B are visual duplicates" test threw an error! You should have more info in your log. Please let hydev know the details.' )
+                    
+                    HydrusData.ShowException( e, do_wait = False )
+                    
                 
             
         
@@ -768,7 +787,16 @@ def GetVisualData( media_result: ClientMediaResult.MediaResult ) -> ClientVisual
         
         numpy_image = image_renderer.GetNumPyImage()
         
-        visual_data = ClientVisualData.GenerateImageVisualDataNumPy( numpy_image )
+        try:
+            
+            visual_data = ClientVisualData.GenerateImageVisualDataNumPy( numpy_image )
+            
+        except Exception as e:
+            
+            HydrusData.Print( f'Hey, the media with hash {hash.hex()} failed to generate visual data! Hydev would be interested in seeing this file!' )
+            
+            raise
+            
         
         visual_data_cache.AddData( hash, visual_data )
         
@@ -798,7 +826,16 @@ def GetVisualDataTiled( media_result: ClientMediaResult.MediaResult ) -> ClientV
         
         numpy_image = image_renderer.GetNumPyImage()
         
-        visual_data_tiled = ClientVisualData.GenerateImageVisualDataTiledNumPy( numpy_image )
+        try:
+            
+            visual_data_tiled = ClientVisualData.GenerateImageVisualDataTiledNumPy( numpy_image )
+            
+        except Exception as e:
+            
+            HydrusData.Print( f'Hey, the media with hash {hash.hex()} failed to generate tiled visual data! Hydev would be interested in seeing this file!' )
+            
+            raise
+            
         
         visual_data_tiled_cache.AddData( hash, visual_data_tiled )
         
@@ -808,12 +845,13 @@ def GetVisualDataTiled( media_result: ClientMediaResult.MediaResult ) -> ClientV
 
 class JpegQuality( ClientCachesBase.CacheableObject ):
     
-    def __init__( self, subsampling, quality_label, quality ):
+    def __init__( self, subsampling, quality_label, quality, progressive: bool ):
         
         self.subsampling = subsampling
         
         self.quality_label = quality_label
         self.quality = quality
+        self.progressive = progressive
         
     
     def GetEstimatedMemoryFootprint( self ) -> int:

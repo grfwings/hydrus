@@ -3,10 +3,10 @@ from qtpy import QtWidgets as QW
 from hydrus.client import ClientConstants as CC
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
 from hydrus.client.gui.panels.options import ClientGUIOptionsPanelBase
 from hydrus.client.gui.widgets import ClientGUICommon
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
 
 class ImportingPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
     
@@ -27,18 +27,18 @@ class ImportingPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         
         default_fios = ClientGUICommon.StaticBox( self, 'default file import options' )
         
-        quiet_file_import_options = self._new_options.GetDefaultFileImportOptions( FileImportOptions.IMPORT_TYPE_QUIET )
+        quiet_file_import_options = self._new_options.GetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_QUIET )
         
         show_downloader_options = True
         allow_default_selection = False
         
-        self._quiet_fios = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._quiet_fios = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._quiet_fios.SetFileImportOptions( quiet_file_import_options )
         
-        loud_file_import_options = self._new_options.GetDefaultFileImportOptions( FileImportOptions.IMPORT_TYPE_LOUD )
+        loud_file_import_options = self._new_options.GetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
         
-        self._loud_fios = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._loud_fios = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._loud_fios.SetFileImportOptions( loud_file_import_options )
         
@@ -88,7 +88,7 @@ class ImportingPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         
         self._new_options.SetBoolean( 'show_destination_page_when_dnd_url', self._show_destination_page_when_dnd_url.isChecked() )
         
-        self._new_options.SetDefaultFileImportOptions( FileImportOptions.IMPORT_TYPE_QUIET, self._quiet_fios.GetFileImportOptions() )
-        self._new_options.SetDefaultFileImportOptions( FileImportOptions.IMPORT_TYPE_LOUD, self._loud_fios.GetFileImportOptions() )
+        self._new_options.SetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_QUIET, self._quiet_fios.GetFileImportOptions() )
+        self._new_options.SetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_LOUD, self._loud_fios.GetFileImportOptions() )
         
     

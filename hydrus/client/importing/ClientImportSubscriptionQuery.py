@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
@@ -11,7 +10,7 @@ from hydrus.client.importing import ClientImporting
 from hydrus.client.importing import ClientImportFileSeeds
 from hydrus.client.importing import ClientImportGallerySeeds
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.networking import ClientNetworking
 from hydrus.client.networking import ClientNetworkingBandwidth
 from hydrus.client.networking import ClientNetworkingContexts
@@ -102,14 +101,14 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
         self._file_seed_cache_status = ClientImportFileSeeds.FileSeedCacheStatus()
         self._file_seed_cache_compaction_number = 250
         self._gallery_seed_log_compaction_number = 100
-        self._tag_import_options = TagImportOptions.TagImportOptions()
+        self._tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
         self._raw_file_velocity = ( 0, 1 )
         self._pretty_file_velocity = 'unknown'
         self._example_file_seed = None
         self._example_gallery_seed = None
         
     
-    def _DomainOK( self, domain_manager: ClientNetworkingDomain.NetworkDomainManager, example_url: typing.Optional[ str ] ):
+    def _DomainOK( self, domain_manager: ClientNetworkingDomain.NetworkDomainManager, example_url: str | None ):
         
         if example_url is None:
             
@@ -177,7 +176,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
         return example_url
         
     
-    def _GetExampleNetworkContexts( self, example_url: typing.Optional[ str ], subscription_name: str ):
+    def _GetExampleNetworkContexts( self, example_url: str | None, subscription_name: str ):
         
         subscription_key = self._GenerateNetworkJobSubscriptionKey( subscription_name )
         
@@ -191,7 +190,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
             example_nj = ClientNetworkingJobs.NetworkJobSubscription( subscription_key, 'GET', example_url )
             example_network_contexts = example_nj.GetNetworkContexts()
             
-        except:
+        except Exception as e:
             
             return [ ClientNetworkingContexts.NetworkContext( CC.NETWORK_CONTEXT_SUBSCRIPTION, subscription_key ), ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT ]
             
@@ -269,7 +268,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
             
             self._example_file_seed = HydrusSerialisable.CreateFromNoneableSerialisableTuple( serialisable_example_file_seed )
             
-        except:
+        except Exception as e:
             
             self._example_file_seed = None
             
@@ -278,7 +277,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
             
             self._example_gallery_seed = HydrusSerialisable.CreateFromNoneableSerialisableTuple( serialisable_example_gallery_seed )
             
-        except:
+        except Exception as e:
             
             self._example_gallery_seed = None
             
@@ -606,7 +605,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
                 
                 file_bandwidth_estimate = self.GetBandwidthWaitingEstimate( bandwidth_manager, subscription_name )
                 
-            except:
+            except Exception as e:
                 
                 # this is tricky, but if there is a borked url in here causing trouble, we should let it run and error out immediately tbh
                 
@@ -829,7 +828,7 @@ class SubscriptionQueryHeader( HydrusSerialisable.SerialisableBase ):
         self._query_text = query_text
         
     
-    def SetTagImportOptions( self, tag_import_options: TagImportOptions.TagImportOptions ):
+    def SetTagImportOptions( self, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy ):
         
         self._tag_import_options = tag_import_options
         

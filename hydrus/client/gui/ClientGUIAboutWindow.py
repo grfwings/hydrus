@@ -24,7 +24,7 @@ def render_availability_line( name: str, is_ok: bool, is_module_not_found: bool,
         
     else:
         
-        HydrusData.ShowText( f'Module {name} failed to import because of the following:' )
+        HydrusData.ShowText( f'Hey, one of your optional modules, "{name}", did not load, and the error is more complicated than "you do not have it". The error was:' )
         HydrusData.ShowText( error_trace )
         
         if name == 'mpv' and 'sio_flush' in error_trace:
@@ -61,6 +61,8 @@ def ShowAboutWindow( win: QW.QWidget ):
     from hydrus.client import ClientTime
     from hydrus.client.gui import ClientGUICharts
     from hydrus.client.gui.canvas import ClientGUIMPV
+    from hydrus.client.gui.canvas import ClientGUIQtMediaPlayer
+    from hydrus.client.networking import ClientNetworkingDomainTLDExtract
     from hydrus.client.parsing import ClientParsing
 
     name = 'hydrus client'
@@ -80,21 +82,6 @@ def ShowAboutWindow( win: QW.QWidget ):
     
     library_version_lines.append( 'python: {}'.format( v ) )
     library_version_lines.append( 'FFMPEG: {}'.format( HydrusFFMPEG.GetFFMPEGVersion() ) )
-    
-    if ClientGUIMPV.MPV_IS_AVAILABLE:
-        
-        library_version_lines.append( 'mpv api version: {}'.format( ClientGUIMPV.GetClientAPIVersionString() ) )
-        
-    else:
-        
-        library_version_lines.append( render_availability_line( 'mpv', ClientGUIMPV.MPV_IS_AVAILABLE, ClientGUIMPV.MPV_MODULE_NOT_FOUND, ClientGUIMPV.MPV_IMPORT_ERROR ) )
-        
-        if HC.RUNNING_FROM_FROZEN_BUILD and HC.PLATFORM_MACOS:
-            
-            HydrusData.ShowText( 'The macOS App does not come with MPV support on its own, but if your system has the dev library, libmpv1 or libmpv2, it will try to import it. It seems your system does not have this, or it failed to import. The specific error follows:' )
-            
-        
-    
     library_version_lines.append( 'OpenCV: {}'.format( cv2.__version__ ) )
     library_version_lines.append( 'openssl: {}'.format( ssl.OPENSSL_VERSION ) )
     
@@ -105,38 +92,18 @@ def ShowAboutWindow( win: QW.QWidget ):
     
     qt_string = 'Qt: Unknown'
     
-    if QtInit.WE_ARE_QT5:
+    if QtInit.WE_ARE_PYSIDE:
         
-        if QtInit.WE_ARE_PYSIDE:
-            
-            # noinspection PyUnresolvedReferences
-            import PySide2
-            
-            qt_string = 'Qt: PySide2 {}'.format( PySide2.__version__ )
-            
-        elif QtInit.WE_ARE_PYQT:
-            
-            # noinspection PyUnresolvedReferences
-            from PyQt5.Qt import PYQT_VERSION_STR # pylint: disable=E0401,E0611
-            
-            qt_string = 'Qt: PyQt5 {}'.format( PYQT_VERSION_STR )
-            
+        import PySide6
         
-    elif QtInit.WE_ARE_QT6:
+        qt_string = 'Qt: PySide6 {}'.format( PySide6.__version__ )
         
-        if QtInit.WE_ARE_PYSIDE:
-            
-            import PySide6
-            
-            qt_string = 'Qt: PySide6 {}'.format( PySide6.__version__ )
-            
-        elif QtInit.WE_ARE_PYQT:
-            
-            # noinspection PyUnresolvedReferences
-            from PyQt6.QtCore import PYQT_VERSION_STR
-            
-            qt_string = 'Qt: PyQt6 {}'.format( PYQT_VERSION_STR )
-            
+    elif QtInit.WE_ARE_PYQT:
+        
+        # noinspection PyUnresolvedReferences
+        from PyQt6.QtCore import PYQT_VERSION_STR
+        
+        qt_string = 'Qt: PyQt6 {}'.format( PYQT_VERSION_STR )
         
     
     try:
@@ -153,7 +120,7 @@ def ShowAboutWindow( win: QW.QWidget ):
             qt_string += f' ({actual_platform_name})'
             
         
-    except:
+    except Exception as e:
         
         qt_string += f' (unknown platform)'
         
@@ -172,7 +139,18 @@ def ShowAboutWindow( win: QW.QWidget ):
     
     library_version_lines.append( 'install dir: {}'.format( HC.BASE_DIR ) )
     library_version_lines.append( 'db dir: {}'.format( CG.client_controller.db_dir ) )
+    
+    current_temp_dir = HydrusTemp.GetCurrentTempDir()
+    
     library_version_lines.append( 'temp dir: {}'.format( HydrusTemp.GetCurrentTempDir() ) )
+    
+    sqlite_temp_dir = HydrusTemp.GetCurrentSQLiteTempDir()
+    
+    if sqlite_temp_dir != current_temp_dir:
+        
+        library_version_lines.append( f'sqlite temp dir (from SQLITE_TMPDIR env): {sqlite_temp_dir}' )
+        
+    
     
     import locale
     
@@ -186,7 +164,7 @@ def ShowAboutWindow( win: QW.QWidget ):
     library_version_lines.append( 'db cache size per file: {}MB'.format( HG.db_cache_size ) )
     library_version_lines.append( 'db journal mode: {}'.format( HG.db_journal_mode ) )
     library_version_lines.append( 'db synchronous mode: {}'.format( HG.db_synchronous ) )
-    library_version_lines.append( 'db transaction commit period: {}'.format( HydrusTime.TimeDeltaToPrettyTimeDelta( HG.db_cache_size ) ) )
+    library_version_lines.append( 'db transaction commit period: {}'.format( HydrusTime.TimeDeltaToPrettyTimeDelta( HG.db_transaction_commit_period ) ) )
     library_version_lines.append( 'db using memory for temp?: {}'.format( HG.no_db_temp_files ) )
     
     description_versions = 'This is the media management application of the hydrus software suite.' + '\n' * 2 + '\n'.join( library_version_lines )
@@ -209,15 +187,21 @@ def ShowAboutWindow( win: QW.QWidget ):
     availability_lines = []
     
     availability_lines.append( render_availability_line( 'QtCharts', ClientGUICharts.QT_CHARTS_OK, ClientGUICharts.QT_CHARTS_MODULE_NOT_FOUND, ClientGUICharts.QT_CHARTS_IMPORT_ERROR ) )
+    availability_lines.append( render_availability_line( 'QtMultimedia', ClientGUIQtMediaPlayer.QT_MULTIMEDIA_IS_AVAILABLE, ClientGUIQtMediaPlayer.QT_MULTIMEDIA_MODULE_NOT_FOUND, ClientGUIQtMediaPlayer.QT_MULTIMEDIA_IMPORT_ERROR ) )
+    availability_lines.append( render_availability_line( 'QtPdf', ClientPDFHandling.PDF_OK, ClientPDFHandling.PDF_MODULE_NOT_FOUND, ClientPDFHandling.PDF_IMPORT_ERROR ) )
     
-    if QtInit.WE_ARE_QT5:
+    availability_lines.append( '' )
+    
+    if ClientGUIMPV.MPV_IS_AVAILABLE:
         
-        availability_lines.append( 'QtPdf not available on Qt5' )
+        availability_lines.append( 'mpv api version: {}'.format( ClientGUIMPV.GetClientAPIVersionString() ) )
         
     else:
         
-        availability_lines.append( render_availability_line( 'QtPdf', ClientPDFHandling.PDF_OK, ClientPDFHandling.PDF_MODULE_NOT_FOUND, ClientPDFHandling.PDF_IMPORT_ERROR ) )
+        availability_lines.append( render_availability_line( 'mpv', ClientGUIMPV.MPV_IS_AVAILABLE, ClientGUIMPV.MPV_MODULE_NOT_FOUND, ClientGUIMPV.MPV_IMPORT_ERROR ) )
         
+    
+    availability_lines.append( '' )
     
     CBOR_AVAILABLE = False
     
@@ -226,7 +210,7 @@ def ShowAboutWindow( win: QW.QWidget ):
         import cbor2
         CBOR_AVAILABLE = True
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -240,6 +224,7 @@ def ShowAboutWindow( win: QW.QWidget ):
     availability_lines.append( render_availability_line( 'lxml', ClientParsing.LXML_IS_OK, not ClientParsing.LXML_IS_OK, '' ) )
     availability_lines.append( render_availability_line( 'lz4', HydrusCompression.LZ4_OK, not HydrusCompression.LZ4_OK, '' ) )
     availability_lines.append( render_availability_line( 'olefile', HydrusOLEHandling.OLEFILE_OK, not HydrusOLEHandling.OLEFILE_OK, '' ) )
+    availability_lines.append( render_availability_line( 'tldextract (under testing)', ClientNetworkingDomainTLDExtract.TLDEXTRACT_OK, ClientNetworkingDomainTLDExtract.TLDEXTRACT_MODULE_NOT_FOUND, ClientNetworkingDomainTLDExtract.TLDEXTRACT_IMPORT_ERROR ) )
     
     #
     

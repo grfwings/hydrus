@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
@@ -8,29 +6,94 @@ from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 
+class ListBookList( ClientGUIListBoxes.BetterQListWidget ):
+    
+    def __init__( self, parent: QW.QWidget, list_chars_width: int | None = None, list_chars_height: int | None = None ):
+        
+        super().__init__( parent )
+        
+        self._list_chars_width = list_chars_width
+        self._list_chars_height = list_chars_height
+        
+    
+    def sizeHint( self ):
+        
+        size = super().sizeHint()
+        
+        if self._list_chars_width is not None:
+            
+            width = ClientGUIFunctions.ConvertTextToPixelWidth( self, self._list_chars_width )
+            
+            size.setWidth( width )
+            
+        elif self._list_chars_height is not None:
+            
+            if self.count() > 0:
+                
+                height = self.sizeHintForRow( 0 ) * self._list_chars_height
+                
+            else:
+                
+                ( _, height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 20, self._list_chars_height ) )
+                
+            
+            size.setHeight( height + ( 2 * self.frameWidth() ) )
+            
+        
+        return size
+        
+    
+    minimumSizeHint = sizeHint
+    
+
 class ListBook( QW.QWidget ):
     
     currentChanged = QC.Signal( int )
     
-    def __init__( self, parent: QW.QWidget, list_chars_width = 28 ):
+    def __init__( self, parent: QW.QWidget, list_chars_width = 28, list_chars_height = 6, orientation = QC.Qt.Orientation.Horizontal, no_vertical_scrollbar = False ):
         
         super().__init__( parent )
         
-        self._page_list = ClientGUIListBoxes.BetterQListWidget( self )
+        if orientation == QC.Qt.Orientation.Horizontal:
+            
+            list_chars_height = None
+            
+        else:
+            
+            list_chars_width = None
+            
+        
+        self._page_list = ListBookList( self, list_chars_width = list_chars_width, list_chars_height = list_chars_height )
         self._page_list.setSelectionMode( QW.QAbstractItemView.SelectionMode.SingleSelection )
         
-        self._page_list.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._page_list, list_chars_width ) )
+        if no_vertical_scrollbar:
+            
+            self._page_list.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
+            self._page_list.verticalScrollBar().setEnabled( False ) # this disables mouse wheel too
+            
         
         self._widget_stack = QW.QStackedWidget( self )
         
         #
         
-        hbox = QP.HBoxLayout( margin = 0 )
+        self._orientation = orientation
         
-        QP.AddToLayout( hbox, self._page_list, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( hbox, self._widget_stack, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        if self._orientation == QC.Qt.Orientation.Horizontal:
+            
+            layout = QP.HBoxLayout( margin = 0 )
+            
+            QP.AddToLayout( layout, self._page_list, CC.FLAGS_EXPAND_PERPENDICULAR )
+            QP.AddToLayout( layout, self._widget_stack, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+            
+        else:
+            
+            layout = QP.VBoxLayout( margin = 0 )
+            
+            QP.AddToLayout( layout, self._page_list, CC.FLAGS_EXPAND_PERPENDICULAR )
+            QP.AddToLayout( layout, self._widget_stack, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+            
         
-        self.setLayout( hbox )
+        self.setLayout( layout )
         
         #
         
@@ -92,7 +155,7 @@ class ListBook( QW.QWidget ):
         return self._page_list.count()
         
     
-    def currentWidget( self ) -> typing.Optional[ QW.QWidget ]:
+    def currentWidget( self ) -> QW.QWidget | None:
         
         if self._widget_stack.count() == 0:
             

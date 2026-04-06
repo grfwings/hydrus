@@ -4,7 +4,6 @@ import sqlite3
 import threading
 import traceback
 import time
-import typing
 
 from hydrus.core import HydrusDBBase
 from hydrus.core import HydrusConstants as HC
@@ -383,7 +382,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
         self._db = None
         self._is_connected = False
         
-        self._cursor_transaction_wrapper: typing.Optional[ HydrusDBBase.DBCursorTransactionWrapper ] = None
+        self._cursor_transaction_wrapper: HydrusDBBase.DBCursorTransactionWrapper | None = None
         
         if os.path.exists( os.path.join( self._db_dir, self._db_filenames[ 'main' ] ) ):
             
@@ -454,7 +453,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 
                 self._is_db_updated = True
                 
-            except:
+            except Exception as e:
                 
                 e = Exception( 'Updating the ' + self._db_name + ' db to version ' + str( version + 1 ) + ' caused this error:' + '\n' + traceback.format_exc() )
                 
@@ -703,6 +702,26 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 
                 self._is_first_start = True
                 
+                if self._db_dir != HC.CONTENT_DB_DIR:
+                    
+                    # we are creating a new db dir outside of the default structure, so let's copy the help stuff over
+                    
+                    for filename in os.listdir( HC.CONTENT_DB_DIR ):
+                        
+                        source_path = os.path.join( HC.CONTENT_DB_DIR, filename )
+                        
+                        if os.path.isfile( source_path ):
+                            
+                            if filename.endswith( '.txt' ) or ( HC.PLATFORM_WINDOWS and filename == 'sqlite3.exe' ):
+                                
+                                dest_path = os.path.join( self._db_dir, filename )
+                                
+                                HydrusPaths.MirrorFile( source_path, dest_path )
+                                
+                            
+                        
+                    
+                
                 self._CreateDB()
                 
                 self._cursor_transaction_wrapper.CommitAndBegin()
@@ -720,7 +739,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
                     message += '\n\n'
                     message += 'If you have used this database many times before, then you have probably had a hard drive failure. Hydrus will now close. Check the "help my db is broke.txt" document in the install_dir/db directory.'
                     message += '\n\n'
-                    message += 'If you are trying over and over to get a fresh client or server booting for the first time, I suspect your database is in an odd half-initialised condition. You should fix your hard drive permissions and delete everything and try over again. If it seems complicated, hydev can help you figure it all out, so do not be afraid of contacting him.'
+                    message += 'If you recently tried to start hydrus for the first time but got an error and are now trying again, your database files failed to initialise that first time and are now in the way. Go to your database folder (probably install_dir/db) and look at the .db files. Are they very small? Delete them and any .db-shm or .db-wal files with them and then try booting the program again. If you get the same problem over and over, you probably have a hard drive permission problem where hydrus can create the database files but not write to them. If the issue seems complicated, hydev can help you figure it all out.'
                     
                     raise HydrusExceptions.DBAccessException( 'missing critical database table!', message )
                     
@@ -1124,7 +1143,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
             
             self._InitCaches()
             
-        except:
+        except Exception as e:
             
             self._DisplayCatastrophicError( traceback.format_exc() )
             
@@ -1170,7 +1189,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
                     
                     error_count = 0
                     
-                except:
+                except Exception as e:
                     
                     error_count += 1
                     

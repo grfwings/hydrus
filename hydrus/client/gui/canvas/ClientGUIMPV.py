@@ -2,7 +2,6 @@ import locale
 import os
 import threading
 import traceback
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -43,7 +42,36 @@ except Exception as e_mpv:
     MPV_IMPORT_ERROR = traceback.format_exc()
     
 
+LOCALE_IS_SET = False
+
 damaged_file_hashes = set()
+
+def GetAudioDeviceTuples() -> list[ tuple[ str, str ] ]:
+    
+    if not MPV_IS_AVAILABLE:
+        
+        return []
+        
+    
+    global LOCALE_IS_SET
+    
+    if not LOCALE_IS_SET:
+        
+        # This is necessary since pyqt stomps over the locale settings needed by libmpv.
+        # This needs to happen after importing pyqt before creating the first mpv.MPV instance.
+        locale.setlocale( locale.LC_NUMERIC, 'C' )
+        
+        LOCALE_IS_SET = True
+        
+    
+    m = mpv.MPV()
+    
+    result = m.audio_device_list
+    
+    m.terminate()
+    
+    return [ (item[ 'name' ], item[ 'description' ] ) for item in result ] + [ ( 'null', 'DEBUG: Do not use any audio output device' ) ]
+    
 
 def GetClientAPIVersionString():
     
@@ -53,7 +81,7 @@ def GetClientAPIVersionString():
         
         return '{}.{}'.format( major, minor )
         
-    except:
+    except Exception as e:
         
         return 'unknown'
         
@@ -80,10 +108,33 @@ def GetClientAPIVersionString():
         
     '''
 
+def EmergencyAudioNullGlobal():
+    
+    HydrusData.DebugPrint( 'We got a "no [audio] playback devices" error from MPV, so I will now emergency-set all players to null audio device to maintain stability. Open/apply the options dialog to attempt to re-set audio devices to all open mpv windows.' )
+    
+    # this is Qt thread so we can talk to this guy no prob
+    MPVEmergencyDumpOutSignaller.instance().emergencyAudioNull.emit()
+    
+
 def EmergencyDumpOutGlobal( probably_crashy, reason ):
     
     # this is Qt thread so we can talk to this guy no prob
     MPVEmergencyDumpOutSignaller.instance().emergencyDumpOut.emit( probably_crashy, reason )
+    
+
+def log_message_is_about_no_audio_devices( component, message ):
+    
+    probably_unplugged_tests = []
+    
+    if 'ao/' in component: # ao/wasapi, potentially others
+        
+        probably_unplugged_tests = [
+            'There are no playback devices available' in message,
+            'ould not open device' in message # could or Could?
+        ]
+        
+    
+    return True in probably_unplugged_tests
     
 
 def log_message_is_fine_bro( component, message ):
@@ -91,7 +142,7 @@ def log_message_is_fine_bro( component, message ):
     return True in (
         'rescan-external-files' in message,
         'LZW decode failed' in message, # borked gif headers
-        'Too many events queued' in message # used to be a problem, now no longer a big deal with the async mediator
+        'Too many events queued' in message, # used to be a problem, now no longer a big deal with the async mediator
     )
     
 
@@ -106,12 +157,6 @@ def log_message_is_probably_crashy_bro( component, message ):
             'Error splitting the input' in message
         ]
         
-    elif 'ao/' in component: # ao/wasapi, potentially others
-        
-        probably_crashy_tests = [
-            'There are no playback devices available' in message
-        ]
-        
     
     return True in probably_crashy_tests
     
@@ -122,6 +167,13 @@ def log_handler( loglevel, component, message ):
     # so we need to push to all players when we have a big deal problem and we'll just deal with it
     
     if log_message_is_fine_bro( component, message ) and not HG.mpv_report_mode:
+        
+        return
+        
+    
+    if log_message_is_about_no_audio_devices( component, message ):
+        
+        CG.client_controller.CallAfterQtSafe( CG.client_controller.gui, EmergencyAudioNullGlobal )
         
         return
         
@@ -152,6 +204,7 @@ def log_handler( loglevel, component, message ):
 
 class MPVEmergencyDumpOutSignaller( QC.QObject ):
     
+    emergencyAudioNull = QC.Signal()
     emergencyDumpOut = QC.Signal( bool, str )
     my_instance = None
     
@@ -227,13 +280,13 @@ class MPVPlaybackRestarted( QC.QEvent ):
         
     
 
-LOCALE_IS_SET = False
-
 class MPVMediator( object ):
     
     def __init__( self, mpv_player: "mpv.MPV" ):
         
         self._mpv_player = mpv_player
+        
+        self._current_audio_device = ''
         
     
     def BlockingTerminate( self ):
@@ -284,6 +337,23 @@ class MPVMediator( object ):
     def Seek( self, time_pos, precise = True ):
         
         raise NotImplementedError()
+        
+    
+    def SetAudioDevice( self, name: str ):
+        
+        raise NotImplementedError()
+        
+    
+    def SetAudioDeviceFromOptions( self ):
+        
+        mpv_preferred_audio_device = CG.client_controller.new_options.GetNoneableString( 'mpv_preferred_audio_device' )
+        
+        if mpv_preferred_audio_device is None:
+            
+            mpv_preferred_audio_device = 'auto'
+            
+        
+        self.SetAudioDevice( mpv_preferred_audio_device )
         
     
     def SetLogLevel( self, value ):
@@ -404,6 +474,16 @@ class MPVMediatorRude( MPVMediator ):
         self._mpv_player.seek( time_pos, reference = 'absolute', precision = precision )
         
     
+    def SetAudioDevice( self, name: str ):
+        
+        if name != self._current_audio_device:
+            
+            self._current_audio_device = name
+            
+            self._mpv_player.audio_device = name
+            
+        
+    
     def SetPaused( self, value: bool ):
         
         self._mpv_player.pause = value
@@ -438,6 +518,13 @@ class MPVMediatorPolite( MPVMediator ):
         
         # Disable mpv key event capture, might also need to set input_x11_keyboard
         self._mpv_player.command_async( 'set', 'input-vo-keyboard', False )
+        
+        mpv_preferred_audio_device = CG.client_controller.new_options.GetNoneableString( 'mpv_preferred_audio_device' )
+        
+        if mpv_preferred_audio_device is not None:
+            
+            self.SetAudioDevice( mpv_preferred_audio_device )
+            
         
         self._mpv_player.observe_property( 'pause', self._Catcher )
         self._mpv_player.observe_property( 'playback-time', self._Catcher )
@@ -604,6 +691,16 @@ class MPVMediatorPolite( MPVMediator ):
         self._waiting_on_a_seek = True
         
     
+    def SetAudioDevice( self, name: str ):
+        
+        if self._current_audio_device != name:
+            
+            self._current_audio_device = name
+            
+            self._mpv_player.command_async( 'set', 'audio-device', name )
+            
+        
+    
     def SetPaused( self, value: bool ):
         
         # mpv_value = 'yes' if value else 'no'
@@ -653,8 +750,8 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if not LOCALE_IS_SET:
             
-            # This is necessary since PyQT stomps over the locale settings needed by libmpv.
-            # This needs to happen after importing PyQT before creating the first mpv.MPV instance.
+            # This is necessary since pyqt stomps over the locale settings needed by libmpv.
+            # This needs to happen after importing pyqt before creating the first mpv.MPV instance.
             locale.setlocale( locale.LC_NUMERIC, 'C' )
             
             LOCALE_IS_SET = True
@@ -728,11 +825,12 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             self.we_are_newer_api = float( GetClientAPIVersionString() ) >= 2.0
             
-        except:
+        except Exception as e:
             
             self.we_are_newer_api = False
             
         
+        MPVEmergencyDumpOutSignaller.instance().emergencyAudioNull.connect( self.EmergencyAudioNull )
         MPVEmergencyDumpOutSignaller.instance().emergencyDumpOut.connect( self.EmergencyDumpOut )
         
         try:
@@ -944,6 +1042,16 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         return False
         
     
+    def EmergencyAudioNull( self ):
+        """
+        We just got an error that there are no audio devices available. This can particularly happen when the user unplugs headphones etc.. and there is no auto to fall back to.
+        
+        Let's try and dump out to null audio device. 
+        """
+        
+        self._mpv_mediator.SetAudioDevice( 'null' )
+        
+    
     def EmergencyDumpOut( self, probably_crashy, reason ):
         
         # we had to rewrite this thing due to some threading/loop/event issues at the lower mpv level
@@ -996,7 +1104,7 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             if probably_crashy:
                 
-                message = f'Sorry, this media appears to have a serious problem in mpv! To avoid crashes, I have unloaded it and will not allow it again this boot. The file is possibly truncated or otherwise corrupted, but if you think it is good, please send it to hydev for more testing. The specific errors should be written to the log.{media_line}'
+                message = f'Sorry, this media appears to have a serious problem in mpv! To avoid crashes, I have unloaded it and will not allow it again this program boot. The file is possibly truncated or otherwise corrupted, but if you think it is good, please send it to hydev for more testing. The specific errors should be written to the log.{media_line}'
                 
                 HydrusData.DebugPrint( message )
                 
@@ -1257,7 +1365,7 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             self._mpv_mediator.Seek( time_index_s, precise = precise )
             
-        except:
+        except Exception as e:
             
             self._disallow_seek_on_this_file = True
             
@@ -1338,7 +1446,7 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def SetMedia( self, media: typing.Optional[ ClientMedia.MediaSingleton ], start_paused = False ):
+    def SetMedia( self, media: ClientMedia.MediaSingleton | None, start_paused = False ):
         
         if media == self._media:
             
@@ -1425,6 +1533,20 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     self._player.visibility = 'always'
                     
                     self._stop_for_slideshow = False
+                    
+                    if CG.client_controller.new_options.GetBoolean( 'mpv_null_audio_on_silent_media' ):
+                        
+                        has_audio = self._media.HasAudio()
+                        
+                        if not has_audio:
+                            
+                            self._mpv_mediator.SetAudioDevice( 'null' )
+                            
+                        else:
+                            
+                            self._mpv_mediator.SetAudioDeviceFromOptions()
+                            
+                        
                     
                     mime = self._media.GetMime()
                     
@@ -1575,6 +1697,8 @@ class MPVWidget( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._player[ 'loop' ] = not loop_playlist
         self._player[ 'loop-playlist' ] = loop_playlist
+        
+        self._mpv_mediator.SetAudioDeviceFromOptions()
         
         mpv_config_path = CG.client_controller.GetMPVConfPath()
         

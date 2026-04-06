@@ -15,6 +15,7 @@ from hydrus.core import HydrusText
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIAsync
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -173,7 +174,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             
             model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_TAG_PARENTS.ID, self._ConvertPairToDisplayTuple, self._ConvertPairToSortTuple )
             
-            self._tag_parents = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, 6, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
+            self._tag_parents = ClientGUIListCtrl.BetterListCtrlTreeView( self._listctrl_panel, 8, model, delete_key_callback = self._DeleteSelectedRows, activation_callback = self._DeleteSelectedRows )
             
             self._listctrl_panel.SetListCtrl( self._tag_parents )
             
@@ -396,7 +397,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
                         HydrusTags.CleanTag( tags[ ( 2 * i ) + 1 ] )
                     )
                     
-                except:
+                except Exception as e:
                     
                     continue
                     
@@ -420,7 +421,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
             
             export_string = self._GetExportString()
             
-            with QP.FileDialog( self, 'Set the export path.', default_filename = 'parents.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as dlg:
+            with ClientGUIDialogsFiles.FileDialog( self, 'Set the export path.', default_filename = 'parents.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as dlg:
                 
                 if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
@@ -484,7 +485,7 @@ class ManageTagParents( ClientGUIScrolledPanels.ManagePanel ):
         
         def _ImportFromTXT( self, only_add = False ):
             
-            with QP.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as dlg:
+            with ClientGUIDialogsFiles.FileDialog( self, 'Select the file to import.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen ) as dlg:
                 
                 if dlg.exec() != QW.QDialog.DialogCode.Accepted:
                     

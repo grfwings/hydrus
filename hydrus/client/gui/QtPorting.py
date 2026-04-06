@@ -6,7 +6,6 @@
 # so, if I just got hit by a bus and you are wondering what the hell is going on here, that's what's going on here
 
 import collections.abc
-import os
 import typing
 
 from qtpy import QtCore as QC
@@ -22,6 +21,7 @@ from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import QtInit
 
@@ -150,185 +150,6 @@ def SplitterVisibleCount( splitter ):
     
     return count
     
-
-class DirPickerCtrl( QW.QWidget ):
-
-    dirPickerChanged = QC.Signal()
-    
-    def __init__( self, parent ):
-        
-        super().__init__( parent )
-        
-        layout = HBoxLayout( spacing = 2 )
-        
-        self._path_edit = QW.QLineEdit( self )
-        
-        self._button = QW.QPushButton( 'browse', self )
-        
-        self._button.clicked.connect( self._Browse )
-        
-        self._path_edit.textEdited.connect( self._TextEdited )
-        
-        layout.addWidget( self._path_edit )
-        layout.addWidget( self._button )
-        
-        self.setLayout( layout )
-        
-    
-    def SetPath( self, path ):
-        
-        self._path_edit.setText( path )
-        
-    
-    def GetPath( self ):
-        
-        return self._path_edit.text()
-        
-    
-    def _Browse( self ):
-        
-        existing_path = self._path_edit.text()
-        
-        kwargs = {}
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            # careful here, QW.QFileDialog.Options doesn't exist on PyQt6
-            kwargs[ 'options' ] = QW.QFileDialog.Option.DontUseNativeDialog
-            
-        
-        path = QW.QFileDialog.getExistingDirectory( self, '', existing_path, **kwargs )
-        
-        if path == '':
-            
-            return
-            
-        
-        path = os.path.normpath( path )
-        
-        self._path_edit.setText( path )
-        
-        if os.path.exists( path ):
-            
-            self.dirPickerChanged.emit()
-            
-        
-    
-    def _TextEdited( self, text ):
-        
-        if os.path.exists( text ):
-            
-            self.dirPickerChanged.emit()
-            
-        
-
-class FilePickerCtrl( QW.QWidget ):
-    
-    filePickerChanged = QC.Signal()
-
-    def __init__( self, parent = None, wildcard = None, starting_directory = None ):
-        
-        super().__init__( parent )
-
-        layout = HBoxLayout( spacing = 2 )
-
-        self._path_edit = QW.QLineEdit( self )
-
-        self._button = QW.QPushButton( 'browse', self )
-
-        self._button.clicked.connect( self._Browse )
-
-        self._path_edit.textEdited.connect( self._TextEdited )
-
-        layout.addWidget( self._path_edit )
-        layout.addWidget( self._button )
-
-        self.setLayout( layout )
-        
-        self._save_mode = False
-        
-        self._wildcard = wildcard
-        
-        self._starting_directory = starting_directory
-        
-
-    def SetPath( self, path ):
-        
-        self._path_edit.setText( path )
-        
-
-    def GetPath( self ):
-        
-        return self._path_edit.text()
-        
-    
-    def SetSaveMode( self, save_mode ):
-        
-        self._save_mode = save_mode
-        
-
-    def _Browse( self ):
-        
-        existing_path = self._path_edit.text()
-        
-        if existing_path == '' and self._starting_directory is not None:
-            
-            existing_path = self._starting_directory
-            
-        
-        kwargs = {}
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            # careful here, QW.QFileDialog.Options doesn't exist on PyQt6
-            kwargs[ 'options' ] = QW.QFileDialog.Option.DontUseNativeDialog
-            
-        
-        if self._save_mode:
-            
-            if self._wildcard:
-                
-                path = QW.QFileDialog.getSaveFileName( self, '', existing_path, filter = self._wildcard, selectedFilter = self._wildcard, **kwargs )[0]
-                
-            else:
-                
-                path = QW.QFileDialog.getSaveFileName( self, '', existing_path, **kwargs )[0]
-                
-            
-        else:
-            
-            if self._wildcard:
-                
-                path = QW.QFileDialog.getOpenFileName( self, '', existing_path, filter = self._wildcard, selectedFilter = self._wildcard, **kwargs )[0]
-                
-            else:
-                
-                path = QW.QFileDialog.getOpenFileName( self, '', existing_path, **kwargs )[0]
-                
-            
-        
-        if path == '':
-            
-            return
-            
-        
-        path = os.path.normpath( path )
-        
-        self._path_edit.setText( path )
-        
-        if self._save_mode or os.path.exists( path ):
-            
-            self.filePickerChanged.emit()
-            
-        
-
-    def _TextEdited( self, text ):
-        
-        if self._save_mode or os.path.exists( text ):
-            
-            self.filePickerChanged.emit()
-            
-        
 
 class TabBar( QW.QTabBar ):
     
@@ -540,7 +361,7 @@ class TabBar( QW.QTabBar ):
                 return
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -1305,31 +1126,7 @@ def AdjustOpacity( image: QG.QImage, opacity_factor ):
 
 def ToKeySequence( modifiers, key ):
     
-    if QtInit.WE_ARE_QT5:
-        
-        # noinspection PyUnresolvedReferences
-        if isinstance( modifiers, QC.Qt.KeyboardModifiers ):
-            
-            seq_str = ''
-            
-            for modifier in [ QC.Qt.KeyboardModifier.ShiftModifier, QC.Qt.KeyboardModifier.ControlModifier, QC.Qt.KeyboardModifier.AltModifier, QC.Qt.KeyboardModifier.MetaModifier, QC.Qt.KeyboardModifier.KeypadModifier, QC.Qt.KeyboardModifier.GroupSwitchModifier ]:
-                
-                if modifiers & modifier: seq_str += QG.QKeySequence( modifier ).toString()
-                
-            
-            seq_str += QG.QKeySequence( key ).toString()
-            
-            return QG.QKeySequence( seq_str )
-            
-        else:
-            
-            return QG.QKeySequence( key + modifiers )
-            
-        
-    else:
-        
-        return QG.QKeySequence( QC.QKeyCombination( modifiers, key ) ) # pylint: disable=E1101
-        
+    return QG.QKeySequence( QC.QKeyCombination( modifiers, key ) ) # pylint: disable=E1101
     
 
 def AddShortcut( widget, modifier, key, func: collections.abc.Callable, *args ):
@@ -1399,6 +1196,7 @@ def SetInitialSize( widget, size ):
         widget.SetInitialSize( size )
         
         return
+        
     
     if isinstance( size, tuple ):
         
@@ -1420,7 +1218,7 @@ def SetBackgroundColour( widget, colour ):
         object_name = str( id( widget ) )
 
         widget.setObjectName( object_name )
-    
+        
     if isinstance( colour, QG.QColor ):
         
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, colour.name()) )
@@ -1432,7 +1230,7 @@ def SetBackgroundColour( widget, colour ):
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, colour.name() ) )
         
     else:
-
+        
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, QG.QColor( colour ).name() ) )
         
     
@@ -1580,83 +1378,90 @@ class EllipsizedLabel( QW.QLabel ):
     
     def paintEvent( self, event ):
         
-        if not self._ellipsize_end:
+        try:
             
-            QW.QLabel.paintEvent( self, event )
-            
-            return
-            
-        
-        painter = QG.QPainter( self )
-
-        fontMetrics = painter.fontMetrics()
-
-        text_lines = self.text().splitlines()
-        
-        line_spacing = fontMetrics.lineSpacing()
-        
-        current_y = 0
-        
-        done = False
-        
-        my_width = self.width()
-        
-        for text_line in text_lines:
-            
-            elided_line = fontMetrics.elidedText( text_line, QC.Qt.TextElideMode.ElideRight, my_width )
-            
-            x = 0
-            width = my_width
-            height = line_spacing
-            flags = self.alignment()
-            
-            painter.drawText( x, current_y, width, height, flags, elided_line )
-            
-            # old hacky line that doesn't support alignment flags
-            #painter.drawText( QC.QPoint( 0, current_y + fontMetrics.ascent() ), elided_line )
-            
-            current_y += line_spacing
-            
-            # old code that did multiline wrap width stuff
-            '''
-            text_layout = QG.QTextLayout( text_line, painter.font() )
-            
-            text_layout.beginLayout()
-            
-            while True:
-            
-                line = text_layout.createLine()
+            if not self._ellipsize_end:
                 
-                if not line.isValid(): break
+                QW.QLabel.paintEvent( self, event )
                 
-                line.setLineWidth( self.width() )
+                return
                 
-                next_line_y = y + line_spacing
             
-                if self.height() >= next_line_y + line_spacing:
+            painter = QG.QPainter( self )
             
-                    line.draw( painter, QC.QPoint( 0, y ) )
+            fontMetrics = painter.fontMetrics()
+            
+            text_lines = self.text().splitlines()
+            
+            line_spacing = fontMetrics.lineSpacing()
+            
+            current_y = 0
+            
+            done = False
+            
+            my_width = self.width()
+            
+            for text_line in text_lines:
                 
-                    y = next_line_y
+                elided_line = fontMetrics.elidedText( text_line, QC.Qt.TextElideMode.ElideRight, my_width )
+                
+                x = 0
+                width = my_width
+                height = line_spacing
+                flags = self.alignment()
+                
+                painter.drawText( x, current_y, width, height, flags, elided_line )
+                
+                # old hacky line that doesn't support alignment flags
+                #painter.drawText( QC.QPoint( 0, current_y + fontMetrics.ascent() ), elided_line )
+                
+                current_y += line_spacing
+                
+                # old code that did multiline wrap width stuff
+                '''
+                text_layout = QG.QTextLayout( text_line, painter.font() )
+                
+                text_layout.beginLayout()
+                
+                while True:
                     
-                else:
-
-                    last_line = text_line[ line.textStart(): ]
-                
-                    elided_last_line = fontMetrics.elidedText( last_line, QC.Qt.TextElideMode.ElideRight, self.width() )
-                
-                    painter.drawText( QC.QPoint( 0, y + fontMetrics.ascent() ), elided_last_line )
+                    line = text_layout.createLine()
                     
-                    done = True
+                    if not line.isValid(): break
                     
-                    break
+                    line.setLineWidth( self.width() )
+                    
+                    next_line_y = y + line_spacing
+                    
+                    if self.height() >= next_line_y + line_spacing:
+                        
+                        line.draw( painter, QC.QPoint( 0, y ) )
+                        
+                        y = next_line_y
+                        
+                    else:
+                        
+                        last_line = text_line[ line.textStart(): ]
+                        
+                        elided_last_line = fontMetrics.elidedText( last_line, QC.Qt.TextElideMode.ElideRight, self.width() )
+                        
+                        painter.drawText( QC.QPoint( 0, y + fontMetrics.ascent() ), elided_last_line )
+                        
+                        done = True
+                        
+                        break
+                        
                     
                 
-
-            text_layout.endLayout()
+                text_layout.endLayout()
+                
+                if done: break
+                '''
+                
             
-            if done: break
-            '''
+        except Exception as e:
+            
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -1760,133 +1565,6 @@ class PasswordEntryDialog( Dialog ):
     def GetValue( self ):
         
         return self._password.text()
-        
-    
-
-class DirDialog( QW.QFileDialog ):
-    
-    def __init__( self, parent = None, message = None ):
-        
-        super().__init__( parent )
-        
-        if message is not None:
-            
-            self.setWindowTitle( message )
-            
-        
-        self.setAcceptMode( QW.QFileDialog.AcceptMode.AcceptOpen )
-        
-        self.setFileMode( QW.QFileDialog.FileMode.Directory )
-        
-        self.setOption( QW.QFileDialog.Option.ShowDirsOnly, True )
-        
-        self.setOption( QW.QFileDialog.Option.ReadOnly, False )
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            self.setOption( QW.QFileDialog.Option.DontUseNativeDialog, True )
-            
-        
-    
-    def __enter__( self ):
-        
-        return self
-        
-    
-    def __exit__( self, exc_type, exc_val, exc_tb ):
-        
-        self.deleteLater()
-        
-    
-    def _GetSelectedFiles( self ):
-        
-        return [ os.path.normpath( path ) for path in self.selectedFiles() ]
-        
-    
-    def GetPath(self):
-        
-        sel = self._GetSelectedFiles()
-        
-        if len( sel ) > 0:
-            
-            return sel[0]
-            
-        
-        return None
-        
-    
-
-class FileDialog( QW.QFileDialog ):
-    
-    def __init__( self, parent = None, message = None, acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFile, default_filename = None, default_directory = None, wildcard = None, defaultSuffix = None ):
-        
-        super().__init__( parent )
-        
-        if message is not None:
-            
-            self.setWindowTitle( message )
-            
-        
-        self.setAcceptMode( acceptMode )
-        
-        self.setFileMode( fileMode )
-        
-        if default_directory is not None:
-            
-            self.setDirectory( default_directory )
-            
-        
-        if defaultSuffix is not None:
-            
-            self.setDefaultSuffix( defaultSuffix )
-            
-        
-        if default_filename is not None:
-            
-            self.selectFile( default_filename )
-            
-        
-        if wildcard:
-            
-            self.setNameFilters( [ wildcard, 'Any files (*)' ] )
-            
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            self.setOption( QW.QFileDialog.Option.DontUseNativeDialog, True )
-            
-        
-    
-    def __enter__( self ):
-        
-        return self
-        
-
-    def __exit__( self, exc_type, exc_val, exc_tb ):
-        
-        self.deleteLater()
-        
-
-    def _GetSelectedFiles( self ):
-        
-        return [ os.path.normpath( path ) for path in self.selectedFiles() ]
-        
-    
-    def GetPath( self ):
-        
-        sel = self._GetSelectedFiles()
-
-        if len( sel ) > 0:
-            
-            return sel[ 0 ]
-            
-
-        return None
-        
-    
-    def GetPaths( self ):
-        
-        return self._GetSelectedFiles()
         
     
 

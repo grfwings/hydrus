@@ -1,16 +1,14 @@
-import typing
-
 from qtpy import QtCore as QC
 from qtpy import QtGui as QG
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusNumbers
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientConstants as CC
 from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIPainterShapes
@@ -405,13 +403,15 @@ def GetNumericalWidth( service_key, star_width, pad_px = None, draw_collapsed = 
                 pad_px = ClientGUIPainterShapes.PAD_PX
                 
             
+        
     except HydrusExceptions.DataMissing:
         
+        text_size = 0
         num_stars = 1
         
     
     return text_size + ( star_width * num_stars) + ( pad_px * ( num_stars - 1 ) ) + ( ClientGUIPainterShapes.PAD_PX )
-    ##return text_size + ( ( star_width + pad_px ) * num_stars - 1 ) + ( ClientGUIPainterShapes.PAD_PX ) - pad_px
+    # return text_size + ( ( star_width + pad_px ) * num_stars - 1 ) + ( ClientGUIPainterShapes.PAD_PX ) - pad_px
     
     
 def GetPenAndBrushColours( service_key, rating_state ):
@@ -615,15 +615,15 @@ class RatingIncDec( QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
         try:
+            
+            painter = QG.QPainter( self )
             
             self._Draw( painter )
             
         except Exception as e:
             
-            HydrusData.ShowException( e, do_wait = False )
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -759,7 +759,7 @@ class RatingLike( QW.QWidget ):
         raise NotImplementedError()
         
     
-    def _SetRating( self, rating: typing.Optional[ float ] ):
+    def _SetRating( self, rating: float | None ):
         
         self._rating_state = rating
         
@@ -798,15 +798,15 @@ class RatingLike( QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
         try:
+            
+            painter = QG.QPainter( self )
             
             self._Draw( painter )
             
         except Exception as e:
             
-            HydrusData.ShowException( e, do_wait = False )
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -1136,15 +1136,15 @@ class RatingNumerical( QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
         try:
+            
+            painter = QG.QPainter( self )
             
             self._Draw( painter )
             
         except Exception as e:
             
-            HydrusData.ShowException( e, do_wait = False )
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -1331,7 +1331,7 @@ class RatingPreviewServiceWrapper:
         return self._service_key
         
     
-    def GetWidget( self, canvas_type = CC.CANVAS_DIALOG, parent = None ) -> typing.Union[ RatingIncDecExample, RatingLikeExample, RatingNumericalExample ]:
+    def GetWidget( self, canvas_type = CC.CANVAS_DIALOG, parent = None ) -> RatingIncDecExample | RatingLikeExample | RatingNumericalExample:
         
         if self._service_type == ClientGUICommon.HC.LOCAL_RATING_INCDEC:
             

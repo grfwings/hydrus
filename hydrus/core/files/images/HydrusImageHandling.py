@@ -42,14 +42,14 @@ if not PIL_HAS_HEIF:
             
             pillow_heif.options.DISABLE_SECURITY_LIMITS = True # no 512MB/768MB bitmap limit for file loading
             
-        except:
+        except Exception as e:
             
             pass
             
         
         HEIF_PLUGIN_OK = True
         
-    except:
+    except Exception as e:
         
         HydrusData.Print( 'Could not register HEIF Opener with plugin library.' )
         
@@ -77,7 +77,7 @@ if not PIL_HAS_AVIF:
         
         AVIF_PLUGIN_OK = True
         
-    except:
+    except Exception as e:
         
         try:
             
@@ -96,13 +96,13 @@ if not PIL_HAS_AVIF:
                     
                     HydrusData.Print( 'AVIF Opener registered with legacy library.' )
                     
-                except:
+                except Exception as e:
                     
                     HydrusData.Print( 'Could not register AVIF Opener with main or legacy library.' )
                     
                 
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( 'Could not register AVIF Opener with main or legacy plugin library.' )
             
@@ -146,6 +146,7 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core.files import HydrusKritaHandling
 from hydrus.core.files import HydrusPSDHandling
+from hydrus.core.files import HydrusORAHandling
 from hydrus.core.files.images import HydrusImageColours
 from hydrus.core.files.images import HydrusImageMetadata
 from hydrus.core.files.images import HydrusImageNormalisation
@@ -174,7 +175,7 @@ def SetEnableLoadTruncatedImages( value: bool ):
             
             HydrusData.Print( f'Could not set the PIL image trunctation value to {value}--perhaps this version of PIL ({PIL.__version__})does not support it?' )
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( f'Could not set the PIL image trunctation value to {value}, and could not determine the PIL version! Something is busted!' )
             
@@ -264,7 +265,14 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
         
         pil_image = HydrusPSDHandling.GeneratePILImageFromPSD( path )
         
-        return GenerateNumPyImageFromPILImage( pil_image )
+        try:
+            
+            return GenerateNumPyImageFromPILImage( pil_image )
+            
+        finally:
+            
+            pil_image.close()
+            
         
     
     if mime == HC.APPLICATION_KRITA:
@@ -276,7 +284,37 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
         
         pil_image = HydrusKritaHandling.MergedPILImageFromKra( path )
         
-        return GenerateNumPyImageFromPILImage( pil_image )
+        try:
+            
+            numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+            
+        finally:
+            
+            pil_image.close()
+            
+        
+        return numpy_image
+        
+    
+    if mime == HC.IMAGE_OPENRASTER:
+        
+        if HG.media_load_report_mode:
+            
+            HydrusData.ShowText( 'Loading ORA' )
+            
+        
+        pil_image = HydrusORAHandling.MergedPILImageFromOra( path )
+        
+        try:
+            
+            numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+            
+        finally:
+            
+            pil_image.close()
+            
+        
+        return numpy_image
         
     
     if mime in PIL_ONLY_MIMETYPES:
@@ -286,21 +324,28 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
     
     if not force_pil:
         
-        pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
+        raw_pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
         
-        if pil_image.mode == 'LAB':
+        try:
             
-            force_pil = True
-            
-        
-        if HydrusImageMetadata.HasICCProfile( pil_image ):
-            
-            if HG.media_load_report_mode:
+            if raw_pil_image.mode == 'LAB':
                 
-                HydrusData.ShowText( 'Image has ICC, so switching to PIL' )
+                force_pil = True
                 
             
-            force_pil = True
+            if HydrusImageMetadata.HasICCProfile( raw_pil_image ):
+                
+                if HG.media_load_report_mode:
+                    
+                    HydrusData.ShowText( 'Image has ICC, so switching to PIL' )
+                    
+                
+                force_pil = True
+                
+            
+        finally:
+            
+            raw_pil_image.close()
             
         
     
@@ -313,7 +358,14 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
         
         pil_image = GeneratePILImage( path )
         
-        numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+        try:
+            
+            numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+            
+        finally:
+            
+            pil_image.close()
+            
         
     else:
         
@@ -346,7 +398,14 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
             
             pil_image = GeneratePILImage( path )
             
-            numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+            try:
+                
+                numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+                
+            finally:
+                
+                pil_image.close()
+                
             
         else:
             
@@ -358,6 +417,7 @@ def GenerateNumPyImage( path, mime, force_pil = False, human_file_description = 
     
     return numpy_image
     
+
 def GenerateNumPyImageFromPILImage( pil_image: PILImage.Image, strip_useless_alpha = True ) -> numpy.ndarray:
     
     try:
@@ -383,40 +443,67 @@ def GenerateNumPyImageFromPILImage( pil_image: PILImage.Image, strip_useless_alp
     return numpy_image
     
 
-def GeneratePILImage( path: typing.Union[ str, typing.BinaryIO ], dequantize = True, human_file_description = None ) -> PILImage.Image:
+def GeneratePILImage( path: str | typing.BinaryIO, dequantize = True, human_file_description = None ) -> PILImage.Image:
     
-    pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
+    original_pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
+    
+    rotated_pil_image = None
     
     try:
         
-        pil_image = HydrusImageNormalisation.RotateEXIFPILImage( pil_image )
+        rotated_pil_image = HydrusImageNormalisation.RotateEXIFPILImage( original_pil_image )
         
         if dequantize:
             
-            if pil_image.mode in ( 'I', 'I;16', 'I;16L', 'I;16B', 'I;16N', 'F' ):
+            if rotated_pil_image.mode in ( 'I', 'I;16', 'I;16L', 'I;16B', 'I;16N', 'F' ):
                 
                 # 'I' = greyscale, uint16
                 # 'F' = float, np.float32
                 
-                # calling "pil_image.convert( 'L' )" and similar on an I doesn't seem to normalise the intensity, it just blows out the image crazy???
+                # calling "rotated_pil_image.convert( 'L' )" and similar on an I doesn't seem to normalise the intensity, it just blows out the image crazy???
                 # so we'll hack it ourselves. these are so rare it is fine if we are a bit weird and lose the extra metadata
                 
-                numpy_image = GenerateNumPyImageFromPILImage( pil_image )
+                try:
+                    
+                    numpy_image = GenerateNumPyImageFromPILImage( rotated_pil_image )
+                    
+                finally:
+                    
+                    rotated_pil_image.close()
+                    
                 
                 numpy_image = HydrusImageNormalisation.NormaliseNumPyImageToUInt8( numpy_image )
                 
-                pil_image = GeneratePILImageFromNumPyImage( numpy_image )
+                rotated_pil_image = GeneratePILImageFromNumPyImage( numpy_image )
                 
             
             # note this destroys animated gifs atm, it collapses down to one frame
-            pil_image = HydrusImageNormalisation.DequantizePILImage( pil_image )
+            dequantised_rotated_pil_image = HydrusImageNormalisation.DequantizePILImage( rotated_pil_image )
             
-        
-        return pil_image
+            # must be 'is not'. '!=' breaks on a closed guy
+            if rotated_pil_image is not dequantised_rotated_pil_image:
+                
+                rotated_pil_image.close()
+                
+            
+            return dequantised_rotated_pil_image
+            
+        else:
+            
+            return rotated_pil_image
+            
         
     except IOError:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Looks like a truncated file that PIL could not handle!' )
+        
+    finally:
+        
+        # must be 'is not'. '!=' breaks on a closed guy
+        if rotated_pil_image is None or original_pil_image is not rotated_pil_image:
+            
+            original_pil_image.close()
+            
         
     
 
@@ -448,6 +535,10 @@ def GeneratePILImageFromNumPyImage( numpy_image: numpy.ndarray ) -> PILImage.Ima
             
             format = 'RGBA'
             
+        else:
+            
+            raise NotImplementedError( f'Unsupported image depth "{depth}"!' )
+            
         
     
     pil_image = PILImage.frombytes( format, ( w, h ), numpy_image.data.tobytes() )
@@ -455,7 +546,7 @@ def GeneratePILImageFromNumPyImage( numpy_image: numpy.ndarray ) -> PILImage.Ima
     return pil_image
     
 
-def GenerateFileBytesNumPy( numpy_image, ext: str = '.png', params: typing.Optional[ list[ int ] ] = None ) -> bytes:
+def GenerateFileBytesNumPy( numpy_image, ext: str = '.png', params: list[ int ] | None = None ) -> bytes:
     
     if params is None:
         
@@ -600,7 +691,14 @@ def GetImageResolution( path, mime ):
         
         pil_image = GeneratePILImage( path, dequantize = False )
         
-        ( width, height ) = pil_image.size
+        try:
+            
+            ( width, height ) = pil_image.size
+            
+        finally:
+            
+            pil_image.close()
+            
         
     except HydrusExceptions.DamagedOrUnusualFileException:
         
@@ -751,13 +849,15 @@ def IsDecompressionBomb( path, human_file_description = None ) -> bool:
     
     try:
         
-        HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
+        raw_pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
+        
+        raw_pil_image.close()
         
     except ( PILImage.DecompressionBombError ):
         
         return True
         
-    except:
+    except Exception as e:
         
         # pil was unable to load it, which does not mean it was a decomp bomb
         return False
@@ -802,7 +902,23 @@ def GenerateDefaultThumbnailNumPyFromPath( path: str, target_resolution: tuple[ 
     
     thumb_image = GeneratePILImage( path )
     
-    pil_image = PILImageOps.pad( thumb_image, target_resolution, PILImage.Resampling.LANCZOS )
+    try:
+        
+        pil_image = PILImageOps.pad( thumb_image, target_resolution, PILImage.Resampling.LANCZOS )
+        
+        try:
+            
+            result = GenerateNumPyImageFromPILImage( pil_image, strip_useless_alpha = False )
+            
+        finally:
+            
+            pil_image.close()
+            
+        
+    finally:
+        
+        thumb_image.close()
+        
     
-    return GenerateNumPyImageFromPILImage( pil_image, strip_useless_alpha = False )
+    return result
     

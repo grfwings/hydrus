@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 try:
     
@@ -7,7 +6,7 @@ try:
     
     CHARDET_OK = True
     
-except:
+except Exception as e:
     
     CHARDET_OK = False
     
@@ -66,7 +65,7 @@ def CleanseImportText( text: str ):
             
             return text.encode( 'utf-16', 'surrogatepass' ).decode( 'utf-16' )
             
-        except:
+        except Exception as e:
             
             import HydrusData
             
@@ -301,7 +300,7 @@ def ElideText( text, max_length, elide_center = False ):
     return text
     
 
-def GetFirstLine( text: typing.Optional[ str ] ) -> str:
+def GetFirstLine( text: str | None ) -> str:
     
     if text is None:
         
@@ -318,7 +317,7 @@ def GetFirstLine( text: typing.Optional[ str ] ) -> str:
         
     
 
-def GetFirstLineSummary( text: typing.Optional[ str ] ) -> str:
+def GetFirstLineSummary( text: str | None ) -> str:
     
     if text is None:
         
@@ -365,7 +364,7 @@ def HumanTextSort( texts ):
     texts.sort( key = HumanTextSortKey ) 
     
 
-def LooksLikeHTML( file_data: typing.Union[ str, bytes ] ):
+def LooksLikeHTML( file_data: str | bytes ):
     # this will false-positive if it is json that contains html, ha ha
     
     if isinstance( file_data, bytes ):
@@ -409,7 +408,7 @@ def LooksLikeSVG( file_data ):
     return False
     
 
-def LooksLikeJSON( file_data: typing.Union[ str, bytes ] ) -> bool:
+def LooksLikeJSON( file_data: str | bytes ) -> bool:
     
     try:
         
@@ -422,7 +421,7 @@ def LooksLikeJSON( file_data: typing.Union[ str, bytes ] ) -> bool:
         
         return True
         
-    except:
+    except Exception as e:
         
         return False
         
@@ -470,7 +469,7 @@ def NonFailingUnicodeDecode( data, encoding, trust_the_encoding = False ):
             
             return ( text, encoding )
             
-        except:
+        except Exception as e:
             
             # ok, the encoding type wasn't recognised locally or something, so revert to trying our best
             encoding = None
@@ -542,7 +541,7 @@ def NonFailingUnicodeDecode( data, encoding, trust_the_encoding = False ):
                     text = default_text
                     encoding = default_encoding
                     
-                except:
+                except Exception as e:
                     
                     text = f'Could not decode the page--problem with given encoding "{encoding}" and no chardet library available.'
                     encoding = 'utf-8'

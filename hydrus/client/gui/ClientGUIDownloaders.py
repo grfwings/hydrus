@@ -9,7 +9,6 @@ from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
 
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
@@ -50,7 +49,7 @@ class EditDownloaderDisplayPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_GUG_KEYS_TO_DISPLAY.ID, self._ConvertGUGDisplayDataToDisplayTuple, self._ConvertGUGDisplayDataToSortTuple )
         
-        self._gug_display_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_display_list_ctrl_panel, 15, model, activation_callback = self._EditGUGDisplay )
+        self._gug_display_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_display_list_ctrl_panel, 12, model, activation_callback = self._EditGUGDisplay, max_height_num_chars = 24 )
         
         self._gug_display_list_ctrl_panel.SetListCtrl( self._gug_display_list_ctrl )
         
@@ -64,7 +63,7 @@ class EditDownloaderDisplayPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_URL_CLASS_KEYS_TO_DISPLAY.ID, self._ConvertURLDisplayDataToDisplayTuple, self._ConvertURLDisplayDataToSortTuple )
         
-        self._url_display_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._url_display_list_ctrl_panel, 15, model, activation_callback = self._EditURLDisplay )
+        self._url_display_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._url_display_list_ctrl_panel, 12, model, activation_callback = self._EditURLDisplay, max_height_num_chars = 24 )
         
         self._url_display_list_ctrl_panel.SetListCtrl( self._url_display_list_ctrl )
         
@@ -467,7 +466,7 @@ class EditNGUGPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_NGUG_GUGS.ID, self._ConvertGUGDataToDisplayTuple, self._ConvertGUGDataToSortTuple )
         
-        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 8, model, use_simple_delete = True )
+        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 8, model, use_simple_delete = True, max_height_num_chars = 24 )
         
         self._gug_list_ctrl_panel.SetListCtrl( self._gug_list_ctrl )
         
@@ -618,7 +617,7 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_GUGS.ID, self._ConvertGUGToDisplayTuple, self._ConvertGUGToSortTuple )
         
-        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 30, model, delete_key_callback = self._DeleteGUG, activation_callback = self._EditGUG )
+        self._gug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._gug_list_ctrl_panel, 8, model, delete_key_callback = self._DeleteGUG, activation_callback = self._EditGUG, max_height_num_chars = 24 )
         
         self._gug_list_ctrl_panel.SetListCtrl( self._gug_list_ctrl )
         
@@ -627,8 +626,6 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._gug_list_ctrl_panel.AddDeleteButton()
         self._gug_list_ctrl_panel.AddSeparator()
         self._gug_list_ctrl_panel.AddImportExportButtons( ( ClientNetworkingGUG.GalleryURLGenerator, ), self._AddGUG )
-        self._gug_list_ctrl_panel.AddSeparator()
-        self._gug_list_ctrl_panel.AddDefaultsButton( ClientDefaults.GetDefaultSingleGUGs, self._AddGUG )
         
         #
         
@@ -636,7 +633,7 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_NGUGS.ID, self._ConvertNGUGToDisplayTuple, self._ConvertNGUGToSortTuple )
         
-        self._ngug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._ngug_list_ctrl_panel, 20, model, use_simple_delete = True, activation_callback = self._EditNGUG )
+        self._ngug_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._ngug_list_ctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._EditNGUG, max_height_num_chars = 24 )
         
         self._ngug_list_ctrl_panel.SetListCtrl( self._ngug_list_ctrl )
         
@@ -645,8 +642,6 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._ngug_list_ctrl_panel.AddDeleteButton()
         self._ngug_list_ctrl_panel.AddSeparator()
         self._ngug_list_ctrl_panel.AddImportExportButtons( ( ClientNetworkingGUG.NestedGalleryURLGenerator, ), self._AddNGUG )
-        self._ngug_list_ctrl_panel.AddSeparator()
-        self._ngug_list_ctrl_panel.AddDefaultsButton( ClientDefaults.GetDefaultNGUGs, self._AddNGUG )
         
         #
         
@@ -749,7 +744,7 @@ class EditGUGsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             url_class = CG.client_controller.network_engine.domain_manager.GetURLClass( example_url )
             
-        except:
+        except Exception as e:
             
             example_url = 'unable to parse example url'
             url_class = None
@@ -970,7 +965,7 @@ class EditURLClassLinksPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_URL_CLASS_API_PAIRS.ID, self._ConvertAPIPairDataToDisplayTuple, self._ConvertAPIPairDataToSortTuple )
         
-        self._api_pairs_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._notebook, 10, model )
+        self._api_pairs_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._notebook, 8, model, max_height_num_chars = 24 )
         
         #
         
@@ -978,7 +973,7 @@ class EditURLClassLinksPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_URL_CLASS_KEYS_TO_PARSER_KEYS.ID, self._ConvertParserDataToDisplayTuple, self._ConvertParserDataToSortTuple )
         
-        self._parser_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._parser_list_ctrl_panel, 24, model, activation_callback = self._EditParser )
+        self._parser_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._parser_list_ctrl_panel, 8, model, activation_callback = self._EditParser, max_height_num_chars = 24 )
         
         self._parser_list_ctrl_panel.SetListCtrl( self._parser_list_ctrl )
         

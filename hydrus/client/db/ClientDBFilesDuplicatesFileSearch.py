@@ -377,7 +377,7 @@ class ClientDBFilesDuplicatesFileSearch( ClientDBModule.ClientDBModule ):
                     HydrusData.Print( f'Fragmentary potential duplicates search did a potentials based search, with per-row speed of: { HydrusTime.TimeDeltaToPrettyTimeDelta( time_took / num_guys ) }' )
                     
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.Print( 'Could not profile the fragmentary duplicates search!' )
                 
@@ -436,7 +436,6 @@ class ClientDBFilesDuplicatesFileSearch( ClientDBModule.ClientDBModule ):
         
         potential_duplicate_pairs_fragmentary_search = ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch( potential_duplicates_search_context, True )
         potential_duplicate_pairs_fragmentary_search.SetSearchSpace( potential_duplicate_id_pairs_and_distances )
-        potential_duplicate_pairs_fragmentary_search.StartNewSearch()
         
         count = 0
         
@@ -462,7 +461,6 @@ class ClientDBFilesDuplicatesFileSearch( ClientDBModule.ClientDBModule ):
         potential_duplicate_pairs_fragmentary_search = ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch( potential_duplicates_search_context, True )
         potential_duplicate_pairs_fragmentary_search.SetDesiredNumHits( 1 )
         potential_duplicate_pairs_fragmentary_search.SetSearchSpace( potential_duplicate_id_pairs_and_distances )
-        potential_duplicate_pairs_fragmentary_search.StartNewSearch()
         
         master_media_id = None
         

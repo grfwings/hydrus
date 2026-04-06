@@ -14,6 +14,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -83,7 +84,7 @@ def ImportFromClipboard( win: QW.QWidget, gallery_seed_log: ClientImportGalleryS
 
 def ImportFromPNG( win: QW.QWidget, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog, can_generate_more_pages: bool ):
     
-    with QP.FileDialog( win, 'select the png with the urls', wildcard = 'PNG (*.png)' ) as dlg:
+    with ClientGUIDialogsFiles.FileDialog( win, 'select the png with the urls', wildcard = 'PNG (*.png)' ) as dlg:
         
         if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
@@ -282,7 +283,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_GALLERY_SEED_LOG.ID, self._ConvertGallerySeedToDisplayTuple, self._ConvertGallerySeedToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 30, model, delete_key_callback = self._DeleteSelected )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self._DeleteSelected )
         
         #
         
@@ -315,7 +316,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
             
             pretty_gallery_seed_index = HydrusNumbers.ToHumanInt( gallery_seed_index )
             
-        except:
+        except Exception as e:
             
             pretty_gallery_seed_index = '--'
             
@@ -342,7 +343,7 @@ class EditGallerySeedLogPanel( ClientGUIScrolledPanels.EditPanel ):
             
             gallery_seed_index = self._gallery_seed_log.GetGallerySeedIndex( gallery_seed )
             
-        except:
+        except Exception as e:
             
             gallery_seed_index = -1
             

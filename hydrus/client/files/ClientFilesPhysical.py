@@ -1,74 +1,278 @@
-import collections.abc
+import collections
+import time
 import os
 
+from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
-from hydrus.core import HydrusPaths
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
+from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusPaths
+from hydrus.core.files import HydrusFilesPhysicalStorage
 
 from hydrus.client import ClientThreading
-
-def CheckFullPrefixCoverage( merge_target, prefixes ):
-    
-    missing_prefixes = GetMissingPrefixes( merge_target, prefixes )
-    
-    if len( missing_prefixes ) > 0:
-        
-        list_of_problems = ', '.join( missing_prefixes )
-        
-        raise HydrusExceptions.DataMissing( 'Missing storage spaces! They are, or are sub-divisions of:' + list_of_problems )
-        
-    
-
-def GetMissingPrefixes( merge_target: str, prefixes: collections.abc.Collection[ str ], min_prefix_length_allowed = 3, prefixes_are_filtered: bool = False ):
-    
-    # given a merge target of 'tf'
-    # do these prefixes, let's say { tf0, tf1, tf2, tf3, tf4, tf5, tf6, tf7, tf8, tf9, tfa, tfb, tfc, tfd, tfe, tff }, add up to 'tf'?
-    
-    hex_chars = '0123456789abcdef'
-    
-    if prefixes_are_filtered:
-        
-        matching_prefixes = prefixes
-        
-    else:
-        
-        matching_prefixes = { prefix for prefix in prefixes if prefix.startswith( merge_target ) }
-        
-    
-    missing_prefixes = []
-    
-    for char in hex_chars:
-        
-        expected_prefix = merge_target + char
-        
-        if expected_prefix in matching_prefixes:
-            
-            # we are good
-            pass
-            
-        else:
-            
-            matching_prefixes_for_this_char = { prefix for prefix in prefixes if prefix.startswith( expected_prefix ) }
-            
-            if len( matching_prefixes_for_this_char ) > 0 or len( expected_prefix ) < min_prefix_length_allowed:
-                
-                missing_for_this_char = GetMissingPrefixes( expected_prefix, matching_prefixes_for_this_char, prefixes_are_filtered = True )
-                
-                missing_prefixes.extend( missing_for_this_char )
-                
-            else:
-                
-                missing_prefixes.append( expected_prefix )
-                
-            
-        
-    
-    return missing_prefixes
-    
 
 # TODO: A 'FilePath' or 'FileLocation' or similar that holds the path or IO stream, and/or temp_path to use for import calcs, and hash once known, and the human description like 'this came from blah URL'
 # then we spam that all over the import pipeline and when we need a nice error, we ask that guy to describe himself
 # search up 'human_file_description' to see what we'd be replacing
+
+def EstimateBaseLocationGranularity( base_location_path ) -> int | None:
+    
+    dir_granularity_count = collections.Counter()
+    
+    with os.scandir( base_location_path ) as scan:
+        
+        hex_chars = '0123456789abcdef'
+        num_weird_gubbins_found = 0
+        
+        for entry in scan:
+            
+            if entry.is_dir( follow_symlinks = False ):
+                
+                if len( entry.name ) > 3:
+                    
+                    continue
+                    
+                elif len( entry.name ) == 3:
+                    
+                    if entry.name[1] in hex_chars and entry.name[2] in hex_chars:
+                        
+                        my_length = 2 # we are 'td8' kind of thing
+                        
+                    else:
+                        
+                        continue
+                        
+                    
+                else:
+                    
+                    if False not in ( c in hex_chars for c in entry.name ):
+                        
+                        my_length = len( entry.name )
+                        
+                    else:
+                        
+                        continue
+                        
+                    
+                
+                child_length = EstimateBaseLocationGranularity( entry.path )
+                
+                if child_length is not None:
+                    
+                    my_length += child_length
+                    
+                
+                dir_granularity_count[ my_length ] += 1
+                
+            else:
+                
+                num_weird_gubbins_found += 1
+                
+            
+            if num_weird_gubbins_found > 16:
+                
+                # ok we hit a file directory probably, so break out early
+                return None
+                
+            
+        
+    
+    if len( dir_granularity_count ) == 0:
+        
+        return None
+        
+    else:
+        
+        return dir_granularity_count.most_common( 1 )[0][0]
+        
+    
+
+def RegranulariseFileStorage( base_location_paths: list[ str ], prefix_types: list[ str ], starting_prefix_length: int, ending_prefix_length: int, job_status: ClientThreading.JobStatus ):
+    """
+    This guy will potentially blat a future version of file storage that has multiple potential locations for a thing.
+    
+    It selects one canonical destination for each ending prefix, so if there are multiple sources that satisfy the starting prefix, we are going to be moving and merging things!
+    """
+    
+    # there is one canonical destination for each ending prefix, which means going from 3 to 2 may mean moving and merging some things
+    ending_prefixes_to_ending_subfolders = dict()
+    
+    base_location_paths_to_granular_folder_prefixes_deleted = collections.defaultdict( list )
+    
+    # I tested this with worker pool, to which it would batch out 100 renames at a time. the idea was to buffer renames against high latency storage
+    # ultimately it rarely got anything better than +20% speed, and at a huge cost to best-case speed because of overhead
+    # I KISSed it away. good try, but failed
+    
+    try:
+        
+        num_files_moved = 0
+        num_weird_dirs = 0
+        num_weird_files = 0
+        
+        if starting_prefix_length == ending_prefix_length:
+            
+            raise Exception( f'Called to granularise a file storage folder, but the starting and ending granularisation was the same ({starting_prefix_length})!!' )
+            
+        
+        starting_prefixes_potential = set()
+        ending_prefixes_potential = set()
+        
+        for prefix_type in prefix_types:
+            
+            starting_prefixes_potential.update( HydrusFilesPhysicalStorage.IteratePrefixes( prefix_type, starting_prefix_length ) )
+            ending_prefixes_potential.update( HydrusFilesPhysicalStorage.IteratePrefixes( prefix_type, ending_prefix_length ) )
+            
+        
+        source_subfolders_we_are_doing: list[ FilesStorageSubfolder ] = []
+        
+        job_status.SetStatusText( 'checking sources' )
+        
+        for base_location_path in base_location_paths:
+            
+            base_location = FilesStorageBaseLocation( base_location_path, 1 )
+            
+            for starting_prefix in sorted( starting_prefixes_potential ):
+                
+                source_subfolder = FilesStorageSubfolder( starting_prefix, base_location )
+                
+                if not source_subfolder.PathExists():
+                    
+                    continue
+                    
+                
+                source_subfolders_we_are_doing.append( source_subfolder )
+                
+            
+        
+        num_source_subfolders_to_do = len( source_subfolders_we_are_doing )
+        
+        for ( num_source_subfolders_done, source_subfolder ) in enumerate( source_subfolders_we_are_doing ):
+            
+            starting_prefix = source_subfolder.prefix
+            
+            job_status.SetStatusText( f'Working "{starting_prefix}" ({HydrusNumbers.ValueRangeToPrettyString( num_source_subfolders_done, num_source_subfolders_to_do )})' + HC.UNICODE_ELLIPSIS )
+            job_status.SetGauge( num_source_subfolders_done, num_source_subfolders_to_do )
+            
+            if starting_prefix_length < ending_prefix_length:
+                
+                ending_prefixes_for_this_subfolder = [ ending_prefix for ending_prefix in ending_prefixes_potential if ending_prefix.startswith( starting_prefix ) ]
+                
+            else:
+                
+                ending_prefixes_for_this_subfolder = [ starting_prefix[ : ending_prefix_length + 1 ] ]
+                
+            
+            for ending_prefix in ending_prefixes_for_this_subfolder:
+                
+                if ending_prefix not in ending_prefixes_to_ending_subfolders:
+                    
+                    ending_subfolder = FilesStorageSubfolder( ending_prefix, source_subfolder.base_location )
+                    
+                    ending_subfolder.MakeSureExists()
+                    
+                    ending_prefixes_to_ending_subfolders[ ending_prefix ] = ending_subfolder
+                    
+                
+            
+            all_rename_jobs = []
+            
+            # this returns isdir results very quickly!
+            with os.scandir( source_subfolder.path ) as scan:
+                
+                for entry in scan:
+                    
+                    if entry.is_dir():
+                        
+                        expected_dir = True in ( ending_subfolder.path.startswith( entry.path ) for ending_subfolder in ending_prefixes_to_ending_subfolders.values() )
+                        
+                        if not expected_dir:
+                            
+                            num_weird_dirs += 1
+                            
+                            HydrusData.Print( f'When granularising folders, I saw a weird directory, "{entry.path}"! How did this thing sneak into Hydrus File Storage? Maybe it is an old prefix stub--a fragment of a previous maintenance job?' )
+                            
+                        
+                    else:
+                        
+                        filename = str( entry.name )
+                        
+                        source_path = source_subfolder.GetFilePath( filename )
+                        
+                        filename_prefix = source_subfolder.prefix[0] + filename[ : ending_prefix_length ]
+                        
+                        if filename_prefix in ending_prefixes_to_ending_subfolders:
+                            
+                            destination_subfolder = ending_prefixes_to_ending_subfolders[ filename_prefix ]
+                            
+                            destination_path = destination_subfolder.GetFilePath( filename )
+                            
+                            all_rename_jobs.append( ( source_path, destination_path ) )
+                            
+                        else:
+                            
+                            num_weird_files += 1
+                            
+                            HydrusData.Print( f'When regranularising folders, I failed to find a destination for the file with path "{source_path}"! I imagine it does not have a nice normal hex name and snuck into Hydrus File Storage by accident. You probably want to clean it up.')
+                            
+                        
+                    
+                
+            
+            for ( num_renames_done, num_renames_to_do, chunk_of_rename_jobs ) in HydrusLists.SplitListIntoChunksRich( all_rename_jobs, 100 ):
+                
+                job_status.SetStatusText( f'File {HydrusNumbers.ValueRangeToPrettyString( num_renames_done, num_renames_to_do )}', level = 2 )
+                job_status.SetGauge( num_renames_done, num_renames_to_do, level = 2 )
+                
+                while job_status.IsPaused() or job_status.IsCancelled():
+                    
+                    time.sleep( 0.1 )
+                    
+                    if job_status.IsCancelled():
+                        
+                        raise HydrusExceptions.CancelledException( 'Cancelled by user' )
+                        
+                    
+                
+                for ( source_path, destination_path ) in chunk_of_rename_jobs:
+                    
+                    os.replace( source_path, destination_path )
+                    
+                
+                num_files_moved += len( chunk_of_rename_jobs )
+                
+            
+            if starting_prefix_length > ending_prefix_length and len( os.listdir( str( source_subfolder.path ) ) ) == 0:
+                
+                base_location_paths_to_granular_folder_prefixes_deleted[ source_subfolder.base_location.path ].append( source_subfolder.prefix )
+                
+                # not recycle
+                HydrusPaths.DeletePath( source_subfolder.path )
+                
+            
+        
+        new_prefixes_to_canonical_locations = { ending_prefix : ending_subfolder.base_location.path for ( ending_prefix, ending_subfolder ) in ending_prefixes_to_ending_subfolders.items() }
+        
+        return ( new_prefixes_to_canonical_locations, num_files_moved, num_weird_dirs, num_weird_files )
+        
+    finally:
+        
+        if len( base_location_paths_to_granular_folder_prefixes_deleted ) > 0:
+            
+            for migrated_path in sorted( base_location_paths_to_granular_folder_prefixes_deleted.keys() ):
+                
+                sorted_prefixes = sorted( base_location_paths_to_granular_folder_prefixes_deleted[ migrated_path ] )
+                
+                HydrusData.Print( f'When regranularising folders, I finished migrating prefixes completely out of the path "{migrated_path}". Since the folders were empty, I deleted them. The prefixes deleted were:' )
+                HydrusData.Print( ', '.join( sorted_prefixes ) )
+                
+            
+        
+        job_status.SetStatusText( 'done!' )
+        
+        job_status.FinishAndDismiss()
+        
+    
 
 class FilesStorageBaseLocation( object ):
     
@@ -80,8 +284,22 @@ class FilesStorageBaseLocation( object ):
         path = HydrusPaths.ConvertPortablePathToAbsPath( path )
         portable_path = HydrusPaths.ConvertAbsPathToPortablePath( path )
         
+        try:
+            
+            real_path = HydrusPaths.ConvertAbsPathToRealPath( path )
+            
+        except Exception as e:
+            
+            HydrusData.Print( f'While trying to realise your file location storage path {path} to determine symlinks and such, the following error occured. Please forward to hydev.' )
+            
+            HydrusData.PrintException( e, do_wait = False )
+            
+            real_path = 'Could not determine real path--check log!'
+            
+        
         self.path = path
         self.portable_path = portable_path
+        self.real_path = real_path
         self.ideal_weight = ideal_weight
         self.max_num_bytes = max_num_bytes
         
@@ -103,13 +321,20 @@ class FilesStorageBaseLocation( object ):
     
     def __repr__( self ):
         
+        pretty_path = self.path
+        
+        if self.real_path != self.path:
+            
+            pretty_path = f'{pretty_path} (Real path: {self.real_path})'
+            
+        
         if self.max_num_bytes is None:
             
-            return f'{self.path} ({self.ideal_weight}, unlimited)'
+            return f'{pretty_path} ({self.ideal_weight}, unlimited)'
             
         else:
             
-            return f'{self.path} ({self.ideal_weight}, {HydrusData.ToHumanBytes( self.max_num_bytes )})'
+            return f'{pretty_path} ({self.ideal_weight}, {HydrusData.ToHumanBytes( self.max_num_bytes )})'
             
         
     
@@ -214,8 +439,8 @@ class FilesStorageBaseLocation( object ):
         
         total_ideal_weight = sum( ( base_location.ideal_weight for base_location in base_locations ) )
         
-        limited_locations = sorted( [ base_location for base_location in base_locations if base_location.max_num_bytes is not None ], key = lambda b_l: b_l.max_num_bytes )
-        unlimited_locations = [ base_location for base_location in base_locations if base_location.max_num_bytes is None ]
+        limited_locations: list[ FilesStorageBaseLocation ] = sorted( [ base_location for base_location in base_locations if base_location.max_num_bytes is not None ], key = lambda b_l: b_l.max_num_bytes )
+        unlimited_locations: list[ FilesStorageBaseLocation ] = [ base_location for base_location in base_locations if base_location.max_num_bytes is None ]
         
         # ok we are first playing a game of elimination. eliminate limited locations that are overweight and distribute the extra for the next round
         next_round_of_limited_locations = []
@@ -228,9 +453,16 @@ class FilesStorageBaseLocation( object ):
             
             limited_location_under_examination = limited_locations.pop( 0 )
             
+            max_num_bytes = limited_location_under_examination.max_num_bytes
+            
+            if max_num_bytes is None:
+                
+                raise Exception( f'Problem calculating ideal storage weights, particularly with location "{limited_location_under_examination.path}"! Please tell hydev.' )
+                
+            
             # of the remaining pot (remaining normalised weight), how much is our share vs remaining players (ideal weight over remaining total ideal weight)
             normalised_weight_we_want_to_have = ( limited_location_under_examination.ideal_weight / remaining_total_ideal_weight ) * remaining_normalised_weight
-            normalised_weight_with_max_bytes = limited_location_under_examination.max_num_bytes / total_num_bytes_to_hold
+            normalised_weight_with_max_bytes = max_num_bytes / total_num_bytes_to_hold
             
             if normalised_weight_with_max_bytes < normalised_weight_we_want_to_have:
                 
@@ -280,24 +512,18 @@ class FilesStorageBaseLocation( object ):
 
 class FilesStorageSubfolder( object ):
     
-    def __init__( self, prefix: str, base_location: FilesStorageBaseLocation, purge: bool = False ):
+    def __init__( self, prefix: str, base_location: FilesStorageBaseLocation ):
         
         self.prefix = prefix
         self.base_location = base_location
-        self.purge = purge
         
         #
         
-        first_char = self.prefix[0]
-        hex_chars = self.prefix[1:]
+        self.hex_prefix = self.prefix[1:]
         
-        # convert 'b' to ['b'], 'ba' to ['ba'], 'bad' to ['ba', 'd'], and so on  
-        our_subfolders = [ hex_chars[ i : i + 2 ] for i in range( 0, len( hex_chars ), 2 ) ]
+        our_subfolders = self._GetOurSubfolders()
         
-        # restore the f/t char
-        our_subfolders[0] = first_char + our_subfolders[0]
-        
-        self.path = os.path.join( self.base_location.path, *our_subfolders )
+        self.path = str( os.path.join( self.base_location.path, *our_subfolders ) )
         self.rwlock = ClientThreading.FileRWLock()
         
     
@@ -319,6 +545,19 @@ class FilesStorageSubfolder( object ):
         return f'{t} {self.prefix[1:]} at {self.path}'
         
     
+    def _GetOurSubfolders( self ):
+        
+        first_char = self.prefix[0]
+        
+        # convert 'b' to ['b'], 'ba' to ['ba'], 'bad' to ['ba', 'd'], and so on  
+        our_subfolders = [ self.hex_prefix[ i : i + 2 ] for i in range( 0, len( self.hex_prefix ), 2 ) ]
+        
+        # restore the f/t char
+        our_subfolders[0] = first_char + our_subfolders[0]
+        
+        return our_subfolders
+        
+    
     def GetNormalisedWeight( self ):
         
         num_hex = len( self.prefix ) - 1
@@ -329,6 +568,26 @@ class FilesStorageSubfolder( object ):
     def GetFilePath( self, filename: str ) -> str:
         
         return os.path.join( self.path, filename )
+        
+    
+    def GetPrefixDirectoriesLongestFirst( self ):
+        
+        our_subfolders = self._GetOurSubfolders()
+        
+        results = []
+        
+        path = self.base_location.path
+        
+        for our_subfolder in our_subfolders:
+            
+            path = os.path.join( path, our_subfolder )
+            
+            results.append( path )
+            
+        
+        results.reverse()
+        
+        return results
         
     
     def IsForFiles( self ):

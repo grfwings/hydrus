@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
@@ -96,7 +94,7 @@ class QuestionCommitInterstitialFilteringPanel( ClientGUIScrolledPanels.Resizing
 
 class QuestionArchiveDeleteFinishFilteringPanel( ClientGUIScrolledPanels.ResizingScrolledPanel ):
     
-    def __init__( self, parent, kept_label: typing.Optional[ str ], deletion_options ):
+    def __init__( self, parent, kept_label: str | None, deletion_options ):
         
         super().__init__( parent )
         
@@ -163,7 +161,7 @@ class QuestionArchiveDeleteFinishFilteringPanel( ClientGUIScrolledPanels.Resizin
                 QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
                 
             
-            delay_delete_buttons = len( deletion_options ) > 0
+            delay_delete_buttons = len( deletion_options ) > 0 and CG.client_controller.new_options.GetBoolean( 'archive_delete_commit_panel_delays_multiple_delete_choices' )
             delayed_delete_buttons = []
             
             for ( location_context, delete_label ) in deletion_options:

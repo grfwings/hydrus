@@ -26,6 +26,7 @@ from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.gui import ClientGUIDialogsManage
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
@@ -53,7 +54,7 @@ if HC.PLATFORM_MACOS:
         
         from hydrus.client import ClientMacIntegration
         
-    except:
+    except Exception as e:
         
         MAC_QUARTZ_OK = False
         
@@ -932,15 +933,21 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             #
             
-            canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
+            def do_it():
+                
+                canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
+                
+                canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
+                
+                canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
+                
+                canvas_frame.SetCanvas( canvas_window )
+                
+                self._ConnectCanvasWindowSignals( canvas_window )
+                
             
-            canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
-            
-            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
-            
-            canvas_frame.SetCanvas( canvas_window )
-            
-            self._ConnectCanvasWindowSignals( canvas_window )
+            # It is important for stability/deadlock purposes that we create a new canvas not in the same event as when we unwind preview viewer and such
+            CG.client_controller.CallAfterQtSafe( self, do_it )
             
         
     
@@ -2795,23 +2802,30 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         def paintEvent( self, event ):
             
-            painter = QG.QPainter( self )
-            
-            bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
-            
-            painter.setBackground( QG.QBrush( bg_colour ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
-            
-            if background_pixmap is not None:
+            try:
                 
-                my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
+                painter = QG.QPainter( self )
                 
-                pixmap_size = background_pixmap.size()
+                bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
                 
-                painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
+                painter.setBackground( QG.QBrush( bg_colour ) )
+                
+                painter.eraseRect( painter.viewport() )
+                
+                background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
+                
+                if background_pixmap is not None:
+                    
+                    my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
+                    
+                    pixmap_size = background_pixmap.size()
+                    
+                    painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
+                    
+                
+            except Exception as e:
+                
+                ClientGUIExceptionHandling.HandlePaintEventException( self, e )
                 
             
         

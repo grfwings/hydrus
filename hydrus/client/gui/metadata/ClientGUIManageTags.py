@@ -30,6 +30,7 @@ from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.lists import ClientGUIListBook
+from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.metadata import ClientGUIIncrementalTagging
 from hydrus.client.gui.metadata import ClientGUIMigrateTags
 from hydrus.client.gui.networking import ClientGUIHydrusNetwork
@@ -229,10 +230,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         
         content_update_packages = self._GetContentUpdatePackages()
         
-        for content_update_package in content_update_packages:
-            
-            CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
-            
+        ClientGUIMediaSimpleActions.CommitContentUpdatePackagesAsync( 'updating tags', content_update_packages )
         
     
     def EventServiceChanged( self, index ):
@@ -242,7 +240,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             return
             
         
-        current_page: typing.Optional[ ManageTagsPanel._Panel ] = self._tag_services.currentWidget()
+        current_page: ManageTagsPanel._Panel | None = self._tag_services.currentWidget()
         
         if current_page is not None:
             

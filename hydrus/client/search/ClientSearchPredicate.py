@@ -185,7 +185,7 @@ def ConvertSummaryFiletypesToString( summary_mimes: collections.abc.Collection[ 
     
     if set( summary_mimes ) == HC.GENERAL_FILETYPES:
         
-        mime_text = 'anything'
+        mime_text = 'all filetypes'
         
     else:
         
@@ -203,8 +203,8 @@ class PredicateCount( object ):
         self,
         min_current_count: int,
         min_pending_count: int,
-        max_current_count: typing.Optional[ int ],
-        max_pending_count: typing.Optional[ int ]
+        max_current_count: int | None,
+        max_pending_count: int | None
         ):
         
         self.min_current_count = min_current_count
@@ -438,7 +438,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def __init__(
         self,
-        predicate_type: typing.Optional[ int ] = None,
+        predicate_type: int | None = None,
         value: typing.Any = None,
         inclusive: bool = True,
         count = None
@@ -614,7 +614,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                 
             elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
                 
-                number_test_or_none = typing.cast( typing.Optional[ ClientNumberTest.NumberTest ], self._value )
+                number_test_or_none = typing.cast( ClientNumberTest.NumberTest | None, self._value )
                 
                 serialisable_value = HydrusSerialisable.GetNoneableSerialisableTuple( number_test_or_none )
                 
@@ -722,13 +722,16 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                 
                 self._value = tuple( HydrusSerialisable.CreateFromSerialisableTuple( serialisable_or_predicates ) )
                 
-                try:
+                if CG.client_controller.IsBooted():
                     
-                    self._value = tuple( sorted( self._value, key = lambda p: HydrusText.HumanTextSortKey( p.ToString() ) ) )
-                    
-                except:
-                    
-                    pass
+                    try:
+                        
+                        self._value = tuple( sorted( self._value, key = lambda p: HydrusText.HumanTextSortKey( p.ToString() ) ) )
+                        
+                    except Exception as e:
+                        
+                        pass
+                        
                     
                 
             elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
@@ -945,7 +948,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
         return self._predicate_type in PREDICATE_TYPES_WE_CAN_TEST_ON_MEDIA_RESULTS
         
     
-    def ExtractComparableValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> typing.Optional[ float ]:
+    def ExtractComparableValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> float | None:
         
         result = self.ExtractValueFromMediaResult( media_result )
         
@@ -957,7 +960,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
         return result
         
     
-    def ExtractValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> typing.Optional[ float ]:
+    def ExtractValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> float | None:
         
         if self._predicate_type == PREDICATE_TYPE_SYSTEM_SIZE:
             
@@ -1152,7 +1155,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                 
                 return Predicate( self._predicate_type, self._value, not self._inclusive )
                 
-            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_HAS_AUDIO, PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY, PREDICATE_TYPE_SYSTEM_HAS_EXIF, PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE ):
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_HAS_AUDIO, PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY, PREDICATE_TYPE_SYSTEM_HAS_EXIF, PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE, PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_KING ):
                 
                 if self._value is None: # weird default that sometimes kicks in, means 'yes, has'
                     
@@ -1187,10 +1190,6 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                     
                 
                 return None
-                
-            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_KING:
-                
-                return Predicate( self._predicate_type, not self._value )
                 
             elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATIO:
                 
@@ -1238,39 +1237,33 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                         
                         return Predicate( self._predicate_type, ( operator, 'not rated', service_key ) )
                         
-                    elif isinstance( val, ( int, float ) ):
+                    
+                else:
+                    
+                    try:
                         
-                        try:
-                            
-                            service_type = CG.client_controller.services_manager.GetServiceType( service_key )
-                            
-                        except:
-                            
-                            return None
-                            
+                        service_type = CG.client_controller.services_manager.GetServiceType( service_key )
                         
-                        if service_type == HC.LOCAL_RATING_LIKE:
-                            
-                            if val == 0.0:
-                                
-                                return Predicate( self._predicate_type, ( '=', 1.0, service_key ) )
-                                
-                            elif val == 1.0:
-                                
-                                return Predicate( self._predicate_type, ( '=', 0.0, service_key ) )
-                                
-                            
+                    except Exception as e:
+                        
+                        return None
                         
                     
-                elif operator == '>':
-                    
-                    # again these are imperfect and we'd want NumberTest tech so we could go <=, >= here
-                    
-                    return Predicate( self._predicate_type, ( '<', val, service_key ) )
-                    
-                elif operator == '<':
-                    
-                    return Predicate( self._predicate_type, ( '>', val, service_key ) )
+                    if service_type == HC.LOCAL_RATING_INCDEC:
+                        
+                        if operator == '>':
+                            
+                            # again these are imperfect and we'd want NumberTest tech so we could go <=, >= here
+                            
+                            return Predicate( self._predicate_type, ( '<', val + 1, service_key ) )
+                            
+                        elif operator == '<':
+                            
+                            new_val = max( val - 1, 0 )
+                            
+                            return Predicate( self._predicate_type, ( '>', new_val, service_key ) )
+                            
+                        
                     
                 
             elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY:
@@ -1300,8 +1293,23 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                 
                 ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = self._value
                 
-                # let's not be too clever yet, but maybe we can inspect logical operator and give better answers here
-                return Predicate( self._predicate_type, ( logical_operator, service_specifier_primary, service_specifier_secondary, not rated ) )
+                if logical_operator == HC.LOGICAL_OPERATOR_ALL:
+                    
+                    # all( a, b, c ) inverts to any not( a b c )
+                    return Predicate( self._predicate_type, ( HC.LOGICAL_OPERATOR_ANY, service_specifier_primary, service_specifier_secondary, not rated ) )
+                    
+                elif logical_operator == HC.LOGICAL_OPERATOR_ANY:
+                    
+                    # opposite of above
+                    return Predicate( self._predicate_type, ( HC.LOGICAL_OPERATOR_ALL, service_specifier_primary, service_specifier_secondary, not rated ) )
+                    
+                elif logical_operator == HC.LOGICAL_OPERATOR_ONLY:
+                    
+                    # all( a, b ) and all not( c, d ) inverts to any not( a, b ) and any( c, d ) I think
+                    # my brain isn't working but I think we don't support that here
+                    
+                    pass
+                    
                 
             
         except Exception as e:
@@ -2608,7 +2616,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                         
                         base = 'missing rating service system predicate'
                         
-                    except:
+                    except Exception as e:
                         
                         base = 'unknown rating service system predicate'
                         
@@ -2945,9 +2953,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
         except Exception as e:
             
-            HydrusData.PrintException( e, do_wait = False )
-            
-            return 'error:cannot render this predicate, check log'
+            return 'error:cannot render this predicate' + str( e )
             
         
     
@@ -2971,6 +2977,38 @@ def MergePredicates( predicates: collections.abc.Collection[ Predicate ] ):
         
     
     return list( master_predicate_dict.values() )
+    
+
+NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES = {
+    PREDICATE_TYPE_TAG,
+    PREDICATE_TYPE_NAMESPACE,
+    PREDICATE_TYPE_WILDCARD
+}
+
+def SetPredicatesInclusivity( predicates: list[ Predicate ], inclusive: bool ):
+    
+    # it is lame to set it every time, but how these lists can be populated from caches and stuff gets complicated, so we'll be comprehensively KISS
+    
+    if inclusive:
+        
+        for predicate in predicates:
+            
+            if predicate.GetType() in NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES:
+                
+                predicate.SetInclusive( True )
+                
+            
+        
+    else:
+        
+        for predicate in predicates:
+            
+            if predicate.GetType() in NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES:
+                
+                predicate.SetInclusive( False )
+                
+            
+        
     
 
 def SortPredicates( predicates: list[ Predicate ] ):

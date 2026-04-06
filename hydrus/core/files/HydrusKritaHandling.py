@@ -44,15 +44,29 @@ def GenerateThumbnailNumPyFromKraPath( path: str, target_resolution: tuple[ int,
         
         pil_image = MergedPILImageFromKra( path )
         
-    except:
+    except Exception as e:
         
         pil_image = ThumbnailPILImageFromKra( path )
         
     
-    # noinspection PyUnresolvedReferences
-    thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+    try:
+        
+        # noinspection PyUnresolvedReferences
+        thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+        
+    finally:
+        
+        pil_image.close()
+        
     
-    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+    try:
+        
+        numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+        
+    finally:
+        
+        thumbnail_pil_image.close()
+        
     
     return numpy_image
     
@@ -76,7 +90,7 @@ def GetKraProperties( path ):
         
         return ( width, height )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.NoResolutionFileException( f'This krita file had no {DOCUMENT_INFO_FILE} or it contains no resolution!' )
         

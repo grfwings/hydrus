@@ -1,6 +1,5 @@
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -231,7 +230,7 @@ class JobStatus( object ):
             
         
     
-    def GetGauge( self, level = 1 ) -> typing.Optional[ tuple[ typing.Optional[ int ], typing.Optional[ int ] ] ]:
+    def GetGauge( self, level = 1 ) -> tuple[ int | None, int | None ] | None:
         
         return self.GetIfHasVariable( f'popup_gauge_{level}' )
         
@@ -246,12 +245,12 @@ class JobStatus( object ):
         return self.GetIfHasVariable( 'network_job' )
         
     
-    def GetStatusText( self, level = 1 ) -> typing.Optional[ str ]:
+    def GetStatusText( self, level = 1 ) -> str | None:
         
         return self.GetIfHasVariable( 'status_text_{}'.format( level ) )
         
     
-    def GetStatusTitle( self ) -> typing.Optional[ str ]:
+    def GetStatusTitle( self ) -> str | None:
         
         return self.GetIfHasVariable( 'status_title' )
         
@@ -269,7 +268,7 @@ class JobStatus( object ):
             
         
     
-    def GetUserCallable( self ) -> typing.Optional[ HydrusData.Call ]:
+    def GetUserCallable( self ) -> HydrusData.Call | None:
         
         return self.GetIfHasVariable( 'user_callable' )
         
@@ -332,6 +331,49 @@ class JobStatus( object ):
         self.Cancel()
         
     
+    def SetExceptionTuple( self, etype, value, tb ):
+        
+        try:
+            
+            try:
+                
+                self.SetStatusTitle( str( etype.__name__ ) )
+                
+            except Exception as e:
+                
+                self.SetStatusTitle( str( etype ) )
+                
+            
+            if value is None:
+                
+                value = 'Unknown error'
+                
+            
+            pretty_value = f'{value}'
+            
+            all_lines = pretty_value.splitlines()
+            
+            first_line = 'Exception'
+            
+            if len( all_lines ) > 0:
+                
+                first_line = all_lines[0]
+                
+            
+            self.SetStatusText( first_line )
+            
+            nice_trace = HydrusData.ConvertExceptionTupleToNiceTrace( etype, value, tb )
+            
+            self.SetVariable( 'traceback', nice_trace )
+            
+        except Exception as e:
+            
+            HydrusData.PrintExceptionTuple( etype, value, tb )
+            
+            self.SetStatusText( 'Encountered exception I could not parse!' )
+            
+        
+    
     def SetFiles( self, hashes: list[ bytes ], label: str ):
         
         if len( hashes ) == 0:
@@ -346,7 +388,7 @@ class JobStatus( object ):
             
         
     
-    def SetGauge( self, num_done: typing.Optional[ int ], num_to_do: typing.Optional[ int ], level = 1 ):
+    def SetGauge( self, num_done: int | None, num_to_do: int | None, level = 1 ):
         
         self.SetVariable( f'popup_gauge_{level}', ( num_done, num_to_do ) )
         
@@ -364,11 +406,6 @@ class JobStatus( object ):
     def SetStatusTitle( self, title: str ):
         
         self.SetVariable( 'status_title', title )
-        
-    
-    def SetTraceback( self, trace: str ):
-        
-        self.SetVariable( 'traceback', trace )
         
     
     def SetUserCallable( self, call: HydrusData.Call ):
@@ -433,7 +470,7 @@ class JobStatus( object ):
             
             return '\n'.join( stuff_to_print )
             
-        except:
+        except Exception as e:
             
             return repr( stuff_to_print )
             

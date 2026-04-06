@@ -16,6 +16,7 @@ from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
 from hydrus.client import ClientStrings
 from hydrus.client import ClientThreading
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -48,7 +49,7 @@ class EditNodes( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_NODES.ID, self._ConvertNodeToDisplayTuple, self._ConvertNodeToSortTuple )
         
-        self._nodes = ClientGUIListCtrl.BetterListCtrlTreeView( self, 20, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
+        self._nodes = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
         
         menu_template_items = []
         
@@ -868,7 +869,7 @@ class ManageParsingScriptsPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PARSING_SCRIPTS.ID, self._ConvertScriptToDisplayTuple, self._ConvertScriptToSortTuple )
         
-        self._scripts = ClientGUIListCtrl.BetterListCtrlTreeView( self, 20, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
+        self._scripts = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
         
         menu_template_items = []
         
@@ -1154,7 +1155,7 @@ class ManageParsingScriptsPanel( ClientGUIScrolledPanels.ManagePanel ):
     
     def ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png with the encoded script', wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png with the encoded script', wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 

@@ -299,7 +299,7 @@ class ContentUpdate( object ):
             
             return f'{HC.content_update_string_lookup[ self._action ]} {HC.content_type_string_lookup[ self._data_type ]}{value_string}'
             
-        except:
+        except Exception as e:
             
             return 'could not parse this content update!'
             
@@ -391,6 +391,11 @@ class ContentUpdatePackage( object ):
     def GetContentUpdates( self, service_key ) -> list[ ContentUpdate ]:
         
         return self._service_keys_to_content_updates[ service_key ]
+        
+    
+    def GetWeight( self ):
+        
+        return sum( ( content_update.GetWeight() for content_updates in self._service_keys_to_content_updates.values() for content_update in content_updates ) )
         
     
     def HasContent( self ) -> bool:

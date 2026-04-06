@@ -6,7 +6,6 @@ import random
 import threading
 import time
 import traceback
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -278,7 +277,7 @@ class ServiceSpecifier( HydrusSerialisable.SerialisableBase ):
                     
                 
             
-        except:
+        except Exception as e:
             
             service_keys = set()
             
@@ -328,7 +327,7 @@ class ServiceSpecifier( HydrusSerialisable.SerialisableBase ):
                     
                     name = CG.client_controller.services_manager.GetServiceName( service_key )
                     
-                except:
+                except Exception as e:
                     
                     name = 'unknown service'
                     
@@ -488,7 +487,7 @@ class Service( object ):
                 
                 return True
                 
-            except:
+            except Exception as e:
                 
                 return False
                 
@@ -670,6 +669,7 @@ class ServiceLocalRating( Service ):
         dictionary[ 'colours' ] = list(self._colours.items())
         dictionary[ 'show_in_thumbnail' ] = self._show_in_thumbnail
         dictionary[ 'show_in_thumbnail_even_when_null' ] = self._show_in_thumbnail_even_when_null        
+        
         return dictionary
         
     
@@ -689,6 +689,7 @@ class ServiceLocalRating( Service ):
             return self._colours[ rating_state ]
             
         
+    
     def GetColours( self ):
         
         with self._lock:
@@ -714,7 +715,7 @@ class ServiceLocalRating( Service ):
             
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         raise NotImplementedError()
         
@@ -722,7 +723,7 @@ class ServiceLocalRating( Service ):
 
 class ServiceLocalRatingIncDec( ServiceLocalRating ):
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ int ] ):
+    def ConvertNoneableRatingToString( self, rating: int | None ):
         
         if rating is None:
             
@@ -777,7 +778,7 @@ class ServiceLocalRatingStars( ServiceLocalRating ):
         self._rating_svg = dictionary[ 'rating_svg' ]
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         raise NotImplementedError()
         
@@ -793,7 +794,7 @@ class ServiceLocalRatingStars( ServiceLocalRating ):
 
 class ServiceLocalRatingLike( ServiceLocalRatingStars ):
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         if rating is None:
             
@@ -871,7 +872,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
             
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         if rating is None:
             
@@ -933,6 +934,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
             return self._custom_pad
             
         
+    
     def GetOneStarValue( self ):
         
         num_choices = self._num_stars
@@ -946,6 +948,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
         
         return one_star_value
         
+    
     def GetShowFractionBesideStars( self ):
         
         with self._lock:
@@ -1162,7 +1165,7 @@ class ServiceRestricted( ServiceRemote ):
             
             return True
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -1343,7 +1346,7 @@ class ServiceRestricted( ServiceRemote ):
                 
                 return True
                 
-            except:
+            except Exception as e:
                 
                 return False
                 
@@ -1641,7 +1644,7 @@ class ServiceRestricted( ServiceRemote ):
                                         
                                         HydrusData.ShowText( message )
                                         
-                                    except:
+                                    except Exception as e:
                                         
                                         pass
                                         
@@ -1718,7 +1721,7 @@ class ServiceRepository( ServiceRestricted ):
             
             return not self._update_downloading_paused
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -2177,7 +2180,7 @@ class ServiceRepository( ServiceRestricted ):
                         
                         definition_update = HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
                         
-                    except:
+                    except Exception as e:
                         
                         CG.client_controller.WriteSynchronous( 'schedule_repository_update_file_maintenance', self._service_key, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_INTEGRITY_DATA_REMOVE_RECORD )
                         
@@ -2306,7 +2309,7 @@ class ServiceRepository( ServiceRestricted ):
                         
                         content_update = HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
                         
-                    except:
+                    except Exception as e:
                         
                         CG.client_controller.WriteSynchronous( 'schedule_repository_update_file_maintenance', self._service_key, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_INTEGRITY_DATA_REMOVE_RECORD )
                         

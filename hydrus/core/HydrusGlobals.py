@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
     from hydrus.core import HydrusController
     
 
-controller: typing.Optional[ "HydrusController.HydrusController" ] = None
+controller: "HydrusController.HydrusController | None" = None
 
 # TODO: move the client, server, and any test-specific garbage to the new module Globals mate, and/or the controller objects themselves
 
@@ -93,8 +93,6 @@ restart = False
 
 twisted_is_broke = False
 twisted_is_broke_exception = None
-
-last_mouse_click_button = None
 
 dirty_object_lock = threading.Lock()
 client_busy = threading.Lock()

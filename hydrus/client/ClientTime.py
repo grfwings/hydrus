@@ -1,6 +1,5 @@
 import datetime
 import traceback
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -86,7 +85,7 @@ def ParseDate( date_string: str ) -> float:
             
             return HydrusTime.SecondiseMSFloat( HydrusTime.DateTimeToTimestampMS( dt ) )
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( f'Dateparser failed to parse: "{date_string}"' )
             
@@ -101,14 +100,14 @@ def ParseDate( date_string: str ) -> float:
                 # if you give this 'January 12, 2012 10:00 PM EST', it moans about the timezone being not understood. maybe some summertime thing? or maybe it wants +0300 kind of thing
                 dt = dateutil.parser.parse( date_string )
                 
-            except:
+            except Exception as e:
                 
                 dt = dateutil.parser.parse( date_string, ignoretz = True )
                 
             
             return HydrusTime.SecondiseMSFloat( HydrusTime.DateTimeToTimestampMS( dt ) )
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( f'Dateutil failed to parse: "{date_string}"' )
             
@@ -117,7 +116,7 @@ def ParseDate( date_string: str ) -> float:
     raise Exception( 'Sorry, could not parse that date!' )
     
 
-def MergeModifiedTimes( existing_timestamp: typing.Optional[ int ], new_timestamp: typing.Optional[ int ] ) -> typing.Optional[ int ]:
+def MergeModifiedTimes( existing_timestamp: int | None, new_timestamp: int | None ) -> int | None:
     
     if ShouldUpdateModifiedTime( existing_timestamp, new_timestamp ):
         
@@ -129,7 +128,7 @@ def MergeModifiedTimes( existing_timestamp: typing.Optional[ int ], new_timestam
         
     
 
-def ShouldUpdateModifiedTime( existing_timestamp: int, new_timestamp: typing.Optional[ int ] ) -> bool:
+def ShouldUpdateModifiedTime( existing_timestamp: int, new_timestamp: int | None ) -> bool:
     
     if new_timestamp is None:
         
@@ -150,7 +149,7 @@ def ShouldUpdateModifiedTime( existing_timestamp: int, new_timestamp: typing.Opt
     return True
     
 
-def TimestampIsSensible( timestamp: typing.Optional[ int ] ) -> bool:
+def TimestampIsSensible( timestamp: int | None ) -> bool:
     
     if timestamp is None:
         
@@ -189,7 +188,7 @@ class TimestampData( HydrusSerialisable.SerialisableBase ):
     SERIALISABLE_NAME = 'Timestamp Data'
     SERIALISABLE_VERSION = 2
     
-    def __init__( self, timestamp_type = None, location = None, timestamp_ms: typing.Optional[ typing.Union[ int, float ] ] = None ):
+    def __init__( self, timestamp_type = None, location = None, timestamp_ms: int | float | None = None ):
         
         super().__init__()
         
@@ -277,7 +276,7 @@ class TimestampData( HydrusSerialisable.SerialisableBase ):
                     
                     service_string = CG.client_controller.services_manager.GetName( self.location )
                     
-                except:
+                except Exception as e:
                     
                     service_string = 'unknown service'
                     

@@ -183,7 +183,7 @@ class GallerySeed( HydrusSerialisable.SerialisableBase ):
     
     def _GiveChildFileSeedMyInfo( self, file_seed, url_for_child_referral: str ):
         
-        file_seed.SetReferralURL( url_for_child_referral )
+        file_seed.SetReferralURLIfNotNone( url_for_child_referral )
         
         file_seed.AddPrimaryURLs( ( self.url, ) )
         
@@ -739,6 +739,17 @@ class GallerySeed( HydrusSerialisable.SerialisableBase ):
             
             result_404 = True
             
+        except HydrusExceptions.CensorshipException:
+            
+            status = CC.STATUS_VETOED
+            note = 'site reports http status code 451: Unavailable For Legal Reasons'
+            
+            self.SetStatus( status, note = note )
+            
+            status_hook( '451 censorship!' )
+            
+            time.sleep( 2 )
+            
         except HydrusExceptions.BadRequestException:
             
             status = CC.STATUS_VETOED
@@ -815,7 +826,7 @@ class GallerySeedLog( HydrusSerialisable.SerialisableBase ):
         self._status_dirty = False
         
     
-    def _GetNextGallerySeed( self, status: int ) -> typing.Optional[ GallerySeed ]:
+    def _GetNextGallerySeed( self, status: int ) -> GallerySeed | None:
         
         for gallery_seed in self._gallery_seeds:
             
@@ -877,7 +888,7 @@ class GallerySeedLog( HydrusSerialisable.SerialisableBase ):
         self._status_dirty = True
         
     
-    def AddGallerySeeds( self, gallery_seeds, parent_gallery_seed: typing.Optional[ GallerySeed ] = None ) -> int:
+    def AddGallerySeeds( self, gallery_seeds, parent_gallery_seed: GallerySeed | None = None ) -> int:
         
         if len( gallery_seeds ) == 0:
             

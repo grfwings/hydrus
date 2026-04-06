@@ -2,7 +2,6 @@ import collections
 import collections.abc
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -132,7 +131,7 @@ class DuplicatesAutoResolutionRule( HydrusSerialisable.SerialisableBaseNamed ):
         self._delete_a = False
         self._delete_b = False
         
-        self._custom_duplicate_content_merge_options: typing.Optional[ ClientDuplicates.DuplicateContentMergeOptions ] = None
+        self._custom_duplicate_content_merge_options: ClientDuplicates.DuplicateContentMergeOptions | None = None
         
         self._counts_lock = threading.Lock()
         self._counts_cache = collections.Counter()
@@ -387,7 +386,7 @@ class DuplicatesAutoResolutionRule( HydrusSerialisable.SerialisableBaseNamed ):
         return ( action, hash_a, hash_b, content_update_packages )
         
     
-    def GetDuplicateContentMergeOptions( self ) -> typing.Optional[ ClientDuplicates.DuplicateContentMergeOptions ]:
+    def GetDuplicateContentMergeOptions( self ) -> ClientDuplicates.DuplicateContentMergeOptions | None:
         
         return self._custom_duplicate_content_merge_options
         
@@ -402,7 +401,7 @@ class DuplicatesAutoResolutionRule( HydrusSerialisable.SerialisableBaseNamed ):
         return self._potential_duplicates_search_context.GetLocationContext()
         
     
-    def GetMaxPendingPairs( self ) -> typing.Optional[ int ]:
+    def GetMaxPendingPairs( self ) -> int | None:
         
         return self._max_pending_pairs
         
@@ -556,7 +555,7 @@ class DuplicatesAutoResolutionRule( HydrusSerialisable.SerialisableBaseNamed ):
         self._delete_b = delete_b
         
     
-    def SetDuplicateContentMergeOptions( self, duplicate_content_merge_options: typing.Optional[ ClientDuplicates.DuplicateContentMergeOptions ] ):
+    def SetDuplicateContentMergeOptions( self, duplicate_content_merge_options: ClientDuplicates.DuplicateContentMergeOptions | None ):
         
         self._custom_duplicate_content_merge_options = duplicate_content_merge_options
         
@@ -571,7 +570,7 @@ class DuplicatesAutoResolutionRule( HydrusSerialisable.SerialisableBaseNamed ):
         self._operation_mode = value
         
     
-    def SetMaxPendingPairs( self, value: typing.Optional[ int ] ):
+    def SetMaxPendingPairs( self, value: int | None ):
         
         self._max_pending_pairs = value
         
@@ -620,7 +619,7 @@ HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIAL
 
 def GetSmartEXIFAndICCComparators():
     
-    one_file_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    one_file_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     one_file_comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_B )
     
@@ -636,7 +635,7 @@ def GetSmartEXIFAndICCComparators():
     
     one_file_comparator.SetMetadataConditional( metadata_conditional )
     
-    hardcoded_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_EXIF_SAME )
+    hardcoded_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_HAS_EXIF_SAME )
     
     smart_exif_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOR(
         [
@@ -647,7 +646,7 @@ def GetSmartEXIFAndICCComparators():
     
     #
     
-    one_file_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    one_file_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     one_file_comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_B )
     
@@ -663,7 +662,7 @@ def GetSmartEXIFAndICCComparators():
     
     one_file_comparator.SetMetadataConditional( metadata_conditional )
     
-    hardcoded_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_HAS_ICC_PROFILE_SAME )
+    hardcoded_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_HAS_ICC_PROFILE_SAME )
     
     smart_icc_profile_comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOR(
         [
@@ -731,7 +730,7 @@ def GetDefaultRuleSuggestionsPixelPerfectFiletypePairs() -> list[ DuplicatesAuto
     
     selector = ClientDuplicatesAutoResolutionComparators.PairSelector()
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
     
@@ -798,7 +797,7 @@ def GetDefaultRuleSuggestionsPixelPerfectFiletypePairs() -> list[ DuplicatesAuto
     
     selector = ClientDuplicatesAutoResolutionComparators.PairSelector()
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
     
@@ -867,7 +866,7 @@ def GetDefaultRuleSuggestionsPixelPerfectFiletypePairs() -> list[ DuplicatesAuto
     
     comparators = []
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
     
@@ -947,7 +946,7 @@ def GetDefaultRuleSuggestionsPixelPerfectFiletypePairs() -> list[ DuplicatesAuto
     
     comparators = []
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
     
@@ -1062,7 +1061,7 @@ def GetDefaultRuleSuggestionsPixelPerfectPairs() -> list[ DuplicatesAutoResoluti
     )
     comparators.append( or_comparator )
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME )
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_FILETYPE_SAME )
     
     comparators.append( comparator )
     
@@ -1156,7 +1155,7 @@ def GetDefaultRuleSuggestionsVisuallySimilar() -> list[ DuplicatesAutoResolution
     
     comparators.append( comparator )
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_FILETYPE_SAME )
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorRelativeHardcoded( hardcoded_type = ClientDuplicatesAutoResolutionComparators.HARDCODED_COMPARATOR_TYPE_TWO_FILES_FILETYPE_SAME )
     
     comparators.append( comparator )
     
@@ -1252,7 +1251,7 @@ def GetDefaultRuleSuggestionsNearPerfectFiletypePairs() -> list[ DuplicatesAutoR
     
     comparators = []
     
-    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFile()
+    comparator = ClientDuplicatesAutoResolutionComparators.PairComparatorOneFileMetadataConditional()
     
     comparator.SetLookingAt( ClientDuplicatesAutoResolutionComparators.LOOKING_AT_A )
     
@@ -1415,7 +1414,7 @@ class DuplicatesAutoResolutionManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         HydrusData.PrintException( e )
                         
-                        message = 'There was an unexpected problem during duplicates auto-resolution work! This system will not run again this boot. A full traceback of this error should be written to the log.'
+                        message = 'There was an unexpected problem during duplicates auto-resolution work! This system will shut down and not start again until the program in restarted. A full traceback of this error should be written to the log.'
                         message += '\n' * 2
                         message += str( e )
                         

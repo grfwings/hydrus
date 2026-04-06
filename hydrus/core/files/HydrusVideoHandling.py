@@ -1,7 +1,6 @@
 import numpy
 import os
 import re
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -25,7 +24,7 @@ def FileIsAnimated( path ):
         
         return num_frames > 1
         
-    except:
+    except Exception as e:
         
         return False
         
@@ -70,14 +69,14 @@ def GetFFMPEGInfoLines( path, count_frames_manually = False, only_first_second =
         
     except FileNotFoundError as e:
         
-        HydrusFFMPEG.HandleFFMPEGFileNotFound( e, path )
+        raise HydrusFFMPEG.HandleFFMPEGFileNotFoundAndGenerateException( e, path )
         
     
     text = stderr
     
-    if len( text ) == 0:
+    if text is None or len( text ) == 0:
         
-        HydrusFFMPEG.HandleFFMPEGNoContent( path, stdout, stderr )
+        raise HydrusFFMPEG.HandleFFMPEGNoContentAndGenerateException( path, stdout, stderr )
         
     
     lines = text.splitlines()
@@ -414,7 +413,7 @@ def ParseFFMPEGDuration( lines ):
         
         return ( file_duration_s, stream_duration_s )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error reading duration!' )
         
@@ -439,7 +438,7 @@ def ParseFFMPEGFPS( lines, png_ok = False ):
         
         return ( fps, confident )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error estimating framerate!' )
         
@@ -493,7 +492,7 @@ def ParseFFMPEGFPSFromFirstSecond( lines_for_first_second ):
         
         return ( fps, confident )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error estimating framerate!' )
         
@@ -631,7 +630,7 @@ def ParseFFMPEGMimeText( lines ):
         
         return mime_text
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error reading file type!' )
         
@@ -662,7 +661,7 @@ def ParseFFMPEGNumFramesManually( lines ) -> int:
         
         num_frames = int( frames_string )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Video was unable to render correctly--could not parse ffmpeg output line: "{}"'.format( final_line ) )
         
@@ -692,7 +691,7 @@ def ParseFFMPEGVideoFormat( lines ):
             return ( False, 'none' )
             
         
-    except:
+    except Exception as e:
         
         video_format = 'unknown'
         
@@ -780,7 +779,7 @@ def ParseFFMPEGVideoResolution( lines, png_ok = False ) -> tuple[ int, int ]:
         
         return ( width, height )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Error parsing resolution!' )
         
@@ -831,8 +830,10 @@ def VideoHasAudio( path, info_lines ) -> bool:
         
     except FileNotFoundError as e:
         
-        HydrusFFMPEG.HandleFFMPEGFileNotFound( e, path )
+        raise HydrusFFMPEG.HandleFFMPEGFileNotFoundAndGenerateException( e, path )
         
+    
+    return False
     
 
 # This was built from moviepy's FFMPEG_VideoReader
@@ -883,7 +884,7 @@ class VideoRendererFFMPEG( object ):
         
         bufsize = self.depth * x * y
         
-        self.process_reader: typing.Optional[ HydrusSubprocess.SubprocessContextReader ] = None
+        self.process_reader: HydrusSubprocess.SubprocessContextReader | None = None
         
         self.bufsize = bufsize
         
@@ -981,7 +982,7 @@ class VideoRendererFFMPEG( object ):
             
         except FileNotFoundError as e:
             
-            HydrusFFMPEG.HandleFFMPEGFileNotFound( e, self._path )
+            raise HydrusFFMPEG.HandleFFMPEGFileNotFoundAndGenerateException( e, self._path )
             
         
         if skip_frames > 0:
@@ -1055,7 +1056,7 @@ class VideoRendererFFMPEG( object ):
                         
                     else:
                         
-                        message = 'Unable to render that video! Please send it to hydrus dev so he can look at it!'
+                        message = 'Unable to render that video! It is probably just weird/broken, but hydev would be interested in seeing it!'
                         
                     
                     raise HydrusExceptions.DamagedOrUnusualFileException( message )

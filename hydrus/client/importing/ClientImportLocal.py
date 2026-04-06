@@ -3,7 +3,6 @@ import collections.abc
 import os
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
@@ -25,8 +24,9 @@ from hydrus.client.files import ClientFiles
 from hydrus.client.importing import ClientImportControl
 from hydrus.client.importing import ClientImporting
 from hydrus.client.importing import ClientImportFileSeeds
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import FilenameTaggingOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientMetadataMigration
 from hydrus.client.metadata import ClientMetadataMigrationExporters
@@ -78,7 +78,7 @@ class HDDImport( HydrusSerialisable.SerialisableBase ):
                     
                     file_seed.source_time = HydrusTime.SecondiseMS( file_modified_time_ms )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -202,7 +202,7 @@ class HDDImport( HydrusSerialisable.SerialisableBase ):
                 
             
         
-        file_seed.ImportPath( self._file_seed_cache, self._file_import_options, FileImportOptions.IMPORT_TYPE_LOUD, status_hook = status_hook )
+        file_seed.ImportPath( self._file_seed_cache, self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD, status_hook = status_hook )
         
         if file_seed.status in CC.SUCCESSFUL_IMPORT_STATES:
             
@@ -226,7 +226,7 @@ class HDDImport( HydrusSerialisable.SerialisableBase ):
                     
                 
             
-            real_presentation_import_options = FileImportOptions.GetRealPresentationImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_LOUD )
+            real_presentation_import_options = FileImportOptionsLegacy.GetRealPresentationImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
             
             if file_seed.ShouldPresent( real_presentation_import_options ):
                 
@@ -372,7 +372,7 @@ class HDDImport( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def SetFileImportOptions( self, file_import_options: FileImportOptions.FileImportOptions ):
+    def SetFileImportOptions( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ):
         
         with self._lock:
             
@@ -413,9 +413,9 @@ class HDDImport( HydrusSerialisable.SerialisableBase ):
             
             try:
                 
-                real_file_import_options = FileImportOptions.GetRealFileImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_LOUD )
+                real_file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
                 
-                ClientImportControl.CheckImporterCanDoFileWorkBecausePausifyingProblem( real_file_import_options )
+                ClientImportControl.CheckImporterCanDoFileWorkBecausePausifyingProblem( real_file_import_options.GetLocationImportOptions() )
                 
             except HydrusExceptions.VetoException:
                 
@@ -489,7 +489,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         search_subdirectories = True,
         file_import_options = None,
         tag_import_options = None,
-        metadata_routers: typing.Optional[ collections.abc.Collection[ ClientMetadataMigration.SingleFileMetadataRouter ] ] = None,
+        metadata_routers: collections.abc.Collection[ ClientMetadataMigration.SingleFileMetadataRouter ] = None,
         tag_service_keys_to_filename_tagging_options = None,
         actions = None,
         action_locations = None,
@@ -502,13 +502,13 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         
         if file_import_options is None:
             
-            file_import_options = FileImportOptions.FileImportOptions()
+            file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
             file_import_options.SetIsDefault( True )
             
         
         if tag_import_options is None:
             
-            tag_import_options = TagImportOptions.TagImportOptions()
+            tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
             
         
         if metadata_routers is None:
@@ -781,7 +781,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             
             try:
                 
-                file_seed.ImportPath( self._file_seed_cache, self._file_import_options, FileImportOptions.IMPORT_TYPE_QUIET )
+                file_seed.ImportPath( self._file_seed_cache, self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_QUIET )
                 
                 if file_seed.status in CC.SUCCESSFUL_IMPORT_STATES:
                     
@@ -791,15 +791,17 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                         
                         hash = file_seed.GetHash()
                         
-                        if self._tag_import_options.HasAdditionalTags() or len( self._metadata_routers ) > 0:
+                        has_additional_tags = self._tag_import_options.GetTagImportOptions().HasAdditionalTags()
+                        
+                        if has_additional_tags or len( self._metadata_routers ) > 0:
                             
                             media_result = CG.client_controller.Read( 'media_result', hash )
                             
-                            if self._tag_import_options.HasAdditionalTags():
+                            if has_additional_tags:
                                 
                                 downloaded_tags = []
                                 
-                                content_update_package = self._tag_import_options.GetContentUpdatePackage( file_seed.status, media_result, downloaded_tags ) # additional tags
+                                content_update_package = self._tag_import_options.GetTagImportOptions().GetContentUpdatePackage( file_seed.status, media_result, downloaded_tags ) # additional tags
                                 
                                 if content_update_package.HasContent():
                                     
@@ -860,7 +862,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
                     
                     if hash not in presentation_hashes_fast:
                         
-                        real_presentation_import_options = FileImportOptions.GetRealPresentationImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_LOUD )
+                        real_presentation_import_options = FileImportOptionsLegacy.GetRealPresentationImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
                         
                         if file_seed.ShouldPresent( real_presentation_import_options ):
                             
@@ -939,7 +941,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             
             # edited out tag carry-over to tio due to bit rot
             
-            tag_import_options = TagImportOptions.TagImportOptions()
+            tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
             
             serialisable_tag_import_options = tag_import_options.GetSerialisableTuple()
             
@@ -980,7 +982,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             
             for service_key in txt_parse_tag_service_keys:
                 
-                filename_tagging_options = TagImportOptions.FilenameTaggingOptions()
+                filename_tagging_options = FilenameTaggingOptions.FilenameTaggingOptions()
                 
                 filename_tagging_options._load_from_neighbouring_txt_files = True
                 
@@ -1014,7 +1016,7 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
             
             file_import_options = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_file_import_options )
             
-            file_import_options.SetAllowedSpecificFiletypes( mimes )
+            file_import_options.GetFileFilteringImportOptions().SetAllowedSpecificFiletypes( mimes )
             
             serialisable_file_import_options = file_import_options.GetSerialisableTuple()
             
@@ -1186,9 +1188,9 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         
         try:
             
-            real_file_import_options = FileImportOptions.GetRealFileImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_QUIET )
+            real_file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_QUIET )
             
-            real_file_import_options.CheckReadyToImport()
+            real_file_import_options.GetLocationImportOptions().CheckReadyToImport()
             
             pubbed_job_status = False
             
@@ -1336,9 +1338,11 @@ class ImportFolder( HydrusSerialisable.SerialisableBaseNamed ):
         
         if not file_import_options.IsDefault() and not self._file_import_options.IsDefault():
             
-            mimes = set( file_import_options.GetAllowedSpecificFiletypes() )
+            file_filtering_import_options = file_import_options.GetFileFilteringImportOptions()
             
-            if mimes != set( self._file_import_options.GetAllowedSpecificFiletypes() ):
+            mimes = set( file_filtering_import_options.GetAllowedSpecificFiletypes() )
+            
+            if mimes != set( self._file_import_options.GetFileFilteringImportOptions().GetAllowedSpecificFiletypes() ):
                 
                 self._file_seed_cache.RemoveFileSeedsByStatus( ( CC.STATUS_VETOED, ) )
                 
@@ -1511,7 +1515,7 @@ class ImportFoldersManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 HydrusData.PrintException( e )
                 
-                message = 'There was an unexpected problem during import folders work! They will not run again this boot. A full traceback of this error should be written to the log.'
+                message = 'There was an unexpected problem during import folders work! They will not run again this program boot. A full traceback of this error should be written to the log.'
                 message += '\n' * 2
                 message += str( e )
                 

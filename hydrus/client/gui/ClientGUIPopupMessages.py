@@ -325,6 +325,11 @@ class PopupMessage( PopupWindow ):
                 
                 presented_hashes = CG.client_controller.Read( 'filter_hashes', location_context, hashes )
                 
+                if len( presented_hashes ) > 0:
+                    
+                    CG.client_controller.pub( 'new_page_query', location_context, initial_hashes = presented_hashes, page_name = attached_files_label )
+                    
+                
                 return presented_hashes
                 
             
@@ -340,23 +345,19 @@ class PopupMessage( PopupWindow ):
                         
                     
                 
-                if len( presented_hashes ) > 0:
-                    
-                    CG.client_controller.pub( 'new_page_query', location_context, initial_hashes = presented_hashes, page_name = attached_files_label )
-                    
-                
-                self._show_files_button.setEnabled( True )
-                
             
             def errback_callable( etype, value, tb ):
                 
                 HydrusData.ShowText( 'Sorry, unable to show those files:' )
                 HydrusData.ShowExceptionTuple( etype, value, tb, do_wait = False )
                 
+            
+            def ui_restoration_callable():
+                
                 self._show_files_button.setEnabled( True )
                 
             
-            job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+            job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
             
             job.start()
             
@@ -708,7 +709,7 @@ class JobStatusPopupQueue( object ):
             
         
     
-    def GetJobStatus( self, job_status_key: bytes ) -> typing.Optional[ ClientThreading.JobStatus ]:
+    def GetJobStatus( self, job_status_key: bytes ) -> ClientThreading.JobStatus | None:
         
         with self._lock:
             
@@ -731,7 +732,7 @@ class JobStatusPopupQueue( object ):
             
         
     
-    def GetNextJobStatusToShow( self ) -> typing.Optional[ ClientThreading.JobStatus ]:
+    def GetNextJobStatusToShow( self ) -> ClientThreading.JobStatus | None:
         
         with self._lock:
             
@@ -929,7 +930,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
+            message_window: PopupMessage | None = sizer_item.widget()
             
             if not message_window:
                 
@@ -1001,7 +1002,7 @@ class PopupMessageManager( QW.QFrame ):
                     
                 
             
-        except:
+        except Exception as e:
             
             text = 'The popup message manager experienced a fatal error and will now stop working! Please restart the client as soon as possible! If this keeps happening, please email the details and your client.log to the hydrus developer.'
             
@@ -1062,7 +1063,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
+            message_window: PopupMessage | None = sizer_item.widget()
             
             if message_window:
                 
@@ -1098,7 +1099,7 @@ class PopupMessageManager( QW.QFrame ):
                 self._CheckPending()
                 
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( traceback.format_exc() )
             
@@ -1116,7 +1117,7 @@ class PopupMessageManager( QW.QFrame ):
         
         for i in range( self._message_vbox.count() ):
             
-            message_window: typing.Optional[ PopupMessage ] = self._message_vbox.itemAt( i ).widget()
+            message_window: PopupMessage | None = self._message_vbox.itemAt( i ).widget()
             
             if not message_window:
                 
@@ -1182,7 +1183,7 @@ class PopupMessageManager( QW.QFrame ):
             
             item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = item.widget()
+            message_window: PopupMessage | None = item.widget()
             
             if not message_window:
                 
@@ -1261,7 +1262,7 @@ class PopupMessageManager( QW.QFrame ):
                 self._SizeAndPositionAndShow()
                 
             
-        except:
+        except Exception as e:
             
             self._update_job.Cancel()
             
@@ -1459,13 +1460,14 @@ class PopupMessageDialogPanel( QW.QWidget ):
                 self._Update()
                 
             
-        except:
+        except Exception as e:
             
             self._update_job.Cancel()
             
             raise
             
         
+    
 
 class PopupMessageSummaryBar( QW.QFrame ):
     
@@ -1483,7 +1485,9 @@ class PopupMessageSummaryBar( QW.QFrame ):
         self._text = ClientGUICommon.BetterStaticText( self )
         self._text.setAlignment( QC.Qt.AlignmentFlag.AlignLeft | QC.Qt.AlignmentFlag.AlignVCenter )
         
-        self._expand_collapse = ClientGUICommon.BetterButton( self, '\u25bc', self.ExpandCollapse )
+        self._expand_collapse = ClientGUICommon.ExpandCollapseArrowButton( self, False )
+        self._expand_collapse.Expand()
+        self._expand_collapse.expandCollapseFlipped.connect( self.expandCollapse )
         
         dismiss_all = ClientGUICommon.BetterButton( self, 'dismiss all', self.dismissAll.emit )
         
@@ -1492,24 +1496,6 @@ class PopupMessageSummaryBar( QW.QFrame ):
         QP.AddToLayout( hbox, self._expand_collapse, CC.FLAGS_CENTER_PERPENDICULAR )
         
         self.setLayout( hbox )
-        
-    
-    def ExpandCollapse( self ):
-        
-        self.expandCollapse.emit()
-        
-        current_text = self._expand_collapse.text()
-        
-        if current_text == '\u25bc':
-            
-            new_text = '\u25b2'
-            
-        else:
-            
-            new_text = '\u25bc'
-            
-        
-        self._expand_collapse.setText( new_text )
         
     
     def SetNumMessages( self, num_messages_pending ):

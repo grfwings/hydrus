@@ -4,13 +4,15 @@ title: Files
 
 # Getting started with files
 
-!!! warning
+!!! warning "Use your brain"
 
-	Hydrus can be powerful, and you control everything. By default, you are not connected to any servers and absolutely nothing is shared with other users--and you can't accidentally one-click your way to exposing your whole collection--but if you tag private files with real names and click to upload that data to a tag repository that other people have access to, the program won't try to stop you.
+	Hydrus can be powerful, and you control everything. By default, you are not connected to any servers and absolutely nothing is shared with other users. You cannot accidentally one-click your way to exposing your whole collection. However, if you tag private files with real names and click to upload that data to a tag repository that other people have access to, the program won't try to stop you.
     
     If you want to do private sexy slideshows of your shy wife, that's great, but if you have set up a repository or Client API connection to share content with friends, use your brain! It is **impossible** to contain leaks of private information.
+    
 
-	It is possible to import millions of files. For many new users, their first mistake is downloading too much too fast in overexcitement and becoming overwhelmed. Take things slow and figure out good processing workflows that work for your schedule before you start adding 500 subscriptions.
+!!! info "Do not rush"
+	It is easy to import millions of files. For many new users, their first mistake is downloading too much too fast in overexcitement and becoming overwhelmed. We are in this for the long haul, so take things slow and figure out good processing workflows that work for your schedule before you start adding 5,000 new subscriptions.
 
 ## The problem
 
@@ -74,9 +76,9 @@ Now:
 
 Hydrus supports many filetypes. A full list can be viewed on the [Supported Filetypes](filetypes.md) page.
 
-Although some support is imperfect for the complicated filetypes. For the Windows and Linux built releases, hydrus now embeds an MPV player for video, audio and gifs, which provides smooth playback and audio, but some other environments may not support MPV and so will default when possible to the native hydrus software renderer, which does not support audio. When something does not render how you want, right-clicking on its thumbnail presents the option 'open externally', which will open the file in the appropriate default program (e.g. ACDSee, VLC).
+Support is imperfect for the complicated filetypes. For Windows and non-Wayland Linux, you can view video and audio smoothly with an mpv embed. For others, there is a native Qt Media Player that is more reliable but less powerful. You can right-click any media and easily 'open externally', which will open the file in the appropriate default program (e.g. qView, VLC).
 
-The client can also download files from several websites, including 4chan and other imageboards, many boorus, and gallery sites like deviant art and hentai foundry. You will learn more about this later.
+The client can also download files from several websites. You will learn more about this later.
 
 ## Inbox and archive
 

@@ -11,10 +11,11 @@ from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsPanels
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.metadata import ClientGUITagFilter
+from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 
 class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
@@ -37,7 +38,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_TAG_SERVICES.ID, self._ConvertTagDataToDisplayTuple, self._ConvertTagDataToSortTuple )
         
-        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteTag )
+        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, 4, model, delete_key_callback = self._DeleteTag, max_height_num_chars = 12 )
         
         tag_services_listctrl_panel.SetListCtrl( self._tag_service_actions )
         
@@ -54,7 +55,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_RATING_SERVICES.ID, self._ConvertRatingDataToDisplayTuple, self._ConvertRatingDataToSortTuple )
         
-        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating )
+        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, 4, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating, max_height_num_chars = 12 )
         
         rating_services_listctrl_panel.SetListCtrl( self._rating_service_actions )
         
@@ -331,7 +332,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
             
         
         pretty_action = HC.content_merge_string_lookup[ action ]
-        pretty_tag_filter = tag_filter.ToPermittedString()
+        pretty_tag_filter = tag_filter.ToFilterString()
         
         display_tuple = ( service_name, pretty_action, pretty_tag_filter )
         
@@ -372,17 +373,19 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
     
     def _EditNoteImportOptions( self ):
         
-        allow_default_selection = False
-        
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit note merge options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditNoteImportOptionsPanel( dlg, self._sync_note_import_options, allow_default_selection, simple_mode = True )
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+            
+            edit_notes_widget = ClientGUIImportOptionsPanels.EditNoteImportOptionsPanel( panel, self._sync_note_import_options, simple_mode = True )
+            
+            panel.SetControl( edit_notes_widget )
             
             dlg.SetPanel( panel )
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
-                self._sync_note_import_options = panel.GetValue()
+                self._sync_note_import_options = edit_notes_widget.GetValue()
                 
             
         

@@ -84,10 +84,10 @@ from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientTagsHandling
 from hydrus.client.networking import ClientNetworkingBandwidth
+from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingLogin
 from hydrus.client.networking import ClientNetworkingSessions
-from hydrus.client.search import ClientNumberTest
 from hydrus.client.search import ClientSearchFavouriteSearches
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
@@ -100,8 +100,8 @@ from hydrus.client.networking import ClientNetworkingSessionsLegacy
 from hydrus.client.networking import ClientNetworkingBandwidthLegacy
 
 #
-#                                𝓑𝓵𝓮𝓼𝓼𝓲𝓷𝓰𝓼 𝓸𝓯 𝓽𝓱𝓮 𝓢𝓱𝓻𝓲𝓷𝓮 𝓸𝓷 𝓽𝓱𝓲𝓼 𝓗𝓮𝓵𝓵 𝓒𝓸𝓭𝓮
-#                                              ＲＥＳＯＬＶＥ ＩＮＣＩＤＥＮＴ
+#                                   𝓑𝓵𝓮𝓼𝓼𝓲𝓷𝓰𝓼 𝓸𝓯 𝓽𝓱𝓮 𝓢𝓱𝓻𝓲𝓷𝓮 𝓸𝓷 𝓽𝓱𝓲𝓼 𝓗𝓮𝓵𝓵 𝓒𝓸𝓭𝓮
+#                                           ＲＥＳＯＬＶＥ ＩＮＣＩＤＥＮＴ
 #
 # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 # ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
@@ -1148,6 +1148,39 @@ class DB( HydrusDB.HydrusDB ):
             
         
     
+    def _ClearOrphanURLMappings( self ):
+        
+        job_status = ClientThreading.JobStatus( cancellable = True )
+        
+        job_status.SetStatusTitle( 'clear orphan url mappings' )
+        
+        self._controller.pub( 'modal_message', job_status )
+        
+        try:
+            
+            job_status.SetStatusText( 'clearing orphans' )
+            
+            self._Execute( 'DELETE FROM url_map WHERE NOT EXISTS ( SELECT 1 FROM urls WHERE urls.url_id = url_map.url_id );' )
+            
+            num_deleted = self._GetRowCount()
+            
+            if num_deleted > 0:
+                
+                HydrusData.ShowText( f'{HydrusNumbers.ToHumanInt( num_deleted )} orphan url mappings deleted!' )
+                
+            else:
+                
+                HydrusData.ShowText( 'No orphan url mappings found!' )
+                
+            
+        finally:
+            
+            job_status.SetStatusText( 'done!' )
+            
+            job_status.FinishAndDismiss()
+            
+        
+    
     def _CreateDB( self ):
         
         # main
@@ -1296,8 +1329,6 @@ class DB( HydrusDB.HydrusDB ):
         
         login_manager = ClientNetworkingLogin.NetworkLoginManager()
         
-        ClientDefaults.SetDefaultLoginManagerScripts( login_manager )
-        
         self.modules_serialisable.SetJSONDump( login_manager )
         
         favourite_search_manager = ClientSearchFavouriteSearches.FavouriteSearchManager()
@@ -1315,8 +1346,6 @@ class DB( HydrusDB.HydrusDB ):
         column_list_manager = ClientGUIListManager.ColumnListManager()
         
         self.modules_serialisable.SetJSONDump( column_list_manager )
-        
-        self._ExecuteMany( 'INSERT INTO json_dumps_named VALUES ( ?, ?, ?, ?, ? );', ClientDefaults.GetDefaultScriptRows() )
         
     
     def _DeletePending( self, service_key ):
@@ -1750,9 +1779,9 @@ class DB( HydrusDB.HydrusDB ):
     def _GetBonedStatsFromTable(
         self,
         current_files_table_name: str,
-        current_timestamps_ms_table_name: typing.Optional[ str ],
-        deleted_files_table_name: typing.Optional[ str ],
-        deleted_timestamps_ms_table_name: typing.Optional[ str ],
+        current_timestamps_ms_table_name: str | None,
+        deleted_files_table_name: str | None,
+        deleted_timestamps_ms_table_name: str | None,
         job_status = None
     ):
         
@@ -3294,12 +3323,11 @@ class DB( HydrusDB.HydrusDB ):
         
         #
         
-        inclusive = True
         pending_count = 0
         
         tag_ids_to_full_counts = { tag_id : ( int( score * 1000 ), None, pending_count, None ) for ( tag_id, score ) in tag_ids_to_scores.items() }
         
-        predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, tag_service_id, tag_ids_to_full_counts, inclusive )
+        predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, tag_service_id, tag_ids_to_full_counts )
         
         result_predicates = []
         
@@ -3636,11 +3664,13 @@ class DB( HydrusDB.HydrusDB ):
         
         file_import_options = file_import_job.GetFileImportOptions()
         
-        destination_location_context = file_import_options.GetDestinationLocationContext()
+        location_import_options = file_import_options.GetLocationImportOptions()
+        
+        destination_location_context = location_import_options.GetDestinationLocationContext()
         
         destination_location_context.FixMissingServices( ClientLocation.ValidLocalDomainsFilter )
         
-        file_import_options.CheckReadyToImport()
+        location_import_options.CheckReadyToImport()
         
         hash = file_import_job.GetHash()
         
@@ -3741,7 +3771,7 @@ class DB( HydrusDB.HydrusDB ):
             
             #
             
-            if file_import_options.AutomaticallyArchives():
+            if file_import_options.GetLocationImportOptions().AutomaticallyArchives():
                 
                 if HG.file_import_report_mode:
                     
@@ -3797,7 +3827,7 @@ class DB( HydrusDB.HydrusDB ):
             
             HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
             
-        except:
+        except Exception as e:
             
             HydrusData.ShowText( 'Was unable to parse an incoming update!' )
             
@@ -3930,6 +3960,7 @@ class DB( HydrusDB.HydrusDB ):
             {
                 'backup' : self._Backup,
                 'clear_orphan_file_records' : self._ClearOrphanFileRecords,
+                'clear_orphan_url_mappings' : self._ClearOrphanURLMappings,
                 'delete_pending' : self._DeletePending,
                 'delete_service_info' : self._DeleteServiceInfo,
                 'dirty_services' : self._SaveDirtyServices,
@@ -3980,7 +4011,6 @@ class DB( HydrusDB.HydrusDB ):
                 'clear_orphan_tables' : self.modules_db_maintenance.ClearOrphanTables,
                 'content_updates' : self.modules_content_updates.ProcessContentUpdatePackage,
                 'cull_file_viewing_statistics' : self.modules_files_viewing_stats.CullFileViewingStatistics,
-                'db_integrity' : self.modules_db_maintenance.CheckDBIntegrity,
                 'delete_serialisable_named' : self.modules_serialisable.DeleteJSONDumpNamed,
                 'delete_potential_duplicate_pairs' : self.modules_files_duplicates_updates.DeleteAllPotentialDuplicatePairs,
                 'dissolve_alternates_group' : self.modules_files_duplicates_updates.DissolveAlternatesGroupIdFromHashes,
@@ -4007,6 +4037,7 @@ class DB( HydrusDB.HydrusDB ):
                 'file_maintenance_add_jobs_hashes' : self.modules_files_maintenance_queue.AddJobsHashes,
                 'file_maintenance_cancel_jobs' : self.modules_files_maintenance_queue.CancelJobs,
                 'file_maintenance_clear_jobs' : self.modules_files_maintenance.ClearJobs,
+                'granularise' : self.modules_files_physical_storage.Granularise,
                 'ideal_client_files_locations' : self.modules_files_physical_storage.SetIdealClientFilesLocations,
                 'maintain_hashed_serialisables' : self.modules_serialisable.MaintainHashedStorage,
                 'maintain_similar_files_tree' : self.modules_similar_files.MaintainTree,
@@ -4896,7 +4927,7 @@ class DB( HydrusDB.HydrusDB ):
         self.modules_similar_files.ResetSearch( hash_ids )
         
     
-    def _PerceptualHashesSearchForPotentialDuplicates( self, search_distance: int, work_period: typing.Optional[ float ] = None ):
+    def _PerceptualHashesSearchForPotentialDuplicates( self, search_distance: int, work_period: float | None = None ):
         
         time_started_float = HydrusTime.GetNowFloat()
         
@@ -6061,8 +6092,6 @@ class DB( HydrusDB.HydrusDB ):
         
         HydrusDB.HydrusDB._RepairDB( self, version )
         
-        self.modules_media_results.ClearMediaResultCache()
-        
         # caches
         
         tag_service_ids_we_have_regenned_storage_for = set()
@@ -6252,7 +6281,7 @@ class DB( HydrusDB.HydrusDB ):
         self._controller.frame_splash_status.SetText( '' )
         
     
-    def _RepairInvalidTags( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ):
+    def _RepairInvalidTags( self, job_status: ClientThreading.JobStatus | None = None ):
         
         invalid_tag_ids_and_tags = set()
         
@@ -6288,7 +6317,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     HydrusTags.CheckTagNotEmpty( cleaned_tag )
                     
-                except:
+                except Exception as e:
                     
                     cleaned_tag = 'unrecoverable invalid tag'
                     
@@ -6359,7 +6388,7 @@ class DB( HydrusDB.HydrusDB ):
                 
                 HydrusData.Print( f'Invalid tag fixing: tag_id {tag_id}: "{tag}" replaced with "{cleaned_tag}"' )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.Print( f'Invalid tag fixing: tag_id {tag_id}: Could not even print the bad tag to the log! It is now known as "{cleaned_tag}"' )
                 
@@ -6935,7 +6964,7 @@ class DB( HydrusDB.HydrusDB ):
             
             self._Execute( 'UPDATE options SET options = ?;', ( options, ) )
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( 'Failed options save dump:' )
             HydrusData.Print( options )
@@ -6964,395 +6993,44 @@ class DB( HydrusDB.HydrusDB ):
         
         self._controller.frame_splash_status.SetText( 'updating db to v' + str( version + 1 ) )
         
-        if version == 590:
-            
-            try:
-                
-                client_api_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_API_MANAGER )
-                
-                all_permissions = client_api_manager.GetAllPermissions()
-                
-                for permissions in all_permissions:
-                    
-                    if permissions.PermitsEverything():
-                        
-                        message = 'Hey, for convenience, at least one of your Client API access permissions was upgraded to "permits everything". This is a simpler state that will auto-inherit new permissions as they are added in future. If you need finer control, please check the settings in "services->review services".'
-                        
-                        self.pub_initial_message( message )
-                        
-                        break
-                        
-                    
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( client_api_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to check some API stuff failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 591:
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'derpibooru.org file page parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 592:
-            
-            try:
-                
-                #                                            ▓▓          
-                #       ░                                   ████         
-                #     ▒███▓                               ▓█████░        
-                #     ▓█████▒                            ███████░        
-                #     ▒███████         ▒▒▓▓▓▓▓▓▒       ▓████████         
-                #      ████████▓  ▒▓███████████████▓▓██████████░         
-                #      ░████████████████▓▓▓███████████████████           
-                #        █████████▓▓▓▓▓▒▒▒▒▓▓▒▒▒▓████▓▓▓███▓░            
-                #          ▓█████▓▒░▒▓▓▓▒▓▓██▒▒▓▓▓▓▓▒▓█▓▓█▓              
-                #          ▓█▓▓▓▓▓▓▒▒███▒▓███▓▒███▒░▒▓█▓████▒            
-                #         ▓██▓░▒▓███▓█▓█████████▓█▓▒████▓████            
-                #        ▒███▓▓▒▓██████▓██▓██▓█████▓▓██▓█▓▓██▓           
-                #        ██████▓▓█▓▓▓▓▓▓▓▓██▓█▓█▓██▒ █████▓▓▓█▒          
-                #       ▓█████▓ ▓▓▓▓█▓███▓██████▓██▓ ▓█▓▓▓▓▓███          
-                #       ████▓█▒ ██▓▓▓█████████▓████▓ ▒████▓▓███▒         
-                #      ▒█▓█▓██░ ███▓▓██████████████▓  █████████▓         
-                #      ▓██████  ██▓▓▓██████████████▓░ ▓█████▓███         
-                #      ███████ ░█▓▓█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   ▓█████████░        
-                #      ███████ ░▓▓▒▒░▒░       ░░ ░    ▓█████████▓        
-                #      ██████▓  ░▒▒▒▓▒░ ░ ░░ ░▒▓█▓███▓▓██████████        
-                #     ░██████▓░▓█▓▓▓█▓▒▒▒▒▒▒▓▓▓▓░  ▓▓▓▓▓▓▓▓▓▓██▓█▒       
-                #     ▓██▓▓▓▓▓▓▓░   ▒▓▓▓▓▓▓▓▓▓▓▓   ▒▒▒▒███████▒ ▒█       
-                #     ▓██▓▓▓▓▓▒▓▒▒ ░▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▒░▒███████ ░██       
-                #     ████████░▒▓▓▓▓▒▒░░░▒▒▒▒▒▒▒▒▓▓▒▒░▓███████▓███▒      
-                #     ████████▒░▒▓▓▒▒▒░░░░ ░░░░░ ░░▒░ ▓███████████▓      
-                #     ████████▓░░▒▒░░░░       ░░░░░░░ ▓██▓███▓█████      
-                #    ▓████████▓▓ ░░░░░ ▒▓▒▒▒▒▓░░░░░░  ███▓███▓█████▓     
-                #    ▓█████▓████▓   ░░░▒▓▓▓▓▓▓░░░░░  ░██▓▒█▓█▓█████▓     
-                #    ██████▓▓▓███▓    ░  ▒▒▒░  ░    ▒██▓▒▒▓▓▓▓██████     
-                #    ███▓▓█▒▓▓█████▓              ▒▓██▓▓▒▓▓▓▓▓██████▓    
-                #   ▒███▓▓▓▓▒▓▓██████▓▒        ▒▓████▓▓▒▒▓▓▓▒███████▓    
-                #   ████▓▓▓▓▒▓▓██████████▓▒▒▓▓▓▓▓████▓▒▒▓▓▒▒▓███▓████░   
-                #   █████▓▓▓▓▓▒███████████▓█▓▓▓▓▓█▓█▓▒▒▓▒▒▓█████▒████▓   
-                #  ░████▓▒▓▒▒▒▒▓██████▓▒▓▓▓▓▓▓▓▒▓▒▒▓▒▒▒▒▓███████▒▓████   
-                
-                def correct_permits_everything_test( p: ClientAPI.APIPermissions ):
-                    
-                    # I messed this up the first time around
-                    
-                    basic_permissions = p.GetBasicPermissions()
-                    
-                    permits_everything = {
-                        ClientAPI.CLIENT_API_PERMISSION_ADD_FILES,
-                        ClientAPI.CLIENT_API_PERMISSION_ADD_TAGS,
-                        ClientAPI.CLIENT_API_PERMISSION_ADD_URLS,
-                        ClientAPI.CLIENT_API_PERMISSION_SEARCH_FILES,
-                        ClientAPI.CLIENT_API_PERMISSION_MANAGE_PAGES,
-                        ClientAPI.CLIENT_API_PERMISSION_MANAGE_HEADERS,
-                        ClientAPI.CLIENT_API_PERMISSION_MANAGE_DATABASE,
-                        ClientAPI.CLIENT_API_PERMISSION_ADD_NOTES,
-                        ClientAPI.CLIENT_API_PERMISSION_MANAGE_FILE_RELATIONSHIPS,
-                        ClientAPI.CLIENT_API_PERMISSION_EDIT_RATINGS 
-                    }.issubset( basic_permissions )
-                    
-                    return permits_everything
-                    
-                
-                def ask_what_to_do_permissions_stuff_593():
-                    
-                    message = 'Hey, a couple weeks ago I messed up the Client API permissions "permits everything" update. Permission sets that did not permit much were set to "permits everything", and those that permitted almost everything were not.'
-                    message += '\n' * 2
-                    message += 'Would you like me to fix this now by re-running the update as it was originally intended, or have you already recently checked everything in "review services" and know you are happy with the current settings?'
-                    
-                    from hydrus.client.gui import ClientGUIDialogsQuick
-                    
-                    result = ClientGUIDialogsQuick.GetYesNo( CG.client_controller.GetMainTLW(), message, title = 'Re-do permissions update?', yes_label = 'yes, re-run the update', no_label = 'no, I checked everything in "review services" already' )
-                    
-                    return result == QW.QDialog.DialogCode.Accepted
-                    
-                
-                client_api_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_API_MANAGER )
-                
-                all_permissions = client_api_manager.GetAllPermissions()
-                
-                underpermitted_yet_set_to_permits_everything = []
-                goodpermitted_but_not_set_to_permits_everything = []
-                
-                for permissions in all_permissions:
-                    
-                    if permissions.PermitsEverything() and not correct_permits_everything_test( permissions ):
-                        
-                        # this was unintentionally set a couple weeks ago due to test inversion
-                        
-                        underpermitted_yet_set_to_permits_everything.append( permissions )
-                        
-                    elif not permissions.PermitsEverything() and correct_permits_everything_test( permissions ):
-                        
-                        # this was missed a couple weeks ago due to test inversion
-                        
-                        goodpermitted_but_not_set_to_permits_everything.append( permissions )
-                        
-                    
-                
-                if len( underpermitted_yet_set_to_permits_everything ) > 0:
-                    
-                    do_permissions_stuff = self._controller.CallBlockingToQtTLW( ask_what_to_do_permissions_stuff_593 )
-                    
-                    if do_permissions_stuff:
-                        
-                        for permissions in underpermitted_yet_set_to_permits_everything:
-                            
-                            permissions.SetPermitsEverything( False )
-                            
-                        
-                        for permissions in goodpermitted_but_not_set_to_permits_everything:
-                            
-                            permissions.SetPermitsEverything( True )
-                            
-                        
-                    
-                    message = 'Ok, I fixed the permissions to how I originally intended it to work. Sorry for the trouble, and please double-check the settings in "services->review services->client api" to make sure it all looks good now.'
-                    
-                    self.pub_initial_message( message )
-                    
-                elif len( goodpermitted_but_not_set_to_permits_everything ) > 0:
-                    
-                    for permissions in goodpermitted_but_not_set_to_permits_everything:
-                        
-                        permissions.SetPermitsEverything( True )
-                        
-                    
-                    message = 'Hey, for convenience, at least one of your Client API access permissions was upgraded to "permits everything". This is a simpler state that will auto-inherit new permissions as they are added in future. You may have had others update a couple of versions ago--today I am just adding more. If you need finer control, please check the settings in "services->review services".'
-                    
-                    self.pub_initial_message( message )
-                    
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( client_api_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to check some API stuff failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'gelbooru 0.2.0 file page parser',
-                    'gelbooru 0.2.5 file page parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 594:
-            
-            try:
-                
-                all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
-                
-                with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
-                    
-                    mimes_we_want = ( HC.ANIMATION_UGOIRA, )
-                    
-                    hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( mimes_we_want ) ) ) )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Some ugoira-scanning failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                false_positive_alternates_group_ids = self._STS( self._Execute( 'SELECT smaller_alternates_group_id FROM duplicate_false_positives;' ) )
-                false_positive_alternates_group_ids.update( self._STS( self._Execute( 'SELECT larger_alternates_group_id FROM duplicate_false_positives;' ) ) )
-                
-                false_positive_medias_ids = set()
-                
-                for alternates_group_id in false_positive_alternates_group_ids:
-                    
-                    false_positive_medias_ids.update( self.modules_files_duplicates_storage.GetAlternateMediaIds( alternates_group_id ) )
-                    
-                
-                db_location_context = self.modules_files_storage.GetDBLocationContext( ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY ) )
-                
-                false_positive_hash_ids = self.modules_files_duplicates_storage.GetDuplicatesHashIds( false_positive_medias_ids, db_location_context )
-                
-                if len( false_positive_hash_ids ) > 0:
-                    
-                    def ask_what_to_do_false_positive_modified_dates():
-                        
-                        message = 'Hey, due to a bug, some potential duplicate pairs that were set as "false positive/not related" in the duplicates system may have had their file modified date database records merged. The files\' true file modified dates on your hard drive were not affected.'
-                        message += '\n' * 2
-                        message += f'You have {len( false_positive_hash_ids)} files ever set as "not related". Shall I reset their file modified dates back to whatever they have on your hard drive? I recommend doing this unless you have a complicated file modified merging scheme already in place and would rather go through all these manually.'
-                        
-                        from hydrus.client.gui import ClientGUIDialogsQuick
-                        
-                        result = ClientGUIDialogsQuick.GetYesNo( CG.client_controller.GetMainTLW(), message, title = 'Reset modified dates?', yes_label = 'do it', no_label = 'do not do it' )
-                        
-                        return result == QW.QDialog.DialogCode.Accepted
-                        
-                    
-                    do_it = self._controller.CallBlockingToQtTLW( ask_what_to_do_false_positive_modified_dates )
-                    
-                    if do_it:
-                        
-                        self.modules_files_maintenance_queue.AddJobs( false_positive_hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_MODIFIED_TIMESTAMP )
-                        
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Some alternates metadata updates failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 598:
-            
-            try:
-                
-                file_search_context = ClientSearchFileSearchContext.FileSearchContext(
-                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY ),
-                    predicates = [
-                        ClientSearchPredicate.Predicate(
-                            predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE,
-                            value = ClientNumberTest.NumberTest( operator = ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT, value = 100, extra_value = 0.02 )
-                        )
-                    ]
-                )
-                
-                hash_ids = self.modules_files_query.GetHashIdsFromQuery( file_search_context = file_search_context, apply_implicit_limit = False )
-                
-                self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Some animation-scanning failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                from hydrus.client.gui.lists import ClientGUIListManager
-                from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
-                
-                column_list_manager: ClientGUIListManager.ColumnListManager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_COLUMN_LIST_MANAGER )
-                
-                column_list_manager.ResetToDefaults( CGLC.COLUMN_LIST_REVIEW_DUPLICATES_AUTO_RESOLUTION_RULES.ID )
-                
-                self.modules_serialisable.SetJSONDump( column_list_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'A list setting failed to reset! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'e621 gallery page parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
+        #                                            ▓▓          
+        #       ░                                   ████         
+        #     ▒███▓                               ▓█████░        
+        #     ▓█████▒                            ███████░        
+        #     ▒███████         ▒▒▓▓▓▓▓▓▒       ▓████████         
+        #      ████████▓  ▒▓███████████████▓▓██████████░         
+        #      ░████████████████▓▓▓███████████████████           
+        #        █████████▓▓▓▓▓▒▒▒▒▓▓▒▒▒▓████▓▓▓███▓░            
+        #          ▓█████▓▒░▒▓▓▓▒▓▓██▒▒▓▓▓▓▓▒▓█▓▓█▓              
+        #          ▓█▓▓▓▓▓▓▒▒███▒▓███▓▒███▒░▒▓█▓████▒            
+        #         ▓██▓░▒▓███▓█▓█████████▓█▓▒████▓████            
+        #        ▒███▓▓▒▓██████▓██▓██▓█████▓▓██▓█▓▓██▓           
+        #        ██████▓▓█▓▓▓▓▓▓▓▓██▓█▓█▓██▒ █████▓▓▓█▒          
+        #       ▓█████▓ ▓▓▓▓█▓███▓██████▓██▓ ▓█▓▓▓▓▓███          
+        #       ████▓█▒ ██▓▓▓█████████▓████▓ ▒████▓▓███▒         
+        #      ▒█▓█▓██░ ███▓▓██████████████▓  █████████▓         
+        #      ▓██████  ██▓▓▓██████████████▓░ ▓█████▓███         
+        #      ███████ ░█▓▓█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   ▓█████████░        
+        #      ███████ ░▓▓▒▒░▒░       ░░ ░    ▓█████████▓        
+        #      ██████▓  ░▒▒▒▓▒░ ░ ░░ ░▒▓█▓███▓▓██████████        
+        #     ░██████▓░▓█▓▓▓█▓▒▒▒▒▒▒▓▓▓▓░  ▓▓▓▓▓▓▓▓▓▓██▓█▒       
+        #     ▓██▓▓▓▓▓▓▓░   ▒▓▓▓▓▓▓▓▓▓▓▓   ▒▒▒▒███████▒ ▒█       
+        #     ▓██▓▓▓▓▓▒▓▒▒ ░▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▒░▒███████ ░██       
+        #     ████████░▒▓▓▓▓▒▒░░░▒▒▒▒▒▒▒▒▓▓▒▒░▓███████▓███▒      
+        #     ████████▒░▒▓▓▒▒▒░░░░ ░░░░░ ░░▒░ ▓███████████▓      
+        #     ████████▓░░▒▒░░░░       ░░░░░░░ ▓██▓███▓█████      
+        #    ▓████████▓▓ ░░░░░ ▒▓▒▒▒▒▓░░░░░░  ███▓███▓█████▓     
+        #    ▓█████▓████▓   ░░░▒▓▓▓▓▓▓░░░░░  ░██▓▒█▓█▓█████▓     
+        #    ██████▓▓▓███▓    ░  ▒▒▒░  ░    ▒██▓▒▒▓▓▓▓██████     
+        #    ███▓▓█▒▓▓█████▓              ▒▓██▓▓▒▓▓▓▓▓██████▓    
+        #   ▒███▓▓▓▓▒▓▓██████▓▒        ▒▓████▓▓▒▒▓▓▓▒███████▓    
+        #   ████▓▓▓▓▒▓▓██████████▓▒▒▓▓▓▓▓████▓▒▒▓▓▒▒▓███▓████░   
+        #   █████▓▓▓▓▓▒███████████▓█▓▓▓▓▓█▓█▓▒▒▓▒▒▓█████▒████▓   
+        #  ░████▓▒▓▒▒▒▒▓██████▓▒▓▓▓▓▓▓▓▒▓▒▒▓▒▒▒▒▓███████▒▓████   
+        # 
+        #                   IN MEMORIAM
+        #       v592 PERMISSION CORRECTION UPDATE CODE
+        # 
         
         if version == 601:
             
@@ -7392,58 +7070,6 @@ class DB( HydrusDB.HydrusDB ):
             
             try:
                 
-                domain_manager: ClientNetworkingDomain.NetworkDomainManager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'shimmie file page parser - simple tags'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                login_manager: ClientNetworkingLogin.NetworkLoginManager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_LOGIN_MANAGER )
-                
-                login_manager.Initialise()
-                
-                login_manager.OverwriteDefaultLoginScripts( [
-                    'e621.net login'
-                ] )
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( login_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some login stuff failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
                 all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
                 
                 with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
@@ -7462,38 +7088,6 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
-        if version == 604:
-            
-            try:
-                
-                domain_manager: ClientNetworkingDomain.NetworkDomainManager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'e621 file page parser with contributor tags'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
         if version == 606:
             
             try:
@@ -7502,7 +7096,7 @@ class DB( HydrusDB.HydrusDB ):
                 
                 do_it = True
                 
-            except:
+            except Exception as e:
                 
                 do_it = False
                 
@@ -7639,7 +7233,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     do_it = True
                     
-                except:
+                except Exception as e:
                     
                     do_it = False
                     
@@ -7692,103 +7286,6 @@ class DB( HydrusDB.HydrusDB ):
                     
                 
             
-            #
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultGUGs( [
-                    'e6ai tag search',
-                    'e621 tag search',
-                    'e926 tag search'
-                ] )
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'e621 file page api parser',
-                    'e621 gallery page api parser',
-                    'e621 pool api parser'
-                ] )
-                
-                domain_manager.OverwriteDefaultURLClasses( [
-                    'e6ai file page api',
-                    'e6ai file page',
-                    'e6ai gallery page api',
-                    'e6ai gallery page',
-                    'e6ai pools page api',
-                    'e6ai pools page',
-                    'e621 file page api',
-                    'e621 file page',
-                    'e621 gallery page api',
-                    'e621 gallery page',
-                    'e621 pools page api',
-                    'e621 pools page',
-                    'e926 file page api',
-                    'e926 file page',
-                    'e926 gallery page api',
-                    'e926 gallery page',
-                    'e926 pools page api',
-                    'e926 pools page'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            message = 'Hey, if you have any e621 subscriptions, the downloader is fixed this week--it recently stopped getting tags. You do not have to do anything.\n\nYour e621 subs will seem to find ~100 files the next time they run and then work through them real quick. There is nothing wrong--they are adapting, one time, to a new URL format. If you changed your e621 subscription to have a very high "normal checks" file limit, go edit them right now! 100 is proper.'
-            
-            self.pub_initial_message( message )
-            
-        
-        if version == 616:
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'e621 file page api parser',
-                    'e621 gallery page api parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
         
         if version == 617:
             
@@ -7800,7 +7297,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     user_wants_us_to_leave_it_on = new_options.GetBoolean( 'always_show_system_everything' )
                     
-                except:
+                except Exception as e:
                     
                     user_wants_us_to_leave_it_on = False
                     
@@ -7838,41 +7335,6 @@ class DB( HydrusDB.HydrusDB ):
                 HydrusData.PrintException( e )
                 
                 message = 'Trying to scan and fix bad tags in the database failed! You can re-attempt this job under _database->check and repair->fix invalid tags_. Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultURLClasses( [
-                    'holotower thread json api',
-                    'holotower thread'
-                ] )
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'holotower thread api parser',
-                    'safebooru file page parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
                 
                 self.pub_initial_message( message )
                 
@@ -8082,35 +7544,6 @@ class DB( HydrusDB.HydrusDB ):
             
             try:
                 
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'derpibooru.org file page parser'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloaders failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
                 new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
                 
                 new_options.SetBoolean( 'allow_remove_on_manage_tags_input', False )
@@ -8179,39 +7612,6 @@ class DB( HydrusDB.HydrusDB ):
                 HydrusData.PrintException( e )
                 
                 message = 'Trying to schedule avif files for some maintenance failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 629:
-            
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'pixiv file page api parser',
-                    'pixiv file page api parser (gets lower quality image if not logged in)'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloaders failed! Please let hydrus dev know!'
                 
                 self.pub_initial_message( message )
                 
@@ -8428,40 +7828,6 @@ class DB( HydrusDB.HydrusDB ):
                 self.pub_initial_message( message )
                 
             
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultURLClasses( [
-                    'pixiv artist gallery page api',
-                    'pixiv artist page (new format)',
-                    'pixiv artist page',
-                    'pixiv file page api',
-                    'pixiv file page',
-                    'pixiv search api'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloader objects failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
         
         if version == 638:
             
@@ -8614,36 +7980,6 @@ class DB( HydrusDB.HydrusDB ):
                 self.pub_initial_message( message )
                 
             
-            try:
-                
-                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
-                
-                domain_manager.Initialise()
-                
-                #
-                
-                domain_manager.OverwriteDefaultParsers( [
-                    'pixiv file page api parser',
-                    'pixiv file page api parser (gets lower quality image if not logged in)'
-                ] )
-                
-                #
-                
-                domain_manager.TryToLinkURLClassesAndParsers()
-                
-                #
-                
-                self.modules_serialisable.SetJSONDump( domain_manager )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update some downloaders failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
         
         if version == 648:
             
@@ -8694,6 +8030,264 @@ class DB( HydrusDB.HydrusDB ):
                 HydrusData.PrintException( e )
                 
                 message = 'Trying to resync your auto-resolution rules to their file domains failed! This is not super important, but hydev would be interested in seeing the error that was printed to the log.\n\nAlso, you might want to pause duplicates auto-resolution work right after the client boots, since it sounds like they have a file storage issue.'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 652:
+            
+            try:
+                
+                domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
+                
+                domain_manager.Initialise()
+                
+                #
+                
+                network_contexts_to_custom_header_dicts = domain_manager.GetNetworkContextsToCustomHeaderDicts()
+                
+                global_headers = network_contexts_to_custom_header_dicts.get( ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT, {} )
+                
+                if 'Accept' not in global_headers:
+                    
+                    global_headers[ 'Accept' ] = ( 'image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8', ClientNetworkingDomain.VALID_APPROVED, 'Prefers jpeg/png over webp, but provides graceful fallback.' )
+                    
+                
+                if 'Cache-Control' not in global_headers:
+                    
+                    global_headers[ 'Cache-Control' ] = ( 'no-transform', ClientNetworkingDomain.VALID_APPROVED, 'Tells CDNs not to deliver "optimised" versions of files. May not be honoured.' )
+                    
+                
+                network_contexts_to_custom_header_dicts[ ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT ] = global_headers
+                
+                domain_manager.SetNetworkContextsToCustomHeaderDicts( network_contexts_to_custom_header_dicts )
+                
+                #
+                
+                self.modules_serialisable.SetJSONDump( domain_manager )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update some http headers failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 653:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                if new_options.GetInteger( 'command_palette_num_chars_for_results_threshold' ) == 0:
+                    
+                    new_options.SetInteger( 'command_palette_num_chars_for_results_threshold', 1 )
+                    
+                    self.modules_serialisable.SetJSONDump( new_options )
+                    
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update your options failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 659:
+            
+            if not self._TableExists( 'main.current_storage_granularity' ):
+                
+                problem_locations = set()
+                
+                def get_location_id_659( absolute_location: str ):
+                    
+                    if absolute_location in problem_locations:
+                        
+                        absolute_location = os.path.join( self._db_dir, 'client_files' )
+                        
+                    
+                    try:
+                        
+                        portable_location = HydrusPaths.ConvertAbsPathToPortablePath( absolute_location )
+                        
+                        result = self._Execute( 'SELECT location_id FROM current_client_files_locations WHERE location = ?;', ( portable_location, ) ).fetchone()
+                        
+                        if result is None:
+                            
+                            self._Execute( 'INSERT INTO current_client_files_locations ( location ) VALUES ( ? );', ( portable_location, ) )
+                            
+                            location_id = self._GetLastRowId()
+                            
+                        else:
+                            
+                            ( location_id, ) = result
+                            
+                        
+                        return location_id
+                        
+                    except Exception as e:
+                        
+                        message = 'Hey, there was a problem migrating your file storage locations to a new system. One of the paths is probably an old broken path of some sort. Here it is:'
+                        message += '\n\n'
+                        message += f'{absolute_location}'
+                        message += '\n\n'
+                        message += 'And the error:'
+                        message += '\n\n'
+                        message += str( e )
+                        message += '\n\n'
+                        message += 'If you close this dialog, I will continue with the update but insert the default "db/client_files" location for this entry, and you will get the repair file locations dialog after the update. If you know you need to fix this by a different method, kill the hydrus process now.'
+                        
+                        CG.client_controller.BlockingSafeShowCriticalMessage( 'Problem updating!', message )
+                        
+                        problem_locations.add( absolute_location )
+                        
+                        return get_location_id_659( os.path.join( self._db_dir, 'client_files' ) )
+                        
+                    
+                
+                # old structure:
+                # 'CREATE TABLE IF NOT EXISTS main.client_files_subfolders ( prefix TEXT, location TEXT, purge INTEGER_BOOLEAN, PRIMARY KEY ( prefix, location ) );'
+                # 'CREATE TABLE IF NOT EXISTS main.ideal_client_files_locations ( location TEXT, weight INTEGER, max_num_bytes INTEGER );'
+                # 'CREATE TABLE IF NOT EXISTS main.ideal_thumbnail_override_location ( location TEXT );'
+                
+                old_client_files_subfolders = self._Execute( 'SELECT prefix, location FROM client_files_subfolders;' ).fetchall()
+                old_ideal_client_files_locations = self._Execute( 'SELECT location, weight, max_num_bytes FROM ideal_client_files_locations;' ).fetchall()
+                old_ideal_thumbnail_override_location = self._Execute( 'SELECT location FROM ideal_thumbnail_override_location;' ).fetchall()
+                
+                self._Execute( 'DROP TABLE client_files_subfolders;' )
+                self._Execute( 'DROP TABLE ideal_client_files_locations;' )
+                self._Execute( 'DROP TABLE ideal_thumbnail_override_location;' )
+                
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.current_client_files_locations ( location_id INTEGER PRIMARY KEY, location TEXT UNIQUE );' )
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.client_files_subfolders ( prefix TEXT, location_id INTEGER, PRIMARY KEY ( prefix, location_id ) );' )
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.ideal_client_files_locations ( location_id INTEGER PRIMARY KEY, weight INTEGER, max_num_bytes INTEGER );' )
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.ideal_thumbnail_override_location ( location_id INTEGER );' )
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.current_storage_granularity ( granularity INTEGER );' )
+                
+                self._Execute( 'INSERT INTO current_storage_granularity ( granularity ) VALUES ( ? );', ( 2, ) )
+                
+                for ( prefix, location ) in old_client_files_subfolders:
+                    
+                    # small chance there is a dupe here on a busted db
+                    
+                    location_id = get_location_id_659( location )
+                    
+                    self._Execute( 'INSERT OR IGNORE INTO client_files_subfolders ( prefix, location_id ) VALUES ( ?, ? );', ( prefix, location_id ) )
+                    
+                
+                for ( location, weight, max_num_bytes ) in old_ideal_client_files_locations:
+                    
+                    location_id = get_location_id_659( location )
+                    
+                    # insert _or ignore_--one guy got a unique constraint error here, suggesting previously the same location was listed twice through some means
+                    self._Execute( 'INSERT OR IGNORE INTO ideal_client_files_locations ( location_id, weight, max_num_bytes ) VALUES ( ?, ?, ? );', ( location_id, weight, max_num_bytes ) )
+                    
+                
+                for ( location, ) in old_ideal_thumbnail_override_location:
+                    
+                    location_id = get_location_id_659( location )
+                    
+                    self._Execute( 'INSERT INTO ideal_thumbnail_override_location ( location_id ) VALUES ( ? );', ( location_id, ) )
+                    
+                
+            
+        
+        if version == 660:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                do_the_message = False
+                
+                media_view_options = new_options.GetMediaViewOptions()
+                
+                for ( mime, ( media_show_action, media_start_paused, media_start_with_embed, preview_show_action, preview_start_paused, preview_start_with_embed, zoom_info ) ) in media_view_options.items():
+                    
+                    ( possible_show_actions, can_start_paused, can_start_with_embed ) = CC.media_viewer_capabilities[ mime ]
+                    
+                    if CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER in possible_show_actions and media_show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON ):
+                        
+                        do_the_message = True
+                        
+                        break
+                        
+                    
+                
+                if do_the_message:
+                    
+                    message = 'Hey, hydev is launching the QtMediaPlayer with this release. This is a nicer fallback for users who cannot run mpv. Unlike the "native player", it supports audio!'
+                    message += '\n\n'
+                    message += 'I noticed that you are set to view some audio/video with the "native player" or an "open externally button". I have not changed anything, but you might like to check out _options->media playback_ and try the QtMediaPlayer out!'
+                    
+                    self.pub_initial_message( message )
+                    
+                
+                new_options.SetBoolean( 'persist_media_window_qt_media_player', False )
+                
+                self.modules_serialisable.SetJSONDump( new_options )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to inspect/update your options failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 662:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                try:
+                    
+                    value = new_options.GetBoolean( 'anchor_and_hide_canvas_drags' )
+                    
+                except Exception as e:
+                    
+                    value = not HC.PLATFORM_MACOS
+                    
+                
+                new_options.SetBoolean( 'anchor_canvas_drags', value )
+                new_options.SetBoolean( 'hide_canvas_drags', value )
+                
+                self.modules_serialisable.SetJSONDump( new_options )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update your options failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+            try:
+                
+                all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
+                
+                with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
+                    
+                    hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE has_audio IS NULL;'.format( temp_hash_ids_table_name ) ) )
+                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
+                    
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'A file maintenance job failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
                 
                 self.pub_initial_message( message )
                 
@@ -8788,7 +8382,7 @@ class DB( HydrusDB.HydrusDB ):
             
             try:
                 
-                self.modules_services.GetServiceId( service_key )
+                service_id = self.modules_services.GetServiceId( service_key )
                 
             except HydrusExceptions.DataMissing:
                 
@@ -8864,7 +8458,7 @@ class DB( HydrusDB.HydrusDB ):
             
             try:
                 
-                HydrusDB.CheckCanVacuumCursor( db_path, self._c )
+                HydrusDB.CheckCanVacuumIntoCursor( db_path, self._c )
                 
             except Exception as e:
                 

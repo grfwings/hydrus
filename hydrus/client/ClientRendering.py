@@ -1,7 +1,6 @@
 import numpy
 import threading
 import time
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtGui as QG
@@ -385,7 +384,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
     
     def GetResolution( self ): return self._resolution
     
-    def GetQtImage( self, clip_rect: typing.Optional[ QC.QRect ] = None, target_resolution: typing.Optional[ QC.QSize ] = None ):
+    def GetQtImage( self, clip_rect: QC.QRect | None = None, target_resolution: QC.QSize | None = None ):
         
         if clip_rect is None:
             
@@ -426,7 +425,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
                 qt_image.setColorSpace( self._qt_colourspace )
                 qt_image.convertToColorSpace( QG.QColorSpace.NamedColorSpace.SRgb )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.Print( 'Failed to load the ICC Profile for {} into a Qt Colourspace!'.format( self._path ) )
                 
@@ -761,6 +760,11 @@ class RasterContainerVideo( RasterContainer ):
         
         num_frames_in_video = self.GetNumFrames()
         
+        if num_frames_in_video == 0 or num_frames_in_video is None:
+            
+            return
+            
+        
         frame_request_is_impossible = FrameIndexOutOfRange( next_index_to_expect, 0, num_frames_in_video - 1 )
         
         if frame_request_is_impossible:
@@ -940,7 +944,7 @@ class RasterContainerVideo( RasterContainer ):
                 
                 ( self._frame_durations_ms, self._times_to_play_animation ) = HydrusAnimationHandling.GetWebPFrameDurationsMS( self._path )
                 
-            except:
+            except Exception as e:
                 
                 self._frame_durations_ms = []
                 self._times_to_play_animation = 0
@@ -956,7 +960,7 @@ class RasterContainerVideo( RasterContainer ):
                 
                 ( self._frame_durations_ms, self._times_to_play_animation ) = HydrusAnimationHandling.GetFrameDurationsMSPILAnimation( self._path )
                 
-            except:
+            except Exception as e:
                 
                 self._frame_durations_ms = []
                 self._times_to_play_animation = 0

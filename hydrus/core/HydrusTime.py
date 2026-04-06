@@ -1,7 +1,6 @@
 import calendar
 import datetime
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusNumbers
@@ -21,7 +20,7 @@ def DateTimeToPrettyTime( dt: datetime.datetime, include_24h_time = True, includ
         
         result = dt.strftime( phrase )
         
-    except:
+    except Exception as e:
         
         return f'unknown time {dt}'
         
@@ -40,7 +39,7 @@ def DateTimeToTimestamp( dt: datetime.datetime ) -> int:
         
         timestamp = int( dt.timestamp() )
         
-    except:
+    except Exception as e:
         
         try:
             
@@ -68,7 +67,7 @@ def DateTimeToTimestamp( dt: datetime.datetime ) -> int:
             
             timestamp = int( time_delta.total_seconds() )
             
-        except:
+        except Exception as e:
             
             timestamp = GetNow()
             
@@ -137,17 +136,17 @@ def GetTimeDeltaUntilTimePrecise( t ):
     return max( time_remaining, 0.0 )
     
 
-def MillisecondiseS( time_delta_s: typing.Optional[ typing.Union[ int, float ] ] ) -> typing.Optional[ int ]:
+def MillisecondiseS( time_delta_s: int | float | None ) -> int | None:
     
     return None if time_delta_s is None else int( time_delta_s * 1000 )
     
 
-def SecondiseMS( time_delta_ms: typing.Optional[ typing.Union[ int, float ] ] ) -> typing.Optional[ int ]:
+def SecondiseMS( time_delta_ms: int | float | None ) -> int | None:
     
     return None if time_delta_ms is None else int( time_delta_ms // 1000 )
     
 
-def SecondiseMSFloat( time_delta_ms: typing.Optional[ typing.Union[ int, float ] ] ) -> typing.Optional[ float ]:
+def SecondiseMSFloat( time_delta_ms: int | float | None ) -> float | None:
     
     return None if time_delta_ms is None else time_delta_ms / 1000.0
     
@@ -214,7 +213,7 @@ def CalendarDeltaToDateTime( years : int, months : int, days : int, hours : int 
         
         dayrange = calendar.monthrange( new_year, new_month )
         
-    except:
+    except Exception as e:
         
         dayrange = ( 0, 30 )
         
@@ -449,13 +448,13 @@ def TimestampToPrettyExpires( timestamp ):
             return 'expires ' + time_delta_string
             
         
-    except:
+    except Exception as e:
         
         return 'unparseable time {}'.format( timestamp )
         
     
 
-def MillisecondsDurationToPrettyTime( duration_ms: typing.Optional[ int ], force_numbers = False ) -> str:
+def MillisecondsDurationToPrettyTime( duration_ms: int | None, force_numbers = False ) -> str:
     
     # should this function just be merged into timedeltatoprettytimedelta or something?
     
@@ -543,7 +542,7 @@ def MillisecondsDurationToPrettyTime( duration_ms: typing.Optional[ int ], force
     return milliseconds_result
     
 
-def TimestampMSToPrettyTime( timestamp_ms: typing.Optional[ int ], in_utc = False, include_24h_time = True, include_milliseconds = True ) -> str:
+def TimestampMSToPrettyTime( timestamp_ms: int | None, in_utc = False, include_24h_time = True, include_milliseconds = True ) -> str:
     
     if timestamp_ms is None:
         
@@ -567,7 +566,7 @@ def TimestampMSToPrettyTime( timestamp_ms: typing.Optional[ int ], in_utc = Fals
         
         dt = TimestampMSToDateTime( timestamp_ms, timezone = timezone )
         
-    except:
+    except Exception as e:
         
         return 'unparseable ms time {}'.format( timestamp_ms )
         
@@ -575,7 +574,7 @@ def TimestampMSToPrettyTime( timestamp_ms: typing.Optional[ int ], in_utc = Fals
     return DateTimeToPrettyTime( dt, include_24h_time = include_24h_time, include_milliseconds = include_milliseconds )
     
 
-def TimestampToPrettyTime( timestamp: typing.Optional[ float ], in_utc = False, include_24h_time = True ) -> str:
+def TimestampToPrettyTime( timestamp: float | None, in_utc = False, include_24h_time = True ) -> str:
     
     if timestamp is None:
         
@@ -599,7 +598,7 @@ def TimestampToPrettyTime( timestamp: typing.Optional[ float ], in_utc = False, 
         
         dt = TimestampToDateTime( timestamp, timezone = timezone )
         
-    except:
+    except Exception as e:
         
         return 'unparseable time {}'.format( timestamp )
         
@@ -653,7 +652,7 @@ def TimestampToPrettyTimeDelta( timestamp, just_now_string = 'now', just_now_thr
                 
             
         
-    except:
+    except Exception as e:
         
         return 'unparseable time {}'.format( timestamp )
         

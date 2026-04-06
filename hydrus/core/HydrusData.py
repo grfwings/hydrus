@@ -2,13 +2,11 @@ import collections
 import collections.abc
 import decimal
 import fractions
-import itertools
 import os
 import struct
 import sys
 import time
 import traceback
-import typing
 import yaml
 
 from hydrus.core import HydrusConstants as HC
@@ -38,7 +36,7 @@ def BuildKeyToSetDict( pairs ):
     return d
     
 
-def BytesToNoneOrHex( b: typing.Optional[ bytes ] ):
+def BytesToNoneOrHex( b: bytes | None ):
     
     if b is None:
         
@@ -50,7 +48,7 @@ def BytesToNoneOrHex( b: typing.Optional[ bytes ] ):
         
     
 
-def HexToNoneOrBytes( h: typing.Optional[ str ] ):
+def HexToNoneOrBytes( h: str | None ):
     
     if h is None:
         
@@ -95,7 +93,7 @@ def CleanRunningFile( db_path, instance ):
         
         os.remove( path )
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -260,18 +258,6 @@ def GetTypeName( obj_type ):
         
     
 
-def IterateHexPrefixes():
-    
-    hex_chars = '0123456789abcdef'
-    
-    for ( one, two ) in itertools.product( hex_chars, hex_chars ):
-        
-        prefix = one + two
-        
-        yield prefix
-        
-    
-
 def LastShutdownWasBad( db_path, instance ):
     
     path = os.path.join( db_path, instance + '_running' )
@@ -303,7 +289,7 @@ def Print( text ):
         
         print( str( text ) )
         
-    except:
+    except Exception as e:
         
         print( repr( text ) )
         
@@ -311,14 +297,7 @@ def Print( text ):
 
 ShowText = Print
 
-def PrintException( e, do_wait = True ):
-    
-    ( etype, value, tb ) = sys.exc_info()
-    
-    PrintExceptionTuple( etype, value, tb, do_wait = do_wait )
-    
-
-def PrintExceptionTuple( etype, value, tb, do_wait = True ):
+def ConvertExceptionTupleToNiceTrace( etype, value, tb ):
     
     if etype is None:
         
@@ -359,6 +338,35 @@ def PrintExceptionTuple( etype, value, tb, do_wait = True ):
 ================== Stack ==================
 {stack}
 =================== End ==================='''
+    
+    return message
+    
+
+def ConvertExceptionTupleToSummary( etype, value, tb ):
+    
+    if value is None:
+        
+        value = 'Unknown error'
+        
+    
+    return f'{etype.__name__}: {value}'
+    
+
+def PrintException( e, do_wait = True ):
+    
+    ( etype, value, tb ) = sys.exc_info()
+    
+    PrintExceptionTuple( etype, value, tb, do_wait = do_wait )
+    
+
+def PrintExceptionTuple( etype, value, tb, do_wait = True ):
+    
+    if etype == HydrusExceptions.ShutdownException:
+        
+        return 'shutting down'
+        
+    
+    message = ConvertExceptionTupleToNiceTrace( etype, value, tb )
     
     DebugPrint( '\n' + message )
     
@@ -479,7 +487,7 @@ def BaseToHumanBytes( size, sig_figs = 3 ):
             d = d.quantize( 0 )
             
         
-    except:
+    except Exception as e:
         
         # blarg
         pass

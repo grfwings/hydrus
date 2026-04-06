@@ -1,7 +1,6 @@
 import collections
 import collections.abc
 import time
-import typing
 
 from qtpy import QtWidgets as QW
 
@@ -402,7 +401,7 @@ def EditDuplicateContentMergeOptions( win: QW.QWidget, duplicate_type: int ):
     
 
 
-def EditFileNotes( win: QW.QWidget, media: ClientMedia.MediaSingleton, name_to_start_on = typing.Optional[ str ] ):
+def EditFileNotes( win: QW.QWidget, media: ClientMedia.MediaSingleton, name_to_start_on = str | None ):
     
     names_to_notes = media.GetNotesManager().GetNamesToNotes()
     
@@ -517,7 +516,7 @@ def ExportFiles( win: QW.QWidget, medias: collections.abc.Collection[ ClientMedi
         
     
 
-def GetContentUpdatesForAppliedContentApplicationCommandRatingsSetFlip( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], rating: typing.Optional[ float ], BLOCK_SIZE = None ):
+def GetContentUpdatesForAppliedContentApplicationCommandRatingsSetFlip( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], rating: float | None, BLOCK_SIZE = None ):
     
     hashes = set()
     
@@ -805,11 +804,11 @@ def GetContentUpdatesForAppliedContentApplicationCommandTags( win: QW.QWidget, s
     return content_updates
     
 
-def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], source_service_key: typing.Optional[ bytes ] = None ):
+def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], source_service_key: bytes | None = None ):
     
     dest_service_name = CG.client_controller.services_manager.GetName( dest_service_key )
     
-    applicable_media = [ m for m in media if CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY in m.GetLocationsManager().GetCurrent() and m.GetMime() not in HC.HYDRUS_UPDATE_FILES ]
+    applicable_media = [ m for m in media if m.GetLocationsManager().IsInCombinedLocalFileDomains() and m.GetMime() not in HC.HYDRUS_UPDATE_FILES ]
     
     if action == HC.CONTENT_UPDATE_MOVE:
         
@@ -958,7 +957,7 @@ def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action:
             
         
     
-    applicable_media_results = [ m.GetMediaResult() for m in applicable_media ]
+    applicable_media_results = [ m.GetMediaResult() for m in applicable_media if m.GetLocationsManager().IsInCombinedLocalFileDomains() ]
     
     CG.client_controller.CallToThread( ClientFileMigration.DoMoveOrDuplicateLocalFiles, dest_service_key, action, applicable_media_results, source_service_key )
     
@@ -1234,21 +1233,28 @@ def ShowFileEmbeddedMetadata( win: QW.QWidget, media: ClientMedia.MediaSingleton
             
             raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
             
-            if mime in HC.FILES_THAT_CAN_HAVE_EXIF:
+            try:
                 
-                exif_dict = HydrusImageMetadata.GetEXIFDict( raw_pil_image )
+                if mime in HC.FILES_THAT_CAN_HAVE_EXIF:
+                    
+                    exif_dict = HydrusImageMetadata.GetEXIFDict( raw_pil_image )
+                    
                 
-            
-            if mime in HC.FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA:
+                if mime in HC.FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA:
+                    
+                    file_text = HydrusImageMetadata.GetEmbeddedFileText( raw_pil_image )
+                    
                 
-                file_text = HydrusImageMetadata.GetEmbeddedFileText( raw_pil_image )
+                if mime == HC.IMAGE_JPEG:
+                    
+                    extra_rows.append( ( 'progressive', 'yes' if 'progression' in raw_pil_image.info else 'no' ) )
+                    
+                    extra_rows.append( ( 'subsampling', HydrusImageMetadata.subsampling_str_lookup[ HydrusImageMetadata.GetJpegSubsamplingRaw( raw_pil_image ) ] ) )
+                    
                 
-            
-            if mime == HC.IMAGE_JPEG:
+            finally:
                 
-                extra_rows.append( ( 'progressive', 'yes' if 'progression' in raw_pil_image.info else 'no' ) )
-                
-                extra_rows.append( ( 'subsampling', HydrusImageMetadata.subsampling_str_lookup[ HydrusImageMetadata.GetJpegSubsamplingRaw( raw_pil_image ) ] ) )
+                raw_pil_image.close()
                 
             
         

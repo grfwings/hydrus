@@ -59,6 +59,7 @@ def AppendPathUntilNoConflicts( path ):
     
     return good_path_absent_ext + ext
     
+
 def ConvertAbsPathToPortablePath( abs_path, base_dir_override = None ):
     
     try:
@@ -79,7 +80,7 @@ def ConvertAbsPathToPortablePath( abs_path, base_dir_override = None ):
             portable_path = abs_path
             
         
-    except:
+    except Exception as e:
         
         portable_path = abs_path
         
@@ -90,6 +91,11 @@ def ConvertAbsPathToPortablePath( abs_path, base_dir_override = None ):
         
     
     return portable_path
+    
+
+def ConvertAbsPathToRealPath( abs_path ):
+    
+    return os.path.realpath( abs_path, strict = False )
     
 
 def ConvertPortablePathToAbsPath( portable_path, base_dir_override = None ):
@@ -114,7 +120,7 @@ def ConvertPortablePathToAbsPath( portable_path, base_dir_override = None ):
         abs_path = os.path.normpath( os.path.join( base_dir, portable_path ) )
         
     
-    # is this sensible, what am I trying to do here? recover from a legacy platform migration maybe, from perhaps when I stored backslashes in portable paths?
+    # is this sensible, what am I trying to do here? recover from a legacy platform migration maybe?
     if not HC.PLATFORM_WINDOWS and not os.path.exists( abs_path ):
         
         abs_path = abs_path.replace( '\\', '/' )
@@ -268,7 +274,7 @@ def DirectoryIsWriteable( path ):
         
         os.unlink( test_path )
         
-    except:
+    except Exception as e:
         
         return False
         
@@ -276,7 +282,7 @@ def DirectoryIsWriteable( path ):
     return True
     
 
-def ElideSubdirsSafely( destination_directory: str, subdirs_elidable: str, path_character_limit: typing.Optional[ int ], dirname_character_limit: typing.Optional[ int ], force_ntfs_rules: bool ):
+def ElideSubdirsSafely( destination_directory: str, subdirs_elidable: str, path_character_limit: int | None, dirname_character_limit: int | None, force_ntfs_rules: bool ):
     
     if subdirs_elidable == '':
         
@@ -430,7 +436,7 @@ def ElideSubdirsSafely( destination_directory: str, subdirs_elidable: str, path_
     return os.path.join( *dirnames_elided )
     
 
-def ElideFilenameSafely( destination_directory: str, subdirs_elidable: str, base_filename: str, ext_suffix: str, path_character_limit: typing.Optional[ int ], dirname_character_limit: typing.Optional[ int ], filename_character_limit: int, force_ntfs_rules: bool ):
+def ElideFilenameSafely( destination_directory: str, subdirs_elidable: str, base_filename: str, ext_suffix: str, path_character_limit: int | None, dirname_character_limit: int | None, filename_character_limit: int, force_ntfs_rules: bool ):
     
     # I could prefetch the GetFileSystemType of the dest directory here and test that precisely instead of PLATFORM...
     # but tbh that opens a Pandora's Box of 'NTFS mount on Linux', and sticking our finger in that sort of thing is Not A Good Idea. let the user handle that if and when it fails
@@ -598,7 +604,7 @@ def FigureOutDBDir( arg_db_dir: str ):
         
         db_dir = arg_db_dir
         
-        db_dir = ConvertPortablePathToAbsPath( db_dir, HC.BASE_DIR )
+        db_dir = ConvertPortablePathToAbsPath( db_dir, base_dir_override = HC.BASE_DIR )
         
     
     if not DirectoryIsWriteable( db_dir ):
@@ -670,13 +676,23 @@ def FilterOlderModifiedFiles( paths: collections.abc.Collection[ str ], grace_pe
                 good_paths.append( path )
                 
             
-        except:
+        except Exception as e:
             
             continue
             
         
     
     return good_paths
+    
+
+def GetAllSubDirsNonRecursive( path ):
+    
+    with os.scandir( path ) as scan:
+        
+        subdir_paths = { entry.path for entry in scan if entry.is_dir() }
+        
+    
+    return subdir_paths
     
 
 def GetDefaultLaunchPath():
@@ -699,8 +715,18 @@ def GetDefaultLaunchPath():
         
     
 
+# in truth this is 'sdiskpart', a namedtuple dynamic object def tucked inside psutil let's go
+# this just teaches the linter what we are basically doing here
+class FakeDiskPart( typing.Protocol ):
+    
+    device: str
+    mountpoint: str
+    fstype: str
+    opts: str
+    
+
 @functools.lru_cache( maxsize = 128 )
-def GetPartitionInfo( path ) -> typing.Optional[ typing.NamedTuple ]:
+def GetPartitionInfo( path ) -> FakeDiskPart | None:
     
     if not HydrusPSUtil.PSUTIL_OK:
         
@@ -739,7 +765,7 @@ def GetPartitionInfo( path ) -> typing.Optional[ typing.NamedTuple ]:
     return None
     
 
-def GetDevice( path ) -> typing.Optional[ str ]:
+def GetDevice( path ) -> str | None:
     
     partition_info = GetPartitionInfo( path )
     
@@ -754,7 +780,7 @@ def GetDevice( path ) -> typing.Optional[ str ]:
         
     
 
-def GetFileSystemType( path: str ) -> typing.Optional[ str ]:
+def GetFileSystemType( path: str ) -> str | None:
     
     partition_info = GetPartitionInfo( path )
     
@@ -769,7 +795,7 @@ def GetFileSystemType( path: str ) -> typing.Optional[ str ]:
         
     
 
-def GetFreeSpace( path ) -> typing.Optional[ int ]:
+def GetFreeSpace( path ) -> int | None:
     
     if not HydrusPSUtil.PSUTIL_OK:
         
@@ -782,13 +808,13 @@ def GetFreeSpace( path ) -> typing.Optional[ int ]:
         
         return disk_usage.free
         
-    except:
+    except Exception as e:
         
         return None
         
     
 
-def GetTotalSpace( path ) -> typing.Optional[ int ]:
+def GetTotalSpace( path ) -> int | None:
     
     if not HydrusPSUtil.PSUTIL_OK:
         
@@ -897,9 +923,11 @@ def LaunchFile( path, launch_path = None ):
 
 def MakeSureDirectoryExists( path ):
     
-    if os.path.exists( path ):
+    try:
         
-        if os.path.isdir( path ):
+        st = os.stat( path )
+        
+        if stat.S_ISDIR( st.st_mode ):
             
             return
             
@@ -908,20 +936,23 @@ def MakeSureDirectoryExists( path ):
             raise Exception( f'Cannot create the directory "{path}" because it already exists as a normal file!' )
             
         
-    else:
+    except FileNotFoundError as e:
         
-        try:
-            
-            os.makedirs( path, exist_ok = True )
-            
-        except FileNotFoundError as e:
-            
-            raise FileNotFoundError( f'While trying to ensure the directory "{path}" exists, none of the possible parent folders seem to exist either! Is the device not plugged in?' ) from e
-            
+        pass # looking good
+        
+    
+    try:
+        
+        # lol this takes 100ms on my USB stick
+        os.makedirs( path, exist_ok = True )
+        
+    except FileNotFoundError as e:
+        
+        raise FileNotFoundError( f'While trying to ensure the directory "{path}" exists, none of the possible parent folders seem to exist either! Is the device not plugged in?' ) from e
         
     
 
-def FileModifiedTimeIsOk( mtime: typing.Union[ int, float ] ):
+def FileModifiedTimeIsOk( mtime: int | float ):
     
     if HC.PLATFORM_WINDOWS:
         
@@ -983,7 +1014,7 @@ def CopyTimes( source, dest ):
         
         return True
         
-    except:
+    except Exception as e:
         
         return False
         
@@ -1487,7 +1518,7 @@ def PathIsFree( path ):
             return True
             
         
-    except:
+    except Exception as e:
         
         HydrusData.Print( 'Could not open the file: ' + path )
         
@@ -1644,7 +1675,7 @@ try:
     PROCESS_UMASK = os.umask( 0o022 )
     os.umask( PROCESS_UMASK )
     
-except:
+except Exception as e:
     
     PROCESS_UMASK = 0o022
     

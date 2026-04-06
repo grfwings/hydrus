@@ -4,6 +4,7 @@ import threading
 import time
 import typing
 
+from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
@@ -26,7 +27,8 @@ from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.importing import ClientGUIFileSeedCache
 from hydrus.client.gui.importing import ClientGUIGallerySeedLog
 from hydrus.client.gui.importing import ClientGUIImport
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
+from hydrus.client.gui.importing import ClientGUIImportOptionsPanels
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.metadata import ClientGUITime
@@ -285,13 +287,20 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._query_panel = ClientGUICommon.StaticBox( self, 'site and queries' )
         
+        label = 'You have selected a downloader that appears to download from multiple sites. Subscriptions make careful timing calculations based on file velocity, and multiple sites offering new files at different times will confuse things! Also, errors or certain search 404s that block a sub query will stop work for all sites in the downloader. Unless you are certain this complex downloader sources data from the same unified stream behind the scenes, and this single website simply has a complicated multi-domain setup, I strongly recommend you duplicate this whole subscription in the dialog above and set each duplicate to check each respective site separately. The subs will clear faster, and your check timings and DEAD results will be far more efficient and reliable!'
+        
+        self._multi_domain_ngug_warning_label = ClientGUICommon.BetterStaticText( self._query_panel, label = label )
+        self._multi_domain_ngug_warning_label.setWordWrap( True )
+        self._multi_domain_ngug_warning_label.setObjectName( 'HydrusWarning' )
+        self._multi_domain_ngug_warning_label.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
+        
         self._gug_key_and_name = ClientGUIImport.GUGKeyAndNameSelector( self._query_panel, gug_key_and_name )
         
         queries_panel = ClientGUIListCtrl.BetterListCtrlPanel( self._query_panel )
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTION_QUERIES.ID, self._ConvertQueryHeaderToDisplayTuple, self._ConvertQueryHeaderToSortTuple )
         
-        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, 10, model, use_simple_delete = True, activation_callback = self._EditQuery )
+        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, 6, model, use_simple_delete = True, activation_callback = self._EditQuery, max_height_num_chars = 24 )
         
         queries_panel.SetListCtrl( self._query_headers )
         
@@ -349,7 +358,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         self._initial_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'The first sync will add no more than this many URLs.' ) )
         
         self._periodic_file_limit = ClientGUICommon.BetterSpinBox( self._file_limits_panel, min=1, max=limits_max )
-        self._periodic_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'Normal syncs will add no more than this many URLs, stopping early if they find several URLs the query has seen before. Note that this generally means top-level posts. If those posts include multiple files, e.g. as on Pixiv, they will still only count for one URL at the stage when this is checked.' ) )
+        self._periodic_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'Normal syncs will add no more than this many URLs, stopping early if they find several URLs the query has seen before. Note that this generally means top-level posts. If those posts can themselves include multiple files, they will still only count for one URL at the stage when this is checked.' ) )
         
         self._this_is_a_random_sample_sub = QW.QCheckBox( self._file_limits_panel )
         self._this_is_a_random_sample_sub.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you check this, you will not get warnings if the normal file limit is hit. Useful if you have a randomly sorted gallery, or you just want a recurring small sample of files.' ) )
@@ -387,7 +396,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = True
         allow_default_selection = True
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetFileImportOptions( file_import_options )
         self._import_options_button.SetTagImportOptions( tag_import_options )
@@ -418,6 +427,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
+        self._query_panel.Add( self._multi_domain_ngug_warning_label, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._query_panel.Add( self._gug_key_and_name, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._query_panel.Add( queries_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
@@ -492,6 +502,28 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         self._checker_options.valueChanged.connect( self._CheckerOptionsUpdated )
         
         self._UpdateDelayText()
+        
+        self._gug_key_and_name.valueChanged.connect( self._UpdateNGUGWidget )
+        
+        self._UpdateNGUGWidget()
+        
+    
+    def _UpdateNGUGWidget( self ):
+        
+        gug_key_and_name = self._gug_key_and_name.GetValue()
+        
+        try:
+            
+            gug = CG.client_controller.network_engine.domain_manager.GetGUG( gug_key_and_name )
+            
+            show_warning = gug.IsMultiDomainNGUG()
+            
+        except Exception as e:
+            
+            show_warning = False
+            
+        
+        self._multi_domain_ngug_warning_label.setVisible( show_warning )
         
     
     def _AddQuery( self ):
@@ -670,7 +702,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 pretty_delay = 'bandwidth: ' + HydrusTime.TimeDeltaToPrettyTimeDelta( estimate )
                 
             
-        except:
+        except Exception as e:
             
             pretty_delay = 'could not determine bandwidth--there may be a problem with some of the urls in this query'
             
@@ -706,7 +738,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 delay = estimate
                 
             
-        except:
+        except Exception as e:
             
             delay = 0
             
@@ -1310,7 +1342,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         self._DoAsyncGetQueryLogContainers( query_headers, call )
         
     
-    def _RetryIgnored( self, query_headers: collections.abc.Collection[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex = typing.Optional[ str ] ):
+    def _RetryIgnored( self, query_headers: collections.abc.Collection[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex = str | None ):
         
         for query_header in query_headers:
             
@@ -1373,9 +1405,17 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         tag_import_options = self._import_options_button.GetTagImportOptions()
         note_import_options = self._import_options_button.GetNoteImportOptions()
         
-        subscription.SetTuple( gug_key_and_name, checker_options, initial_file_limit, periodic_file_limit, paused, file_import_options, tag_import_options, self._no_work_until )
+        subscription.SetGUGKeyAndName( gug_key_and_name )
+        subscription.SetCheckerOptions( checker_options )
+        subscription.SetFileLimits( initial_file_limit, periodic_file_limit )
         
+        subscription.SetPaused( paused )
+        
+        subscription.SetFileImportOptions( file_import_options )
+        subscription.SetTagImportOptions( tag_import_options )
         subscription.SetNoteImportOptions( note_import_options )
+        
+        subscription.SetNoWorkUntil( self._no_work_until )
         
         subscription.SetThisIsARandomSampleSubscription( self._this_is_a_random_sample_sub.isChecked() )
         
@@ -1439,7 +1479,7 @@ class EditSubscriptionQueryPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = False # just for additional tags, no parsing gubbins needed
         allow_default_selection = False
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetTagImportOptions( tag_import_options )
         
@@ -1633,7 +1673,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTIONS.ID, self._ConvertSubscriptionToDisplayTuple, self._ConvertSubscriptionToSortTuple )
         
-        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, 12, model, use_simple_delete = True, activation_callback = self.Edit )
+        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, 6, model, use_simple_delete = True, activation_callback = self.Edit, max_height_num_chars = 24 )
         
         self._subscriptions_panel.SetListCtrl( self._subscriptions )
         
@@ -1678,6 +1718,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._subscriptions_panel.NewButtonRow()
         
         self._subscriptions_panel.AddButton( 'select subscriptions', self.SelectSubscriptions )
+        self._subscriptions_panel.AddButton( 'overwrite downloader', self.SetDownloader, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite checker options', self.SetCheckerOptions, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite file import options', self.SetFileImportOptions, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite tag import options', self.SetTagImportOptions, enabled_only_on_selection = True )
@@ -1866,7 +1907,19 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ( name, gug_key_and_name, query_headers, checker_options, initial_file_limit, periodic_file_limit, paused, file_import_options, tag_import_options, no_work_until, no_work_until_reason ) = subscription.ToTuple()
         
-        pretty_site = gug_key_and_name[1]
+        try:
+            
+            pretty_site = gug_key_and_name[1]
+            
+        except:
+            
+            pretty_site = 'unknown downloader'
+                
+        
+        if pretty_site == '':
+            
+            pretty_site = 'no downloader set!'
+            
         
         if len( query_headers ) > 0:
             
@@ -1968,7 +2021,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 pretty_delay = 'could not determine bandwidth, there may be an error with the sub or its urls'
                 
@@ -2071,7 +2124,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 delay = 0
                 
@@ -2404,7 +2457,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._DoAsyncGetQueryLogContainers( query_headers, call )
         
     
-    def _RetryIgnored( self, query_headers: collections.abc.Iterable[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex: typing.Optional[ str ] ):
+    def _RetryIgnored( self, query_headers: collections.abc.Iterable[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex: str | None ):
         
         for query_header in query_headers:
             
@@ -2427,7 +2480,16 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def Add( self ):
         
-        gug_key_and_name = CG.client_controller.network_engine.domain_manager.GetDefaultGUGKeyAndName()
+        try:
+            
+            default_gug_key_and_name = CG.client_controller.network_engine.domain_manager.GetDefaultGUGKeyAndName()
+            
+            gug_key_and_name = ClientGUIImport.SelectGUGKeyAndName( self, default_gug_key_and_name, for_new_sub = True )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
         
         empty_subscription = ClientImportSubscriptions.Subscription( 'new subscription', gug_key_and_name = gug_key_and_name )
         
@@ -2526,8 +2588,8 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         if can_do_cased and can_do_caseless:
             
             choice_tuples = [
-                ( 'do a normal upper/lower case deduplication', False, 'Dedupe "samus_aran" with "samus_aran" or "Samus_Aran". This is usually the best option to go with--most sites ignore case.' ),
-                ( 'only do exact text deduplication', True, 'Dedupe "samus_aran" with "samus_aran", but not "Samus_Aran". Usually not important, but some specific galleries may care about this.' )
+                ( 'do a normal upper/lower case deduplication', False, 'Dedupe "my_query" with "my_query" or "My_Query". This is usually the best option to go with--most sites ignore case.' ),
+                ( 'only do exact text deduplication', True, 'Dedupe "my_query" with "my_query", but not "My_Query". Usually not important, but some specific galleries may care about this.' )
             ]
             
             message = 'Which kind of duplication are we going to do?'
@@ -2543,7 +2605,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         elif can_do_caseless:
             
-            message = 'There are no exact text duplicates. Only upper/lower case deduplication is available, merging queries like "samus_aran" and "Samus_Aran". Is this ok?'
+            message = 'There are no exact text duplicates. Only upper/lower case deduplication is available, merging queries like "my_query" and "My_Query". Is this ok?'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -2881,7 +2943,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def LowerCaseQueries( self ):
         
-        message = 'This will convert the selected subscriptions\' queries to lowercase text. "Samus_Aran" will become "samus_aran". Most sites do not care about case, but it can help things stay neat.'
+        message = 'This will convert the selected subscriptions\' queries to lowercase text. "My_Query" will become "my_query". Most sites do not care about case, but it can help things stay neat.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
@@ -3277,6 +3339,34 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         
     
+    def SetDownloader( self ):
+        
+        subscriptions = self._subscriptions.GetData( only_selected = True )
+        
+        if len( subscriptions ) == 0:
+            
+            return
+            
+        
+        gug_key_and_name = subscriptions[0].GetGUGKeyAndName()
+        
+        try:
+            
+            edited_gug_key_and_name = ClientGUIImport.SelectGUGKeyAndName( self, gug_key_and_name )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        for subscription in subscriptions:
+            
+            subscription.SetGUGKeyAndName( edited_gug_key_and_name )
+            
+        
+        self._subscriptions.UpdateDatas( subscriptions )
+        
+    
     def SetFileImportOptions( self ):
         
         subscriptions = self._subscriptions.GetData( only_selected = True )
@@ -3292,7 +3382,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit file import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditFileImportOptionsPanel( dlg, file_import_options, show_downloader_options, allow_default_selection )
+            panel = ClientGUIImportOptionsPanels.EditFileImportOptionsLegacyPanel( dlg, file_import_options, show_downloader_options, allow_default_selection )
             
             dlg.SetPanel( panel )
             
@@ -3324,13 +3414,17 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit note import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditNoteImportOptionsPanel( dlg, note_import_options, allow_default_selection )
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+            
+            edit_notes_widget = ClientGUIImportOptionsPanels.EditNoteImportOptionsLegacyPanel( panel, note_import_options, allow_default_selection )
+            
+            panel.SetControl( edit_notes_widget )
             
             dlg.SetPanel( panel )
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
-                note_import_options = panel.GetValue()
+                note_import_options = edit_notes_widget.GetValue()
                 
                 for subscription in subscriptions:
                     
@@ -3357,7 +3451,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit tag import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditTagImportOptionsPanel( dlg, tag_import_options, show_downloader_options, allow_default_selection )
+            panel = ClientGUIImportOptionsPanels.EditTagImportOptionsLegacyPanel( dlg, tag_import_options, show_downloader_options, allow_default_selection )
             
             dlg.SetPanel( panel )
             

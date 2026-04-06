@@ -1,6 +1,5 @@
 import collections.abc
 import os
-import typing
 
 from qtpy import QtWidgets as QW
 
@@ -18,7 +17,7 @@ from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.importing import ClientGUIFileSeedCache
 from hydrus.client.gui.importing import ClientGUIImport
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.metadata import ClientGUIMetadataMigration
@@ -26,8 +25,9 @@ from hydrus.client.gui.metadata import ClientGUIMetadataMigrationTest
 from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIPathWidgets
 from hydrus.client.importing import ClientImportLocal
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import FilenameTaggingOptions
 from hydrus.client.metadata import ClientMetadataMigrationExporters
 from hydrus.client.metadata import ClientMetadataMigrationImporters
 
@@ -41,7 +41,7 @@ class EditImportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_IMPORT_FOLDERS.ID, self._ConvertImportFolderToDisplayTuple, self._ConvertImportFolderToSortTuple )
         
-        self._import_folders = ClientGUIListCtrl.BetterListCtrlTreeView( import_folders_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._import_folders = ClientGUIListCtrl.BetterListCtrlTreeView( import_folders_panel, 4, model, use_simple_delete = True, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         import_folders_panel.SetListCtrl( self._import_folders )
         
@@ -142,7 +142,7 @@ class EditImportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def _Edit( self ):
         
-        import_folder: typing.Optional[ ClientImportLocal.ImportFolder ] = self._import_folders.GetTopSelectedData()
+        import_folder: ClientImportLocal.ImportFolder | None = self._import_folders.GetTopSelectedData()
         
         if import_folder is None:
             
@@ -206,7 +206,7 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._name = QW.QLineEdit( self._folder_box )
         
-        self._path = QP.DirPickerCtrl( self._folder_box )
+        self._path = ClientGUIPathWidgets.DirPickerCtrl( self._folder_box )
         
         self._search_subdirectories = QW.QCheckBox( self._folder_box )
         
@@ -233,7 +233,7 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = False
         allow_default_selection = True
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetFileImportOptions( file_import_options )
         self._import_options_button.SetTagImportOptions( tag_import_options )
@@ -259,16 +259,16 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
             
         
         self._action_successful = create_choice()
-        self._location_successful = QP.DirPickerCtrl( self._file_box )
+        self._location_successful = ClientGUIPathWidgets.DirPickerCtrl( self._file_box )
         
         self._action_redundant = create_choice()
-        self._location_redundant = QP.DirPickerCtrl( self._file_box )
+        self._location_redundant = ClientGUIPathWidgets.DirPickerCtrl( self._file_box )
         
         self._action_deleted = create_choice()
-        self._location_deleted = QP.DirPickerCtrl( self._file_box )
+        self._location_deleted = ClientGUIPathWidgets.DirPickerCtrl( self._file_box )
         
         self._action_failed = create_choice()
-        self._location_failed = QP.DirPickerCtrl( self._file_box )
+        self._location_failed = ClientGUIPathWidgets.DirPickerCtrl( self._file_box )
         
         #
         
@@ -278,7 +278,7 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILENAME_TAGGING_OPTIONS.ID, self._ConvertFilenameTaggingOptionsToDisplayTuple, self._ConvertFilenameTaggingOptionsToSortTuple )
         
-        self._filename_tagging_options = ClientGUIListCtrl.BetterListCtrlTreeView( filename_tagging_options_panel, 5, model, use_simple_delete = True, activation_callback = self._EditFilenameTaggingOptions )
+        self._filename_tagging_options = ClientGUIListCtrl.BetterListCtrlTreeView( filename_tagging_options_panel, 4, model, use_simple_delete = True, activation_callback = self._EditFilenameTaggingOptions, max_height_num_chars = 12 )
         
         filename_tagging_options_panel.SetListCtrl( self._filename_tagging_options )
         
@@ -449,7 +449,7 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit filename tagging options' ) as dlg:
             
-            filename_tagging_options = TagImportOptions.FilenameTaggingOptions()
+            filename_tagging_options = FilenameTaggingOptions.FilenameTaggingOptions()
             
             panel = ClientGUIImport.EditFilenameTaggingOptionPanel( dlg, service_key, filename_tagging_options, example_path = example_path )
             
@@ -668,7 +668,7 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
                 self._sidecar_test_context_factory.SetExampleFilePaths( example_paths )
                 
             
-        except:
+        except Exception as e:
             
             return
             
@@ -689,6 +689,8 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
     def GetValue( self ):
         
         self._CheckValid()
+        
+        edited_import_folder = self._import_folder.Duplicate()
         
         name = self._name.text()
         path = self._path.GetPath()
@@ -736,17 +738,17 @@ class EditImportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         tag_service_keys_to_filename_tagging_options = dict( self._filename_tagging_options.GetData() )
         
-        self._import_folder.SetTuple( name, path, file_import_options, tag_import_options, tag_service_keys_to_filename_tagging_options, actions, action_locations, period, check_regularly, paused, check_now, show_working_popup, publish_files_to_popup_button, publish_files_to_page )
+        edited_import_folder.SetTuple( name, path, file_import_options, tag_import_options, tag_service_keys_to_filename_tagging_options, actions, action_locations, period, check_regularly, paused, check_now, show_working_popup, publish_files_to_popup_button, publish_files_to_page )
         
-        self._import_folder.SetLastModifiedTimeSkipPeriod( self._last_modified_time_skip_period.GetValue() )
+        edited_import_folder.SetLastModifiedTimeSkipPeriod( self._last_modified_time_skip_period.GetValue() )
         
         metadata_routers = self._metadata_routers_button.GetValue()
         
-        self._import_folder.SetMetadataRouters( metadata_routers )
+        edited_import_folder.SetMetadataRouters( metadata_routers )
         
         search_subdirectories = self._search_subdirectories.isChecked()
         
-        self._import_folder.SetSearchSubdirectories( search_subdirectories )
+        edited_import_folder.SetSearchSubdirectories( search_subdirectories )
         
-        return self._import_folder
+        return edited_import_folder
         

@@ -12,7 +12,6 @@ from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetwork
@@ -57,7 +56,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_MANAGE_SERVICES.ID, self._ConvertServiceToDisplayTuple, self._ConvertServiceToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 25, model, delete_key_callback = self._Delete, activation_callback = self._Edit)
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self._Delete, activation_callback = self._Edit, max_height_num_chars = 24 )
         
         menu_template_items = []
         
@@ -418,22 +417,6 @@ class EditClientServicePanel( ClientGUIScrolledPanels.EditPanel ):
         self.widget().setLayout( vbox )
         
     
-    def _GetArchiveNameToDisplay( self, portable_hta_path, namespaces ):
-        
-        hta_path = HydrusPaths.ConvertPortablePathToAbsPath( portable_hta_path )
-        
-        if len( namespaces ) == 0:
-            
-            name_to_display = hta_path
-            
-        else:
-            
-            name_to_display = hta_path + ' (' + ', '.join( HydrusTags.ConvertUglyNamespacesToPrettyStrings( namespaces ) ) + ')'
-            
-        
-        return name_to_display
-        
-    
     def GetValue( self ):
         
         name = self._service_panel.GetValue()
@@ -772,19 +755,17 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( account_types ):
             
-            self._EnableDisableButtons( True )
-            
             self._SelectAccountTypeForAutoAccountCreation( account_types )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -864,20 +845,18 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( registration_key ):
             
-            self._EnableDisableButtons( True )
-            
             # break this up into the 'yep, now I have the key' and call that
             self._STARTGetAccessKeyFromRegistrationKey( registration_key )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -918,19 +897,17 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             
             self._access_key.setText( access_key_encoded )
             
-            self._EnableDisableButtons( True )
-            
             ClientGUIDialogsMessage.ShowInformation( self, 'Looks good!' )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1046,19 +1023,17 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( message ):
             
-            self._EnableDisableButtons( True )
-            
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -2038,7 +2013,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CLIENT_API_PERMISSIONS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, 10, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
+        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, 4, model, delete_key_callback = self._Delete, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         permissions_list_panel.SetListCtrl( self._permissions_list )
         
@@ -2779,9 +2754,9 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             return 1
             
         
-        def publish_callable( result ):
+        def publish_callable( _ ):
             
-            self._my_updater.Update()
+            pass
             
         
         def errback_callable( etype, value, tb ):
@@ -2792,6 +2767,9 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
                 
             
             ClientGUIDialogsMessage.ShowCritical( self, 'Problem!', str( value ) )
+            
+        
+        def ui_restoration_callable():
             
             self._my_updater.Update()
             
@@ -2813,7 +2791,7 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         self._refresh_account_button.setEnabled( False )
         self._refresh_account_button.setText( 'fetching' + HC.UNICODE_ELLIPSIS )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -3090,18 +3068,19 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                 
             
         
-        with QP.DirDialog( self, 'Select export location.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                self._export_updates_button.setText( 'exporting' + HC.UNICODE_ELLIPSIS )
-                self._export_updates_button.setEnabled( False )
-                
-                CG.client_controller.CallToThread( do_it, path, self._service )
-                
+            path = ClientGUIDialogsQuick.PickDirectory( self, 'Select export location.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        self._export_updates_button.setText( 'exporting' + HC.UNICODE_ELLIPSIS )
+        self._export_updates_button.setEnabled( False )
+        
+        CG.client_controller.CallToThread( do_it, path, self._service )
         
     
     def _FetchServiceInfo( self ):
@@ -3136,8 +3115,6 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
-            self._my_updater.Update()
-            
         
         def errback_callable( etype, value, tb ):
             
@@ -3148,13 +3125,16 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             ClientGUIDialogsMessage.ShowCritical( self, 'Problem!', str( value ) )
             
+        
+        def ui_restoration_callable():
+            
             self._my_updater.Update()
             
         
         self._service_info_button.setEnabled( False )
         self._service_info_button.setText( 'fetching' + HC.UNICODE_ELLIPSIS )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -3576,7 +3556,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_IPFS_SHARES.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, 6, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes )
+        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, 4, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes, max_height_num_chars = 12 )
         
         self._ipfs_shares_panel.SetListCtrl( self._ipfs_shares )
         
@@ -4107,7 +4087,7 @@ class ReviewServicesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 previous_service_key = page.GetServiceKey()
                 
             
-        except:
+        except Exception as e:
             
             previous_service_key = None
             

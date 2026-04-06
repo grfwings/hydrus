@@ -11,6 +11,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientSerialisable
 from hydrus.client import ClientStrings
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -401,7 +402,7 @@ class EditFormulaPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png with the encoded formula', wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png with the encoded formula', wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -501,7 +502,7 @@ class EditHTMLTagRulePanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._tag_attributes = ClientGUIStringControls.StringToStringDictControl( self, tag_attributes, min_height = 4 )
         
-        self._tag_index = ClientGUICommon.NoneableSpinCtrl( self, 0, message = 'index to fetch', none_phrase = 'get all', min = -65536, max = 65535 )
+        self._tag_index = ClientGUICommon.NoneableSpinCtrl( self, 0, none_phrase = 'get all', min = -65536, max = 65535 )
         self._tag_index.setToolTip( ClientGUIFunctions.WrapToolTip( 'You can make this negative to do negative indexing, e.g. -2 for "Select the second from last item".' ) )
         
         self._tag_depth = ClientGUICommon.BetterSpinBox( self, min=1, max=255 )
@@ -1293,7 +1294,7 @@ class EditNestedFormulaPanel( EditSpecificFormulaPanel ):
                     
                 
             
-        except:
+        except Exception as e:
             
             main_texts = [ '' ]
             

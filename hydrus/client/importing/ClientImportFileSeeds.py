@@ -28,10 +28,12 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientTime
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.importing import ClientImporting
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.importing.options import NoteImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import NoteImportOptionsLegacy
+from hydrus.client.importing.options import PrefetchImportOptions
 from hydrus.client.importing.options import PresentationImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import TagFilteringImportOptions
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.networking import ClientNetworkingFunctions
@@ -278,7 +280,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         self._source_urls.update( urls )
         
     
-    def _CheckTagsVeto( self, tags, tag_import_options: TagImportOptions.TagImportOptions ):
+    def _CheckTagsVeto( self, tags, tag_filtering_import_options: TagFilteringImportOptions.TagFilteringImportOptions ):
         
         if len( tags ) > 0:
             
@@ -286,7 +288,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
             
             all_chain_tags = set( itertools.chain.from_iterable( tags_to_siblings.values() ) )
             
-            tag_import_options.CheckTagsVeto( tags, all_chain_tags )
+            tag_filtering_import_options.CheckTagsVeto( tags, all_chain_tags )
             
         
     
@@ -326,7 +328,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         
         file_seed.AddRequestHeaders( self._request_headers )
         
-        file_seed.SetReferralURL( url_for_child_referral )
+        file_seed.SetReferralURLIfNotNone( url_for_child_referral )
         
         if self._referral_url is not None:
             
@@ -349,7 +351,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         
         file_seed.AddNamesAndNotes( sorted( self._names_and_notes_dict.items() ) )
         
-        file_seed.source_time = self.source_time
+        file_seed.SetSourceTimeIfSensible( self.source_time )
         
     
     def _InitialiseFromSerialisableInfo( self, serialisable_info ):
@@ -390,7 +392,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         self._hashes = { hash_type : bytes.fromhex( encoded_hash ) for ( hash_type, encoded_hash ) in serialisable_hashes if encoded_hash is not None }
         
     
-    def _SetupNoteImportOptions( self, given_note_import_options: NoteImportOptions.NoteImportOptions ) -> NoteImportOptions.NoteImportOptions:
+    def _SetupNoteImportOptions( self, given_note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy ) -> NoteImportOptionsLegacy.NoteImportOptionsLegacy:
         
         if given_note_import_options.IsDefault():
             
@@ -404,7 +406,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return note_import_options
         
     
-    def _SetupTagImportOptions( self, given_tag_import_options: TagImportOptions.TagImportOptions ) -> TagImportOptions.TagImportOptions:
+    def _SetupTagImportOptions( self, given_tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy ) -> TagImportOptionsLegacy.TagImportOptionsLegacy:
         
         if given_tag_import_options.IsDefault():
             
@@ -618,7 +620,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                     
                     file_seed_data_for_comparison = CG.client_controller.network_engine.domain_manager.NormaliseURL( file_seed_data )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -662,7 +664,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         self._external_filterable_tags.update( tags )
         
     
-    def AddParsedPost( self, parsed_post: ClientParsingResults.ParsedPost, file_import_options: FileImportOptions.FileImportOptions ):
+    def AddParsedPost( self, parsed_post: ClientParsingResults.ParsedPost, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ):
         
         parsed_request_headers = parsed_post.GetHTTPHeaders()
         
@@ -692,12 +694,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         
         source_timestamp = parsed_post.GetTimestamp( HC.TIMESTAMP_TYPE_MODIFIED_DOMAIN )
         
-        if source_timestamp is not None and ClientTime.TimestampIsSensible( source_timestamp ):
-            
-            source_timestamp = min( HydrusTime.GetNow() - 30, source_timestamp )
-            
-            self.source_time = ClientTime.MergeModifiedTimes( self.source_time, source_timestamp )
-            
+        self.SetSourceTimeIfSensible( source_timestamp )
         
         self._UpdateModified()
         
@@ -737,18 +734,18 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         self._UpdateModified()
         
     
-    def CheckPreFetchMetadata( self, tag_import_options: TagImportOptions.TagImportOptions ):
+    def CheckPreFetchMetadata( self, tag_filtering_import_options: TagFilteringImportOptions.TagFilteringImportOptions ):
         
-        self._CheckTagsVeto( self._tags, tag_import_options )
+        self._CheckTagsVeto( self._tags, tag_filtering_import_options )
         
     
     def DownloadAndImportRawFile( self, file_url: str, file_import_options, loud_or_quiet: int, network_job_factory, network_job_presentation_context_factory, status_hook, override_bandwidth = False, spawning_url = None, forced_referral_url = None, file_seed_cache = None ):
         
-        file_import_options = FileImportOptions.GetRealFileImportOptions( file_import_options, loud_or_quiet )
+        file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( file_import_options, loud_or_quiet )
         
         self.AddPrimaryURLs( ( file_url, ) )
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'file_download' )
         
         try:
             
@@ -786,7 +783,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                 network_job.OverrideBandwidth( 3 )
                 
             
-            network_job.SetFileImportOptions( file_import_options )
+            network_job.SetFileFilteringImportOptions( file_import_options.GetFileFilteringImportOptions() )
             
             CG.client_controller.network_engine.AddJob( network_job )
             
@@ -861,10 +858,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                     
                 
             
-            if ClientTime.TimestampIsSensible( last_modified_time ):
-                
-                self.source_time = ClientTime.MergeModifiedTimes( self.source_time, last_modified_time )
-                
+            self.SetSourceTimeIfSensible( last_modified_time )
             
             status_hook( 'importing file' )
             
@@ -876,7 +870,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def FetchPageMetadata( self, tag_import_options: TagImportOptions.TagImportOptions ):
+    def FetchPageMetadata( self, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy ):
         
         pass
         
@@ -939,17 +933,19 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return dict( self._hashes )
         
     
-    def GetPreImportStatusPredictionHash( self, file_import_options: FileImportOptions.FileImportOptions ) -> tuple[ bool, bool, ClientImportFiles.FileImportStatus ]:
+    def GetPreImportStatusPredictionHash( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ) -> tuple[ bool, bool, ClientImportFiles.FileImportStatus ]:
         
         # TODO: a user raised the spectre of multiple hash parses on some site that actually provides somehow the pre- and post- optimised versions of a file
         # some I guess support multiple hashes at some point, maybe, or figure out a different solution, or draw a harder line in parsing about one-hash-per-parse
         
-        preimport_hash_check_type = file_import_options.GetPreImportHashCheckType()
+        prefetch_import_options = file_import_options.GetPrefetchImportOptions()
+        
+        preimport_hash_check_type = prefetch_import_options.GetPreImportHashCheckType()
         
         match_found = False
-        matches_are_dispositive = preimport_hash_check_type == FileImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
+        matches_are_dispositive = preimport_hash_check_type == PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
         
-        if len( self._hashes ) == 0 or preimport_hash_check_type == FileImportOptions.DO_NOT_CHECK:
+        if len( self._hashes ) == 0 or preimport_hash_check_type == PrefetchImportOptions.DO_NOT_CHECK:
             
             return ( match_found, matches_are_dispositive, ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
@@ -997,16 +993,18 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return ( match_found, matches_are_dispositive, ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
         
     
-    def GetPreImportStatusPredictionURL( self, file_import_options: FileImportOptions.FileImportOptions, file_url = None ) -> tuple[ bool, bool, ClientImportFiles.FileImportStatus ]:
+    def GetPreImportStatusPredictionURL( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, file_url = None ) -> tuple[ bool, bool, ClientImportFiles.FileImportStatus ]:
         
-        preimport_url_check_type = file_import_options.GetPreImportURLCheckType()
+        prefetch_import_options = file_import_options.GetPrefetchImportOptions()
         
-        preimport_url_check_looks_for_neighbour_spam = file_import_options.PreImportURLCheckLooksForNeighbourSpam()
+        preimport_url_check_type = prefetch_import_options.GetPreImportURLCheckType()
+        
+        preimport_url_check_looks_for_neighbour_spam = prefetch_import_options.PreImportURLCheckLooksForNeighbourSpam()
         
         match_found = False
-        matches_are_dispositive = preimport_url_check_type == FileImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
+        matches_are_dispositive = preimport_url_check_type == PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
         
-        if preimport_url_check_type == FileImportOptions.DO_NOT_CHECK:
+        if preimport_url_check_type == PrefetchImportOptions.DO_NOT_CHECK:
             
             return ( match_found, matches_are_dispositive, ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
@@ -1035,7 +1033,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         all_neighbour_useful_lookup_urls = list( lookup_urls )
         all_neighbour_useful_lookup_urls.extend( source_lookup_urls )
         
-        if file_import_options.ShouldAssociateSourceURLs():
+        if file_import_options.GetLocationImportOptions().ShouldAssociateSourceURLs():
             
             lookup_urls.extend( source_lookup_urls )
             
@@ -1159,11 +1157,11 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return self.GetHash() is not None
         
     
-    def Import( self, temp_path: str, file_import_options: FileImportOptions.FileImportOptions, status_hook = None ):
+    def Import( self, temp_path: str, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, status_hook = None ):
         
         if file_import_options.IsDefault():
             
-            file_import_options = FileImportOptions.GetRealFileImportOptions( file_import_options, FileImportOptions.IMPORT_TYPE_LOUD )
+            file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
             
         
         file_import_job = ClientImportFiles.FileImportJob( temp_path, file_import_options, human_file_description = self.file_seed_data )
@@ -1174,11 +1172,11 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         self.SetHash( file_import_status.hash )
         
     
-    def ImportPath( self, file_seed_cache: "FileSeedCache", file_import_options: FileImportOptions.FileImportOptions, loud_or_quiet: int, status_hook = None ):
+    def ImportPath( self, file_seed_cache: "FileSeedCache", file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, loud_or_quiet: int, status_hook = None ):
         
         try:
             
-            file_import_options = FileImportOptions.GetRealFileImportOptions( file_import_options, loud_or_quiet )
+            file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( file_import_options, loud_or_quiet )
             
             if self.file_seed_type != FILE_SEED_TYPE_HDD:
                 
@@ -1192,7 +1190,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                 raise HydrusExceptions.VetoException( 'Source file does not exist!' )
                 
             
-            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'file_import' )
             
             try:
                 
@@ -1281,7 +1279,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def PredictPreImportStatus( self, file_import_options: FileImportOptions.FileImportOptions, tag_import_options: TagImportOptions.TagImportOptions, note_import_options: NoteImportOptions.NoteImportOptions, file_url = None ):
+    def PredictPreImportStatus( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, tag_import_options_legacy: TagImportOptionsLegacy.TagImportOptionsLegacy, note_import_options_legacy: NoteImportOptionsLegacy.NoteImportOptionsLegacy, file_url = None ):
         
         ( hash_match_found, hash_matches_are_dispositive, hash_file_import_status ) = self.GetPreImportStatusPredictionHash( file_import_options )
         ( url_match_found, url_matches_are_dispositive, url_file_import_status ) = self.GetPreImportStatusPredictionURL( file_import_options, file_url = file_url )
@@ -1299,7 +1297,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         else:
             
             # prefer the one that says already in db/previously deleted
-            if hash_file_import_status.ShouldImport( file_import_options ):
+            if hash_file_import_status.ShouldImport( file_import_options.GetFileFilteringImportOptions() ):
                 
                 file_import_status = url_file_import_status
                 
@@ -1311,21 +1309,25 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         
         # and make some recommendations
         
-        should_download_file = file_import_status.ShouldImport( file_import_options )
+        should_download_file = file_import_status.ShouldImport( file_import_options.GetFileFilteringImportOptions() )
         
         should_download_metadata = should_download_file # if we want the file, we need the metadata to get the file_url!
+        
+        tag_import_options = tag_import_options_legacy.GetTagImportOptions()
         
         # but if we otherwise still want to force some tags, let's do it
         if not should_download_metadata and tag_import_options.WorthFetchingTags():
             
-            url_override = url_file_import_status.AlreadyInDB() and tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB()
-            hash_override = hash_file_import_status.AlreadyInDB() and tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB()
+            url_override = url_file_import_status.AlreadyInDB() and tag_import_options_legacy.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB()
+            hash_override = hash_file_import_status.AlreadyInDB() and tag_import_options_legacy.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB()
             
             if url_override or hash_override:
                 
                 should_download_metadata = True
                 
             
+        
+        note_import_options = note_import_options_legacy.GetNoteImportOptions()
         
         if not should_download_metadata and note_import_options.GetGetNotes():
             
@@ -1385,6 +1387,24 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
     def SetReferralURL( self, referral_url: str ):
         
         self._referral_url = referral_url
+        
+    
+    def SetReferralURLIfNotNone( self, referral_url: str ):
+        
+        if self._referral_url is not None:
+            
+            self._referral_url = referral_url
+            
+        
+    
+    def SetSourceTimeIfSensible( self, new_source_time: int | None ):
+        
+        if ClientTime.TimestampIsSensible( new_source_time ):
+            
+            new_source_time = min( HydrusTime.GetNow() - 30, new_source_time )
+            
+            self.source_time = ClientTime.MergeModifiedTimes( self.source_time, new_source_time )
+            
         
     
     def SetStatus( self, status: int, note: str = '', exception = None ):
@@ -1456,7 +1476,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return False
         
     
-    def WorkOnURL( self, file_seed_cache: "FileSeedCache", status_hook, network_job_factory, network_job_presentation_context_factory, file_import_options: FileImportOptions.FileImportOptions, loud_or_quiet: int, tag_import_options: TagImportOptions.TagImportOptions, note_import_options: NoteImportOptions.NoteImportOptions ):
+    def WorkOnURL( self, file_seed_cache: "FileSeedCache", status_hook, network_job_factory, network_job_presentation_context_factory, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, loud_or_quiet: int, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy, note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy ):
         
         did_substantial_work = False
         
@@ -1476,9 +1496,11 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                 raise HydrusExceptions.VetoException( 'Cannot parse {}: {}'.format( match_name, cannot_parse_reason ) )
                 
             
-            file_import_options = FileImportOptions.GetRealFileImportOptions( file_import_options, loud_or_quiet )
+            file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( file_import_options, loud_or_quiet )
             tag_import_options = self._SetupTagImportOptions( tag_import_options )
             note_import_options = self._SetupNoteImportOptions( note_import_options )
+            
+            tag_filtering_import_options = tag_import_options.GetTagFilteringImportOptions()
             
             status_hook( 'checking url status' )
             
@@ -1544,7 +1566,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                     
                     if len( parsed_posts ) == 0:
                         
-                        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+                        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'empty_document_test' )
                         
                         it_was_a_real_file = False
                         
@@ -1563,7 +1585,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                                 it_was_a_real_file = True
                                 
                             
-                        except:
+                        except Exception as e:
                             
                             # something crazy happened, like FFMPEG thinking JSON was an MP4 wew, so let's bail out
                             raise HydrusExceptions.VetoException( 'The parser found nothing in the document, and while the document initially seemed to actually be an importable file, it looks like it failed to import too!' )
@@ -1595,7 +1617,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                             
                             insertion_index = my_index + 1
                             
-                        except:
+                        except Exception as e:
                             
                             insertion_index = len( file_seed_cache )
                             
@@ -1615,7 +1637,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                         
                         self.AddParsedPost( parsed_post, file_import_options )
                         
-                        self.CheckPreFetchMetadata( tag_import_options )
+                        self.CheckPreFetchMetadata( tag_filtering_import_options )
                         
                         desired_urls = parsed_post.GetURLs( ( HC.URL_TYPE_DESIRED, ), only_get_top_priority = True )
                         
@@ -1647,7 +1669,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                                 
                             elif url_type == HC.URL_TYPE_POST and can_parse:
                                 
-                                # a pixiv mode=medium page has spawned a mode=manga page, so we need a new file_seed to go pursue that
+                                # nested URL type, might be a subsequent 'zoomed in' view or a mini-album page type with n = 1 
                                 
                                 child_urls = [ desired_url ]
                                 
@@ -1689,7 +1711,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                                 
                                 insertion_index = my_index + 1
                                 
-                            except:
+                            except Exception as e:
                                 
                                 insertion_index = len( file_seed_cache )
                                 
@@ -1708,7 +1730,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                 
                 if should_download_file:
                     
-                    self.CheckPreFetchMetadata( tag_import_options )
+                    self.CheckPreFetchMetadata( tag_filtering_import_options )
                     
                     did_substantial_work = True
                     
@@ -1766,6 +1788,17 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
             
             time.sleep( 2 )
             
+        except HydrusExceptions.CensorshipException:
+            
+            status = CC.STATUS_VETOED
+            note = 'site reports http status code 451: Unavailable For Legal Reasons'
+            
+            self.SetStatus( status, note = note )
+            
+            status_hook( '451 censorship!' )
+            
+            time.sleep( 2 )
+            
         except HydrusExceptions.UnsupportedFileException as e:
             
             status = CC.STATUS_ERROR
@@ -1792,7 +1825,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         return did_substantial_work
         
     
-    def WriteContentUpdates( self, file_import_options: typing.Optional[ FileImportOptions.FileImportOptions ] = None, tag_import_options: typing.Optional[ TagImportOptions.TagImportOptions ] = None, note_import_options: typing.Optional[ NoteImportOptions.NoteImportOptions ] = None ):
+    def WriteContentUpdates( self, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy | None = None, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy | None = None, note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy | None = None ):
         
         did_work = False
         
@@ -1819,7 +1852,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
         
         if file_import_options is not None:
             
-            if file_import_options.ShouldAssociatePrimaryURLs():
+            if file_import_options.GetLocationImportOptions().ShouldAssociatePrimaryURLs():
                 
                 potentially_associable_urls.update( self._primary_urls )
                 
@@ -1864,7 +1897,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                     
                 
             
-            if file_import_options.ShouldAssociateSourceURLs():
+            if file_import_options.GetLocationImportOptions().ShouldAssociateSourceURLs():
                 
                 potentially_associable_urls.update( self._source_urls )
                 
@@ -1876,7 +1909,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                     media_result = CG.client_controller.Read( 'media_result', hash )
                     
                 
-                extra_content_update_package = file_import_options.GetAlreadyInDBPostImportContentUpdatePackage( media_result )
+                extra_content_update_package = file_import_options.GetLocationImportOptions().GetAlreadyInDBPostImportContentUpdatePackage( media_result )
                 
                 content_update_package.AddContentUpdatePackage( extra_content_update_package )
                 
@@ -1907,7 +1940,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
                 media_result = CG.client_controller.Read( 'media_result', hash )
                 
             
-            for ( service_key, content_updates ) in tag_import_options.GetContentUpdatePackage( self.status, media_result, set( self._tags ), external_filterable_tags = self._external_filterable_tags, external_additional_service_keys_to_tags = self._external_additional_service_keys_to_tags ).IterateContentUpdates():
+            for ( service_key, content_updates ) in tag_import_options.GetTagImportOptions().GetContentUpdatePackage( self.status, media_result, set( self._tags ), external_filterable_tags = self._external_filterable_tags, external_additional_service_keys_to_tags = self._external_additional_service_keys_to_tags ).IterateContentUpdates():
                 
                 content_update_package.AddContentUpdates( service_key, content_updates )
                 
@@ -1924,7 +1957,7 @@ class FileSeed( HydrusSerialisable.SerialisableBase ):
             
             names_and_notes = sorted( self._names_and_notes_dict.items() )
             
-            for ( service_key, content_updates ) in note_import_options.GetContentUpdatePackage( media_result, names_and_notes ).IterateContentUpdates():
+            for ( service_key, content_updates ) in note_import_options.GetNoteImportOptions().GetContentUpdatePackage( media_result, names_and_notes ).IterateContentUpdates():
                 
                 content_update_package.AddContentUpdates( service_key, content_updates )
                 
@@ -1972,7 +2005,7 @@ class FileSeedCacheStatus( HydrusSerialisable.SerialisableBase ):
         self._statuses_to_counts.update( dict( serialisable_statuses_to_counts ) )
         
     
-    def GetFileSeedCount( self, status: typing.Optional[ int ] = None ) -> int:
+    def GetFileSeedCount( self, status: int | None = None ) -> int:
         
         if status is None:
             
@@ -2397,7 +2430,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
         return latest_timestamp
         
     
-    def _GetMyFileSeed( self, file_seed: FileSeed ) -> typing.Optional[ FileSeed ]:
+    def _GetMyFileSeed( self, file_seed: FileSeed ) -> FileSeed | None:
         
         search_file_seeds = file_seed.GetSearchFileSeeds()
         
@@ -2412,7 +2445,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
         return None
         
     
-    def _GetNextFileSeed( self, status: int ) -> typing.Optional[ FileSeed ]:
+    def _GetNextFileSeed( self, status: int ) -> FileSeed | None:
         
         statuses_to_file_seeds = self._GetStatusesToFileSeeds()
         file_seeds_to_indices = self._GetFileSeedsToIndices()
@@ -2495,7 +2528,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
                     
                     num_additional_children_in_current_batch += max( 0, int( result.group() ) )
                     
-                except:
+                except Exception as e:
                     
                     add_children_until_you_hit_a_parent = True
                     
@@ -2685,19 +2718,11 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
         
         if version in ( 2, 3 ):
             
-            # gelbooru replaced their thumbnail links with this redirect spam
-            # 'https://gelbooru.com/redirect.php?s=Ly9nZWxib29ydS5jb20vaW5kZXgucGhwP3BhZ2U9cG9zdCZzPXZpZXcmaWQ9MzY4ODA1OA=='
-            
-            # I missed some http ones here, so I've broadened the test and rescheduled it
+            # removed some old update code here
             
             new_serialisable_info = []
             
             for ( file_seed, file_seed_info ) in old_serialisable_info:
-                
-                if 'gelbooru.com/redirect.php' in file_seed:
-                    
-                    continue
-                    
                 
                 new_serialisable_info.append( ( file_seed, file_seed_info ) )
                 
@@ -2707,86 +2732,17 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
         
         if version == 4:
             
-            def ConvertRegularToRawURL( regular_url ):
-                
-                # convert this:
-                # http://68.media.tumblr.com/5af0d991f26ef9fdad5a0c743fb1eca2/tumblr_opl012ZBOu1tiyj7vo1_500.jpg
-                # to this:
-                # http://68.media.tumblr.com/5af0d991f26ef9fdad5a0c743fb1eca2/tumblr_opl012ZBOu1tiyj7vo1_raw.jpg
-                # the 500 part can be a bunch of stuff, including letters
-                
-                url_components = regular_url.split( '_' )
-                
-                last_component = url_components[ -1 ]
-                
-                ( number_gubbins, file_ext ) = last_component.split( '.' )
-                
-                raw_last_component = 'raw.{}'.format( file_ext )
-                
-                url_components[ -1 ] = raw_last_component
-                
-                raw_url = '_'.join( url_components )
-                
-                return raw_url
-                
-            
-            def Remove68Subdomain( long_url ):
-                
-                # sometimes the 68 subdomain gives a 404 on the raw url, so:
-                
-                # convert this:
-                # http://68.media.tumblr.com/5af0d991f26ef9fdad5a0c743fb1eca2/tumblr_opl012ZBOu1tiyj7vo1_raw.jpg
-                # to this:
-                # http://media.tumblr.com/5af0d991f26ef9fdad5a0c743fb1eca2/tumblr_opl012ZBOu1tiyj7vo1_raw.jpg
-                
-                # I am not sure if it is always 68, but let's not assume
-                
-                ( scheme, rest ) = long_url.split( '://', 1 )
-                
-                if rest.startswith( 'media.tumblr.com' ):
-                    
-                    return long_url
-                    
-                
-                ( gumpf, shorter_rest ) = rest.split( '.', 1 )
-                
-                shorter_url = '{}://{}'.format( scheme, shorter_rest )
-                
-                return shorter_url
-                
-            
             new_serialisable_info = []
             
             good_file_seeds = set()
             
             for ( file_seed, file_seed_info ) in old_serialisable_info:
                 
-                try:
+                # removed some old update code here
+                
+                if file_seed in good_file_seeds: # we hit a dupe, so skip it
                     
-                    parse = urllib.parse.urlparse( file_seed )
-                    
-                    if 'media.tumblr.com' in parse.netloc:
-                        
-                        file_seed = Remove68Subdomain( file_seed )
-                        
-                        file_seed = ConvertRegularToRawURL( file_seed )
-                        
-                        file_seed = ClientNetworkingFunctions.ConvertHTTPToHTTPS( file_seed )
-                        
-                    
-                    if 'pixiv.net' in parse.netloc:
-                        
-                        file_seed = ClientNetworkingFunctions.ConvertHTTPToHTTPS( file_seed )
-                        
-                    
-                    if file_seed in good_file_seeds: # we hit a dupe, so skip it
-                        
-                        continue
-                        
-                    
-                except:
-                    
-                    pass
+                    continue
                     
                 
                 good_file_seeds.add( file_seed )
@@ -2827,7 +2783,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
                         file_seed = file_seed.replace( magic_phrase, replacement )
                         
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -3185,7 +3141,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetFirstFileSeed( self ) -> typing.Optional[ FileSeed ]:
+    def GetFirstFileSeed( self ) -> FileSeed | None:
         
         with self._lock:
             
@@ -3225,7 +3181,7 @@ class FileSeedCache( HydrusSerialisable.SerialisableBase ):
         return latest_timestamp
         
     
-    def GetNextFileSeed( self, status: int ) -> typing.Optional[ FileSeed ]:
+    def GetNextFileSeed( self, status: int ) -> FileSeed | None:
         
         with self._lock:
             

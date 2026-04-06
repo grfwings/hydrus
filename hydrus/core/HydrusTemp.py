@@ -82,6 +82,16 @@ def CleanUpOldTempPaths():
         
     
 
+def GetCurrentSQLiteTempDir():
+    
+    if 'SQLITE_TMPDIR' in os.environ:
+        
+        return os.environ[ 'SQLITE_TMPDIR' ]
+        
+    
+    return GetCurrentTempDir()
+    
+
 def GetCurrentTempDir():
     
     return tempfile.gettempdir()
@@ -126,12 +136,12 @@ def GetSubTempDir( prefix = '' ):
     return tempfile.mkdtemp( prefix = prefix, dir = hydrus_temp_dir )
     
 
-def GetTempPath( suffix = '', dir = None ):
+def GetTempPath( prefix: str, suffix = '', dir = None ):
     
     if dir is None:
         
         dir = HG.controller.GetHydrusTempDir()
         
     
-    return tempfile.mkstemp( suffix = suffix, prefix = 'hydrus', dir = dir )
+    return tempfile.mkstemp( suffix = suffix, prefix = prefix + '_', dir = dir )
     

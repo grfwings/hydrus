@@ -14,10 +14,24 @@ def GenerateThumbnailNumPyFromPaintNET( path: str, target_resolution: tuple[ int
     
     pil_image = ThumbnailPILImageFromPaintNET( path )
     
-    # noinspection PyUnresolvedReferences
-    thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+    try:
+        
+        # noinspection PyUnresolvedReferences
+        thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+        
+    finally:
+        
+        pil_image.close()
+        
     
-    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+    try:
+        
+        numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+        
+    finally:
+        
+        thumbnail_pil_image.close()
+        
     
     return numpy_image
     
@@ -30,7 +44,7 @@ def GetPaintNETResolution( path: str ):
         
         return GetPaintNETResolutionFromXMLHeader( xml_header )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.NoThumbnailFileException( f'Could not read resolution bytes from this Paint.NET!' )
         
@@ -45,7 +59,7 @@ def GetPaintNETResolutionFromXMLHeader( xml_header: str ):
         width = int( root.attrib[ 'width' ] )
         height = int( root.attrib[ 'height' ] )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'Cannot parse the XML from this Paint.NET file!' )
         
@@ -65,7 +79,7 @@ def GetPaintNETXMLHeader( path:str ):
             
             xml_header = f.read( header_length ).decode( 'utf-8' )
             
-        except:
+        except Exception as e:
             
             raise HydrusExceptions.DamagedOrUnusualFileException( 'Cannot read the XML from this Paint.NET file!' )
             
@@ -85,7 +99,7 @@ def ThumbnailPILImageFromPaintNET( path: str ):
         thumb_tag = root.find( './custom/thumb' )
         png_b64 = thumb_tag.attrib[ 'png' ]
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.NoThumbnailFileException( f'Could not read thumb bytes from this Paint.NET xml!' )
         
@@ -94,7 +108,7 @@ def ThumbnailPILImageFromPaintNET( path: str ):
         
         png_bytes = base64.b64decode( png_b64 )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.NoThumbnailFileException( f'Could not decode thumb bytes from this Paint.NET xml!' )
         

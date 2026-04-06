@@ -12,6 +12,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client.gui import ClientGUICore as CGC
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import QtPorting as QP
@@ -96,7 +97,7 @@ class CollectComboCtrl( QW.QComboBox ):
                 
                 text_and_data_tuples.update( namespaces )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.DebugPrint( 'Bad namespaces: {}'.format( namespaces ) )
                 
@@ -232,19 +233,26 @@ class CollectComboCtrl( QW.QComboBox ):
         return typing.cast( QG.QStandardItemModel, super().model() )
         
     
-    def paintEvent( self, e ):
+    def paintEvent( self, event ):
         
-        painter = QW.QStylePainter( self )
-        painter.setPen( self.palette().color( QG.QPalette.ColorRole.Text ) )
-
-        opt = QW.QStyleOptionComboBox()
-        self.initStyleOption( opt )
-
-        opt.currentText = self._cached_text
-        
-        painter.drawComplexControl( QW.QStyle.CC_ComboBox, opt )
-        
-        painter.drawControl( QW.QStyle.CE_ComboBoxLabel, opt )
+        try:
+            
+            painter = QW.QStylePainter( self )
+            painter.setPen( self.palette().color( QG.QPalette.ColorRole.Text ) )
+            
+            opt = QW.QStyleOptionComboBox()
+            self.initStyleOption( opt )
+            
+            opt.currentText = self._cached_text
+            
+            painter.drawComplexControl( QW.QStyle.CC_ComboBox, opt )
+            
+            painter.drawControl( QW.QStyle.CE_ComboBoxLabel, opt )
+            
+        except Exception as e:
+            
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
+            
         
     
     def ReinitialiseChoices( self ):
@@ -313,7 +321,7 @@ class MediaCollectControl( QW.QWidget ):
     
     collectChanged = QC.Signal( ClientMedia.MediaCollect )
     
-    def __init__( self, parent, media_collect: typing.Optional[ ClientMedia.MediaCollect ] = None ):
+    def __init__( self, parent, media_collect: ClientMedia.MediaCollect | None = None ):
         
         super().__init__( parent )
         
@@ -580,7 +588,7 @@ class MediaSortControl( QW.QWidget ):
             
             self.SetSort( media_sort )
             
-        except:
+        except Exception as e:
             
             default_sort = ClientMedia.MediaSort( ( 'system', CC.SORT_FILES_BY_FILESIZE ), CC.SORT_ASC )
             

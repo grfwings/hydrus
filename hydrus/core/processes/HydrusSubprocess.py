@@ -1,7 +1,6 @@
 import os
 import queue
 import subprocess
-import sys
 import threading
 
 from hydrus.core import HydrusBoot
@@ -97,7 +96,7 @@ def GetSubprocessEnv():
                 
                 # pyinstaller can just replace this nice usually long str with multiple paths with base_dir/share
                 # absent the _orig above to rescue this, we'll populate with basic
-                if ':' not in xdg_data_dirs and HC.BASE_DIR in xdg_data_dirs:
+                if ':' not in xdg_data_dirs and ( HC.BASE_DIR in xdg_data_dirs or HC.CONTENT_BASE_DIR in xdg_data_dirs ):
                     
                     xdg_data_dirs = '/usr/local/share:/usr/share'
                     
@@ -145,21 +144,9 @@ def GetSubprocessKWArgs( hide_terminal = True, text = False ):
     
     if text:
         
-        # probably need to override the stdXXX pipes with i/o encoding wrappers in the case of 3.5 here
-        
-        if sys.version_info.minor >= 6:
-            
-            sbp_kwargs[ 'encoding' ] = 'utf-8'
-            
-        
-        if sys.version_info.minor >= 7:
-            
-            sbp_kwargs[ 'text' ] = True
-            
-        else:
-            
-            sbp_kwargs[ 'universal_newlines' ] = True
-            
+        sbp_kwargs[ 'text' ] = True
+        sbp_kwargs[ 'encoding' ] = 'utf-8'
+        sbp_kwargs[ 'errors' ] = 'replace' # handling mp4s with invalid utf-8 metadata hooray
         
     
     if hide_terminal:
@@ -323,7 +310,7 @@ def SubprocessCommunicate( cmd, process: subprocess.Popen, timeout: int ):
                 
                 process.kill()
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -436,7 +423,21 @@ class SubprocessContext( object ):
                     continue
                     
                 
-                chunk = self.process.stdout.read( self._bufsize )
+                if self.process.returncode is not None:
+                    
+                    return
+                    
+                
+                try:
+                    
+                    chunk = self.process.stdout.read( self._bufsize )
+                    
+                except ValueError: # probably got terminated at an inconvenient time
+                    
+                    HydrusData.Print( f'Probably not a big deal, but the Subprocess Command "{self._cmd}" closed its stdout early. If this keeps happening, please let hydev know!' )
+                    
+                    return
+                    
                 
                 if len( chunk ) == 0:
                     

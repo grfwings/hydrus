@@ -14,10 +14,14 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientLocation
 from hydrus.client.importing import ClientImportFileSeeds
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileFilteringImportOptions
+from hydrus.client.importing.options import LocationImportOptions
 from hydrus.client.importing.options import NoteImportOptions
+from hydrus.client.importing.options import PrefetchImportOptions
 from hydrus.client.importing.options import PresentationImportOptions
+from hydrus.client.importing.options import TagFilteringImportOptions
 from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.media import ClientMediaManagers
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
@@ -105,13 +109,15 @@ class TestCheckerOptions( unittest.TestCase ):
         
         new_thread_file_seed_cache = ClientImportFileSeeds.FileSeedCache()
         
+        time_since_last_post = 600
+        
         for i in range( 10 ):
             
             url = 'https://wew.lad/' + os.urandom( 16 ).hex()
             
             file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
             
-            file_seed.source_time = last_check_time - 600
+            file_seed.source_time = last_check_time - time_since_last_post
             
             new_thread_file_seed_cache.AddFileSeeds( ( file_seed, ) )
             
@@ -188,9 +194,8 @@ class TestCheckerOptions( unittest.TestCase ):
         self.assertEqual( slow_checker_options.GetPrettyCurrentVelocity( new_thread_file_seed_cache, last_check_time ), 'at last check, found 10 files in previous 10 minutes' )
         self.assertEqual( callous_checker_options.GetPrettyCurrentVelocity( new_thread_file_seed_cache, last_check_time ), 'at last check, found 0 files in previous 1 minute' )
         
-        # these would be 360, 120, 600, but the 'don't check faster the time since last file post' bumps this up
-        self.assertEqual( regular_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 600 )
-        self.assertEqual( fast_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 600 )
+        self.assertEqual( regular_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 300 )
+        self.assertEqual( fast_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 150 )
         self.assertEqual( slow_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 600 )
         
         # Let's test the static timings, where if faster_than == slower_than
@@ -210,86 +215,55 @@ class TestCheckerOptions( unittest.TestCase ):
         self.assertEqual( static_checker_options.GetNextCheckTime( new_thread_file_seed_cache, last_check_time ), last_check_time + 3600 * ( 100000 // 3600 ) )
         
     
-class TestFileImportOptions( unittest.TestCase ):
+
+class TestFileFilteringImportOptions( unittest.TestCase ):
     
-    def test_file_import_options( self ):
-        
-        file_import_options = FileImportOptions.FileImportOptions()
+    def test_file_filtering_import_options( self ):
         
         exclude_deleted = False
-        preimport_hash_check_type = FileImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
-        preimport_url_check_type = FileImportOptions.DO_CHECK
         allow_decompression_bombs = False
-        min_size = None
-        max_size = None
-        max_gif_size = None
-        min_resolution = None
-        max_resolution = None
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options = FileFilteringImportOptions.FileFilteringImportOptions()
         
-        automatic_archive = False
-        associate_primary_urls = False
-        associate_source_urls = False
-        
-        file_import_options.SetPostImportOptions( automatic_archive, associate_primary_urls, associate_source_urls )
+        file_filtering_import_options.SetAllowsDecompressionBombs( allow_decompression_bombs )
+        file_filtering_import_options.SetExcludesDeleted( exclude_deleted )
         
         #
         
-        self.assertFalse( file_import_options.ExcludesDeleted() )
-        self.assertFalse( file_import_options.AllowsDecompressionBombs() )
-        self.assertFalse( file_import_options.AutomaticallyArchives() )
-        self.assertFalse( file_import_options.ShouldAssociatePrimaryURLs() )
-        self.assertFalse( file_import_options.ShouldAssociateSourceURLs() )
+        self.assertFalse( file_filtering_import_options.ExcludesDeleted() )
+        self.assertFalse( file_filtering_import_options.AllowsDecompressionBombs() )
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
-        file_import_options.CheckFileIsValid( 65536, HC.APPLICATION_7Z, None, None )
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.APPLICATION_7Z, None, None )
         
         #
         
         exclude_deleted = True
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetExcludesDeleted( exclude_deleted )
         
-        self.assertTrue( file_import_options.ExcludesDeleted() )
-        self.assertFalse( file_import_options.AllowsDecompressionBombs() )
-        self.assertFalse( file_import_options.AutomaticallyArchives() )
+        self.assertTrue( file_filtering_import_options.ExcludesDeleted() )
         
         #
         
         allow_decompression_bombs = True
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetAllowsDecompressionBombs( allow_decompression_bombs )
         
-        self.assertTrue( file_import_options.ExcludesDeleted() )
-        self.assertTrue( file_import_options.AllowsDecompressionBombs() )
-        self.assertFalse( file_import_options.AutomaticallyArchives() )
-        
-        #
-        
-        automatic_archive = True
-        associate_primary_urls = True
-        associate_source_urls  = True
-        
-        file_import_options.SetPostImportOptions( automatic_archive, associate_primary_urls, associate_source_urls )
-        
-        self.assertTrue( file_import_options.ExcludesDeleted() )
-        self.assertTrue( file_import_options.AllowsDecompressionBombs() )
-        self.assertTrue( file_import_options.AutomaticallyArchives() )
-        self.assertTrue( file_import_options.ShouldAssociatePrimaryURLs() )
-        self.assertTrue( file_import_options.ShouldAssociateSourceURLs() )
+        self.assertTrue( file_filtering_import_options.ExcludesDeleted() )
+        self.assertTrue( file_filtering_import_options.AllowsDecompressionBombs() )
         
         #
         
         min_size = 4096
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetMinSize( min_size )
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
         
         with self.assertRaises( HydrusExceptions.FileImportRulesException ):
             
-            file_import_options.CheckFileIsValid( 512, HC.IMAGE_JPEG, 640, 480 )
+            file_filtering_import_options.CheckFileIsValid( 512, HC.IMAGE_JPEG, 640, 480 )
             
         
         #
@@ -297,13 +271,14 @@ class TestFileImportOptions( unittest.TestCase ):
         min_size = None
         max_size = 2000
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetMinSize( min_size )
+        file_filtering_import_options.SetMaxSize( max_size )
         
-        file_import_options.CheckFileIsValid( 1800, HC.IMAGE_JPEG, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 1800, HC.IMAGE_JPEG, 640, 480 )
         
         with self.assertRaises( HydrusExceptions.FileImportRulesException ):
             
-            file_import_options.CheckFileIsValid( 2200, HC.IMAGE_JPEG, 640, 480 )
+            file_filtering_import_options.CheckFileIsValid( 2200, HC.IMAGE_JPEG, 640, 480 )
             
         
         #
@@ -311,16 +286,17 @@ class TestFileImportOptions( unittest.TestCase ):
         max_size = None
         max_gif_size = 2000
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetMaxSize( max_size )
+        file_filtering_import_options.SetMaxGifSize( max_gif_size )
         
-        file_import_options.CheckFileIsValid( 1800, HC.IMAGE_JPEG, 640, 480 )
-        file_import_options.CheckFileIsValid( 2200, HC.IMAGE_JPEG, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 1800, HC.IMAGE_JPEG, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 2200, HC.IMAGE_JPEG, 640, 480 )
         
-        file_import_options.CheckFileIsValid( 1800, HC.ANIMATION_GIF, 640, 480 )
+        file_filtering_import_options.CheckFileIsValid( 1800, HC.ANIMATION_GIF, 640, 480 )
         
         with self.assertRaises( HydrusExceptions.FileImportRulesException ):
             
-            file_import_options.CheckFileIsValid( 2200, HC.ANIMATION_GIF, 640, 480 )
+            file_filtering_import_options.CheckFileIsValid( 2200, HC.ANIMATION_GIF, 640, 480 )
             
         
         #
@@ -328,44 +304,47 @@ class TestFileImportOptions( unittest.TestCase ):
         max_gif_size = None
         min_resolution = ( 200, 100 )
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetMaxGifSize( max_gif_size )
+        file_filtering_import_options.SetMinResolution( min_resolution )
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
-        
-        with self.assertRaises( HydrusExceptions.FileImportRulesException ):
-            
-            file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 180, 480 )
-            
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
         
         with self.assertRaises( HydrusExceptions.FileImportRulesException ):
             
-            file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 80 )
+            file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 180, 480 )
             
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 180 )
+        with self.assertRaises( HydrusExceptions.FileImportRulesException ):
+            
+            file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 80 )
+            
+        
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 180 )
         
         #
         
         min_resolution = None
         max_resolution = ( 3000, 4000 )
         
-        file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
+        file_filtering_import_options.SetMinResolution( min_resolution )
+        file_filtering_import_options.SetMaxResolution( max_resolution )
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
-        
-        with self.assertRaises( HydrusExceptions.FileImportRulesException ):
-            
-            file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 3200, 480 )
-            
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 480 )
         
         with self.assertRaises( HydrusExceptions.FileImportRulesException ):
             
-            file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 4200 )
+            file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 3200, 480 )
             
         
-        file_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 2800, 3800 )
+        with self.assertRaises( HydrusExceptions.FileImportRulesException ):
+            
+            file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 640, 4200 )
+            
+        
+        file_filtering_import_options.CheckFileIsValid( 65536, HC.IMAGE_JPEG, 2800, 3800 )
         
     
+
 def GetNotesMediaResult( hash, names_to_notes ):
     
     file_id = 123
@@ -394,6 +373,124 @@ def GetNotesMediaResult( hash, names_to_notes ):
     
     return media_result
     
+
+class TestLocationImportOptions( unittest.TestCase ):
+    
+    def test_location_import_options( self ):
+        
+        destination_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.LOCAL_FILE_SERVICE_KEY )
+        automatic_archive = False
+        do_archive_already_in_db_files = False
+        do_import_destinations_on_already_in_db_files = False
+        associate_primary_urls = False
+        associate_source_urls = False
+        
+        location_import_options = LocationImportOptions.LocationImportOptions()
+        
+        location_import_options.SetDestinationLocationContext( destination_location_context )
+        location_import_options.SetAutomaticallyArchives( automatic_archive )
+        location_import_options.SetDoAutomaticArchiveOnAlreadyInDBFiles( do_archive_already_in_db_files )
+        location_import_options.SetDoImportDestinationsOnAlreadyInDBFiles( do_import_destinations_on_already_in_db_files )
+        location_import_options.SetShouldAssociatePrimaryURLs( associate_primary_urls )
+        location_import_options.SetShouldAssociateSourceURLs( associate_source_urls )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        automatic_archive = True
+        
+        location_import_options.SetAutomaticallyArchives( automatic_archive )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        do_archive_already_in_db_files = True
+        
+        location_import_options.SetDoAutomaticArchiveOnAlreadyInDBFiles( do_archive_already_in_db_files )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        do_import_destinations_on_already_in_db_files = True
+        
+        location_import_options.SetDoImportDestinationsOnAlreadyInDBFiles( do_import_destinations_on_already_in_db_files )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        associate_primary_urls = True
+        
+        location_import_options.SetShouldAssociatePrimaryURLs( associate_primary_urls )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        associate_source_urls = True
+        
+        location_import_options.SetShouldAssociateSourceURLs( associate_source_urls )
+        
+        #
+        
+        self.assertEqual( location_import_options.GetDestinationLocationContext(), destination_location_context )
+        self.assertEqual( location_import_options.AutomaticallyArchives(), automatic_archive )
+        self.assertEqual( location_import_options.DoAutomaticArchiveOnAlreadyInDBFiles(), do_archive_already_in_db_files )
+        self.assertEqual( location_import_options.DoImportDestinationsOnAlreadyInDBFiles(), do_import_destinations_on_already_in_db_files )
+        self.assertEqual( location_import_options.ShouldAssociatePrimaryURLs(), associate_primary_urls )
+        self.assertEqual( location_import_options.ShouldAssociateSourceURLs(), associate_source_urls )
+        
+        #
+        
+        destination_location_context = ClientLocation.LocationContext( current_service_keys = set(), deleted_service_keys = set() )
+        
+        location_import_options.SetDestinationLocationContext( destination_location_context )
+        
+        with self.assertRaises( HydrusExceptions.FileImportBlockException ):
+            
+            location_import_options.CheckReadyToImport()
+            
+        
+    
+
 class TestNoteImportOptions( unittest.TestCase ):
     
     def test_basics( self ):
@@ -547,6 +644,23 @@ def GetTagsMediaResult( hash, in_inbox, service_key, deleted_tags ):
     
     return media_result
     
+
+class TestPrefetchImportOptions( unittest.TestCase ):
+    
+    def test_prefetch_import_options( self ):
+        
+        prefetch_import_options = PrefetchImportOptions.PrefetchImportOptions()
+        
+        prefetch_import_options.SetPreImportHashCheckType( PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE )
+        prefetch_import_options.SetPreImportURLCheckType( PrefetchImportOptions.DO_CHECK )
+        prefetch_import_options.SetPreImportURLCheckLooksForNeighbourSpam( True )
+        
+        self.assertEqual( prefetch_import_options.GetPreImportHashCheckType(), PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE )
+        self.assertEqual( prefetch_import_options.GetPreImportURLCheckType(), PrefetchImportOptions.DO_CHECK )
+        self.assertTrue( prefetch_import_options.PreImportURLCheckLooksForNeighbourSpam() )
+        
+    
+
 class TestPresentationImportOptions( unittest.TestCase ):
     
     def test_presentation_import_options( self ):
@@ -878,11 +992,68 @@ class TestPresentationImportOptions( unittest.TestCase ):
         self.assertEqual( result, expected_result )
         
     
+
+class TestTagFilteringImportOptions( unittest.TestCase ):
+    
+    def test_basics( self ):
+        
+        default_tag_filtering_import_options = TagFilteringImportOptions.TagFilteringImportOptions()
+        
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
+        
+        blacklist = default_tag_filtering_import_options.GetTagBlacklist()
+        
+        self.assertEqual( blacklist.Filter( some_tags ), some_tags )
+        
+        whitelist = default_tag_filtering_import_options.GetTagWhitelist()
+        
+        self.assertEqual( whitelist, [] )
+        
+    
+    def test_blacklist( self ):
+        
+        tag_blacklist = HydrusTags.TagFilter()
+        
+        tag_blacklist.SetRule( 'series:', HC.FILTER_BLACKLIST )
+        
+        tag_filtering_import_options = TagFilteringImportOptions.TagFilteringImportOptions( tag_blacklist = tag_blacklist )
+        
+        with self.assertRaises( HydrusExceptions.VetoException ):
+            
+            tag_filtering_import_options.CheckTagsVeto( { 'bodysuit', 'series:bountyvania' }, set() )
+            
+        
+        with self.assertRaises( HydrusExceptions.VetoException ):
+            
+            tag_filtering_import_options.CheckTagsVeto( { 'bodysuit' }, { 'series:bountyvania' } )
+            
+        
+        tag_filtering_import_options.CheckTagsVeto( { 'bodysuit' }, set() )
+        
+    
+    def test_whitelist( self ):
+        
+        example_service_key = TG.test_controller.example_tag_repo_service_key
+        
+        tag_whitelist = [ 'bodysuit' ]
+        
+        tag_filtering_import_options = TagFilteringImportOptions.TagFilteringImportOptions( tag_whitelist = tag_whitelist )
+        
+        with self.assertRaises( HydrusExceptions.VetoException ):
+            
+            tag_filtering_import_options.CheckTagsVeto( { 'series:bountyvania' }, set() )
+            
+        
+        tag_filtering_import_options.CheckTagsVeto( { 'bodysuit', 'series:bountyvania' }, set() )
+        tag_filtering_import_options.CheckTagsVeto( { 'series:bountyvania' }, { 'bodysuit' } )
+        
+    
+
 class TestTagImportOptions( unittest.TestCase ):
     
     def test_basics( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = TG.test_controller.example_tag_repo_service_key
         
@@ -892,76 +1063,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         default_tag_import_options = TagImportOptions.TagImportOptions()
         
-        self.assertEqual( default_tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), False )
-        self.assertEqual( default_tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), False )
-        
-        blacklist = default_tag_import_options.GetTagBlacklist()
-        
-        self.assertEqual( blacklist.Filter( some_tags ), some_tags )
-        
-        whitelist = default_tag_import_options.GetTagWhitelist()
-        
-        self.assertEqual( whitelist, [] )
-        
         HF.compare_content_update_packages( self, default_tag_import_options.GetContentUpdatePackage( CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), ClientContentUpdates.ContentUpdatePackage() )
-        
-        #
-        
-        tag_import_options = TagImportOptions.TagImportOptions( fetch_tags_even_if_url_recognised_and_file_already_in_db = True )
-        
-        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), True )
-        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), False )
-        
-        #
-        
-        tag_import_options = TagImportOptions.TagImportOptions( fetch_tags_even_if_hash_recognised_and_file_already_in_db = True )
-        
-        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), False )
-        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), True )
-        
-    
-    def test_blacklist( self ):
-        
-        example_service_key = TG.test_controller.example_tag_repo_service_key
-        
-        tag_blacklist = HydrusTags.TagFilter()
-        
-        tag_blacklist.SetRule( 'series:', HC.FILTER_BLACKLIST )
-        
-        service_keys_to_service_tag_import_options = { example_service_key : TagImportOptions.ServiceTagImportOptions( get_tags = True ) }
-        
-        tag_import_options = TagImportOptions.TagImportOptions( tag_blacklist = tag_blacklist, service_keys_to_service_tag_import_options = service_keys_to_service_tag_import_options )
-        
-        with self.assertRaises( HydrusExceptions.VetoException ):
-            
-            tag_import_options.CheckTagsVeto( { 'bodysuit', 'series:metroid' }, set() )
-            
-        
-        with self.assertRaises( HydrusExceptions.VetoException ):
-            
-            tag_import_options.CheckTagsVeto( { 'bodysuit' }, { 'series:metroid' } )
-            
-        
-        tag_import_options.CheckTagsVeto( { 'bodysuit' }, set() )
-        
-    
-    def test_whitelist( self ):
-        
-        example_service_key = TG.test_controller.example_tag_repo_service_key
-        
-        tag_whitelist = [ 'bodysuit' ]
-        
-        service_keys_to_service_tag_import_options = { example_service_key : TagImportOptions.ServiceTagImportOptions( get_tags = True ) }
-        
-        tag_import_options = TagImportOptions.TagImportOptions( tag_whitelist = tag_whitelist, service_keys_to_service_tag_import_options = service_keys_to_service_tag_import_options )
-        
-        with self.assertRaises( HydrusExceptions.VetoException ):
-            
-            tag_import_options.CheckTagsVeto( { 'series:metroid' }, set() )
-            
-        
-        tag_import_options.CheckTagsVeto( { 'bodysuit', 'series:metroid' }, set() )
-        tag_import_options.CheckTagsVeto( { 'series:metroid' }, { 'bodysuit' } )
         
     
     def test_external_tags( self ):
@@ -970,7 +1072,7 @@ class TestTagImportOptions( unittest.TestCase ):
         example_hash = HydrusData.GenerateKey()
         example_service_key = TG.test_controller.example_tag_repo_service_key
         
-        external_filterable_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        external_filterable_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         external_additional_service_keys_to_tags = { example_service_key : { 'series:evangelion' } }
         
         media_result = GetTagsMediaResult( example_hash, True, example_service_key, set() )
@@ -989,7 +1091,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'bodysuit', 'character:samus aran', 'series:metroid', 'series:evangelion' }
+        filtered_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania', 'series:evangelion' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
@@ -1012,7 +1114,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'bodysuit', 'character:samus aran', 'series:evangelion' }
+        filtered_tags = { 'bodysuit', 'character:space bounty hunter', 'series:evangelion' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
@@ -1020,7 +1122,7 @@ class TestTagImportOptions( unittest.TestCase ):
     
     def test_services( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key_1 = CC.DEFAULT_LOCAL_TAG_SERVICE_KEY
         example_service_key_2 = TG.test_controller.example_tag_repo_service_key
@@ -1045,17 +1147,17 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates_1 = dict( result.IterateContentUpdates() )[ example_service_key_1 ]
         
-        filtered_tags = { 'bodysuit', 'character:samus aran', 'series:evangelion' }
+        filtered_tags = { 'bodysuit', 'character:space bounty hunter', 'series:evangelion' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates_1 }
         
     
     def test_overwrite_deleted_filterable( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = TG.test_controller.example_tag_repo_service_key
         
-        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:metroid' } )
+        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:bountyvania' } )
         
         #
         
@@ -1071,7 +1173,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'character:samus aran' }
+        filtered_tags = { 'character:space bounty hunter' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
@@ -1090,7 +1192,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        filtered_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
@@ -1098,11 +1200,11 @@ class TestTagImportOptions( unittest.TestCase ):
     
     def test_overwrite_deleted_additional( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = TG.test_controller.example_tag_repo_service_key
         
-        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:metroid' } )
+        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:bountyvania' } )
         
         #
         
@@ -1118,7 +1220,7 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'character:samus aran' }
+        filtered_tags = { 'character:space bounty hunter' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
@@ -1137,17 +1239,48 @@ class TestTagImportOptions( unittest.TestCase ):
         
         content_updates = dict( result.IterateContentUpdates() )[ example_service_key ]
         
-        filtered_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        filtered_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         result_tags = { c_u.GetRow()[0] for c_u in content_updates }
         
         self.assertEqual( result_tags, filtered_tags )
         
     
+
+class TestTagImportOptionsLegacy( unittest.TestCase ):
+    
+    def test_basics( self ):
+        
+        example_hash = HydrusData.GenerateKey()
+        example_service_key = TG.test_controller.example_tag_repo_service_key
+        
+        #
+        
+        default_tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
+        
+        self.assertEqual( default_tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), False )
+        self.assertEqual( default_tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), False )
+        
+        #
+        
+        tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( fetch_tags_even_if_url_recognised_and_file_already_in_db = True )
+        
+        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), True )
+        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), False )
+        
+        #
+        
+        tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( fetch_tags_even_if_hash_recognised_and_file_already_in_db = True )
+        
+        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfURLKnownAndFileAlreadyInDB(), False )
+        self.assertEqual( tag_import_options.ShouldFetchTagsEvenIfHashKnownAndFileAlreadyInDB(), True )
+        
+    
+
 class TestServiceTagImportOptions( unittest.TestCase ):
     
     def test_basics( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
@@ -1169,7 +1302,7 @@ class TestServiceTagImportOptions( unittest.TestCase ):
     
     def test_get_tags_filtering( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
@@ -1189,24 +1322,24 @@ class TestServiceTagImportOptions( unittest.TestCase ):
         
         service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, get_tags_filter = only_namespaced )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran', 'series:metroid' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter', 'series:bountyvania' } )
         
         #
         
-        only_samus = HydrusTags.TagFilter()
+        only_sbh = HydrusTags.TagFilter()
         
-        only_samus.SetRule( '', HC.FILTER_BLACKLIST )
-        only_samus.SetRule( ':', HC.FILTER_BLACKLIST )
-        only_samus.SetRule( 'character:samus aran', HC.FILTER_WHITELIST )
+        only_sbh.SetRule( '', HC.FILTER_BLACKLIST )
+        only_sbh.SetRule( ':', HC.FILTER_BLACKLIST )
+        only_sbh.SetRule( 'character:space bounty hunter', HC.FILTER_WHITELIST )
         
-        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, get_tags_filter = only_samus )
+        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, get_tags_filter = only_sbh )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter' } )
         
     
     def test_additional( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
@@ -1221,17 +1354,17 @@ class TestServiceTagImportOptions( unittest.TestCase ):
     
     def test_overwrite_deleted_get_tags_filtering( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
-        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:metroid' } )
+        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:bountyvania' } )
         
         #
         
         service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, get_tags_overwrite_deleted = False )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter' } )
         
         #
         
@@ -1243,7 +1376,7 @@ class TestServiceTagImportOptions( unittest.TestCase ):
         
         service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags_overwrite_deleted = True )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter' } )
         
     
     def test_overwrite_deleted_additional( self ):
@@ -1252,30 +1385,30 @@ class TestServiceTagImportOptions( unittest.TestCase ):
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
-        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:metroid' } )
+        media_result = GetTagsMediaResult( example_hash, True, example_service_key, { 'bodysuit', 'series:bountyvania' } )
         
         #
         
-        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }, additional_tags_overwrite_deleted = False )
+        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }, additional_tags_overwrite_deleted = False )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran' } )
-        
-        #
-        
-        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }, additional_tags_overwrite_deleted = True )
-        
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'bodysuit', 'character:samus aran', 'series:metroid' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter' } )
         
         #
         
-        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }, get_tags_overwrite_deleted = True )
+        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }, additional_tags_overwrite_deleted = True )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:samus aran' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' } )
+        
+        #
+        
+        service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, additional_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }, get_tags_overwrite_deleted = True )
+        
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'character:space bounty hunter' } )
         
     
     def test_application( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
@@ -1309,8 +1442,8 @@ class TestServiceTagImportOptions( unittest.TestCase ):
     
     def test_existing( self ):
         
-        some_tags = { 'bodysuit', 'character:samus aran', 'series:metroid' }
-        existing_tags = { 'character:samus aran', 'series:metroid' }
+        some_tags = { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
+        existing_tags = { 'character:space bounty hunter', 'series:bountyvania' }
         example_hash = HydrusData.GenerateKey()
         example_service_key = HydrusData.GenerateKey()
         
@@ -1326,7 +1459,7 @@ class TestServiceTagImportOptions( unittest.TestCase ):
         
         #
         
-        some_tags = { 'explicit', 'bodysuit', 'character:samus aran', 'series:metroid' }
+        some_tags = { 'explicit', 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' }
         existing_tags = { 'bodysuit' }
         
         only_unnamespaced = HydrusTags.TagFilter()
@@ -1337,6 +1470,6 @@ class TestServiceTagImportOptions( unittest.TestCase ):
         
         service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True, only_add_existing_tags = True, only_add_existing_tags_filter = only_unnamespaced )
         
-        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'bodysuit', 'character:samus aran', 'series:metroid' } )
+        self.assertEqual( service_tag_import_options.GetTags( example_service_key, CC.STATUS_SUCCESSFUL_AND_NEW, media_result, some_tags ), { 'bodysuit', 'character:space bounty hunter', 'series:bountyvania' } )
         
     

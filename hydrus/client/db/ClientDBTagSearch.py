@@ -490,7 +490,6 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
         file_search_context: ClientSearchFileSearchContext.FileSearchContext,
         search_text: str = '',
         exact_match = False,
-        inclusive = True,
         search_namespaces_into_full_tags = False,
         zero_count_ok = False,
         job_status = None
@@ -539,7 +538,7 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
             
             if ':' not in search_text and search_namespaces_into_full_tags and not exact_match:
                 
-                # 'char' -> 'character:samus aran'
+                # 'char' -> 'character:dave'
                 
                 special_search_text = '{}*:*'.format( search_text )
                 
@@ -569,7 +568,7 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
                 
                 #
                 
-                predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, display_tag_service_id, ids_to_count, inclusive, job_status = job_status )
+                predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, display_tag_service_id, ids_to_count, job_status = job_status )
                 
                 all_predicates.extend( predicates )
                 
@@ -893,7 +892,7 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
                 else:
                     
                     # we want the " " wrapping our search text to keep whitespace words connected and in order
-                    # "samus ar*" should not match "around samus"
+                    # "man ha*" should not match "happy man"
                     
                     # simple 'sam*' style subtag, so we can search fts4 no prob
                     
@@ -1009,7 +1008,7 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
                 else:
                     
                     # we want the " " wrapping our search text to keep whitespace words connected and in order
-                    # "samus ar*" should not match "around samus"
+                    # "man ha*" should not match "happy man"
                     
                     # simple 'sam*' style subtag, so we can search fts4 no prob
                     
@@ -1309,7 +1308,6 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
         tag_display_type: int,
         file_search_context: ClientSearchFileSearchContext.FileSearchContext,
         tag_ids: collections.abc.Collection[ int ],
-        inclusive = True,
         zero_count_ok = False,
         job_status = None
     ):
@@ -1345,7 +1343,7 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
                 
                 #
                 
-                predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, display_tag_service_id, ids_to_count, inclusive, job_status = job_status )
+                predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, display_tag_service_id, ids_to_count, job_status = job_status )
                 
                 all_predicates.extend( predicates )
                 
@@ -1366,7 +1364,6 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
         tag_display_type: int,
         file_search_context: ClientSearchFileSearchContext.FileSearchContext,
         tags: collections.abc.Collection[ str ],
-        inclusive = True,
         zero_count_ok = False,
         job_status = None
     ):
@@ -1377,7 +1374,6 @@ class ClientDBTagSearch( ClientDBModule.ClientDBModule ):
             tag_display_type,
             file_search_context,
             tag_ids,
-            inclusive = inclusive,
             zero_count_ok = zero_count_ok,
             job_status = job_status )
         

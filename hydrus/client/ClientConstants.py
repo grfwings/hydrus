@@ -187,7 +187,8 @@ MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON = 4
 MEDIA_VIEWER_ACTION_DO_NOT_SHOW_ON_ACTIVATION_OPEN_EXTERNALLY = 5
 MEDIA_VIEWER_ACTION_DO_NOT_SHOW = 6
 MEDIA_VIEWER_ACTION_SHOW_WITH_MPV = 7
-MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER = 8
+MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER_VIDEO_WIDGET = 8
+MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER = 9
 
 media_viewer_action_string_lookup = {
     MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE : 'show with native hydrus viewer',
@@ -198,7 +199,8 @@ media_viewer_action_string_lookup = {
     MEDIA_VIEWER_ACTION_DO_NOT_SHOW_ON_ACTIVATION_OPEN_EXTERNALLY : 'do not show in the media viewer. on thumbnail activation, open externally',
     MEDIA_VIEWER_ACTION_DO_NOT_SHOW : 'do not show at all',
     MEDIA_VIEWER_ACTION_SHOW_WITH_MPV : 'show using mpv',
-    MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER : 'show using Qt Media Player (EXPERIMENTAL, buggy, crashy!)'
+    MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER_VIDEO_WIDGET : 'show using old QtMediaPlayer test -- obselete',
+    MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER : 'show using QtMediaPlayer',
 }
 
 unsupported_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON, MEDIA_VIEWER_ACTION_DO_NOT_SHOW_ON_ACTIVATION_OPEN_EXTERNALLY, MEDIA_VIEWER_ACTION_DO_NOT_SHOW ]
@@ -206,8 +208,8 @@ static_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE ] + unsupported_me
 animated_webp_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE ] + unsupported_media_actions
 animated_jxl_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE ] + unsupported_media_actions
 ugoira_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE ] + unsupported_media_actions
-animated_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ] + static_media_actions
-audio_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ] + unsupported_media_actions
+animated_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ] + static_media_actions
+audio_media_actions = [ MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ] + unsupported_media_actions
 
 # actions, can_start_paused, can_start_with_embed
 static_full_support = ( static_media_actions, False, True )
@@ -776,6 +778,10 @@ class GlobalIcons( object ):
         self.dump_ok = self._GetSVGOrPNGPathIcon( 'dump_ok' )
         self.dump_recoverable = self._GetSVGOrPNGPathIcon( 'dump_recoverable' )
         self.dump_fail = self._GetSVGOrPNGPathIcon( 'dump_fail' )
+        
+        self.image = self._GetSVGOrPNGPathIcon( 'image' )
+        self.images = self._GetSVGOrPNGPathIcon( 'images' )
+        self.slideshow = self._GetSVGOrPNGPathIcon( 'slideshow' )
         
         self.family = self._GetSVGOrPNGPathIcon( 'family' )
         self.keyboard = self._GetSVGOrPNGPathIcon( 'keyboard' )

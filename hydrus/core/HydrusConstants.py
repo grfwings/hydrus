@@ -2,18 +2,22 @@ import os
 import platform
 import sqlite3
 import sys
-import typing
 
 # if you ever remove this, don't forget it is in HydrusBoot as the third party library check
 import yaml
-
-# old method of getting frozen dir, doesn't work for symlinks looks like:
-# BASE_DIR = getattr( sys, '_MEIPASS', None )
 
 RUNNING_CLIENT = False
 RUNNING_SERVER = False
 
 RUNNING_FROM_FROZEN_BUILD = getattr( sys, 'frozen', False )
+
+# since pyinstaller 4.3, __file__ is corrected and will work in frozen as it does in source
+# __file__ paths are virtual--the actual .pyc files are bundled into a PYZ-00.pyz archive inside the exe or whatever
+
+# this file is stored in hydrus/core
+HYDRUS_MODULE_BASE_DIR = os.path.dirname( os.path.dirname( os.path.realpath( __file__ ) ) )
+
+CONTENT_BASE_DIR = os.path.dirname( HYDRUS_MODULE_BASE_DIR )
 
 if RUNNING_FROM_FROZEN_BUILD:
     
@@ -21,26 +25,40 @@ if RUNNING_FROM_FROZEN_BUILD:
     
     BASE_DIR = os.path.dirname( real_exe_path )
     
+    if os.path.exists( os.path.join( CONTENT_BASE_DIR, 'static' ) ):
+        
+        # ok everything is fine. in the new spec, this location is base_dir/lib
+        pass
+        
+    elif os.path.exists( os.path.join( BASE_DIR, 'static' ) ):
+        
+        # something crazy is going on, but let's try and recover
+        CONTENT_BASE_DIR = BASE_DIR
+        
+    else:
+        
+        raise Exception( 'Could not determine the content base directory! Please tell hydev!' )
+        
+    
 else:
     
-    try:
-        
-        hc_realpath_dir = os.path.dirname( os.path.realpath( __file__ ) )
-        
-        HYDRUS_MODULE_DIR = os.path.split( hc_realpath_dir )[0]
-        
-        BASE_DIR = os.path.split( HYDRUS_MODULE_DIR )[0]
-        
-    except NameError: # if __file__ is not defined due to some weird OS
-        
-        BASE_DIR = os.path.realpath( sys.path[0] )
-        
+    BASE_DIR = CONTENT_BASE_DIR
     
-    if BASE_DIR == '':
-        
-        BASE_DIR = os.getcwd()
-        
+
+if BASE_DIR == '':
     
+    raise Exception( 'Could not determine the base directory! Please tell hydev!' )
+    
+
+BIN_DIR = os.path.join( CONTENT_BASE_DIR, 'bin' )
+HELP_DIR = os.path.join( CONTENT_BASE_DIR, 'help' )
+
+LICENSE_PATH = os.path.join( CONTENT_BASE_DIR, 'license.txt' )
+
+DEFAULT_DB_DIR = os.path.join( BASE_DIR, 'db' )
+CONTENT_DB_DIR = os.path.join( CONTENT_BASE_DIR, 'db' )
+
+#
 
 muh_platform = sys.platform.lower()
 
@@ -57,6 +75,8 @@ elif PLATFORM_LINUX:
     NICE_PLATFORM_STRING = 'Linux'
 elif PLATFORM_HAIKU:
     NICE_PLATFORM_STRING = 'Haiku'
+else:
+    NICE_PLATFORM_STRING = 'Unknown?!'
 
 NICE_ARCHITECTURE_STRING = platform.machine()
 
@@ -65,10 +85,9 @@ if NICE_ARCHITECTURE_STRING == 'AMD64':
     NICE_ARCHITECTURE_STRING = 'x86_64'
     
 
+# this is obviously old, but we'll leave it in for any future attempts
 RUNNING_FROM_MACOS_APP = os.path.exists( os.path.join( BASE_DIR, 'running_from_app' ) )
 
-# I used to check argv[0], but it is unreliable
-# sys.argv[0].endswith( '.py' ) or sys.argv[0].endswith( '.pyw' )
 RUNNING_FROM_SOURCE = not ( RUNNING_FROM_FROZEN_BUILD or RUNNING_FROM_MACOS_APP )
 
 if RUNNING_FROM_SOURCE:
@@ -77,12 +96,8 @@ elif RUNNING_FROM_FROZEN_BUILD:
     NICE_RUNNING_AS_STRING = 'from frozen build'
 elif RUNNING_FROM_MACOS_APP:
     NICE_RUNNING_AS_STRING = 'from App'
-
-BIN_DIR = os.path.join( BASE_DIR, 'bin' )
-HELP_DIR = os.path.join( BASE_DIR, 'help' )
-INCLUDE_DIR = os.path.join( BASE_DIR, 'include' )
-
-DEFAULT_DB_DIR = os.path.join( BASE_DIR, 'db' )
+else:
+    NICE_RUNNING_AS_STRING = 'from unknown?!'
 
 if PLATFORM_MACOS:
     
@@ -104,8 +119,6 @@ if USERPATH_DB_DIR == desired_userpath_db_dir:
 
 WE_SWITCHED_TO_USERPATH = False
 
-LICENSE_PATH = os.path.join( BASE_DIR, 'license.txt' )
-
 #
 
 options = {}
@@ -113,8 +126,8 @@ options = {}
 # Misc
 
 NETWORK_VERSION = 20
-SOFTWARE_VERSION = 651
-CLIENT_API_VERSION = 83
+SOFTWARE_VERSION = 666
+CLIENT_API_VERSION = 88
 
 SERVER_THUMBNAIL_DIMENSIONS = ( 200, 200 )
 
@@ -125,11 +138,6 @@ READ_BLOCK_SIZE = 256 * 1024
 lifetimes = [ ( 'one month', 30 * 86400 ), ( 'three months', 3 * 30 * 86400 ), ( 'six months', 6 * 30 * 86400 ), ( 'one year', 365 * 86400 ), ( 'two years', 2 * 365 * 86400 ), ( 'five years', 5 * 365 * 86400 ), ( 'does not expire', None ) ]
 
 USERPATH_SVG_ICON = 'star_shapes'
-
-# some typing stuff
-
-noneable_int = typing.Optional[ int ]
-noneable_str = typing.Optional[ str ]
 
 # Enums
 
@@ -835,6 +843,7 @@ IMAGE_JXL = 85
 APPLICATION_PAINT_DOT_NET = 86
 UNDETERMINED_JXL = 87
 ANIMATION_JXL = 88
+IMAGE_OPENRASTER = 89
 APPLICATION_OCTET_STREAM = 100
 APPLICATION_UNKNOWN = 101
 
@@ -885,6 +894,7 @@ SEARCHABLE_MIMES = {
     APPLICATION_PSD,
     APPLICATION_SAI2,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
     APPLICATION_XCF,
     APPLICATION_PROCREATE,
     APPLICATION_PDF,
@@ -1010,6 +1020,7 @@ APPLICATIONS = [
 IMAGE_PROJECT_FILES = [
     APPLICATION_CLIP,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
     APPLICATION_PAINT_DOT_NET,
     APPLICATION_PROCREATE,
     APPLICATION_PSD,
@@ -1026,10 +1037,10 @@ ARCHIVES = [
     APPLICATION_ZIP
 ]
 
-VIEWABLE_IMAGE_PROJECT_FILES = { APPLICATION_PSD, APPLICATION_KRITA }
+VIEWABLE_IMAGE_PROJECT_FILES = { APPLICATION_PSD, APPLICATION_KRITA, IMAGE_OPENRASTER }
 
 # zip files that have a `mimetype` file inside
-OPEN_DOCUMENT_ZIPS = { APPLICATION_KRITA, APPLICATION_EPUB }
+OPEN_DOCUMENT_ZIPS = { APPLICATION_KRITA, APPLICATION_EPUB, IMAGE_OPENRASTER }
 
 # zip files that have a `[Content_Types].xml` file inside
 MICROSOFT_OPEN_XML_DOCUMENT_ZIPS = { APPLICATION_DOCX, APPLICATION_XLSX, APPLICATION_PPTX }
@@ -1096,6 +1107,7 @@ MIMES_THAT_MAY_THEORETICALLY_HAVE_TRANSPARENCY = MIMES_THAT_WE_CAN_CHECK_FOR_TRA
     APPLICATION_PSD,
     APPLICATION_SAI2,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
     APPLICATION_XCF,
     APPLICATION_PROCREATE,
     APPLICATION_CLIP,
@@ -1153,6 +1165,7 @@ mime_enum_lookup = {
     'application/clip' : APPLICATION_CLIP, # made up
     'application/sai2': APPLICATION_SAI2, # made up
     'application/x-krita': APPLICATION_KRITA,
+    'image/openraster': IMAGE_OPENRASTER,
     'image/vnd.paint.net' : APPLICATION_PAINT_DOT_NET, # not official
     'application/x-paintnet' : APPLICATION_PAINT_DOT_NET, # not official
     'application/x-procreate': APPLICATION_PROCREATE, # made up
@@ -1260,6 +1273,7 @@ mime_string_lookup = {
     APPLICATION_CLIP : 'clip',
     APPLICATION_SAI2 : 'sai2',
     APPLICATION_KRITA : 'krita',
+    IMAGE_OPENRASTER : 'ora',
     APPLICATION_PAINT_DOT_NET : 'paint.net',
     APPLICATION_XCF : 'xcf',
     APPLICATION_PROCREATE : 'procreate',
@@ -1355,6 +1369,7 @@ mime_mimetype_string_lookup = {
     APPLICATION_CLIP : 'application/clip', # made up
     APPLICATION_SAI2: 'application/sai2', # made up
     APPLICATION_KRITA: 'application/x-krita',
+    IMAGE_OPENRASTER: 'image/openraster',
     APPLICATION_PAINT_DOT_NET : 'application/x-paintnet', # no official
     APPLICATION_XCF : 'image/x-xcf',
     APPLICATION_PROCREATE : 'application/x-procreate', # made up
@@ -1404,7 +1419,7 @@ mime_mimetype_string_lookup[ UNDETERMINED_WM ] = '{} or {}'.format( mime_mimetyp
 mime_mimetype_string_lookup[ UNDETERMINED_MP4 ] = '{} or {}'.format( mime_mimetype_string_lookup[ AUDIO_MP4 ], mime_mimetype_string_lookup[ VIDEO_MP4 ] )
 mime_mimetype_string_lookup[ UNDETERMINED_PNG ] = '{} or {}'.format( mime_mimetype_string_lookup[ IMAGE_PNG ], mime_mimetype_string_lookup[ ANIMATION_APNG ] )
 mime_mimetype_string_lookup[ UNDETERMINED_WEBP ] = 'image/webp, static or animated'
-mime_mimetype_string_lookup[ UNDETERMINED_WEBP ] = 'image/jxl, static or animated'
+mime_mimetype_string_lookup[ UNDETERMINED_JXL ] = 'image/jxl, static or animated'
 
 mime_ext_lookup = {
     APPLICATION_HYDRUS_CLIENT_COLLECTION : '.collection',
@@ -1448,6 +1463,7 @@ mime_ext_lookup = {
     APPLICATION_CLIP : '.clip',
     APPLICATION_SAI2 : '.sai2',
     APPLICATION_KRITA : '.kra',
+    IMAGE_OPENRASTER : '.ora',
     APPLICATION_PAINT_DOT_NET : '.pdn',
     APPLICATION_XCF : '.xcf',
     APPLICATION_PROCREATE : '.procreate',
@@ -1490,44 +1506,6 @@ IMAGE_FILE_EXTS.update( ( '.jpe', '.jpeg' ) )
 VIDEO_FILE_EXTS = { mime_ext_lookup[ mime ] for mime in VIDEO }
 
 ALLOWED_MIME_EXTENSIONS = [ mime_ext_lookup[ mime ] for mime in ALLOWED_MIMES ]
-
-SITE_TYPE_DEVIANT_ART = 0
-SITE_TYPE_GIPHY = 1
-SITE_TYPE_PIXIV = 2
-SITE_TYPE_BOORU = 3
-SITE_TYPE_TUMBLR = 4
-SITE_TYPE_HENTAI_FOUNDRY = 5
-SITE_TYPE_NEWGROUNDS = 6
-SITE_TYPE_NEWGROUNDS_MOVIES = 7
-SITE_TYPE_NEWGROUNDS_GAMES = 8
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST = 9
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST_PICTURES = 10
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST_SCRAPS = 11
-SITE_TYPE_HENTAI_FOUNDRY_TAGS = 12
-SITE_TYPE_PIXIV_ARTIST_ID = 13
-SITE_TYPE_PIXIV_TAG = 14
-SITE_TYPE_DEFAULT = 15
-SITE_TYPE_WATCHER = 16
-
-site_type_string_lookup = {
-    SITE_TYPE_DEFAULT : 'default',
-    SITE_TYPE_BOORU : 'booru',
-    SITE_TYPE_DEVIANT_ART : 'deviant art',
-    SITE_TYPE_GIPHY : 'giphy',
-    SITE_TYPE_HENTAI_FOUNDRY : 'hentai foundry',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST : 'hentai foundry artist',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST_PICTURES : 'hentai foundry artist pictures',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST_SCRAPS : 'hentai foundry artist scraps',
-    SITE_TYPE_HENTAI_FOUNDRY_TAGS : 'hentai foundry tags',
-    SITE_TYPE_NEWGROUNDS : 'newgrounds',
-    SITE_TYPE_NEWGROUNDS_GAMES : 'newgrounds games',
-    SITE_TYPE_NEWGROUNDS_MOVIES : 'newgrounds movies',
-    SITE_TYPE_PIXIV : 'pixiv',
-    SITE_TYPE_PIXIV_ARTIST_ID : 'pixiv artist id',
-    SITE_TYPE_PIXIV_TAG : 'pixiv tag',
-    SITE_TYPE_TUMBLR : 'tumblr',
-    SITE_TYPE_WATCHER : 'watcher'
-}
 
 TIMEZONE_UTC = 0
 TIMEZONE_LOCAL = 1
@@ -1575,6 +1553,7 @@ DOCUMENTATION_ADDING_NEW_DOWNLOADERS = 'adding_new_downloaders.html'
 DOCUMENTATION_DOWNLOADER_URL_CLASSES = 'downloader_url_classes.html'
 DOCUMENTATION_GETTING_STARTED_SUBSCRIPTIONS = 'getting_started_subscriptions.html'
 DOCUMENTATION_DATABASE_MIGRATION = 'database_migration.html'
+DOCUMENTATION_DATABASE_MIGRATION_GRANULARITY = 'database_migration.html#granularity'
 DOCUMENTATION_DUPLICATES = 'duplicates.html'
 DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION = 'advanced_duplicates_auto_resolution.html'
 DOCUMENTATION_DOWNLOADER_SHARING = 'downloader_sharing.html'

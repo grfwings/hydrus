@@ -1,6 +1,5 @@
 import functools
 import re
-import typing
 import urllib.parse
 
 from hydrus.core import HydrusConstants as HC
@@ -50,7 +49,7 @@ def ConvertURLClassesIntoAPIPairs( url_classes ):
             
             api_url = url_class.GetAPIURL( example_url )
             
-        except:
+        except Exception as e:
             
             continue
             
@@ -151,7 +150,7 @@ class URLClassParameterFixedName( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetDefaultValue( self, with_processing = False ) -> typing.Optional[ str ]:
+    def GetDefaultValue( self, with_processing = False ) -> str | None:
         
         if with_processing and self._default_value is not None:
             
@@ -161,7 +160,7 @@ class URLClassParameterFixedName( HydrusSerialisable.SerialisableBase ):
                 
                 return result[0]
                 
-            except:
+            except Exception as e:
                 
                 return self._default_value
                 
@@ -212,7 +211,7 @@ class URLClassParameterFixedName( HydrusSerialisable.SerialisableBase ):
         return self._value_string_match.Matches( value )
         
     
-    def SetDefaultValue( self, default_value: typing.Optional[ str ] ):
+    def SetDefaultValue( self, default_value: str | None ):
         
         self._default_value = default_value
         
@@ -241,7 +240,7 @@ class URLDomainMask( HydrusSerialisable.SerialisableBase ):
     SERIALISABLE_NAME = 'URL Domain Mask'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, raw_domains: typing.Optional[ list[ str ] ] = None, domain_regexes: typing.Optional[ list[ str ] ] = None, match_subdomains: bool = False, keep_matched_subdomains: bool = False ):
+    def __init__( self, raw_domains: list[ str ] | None = None, domain_regexes: list[ str ] | None = None, match_subdomains: bool = False, keep_matched_subdomains: bool = False ):
         
         if raw_domains is None:
             
@@ -279,7 +278,7 @@ class URLDomainMask( HydrusSerialisable.SerialisableBase ):
             
             return ( self._raw_domains, self._domain_regexes, self.match_subdomains ).__hash__()
             
-        except:
+        except Exception as e:
             
             last_ditch = repr( ( self._raw_domains, self._domain_regexes, self.match_subdomains ) )
             
@@ -320,7 +319,7 @@ class URLDomainMask( HydrusSerialisable.SerialisableBase ):
             
             self._re_clip_patterns = [ re.compile( domain_regex + '$' ) for domain_regex in all_domain_regexes ]
             
-        except:
+        except Exception as e:
             
             self._re_match_patterns = []
             self._re_clip_patterns = []
@@ -349,7 +348,7 @@ class URLDomainMask( HydrusSerialisable.SerialisableBase ):
                 
                 self.keep_matched_subdomains = bool( self.keep_matched_subdomains )
                 
-            except:
+            except Exception as e:
                 
                 self.keep_matched_subdomains = False
                 
@@ -1445,7 +1444,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
                 
                 page_index = int( page_index )
                 
-            except:
+            except Exception as e:
                 
                 raise HydrusExceptions.URLClassException( 'Could not generate next gallery page--index component was not an integer!' )
                 
@@ -1471,7 +1470,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
                 
                 page_index = int( page_index )
                 
-            except:
+            except Exception as e:
                 
                 raise HydrusExceptions.URLClassException( 'Could not generate next gallery page--index component was not an integer!' )
                 
@@ -1591,7 +1590,7 @@ class URLClass( HydrusSerialisable.SerialisableBaseNamed ):
             
             len_example_url = len( self.Normalise( self._example_url, for_server = True ) )
             
-        except:
+        except Exception as e:
             
             len_example_url = len( self._example_url )
             

@@ -35,18 +35,29 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         
         #
         
-        media_viewer_panel = ClientGUICommon.StaticBox( self, 'mouse and animations' )
+        mouse_panel = ClientGUICommon.StaticBox( self, 'mouse behaviour' )
         
-        self._animated_scanbar_height = ClientGUICommon.BetterSpinBox( media_viewer_panel, min=1, max=255 )
-        self._animated_scanbar_hide_height = ClientGUICommon.NoneableSpinCtrl( media_viewer_panel, 5, none_phrase = 'no, hide it', min = 1, max = 255, unit = 'px' )
-        self._animated_scanbar_nub_width = ClientGUICommon.BetterSpinBox( media_viewer_panel, min=1, max=63 )
+        self._media_viewer_cursor_autohide_time_ms = ClientGUICommon.NoneableSpinCtrl( mouse_panel, 700, none_phrase = 'do not autohide', min = 100, max = 100000, unit = 'ms' )
         
-        self._media_viewer_cursor_autohide_time_ms = ClientGUICommon.NoneableSpinCtrl( media_viewer_panel, 700, none_phrase = 'do not autohide', min = 100, max = 100000, unit = 'ms' )
+        self._disallow_media_drags_on_duration_media = QW.QCheckBox( mouse_panel )
         
-        self._disallow_media_drags_on_duration_media = QW.QCheckBox( media_viewer_panel )
+        self._anchor_canvas_drags = QW.QCheckBox( mouse_panel )
+        self._anchor_canvas_drags.setToolTip( ClientGUIFunctions.WrapToolTip( 'When dragging media around in the media viewer, should I try and pin the mouse in place? Some OSes do not like this.' ) )
         
-        self._anchor_and_hide_canvas_drags = QW.QCheckBox( media_viewer_panel )
-        self._touchscreen_canvas_drags_unanchor = QW.QCheckBox( media_viewer_panel )
+        self._hide_canvas_drags = QW.QCheckBox( mouse_panel )
+        self._hide_canvas_drags.setToolTip( ClientGUIFunctions.WrapToolTip( 'When dragging media around in the media viewer, should I hide the mouse during the drag?' ) )
+        
+        self._touchscreen_canvas_drags_unanchor = QW.QCheckBox( mouse_panel )
+        self._touchscreen_canvas_drags_unanchor.setToolTip( ClientGUIFunctions.WrapToolTip( 'A touchscreen finger drag does not play well with the anchor-in-place tech, and it feels like the image suddenly accelerates. I can detect that situation and try to bail out.' ) )
+        
+        #
+        
+        seek_bar_panel = ClientGUICommon.StaticBox( self, 'animation/audio seek bar' )
+        
+        self._animated_scanbar_height = ClientGUICommon.BetterSpinBox( seek_bar_panel, min=1, max=255 )
+        self._animated_scanbar_hide_height = ClientGUICommon.NoneableSpinCtrl( seek_bar_panel, 5, none_phrase = 'no, hide it completely', min = 1, max = 255, unit = 'px' )
+        self._animated_scanbar_pop_in_requires_focus = QW.QCheckBox( seek_bar_panel )
+        self._animated_scanbar_nub_width = ClientGUICommon.BetterSpinBox( seek_bar_panel, min=1, max=63 )
         
         #
         
@@ -89,9 +100,12 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         self._animated_scanbar_hide_height.SetValue( 5 )
         self._animated_scanbar_hide_height.SetValue( self._new_options.GetNoneableInteger( 'animated_scanbar_hide_height' ) )
         
+        self._animated_scanbar_pop_in_requires_focus.setChecked( self._new_options.GetBoolean( 'animated_scanbar_pop_in_requires_focus' ) )
+        
         self._media_viewer_cursor_autohide_time_ms.SetValue( self._new_options.GetNoneableInteger( 'media_viewer_cursor_autohide_time_ms' ) )
         self._disallow_media_drags_on_duration_media.setChecked( self._new_options.GetBoolean( 'disallow_media_drags_on_duration_media' ) )
-        self._anchor_and_hide_canvas_drags.setChecked( self._new_options.GetBoolean( 'anchor_and_hide_canvas_drags' ) )
+        self._anchor_canvas_drags.setChecked( self._new_options.GetBoolean( 'anchor_canvas_drags' ) )
+        self._hide_canvas_drags.setChecked( self._new_options.GetBoolean( 'hide_canvas_drags' ) )
         self._touchscreen_canvas_drags_unanchor.setChecked( self._new_options.GetBoolean( 'touchscreen_canvas_drags_unanchor' ) )
         
         slideshow_durations = self._new_options.GetSlideshowDurations()
@@ -120,16 +134,25 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         rows = []
         
         rows.append( ( 'Time until mouse cursor autohides on media viewer:', self._media_viewer_cursor_autohide_time_ms ) )
-        rows.append( ( 'Animation scanbar height:', self._animated_scanbar_height ) )
-        rows.append( ( 'Animation scanbar height when mouse away:', self._animated_scanbar_hide_height ) )
-        rows.append( ( 'Animation scanbar nub width:', self._animated_scanbar_nub_width ) )
         rows.append( ( 'Do not allow mouse media drag-panning when the media has duration:', self._disallow_media_drags_on_duration_media ) )
-        rows.append( ( 'RECOMMEND WINDOWS ONLY: Hide and anchor mouse cursor on media viewer drags:', self._anchor_and_hide_canvas_drags ) )
-        rows.append( ( 'RECOMMEND WINDOWS ONLY: If set to hide and anchor, undo on apparent touchscreen drag:', self._touchscreen_canvas_drags_unanchor ) )
+        rows.append( ( 'Anchor mouse cursor during media viewer drags:', self._anchor_canvas_drags ) )
+        rows.append( ( 'Hide mouse cursor during media viewer drags:', self._hide_canvas_drags ) )
+        rows.append( ( 'If set to anchor drags, undo on apparent touchscreen drag:', self._touchscreen_canvas_drags_unanchor ) )
         
-        media_viewer_gridbox = ClientGUICommon.WrapInGrid( media_viewer_panel, rows )
+        mouse_gridbox = ClientGUICommon.WrapInGrid( mouse_panel, rows )
         
-        media_viewer_panel.Add( media_viewer_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        mouse_panel.Add( mouse_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        rows = []
+        
+        rows.append( ( 'Seek bar height:', self._animated_scanbar_height ) )
+        rows.append( ( 'Seek bar height when mouse away:', self._animated_scanbar_hide_height ) )
+        rows.append( ( 'Seek bar full-height pop-in requires window focus:', self._animated_scanbar_pop_in_requires_focus ) )
+        rows.append( ( 'Seek bar nub width:', self._animated_scanbar_nub_width ) )
+        
+        seek_bar_gridbox = ClientGUICommon.WrapInGrid( seek_bar_panel, rows )
+        
+        seek_bar_panel.Add( seek_bar_gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         rows = []
         
@@ -148,7 +171,8 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         
         vbox = QP.VBoxLayout()
         
-        QP.AddToLayout( vbox, media_viewer_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, mouse_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( vbox, seek_bar_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, slideshow_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, focus_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         vbox.addStretch( 0 )
@@ -186,7 +210,8 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         self._new_options.SetBoolean( 'activate_main_gui_on_viewer_close', self._activate_main_gui_on_viewer_close.isChecked() )
         
         self._new_options.SetBoolean( 'disallow_media_drags_on_duration_media', self._disallow_media_drags_on_duration_media.isChecked() )
-        self._new_options.SetBoolean( 'anchor_and_hide_canvas_drags', self._anchor_and_hide_canvas_drags.isChecked() )
+        self._new_options.SetBoolean( 'anchor_canvas_drags', self._anchor_canvas_drags.isChecked() )
+        self._new_options.SetBoolean( 'hide_canvas_drags', self._hide_canvas_drags.isChecked() )
         self._new_options.SetBoolean( 'touchscreen_canvas_drags_unanchor', self._touchscreen_canvas_drags_unanchor.isChecked() )
         
         self._new_options.SetNoneableInteger( 'media_viewer_cursor_autohide_time_ms', self._media_viewer_cursor_autohide_time_ms.GetValue() )
@@ -195,6 +220,8 @@ class MediaViewerPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         self._new_options.SetInteger( 'animated_scanbar_nub_width', self._animated_scanbar_nub_width.value() )
         
         self._new_options.SetNoneableInteger( 'animated_scanbar_hide_height', self._animated_scanbar_hide_height.GetValue() )
+        
+        self._new_options.SetBoolean( 'animated_scanbar_pop_in_requires_focus', self._animated_scanbar_pop_in_requires_focus.isChecked() )
         
         try:
             

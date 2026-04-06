@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusLists
@@ -7,13 +6,12 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
 from hydrus.core.processes import HydrusThreading
 
-from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
 
-def DoMoveOrDuplicateLocalFiles( dest_service_key: bytes, action: int, media_results: collections.abc.Collection[ ClientMediaResult.MediaResult ], source_service_key: typing.Optional[ bytes ] = None ):
+def DoMoveOrDuplicateLocalFiles( dest_service_key: bytes, action: int, media_results: collections.abc.Collection[ ClientMediaResult.MediaResult ], source_service_key: bytes | None = None ):
     
     if action in ( HC.CONTENT_UPDATE_MOVE, HC.CONTENT_UPDATE_MOVE_MERGE ) and source_service_key is None:
         
@@ -22,7 +20,7 @@ def DoMoveOrDuplicateLocalFiles( dest_service_key: bytes, action: int, media_res
     
     for media_result in media_results:
         
-        if not CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY in media_result.GetLocationsManager().GetCurrent():
+        if not media_result.GetLocationsManager().IsInCombinedLocalFileDomains():
             
             raise Exception( f'The file "{media_result.GetHash().hex()} is not in any local file domains, so I cannot copy!' )
             

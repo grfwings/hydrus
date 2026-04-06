@@ -19,7 +19,7 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client.files.images import ClientImagePerceptualHashes
 from hydrus.client.importing import ClientImportFiles
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientFileMigration
 from hydrus.client.networking.api import ClientLocalServerCore
@@ -58,7 +58,7 @@ class HydrusResourceClientAPIRestrictedAddFilesAddFile( HydrusResourceClientAPIR
             
             delete_after_successful_import = request.parsed_request_args.GetValue( 'delete_after_successful_import', bool, default_value = False )
             
-            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'client_api_import' )
             
             request.temp_file_info = ( os_file_handle, temp_path )
             
@@ -67,13 +67,13 @@ class HydrusResourceClientAPIRestrictedAddFilesAddFile( HydrusResourceClientAPIR
         
         ( os_file_handle, temp_path ) = request.temp_file_info
         
-        file_import_options = CG.client_controller.new_options.GetDefaultFileImportOptions( FileImportOptions.IMPORT_TYPE_QUIET ).Duplicate()
+        file_import_options = CG.client_controller.new_options.GetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_QUIET ).Duplicate()
         
         custom_location_context = ClientLocalServerCore.ParseLocalFileDomainLocationContext( request )
         
         if custom_location_context is not None:
             
-            file_import_options.SetDestinationLocationContext( custom_location_context )
+            file_import_options.GetLocationImportOptions().SetDestinationLocationContext( custom_location_context )
             
         
         file_import_job = ClientImportFiles.FileImportJob( temp_path, file_import_options, human_file_description = f'API POSTed File' )
@@ -230,7 +230,7 @@ class HydrusResourceClientAPIRestrictedAddFilesMigrateFiles( HydrusResourceClien
         
         for media_result in media_results:
             
-            if not CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY in media_result.GetLocationsManager().GetCurrent():
+            if not media_result.GetLocationsManager().IsInCombinedLocalFileDomains():
                 
                 raise HydrusExceptions.BadRequestException( f'The file "{media_result.GetHash().hex()} is not in any local file domains, so I cannot copy!' )
                 
@@ -315,7 +315,7 @@ class HydrusResourceClientAPIRestrictedAddFilesGenerateHashes( HydrusResourceCli
                 raise HydrusExceptions.BadRequestException( 'Path "{}" is not a file!'.format( path ) )
                 
             
-            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'client_api_hashing' )
             
             request.temp_file_info = ( os_file_handle, temp_path )
             

@@ -1,4 +1,4 @@
-FROM alpine:3.22
+FROM alpine:3.23
 
 ARG UID
 ARG GID
@@ -7,7 +7,7 @@ ARG GID
 ENTRYPOINT ["/bin/sh", "/opt/hydrus/static/build_files/docker/client/entrypoint.sh"]
 LABEL git="https://github.com/hydrusnetwork/hydrus"
 
-RUN apk --no-cache add fvwm xvfb opencv mpv mpv-libs ffmpeg jq libheif \
+RUN apk --no-cache add fvwm tigervnc xvfb supervisor opencv mpv mpv-libs ffmpeg jq libheif shadow novnc \
  openssl nodejs patch font-noto font-noto-emoji font-noto-cjk \
  py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet \
  py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity
@@ -15,6 +15,8 @@ RUN apk --no-cache add build-base python3-dev fribidi-dev harfbuzz-dev jpeg-dev 
 RUN pip install --break-system-packages Send2Trash cloudscraper pyparsing cbor2 Pympler pillow-heif dateparser
 
 RUN apk --no-cache add xpra openssh-server dbus-x11
+
+RUN ln -fs /usr/bin/python3 /usr/bin/python && ln -fs /usr/bin/pip3 /usr/bin/pip && ln -fs vnc.html /usr/share/novnc/index.html
 
 RUN set -xe \
     && mkdir -p /opt/hydrus \

@@ -51,7 +51,7 @@ def AppendLoadingPredicate( predicates, label ):
     predicates.append( ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_LABEL, value = label + HC.UNICODE_ELLIPSIS ) )
     
 
-def InsertOtherPredicatesForRead( predicates: collections.abc.MutableSequence[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, include_unusual_predicate_types: bool, under_construction_or_predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
+def InsertOtherPredicatesForRead( predicates: collections.abc.MutableSequence[ ClientSearchPredicate.Predicate ], parsed_autocomplete_text: ClientSearchAutocomplete.ParsedAutocompleteText, include_unusual_predicate_types: bool, under_construction_or_predicate: ClientSearchPredicate.Predicate | None ):
     
     if include_unusual_predicate_types:
         
@@ -261,7 +261,7 @@ def ReadFetch(
                 
             else:
                 
-                exact_match_predicates = CG.client_controller.Read( 'autocomplete_predicates', ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, file_search_context, search_text = strict_search_text, exact_match = True, inclusive = parsed_autocomplete_text.inclusive, job_status = job_status )
+                exact_match_predicates = CG.client_controller.Read( 'autocomplete_predicates', ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, file_search_context, search_text = strict_search_text, exact_match = True, job_status = job_status )
                 
                 small_exact_match_search = ShouldDoExactSearch( parsed_autocomplete_text )
                 
@@ -291,7 +291,7 @@ def ReadFetch(
                     
                     search_namespaces_into_full_tags = parsed_autocomplete_text.GetTagAutocompleteOptions().SearchNamespacesIntoFullTags()
                     
-                    predicates = CG.client_controller.Read( 'autocomplete_predicates', ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, file_search_context, search_text = autocomplete_search_text, inclusive = parsed_autocomplete_text.inclusive, job_status = job_status, search_namespaces_into_full_tags = search_namespaces_into_full_tags )
+                    predicates = CG.client_controller.Read( 'autocomplete_predicates', ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, file_search_context, search_text = autocomplete_search_text, job_status = job_status, search_namespaces_into_full_tags = search_namespaces_into_full_tags )
                     
                     if job_status.IsCancelled():
                         
@@ -405,7 +405,7 @@ def ReadFetch(
                 
                 # now spend time fetching siblings if needed
                 
-                predicates = CG.client_controller.Read( 'media_predicates', tag_context, tags_to_count, parsed_autocomplete_text.inclusive, job_status = job_status )
+                predicates = CG.client_controller.Read( 'media_predicates', tag_context, tags_to_count, job_status = job_status )
                 
                 results_cache = ClientSearchAutocomplete.PredicateResultsCacheMedia( predicates )
                 
@@ -431,22 +431,16 @@ def ReadFetch(
         
         matches = ClientSearchPredicate.SortPredicates( matches )
         
-        if not parsed_autocomplete_text.inclusive:
-            
-            for match in matches:
-                
-                match.SetInclusive( False )
-                
-            
-        
-    
-    allow_auto_wildcard_conversion = True
     
     matches = HydrusLists.FastIndexUniqueList( matches )
+    
+    allow_auto_wildcard_conversion = True
     
     InsertTagPredicates( matches, tag_service_key, parsed_autocomplete_text, allow_auto_wildcard_conversion, insert_if_does_not_exist = False )
     
     InsertOtherPredicatesForRead( matches, parsed_autocomplete_text, include_unusual_predicate_types, under_construction_or_predicate )
+    
+    ClientSearchPredicate.SetPredicatesInclusivity( matches, parsed_autocomplete_text.inclusive )
     
     if job_status.IsCancelled():
         
@@ -963,7 +957,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         parent.verticalScrollBar().valueChanged.connect( self.ParentWasScrolled )
                         
                     
-                except:
+                except Exception as e:
                     
                     break
                     
@@ -1041,7 +1035,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 self._HideDropdown()
                 
             
-        except:
+        except Exception as e:
             
             raise
             
@@ -1087,7 +1081,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def _InitSearchResultsList( self ):
+    def _InitSearchResultsList( self ) -> ListBoxTagsPredicatesAC:
         
         raise NotImplementedError()
         
@@ -1263,7 +1257,7 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         
                         stuff_in_results_list = len( current_results_list ) > 0
                         
-                    except:
+                    except Exception as e:
                         
                         stuff_in_results_list = False
                         
@@ -1846,7 +1840,7 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         raise NotImplementedError()
         
     
-    def _GetCurrentBroadcastTextPredicate( self ) -> typing.Optional[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentBroadcastTextPredicate( self ) -> ClientSearchPredicate.Predicate | None:
         
         raise NotImplementedError()
         
@@ -1869,19 +1863,19 @@ class AutoCompleteDropdownTags( AutoCompleteDropdown ):
         return parsed_autocomplete_text
         
     
-    def _InitChildrenList( self ) -> typing.Optional[ ChildrenTab ]:
+    def _InitChildrenList( self ) -> ChildrenTab | None:
         
         tag_service_key = self._tag_context_button.GetValue().service_key
         
         return ChildrenTab( self._dropdown_notebook, self.BroadcastChoices, self._float_mode, self._location_context_button.GetValue(), tag_service_key, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, height_num_chars = 4 )
         
     
-    def _InitFavouritesList( self ) -> typing.Optional[ typing.Union[ ListBoxTagsPredicatesAC, ListBoxTagsStringsAC ] ]:
+    def _InitFavouritesList( self ) -> ListBoxTagsPredicatesAC | ListBoxTagsStringsAC | None:
         
         return None
         
     
-    def _InitSearchResultsList( self ):
+    def _InitSearchResultsList( self ) -> ListBoxTagsPredicatesAC:
         
         raise NotImplementedError()
         
@@ -2144,7 +2138,7 @@ class AutoCompleteDropdownTagsFileSearchContext( AutoCompleteDropdownTags ):
         raise NotImplementedError()
         
     
-    def _GetCurrentBroadcastTextPredicate( self ) -> typing.Optional[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentBroadcastTextPredicate( self ) -> ClientSearchPredicate.Predicate | None:
         
         raise NotImplementedError()
         
@@ -2306,7 +2300,7 @@ class AutocompleteDropdownTagsFileSearchContextORCapable( AutoCompleteDropdownTa
         ClientGUIFunctions.SetFocusLater( self._text_ctrl )
         
     
-    def _GetCurrentBroadcastTextPredicate( self ) -> typing.Optional[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentBroadcastTextPredicate( self ) -> ClientSearchPredicate.Predicate | None:
         
         raise NotImplementedError()
         
@@ -2420,8 +2414,8 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
         parent: QW.QWidget,
         page_key,
         file_search_context: ClientSearchFileSearchContext.FileSearchContext,
-        media_sort_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaSortControl ] = None,
-        media_collect_widget: typing.Optional[ ClientGUIMediaResultsPanelSortCollect.MediaCollectControl ] = None,
+        media_sort_widget: ClientGUIMediaResultsPanelSortCollect.MediaSortControl | None = None,
+        media_collect_widget: ClientGUIMediaResultsPanelSortCollect.MediaCollectControl | None = None,
         media_callable = None,
         synchronised = True,
         include_unusual_predicate_types = True,
@@ -2678,7 +2672,7 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
         CGC.core().PopupMenu( self, menu )
         
     
-    def _GetCurrentBroadcastTextPredicate( self ) -> typing.Optional[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentBroadcastTextPredicate( self ) -> ClientSearchPredicate.Predicate | None:
         
         parsed_autocomplete_text = self._GetParsedAutocompleteText()
         
@@ -2712,7 +2706,7 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
         return favs_list
         
     
-    def _InitSearchResultsList( self ):
+    def _InitSearchResultsList( self ) -> ListBoxTagsPredicatesAC:
         
         if self._fixed_results_list_height is None:
             
@@ -2824,7 +2818,7 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
                         predicates.append( pat.GetImmediateFileSearchPredicate( allow_auto_wildcard_conversion = True ) )
                         
                     
-                except:
+                except Exception as e:
                     
                     continue
                     
@@ -3083,7 +3077,9 @@ class ListBoxTagsActiveSearchPredicates( ClientGUIListBoxes.ListBoxTagsPredicate
     
     def __init__( self, parent: AutocompleteDropdownTagsFileSearchContextORCapable, page_key, file_search_context: ClientSearchFileSearchContext.FileSearchContext, for_metadata_conditional: bool ):
         
-        super().__init__( parent, height_num_chars = 6 )
+        height_num_chars = CG.client_controller.new_options.GetInteger( 'active_search_predicates_height_num_chars' )
+        
+        super().__init__( parent, height_num_chars = height_num_chars )
         
         self._my_ac_parent = parent
         
@@ -3479,7 +3475,7 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
             
         
     
-    def _GetCurrentBroadcastTextPredicate( self ) -> typing.Optional[ ClientSearchPredicate.Predicate ]:
+    def _GetCurrentBroadcastTextPredicate( self ) -> ClientSearchPredicate.Predicate | None:
         
         parsed_autocomplete_text = self._GetParsedAutocompleteText()
         
@@ -3517,7 +3513,7 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
         return favs_list
         
     
-    def _InitSearchResultsList( self ):
+    def _InitSearchResultsList( self ) -> ListBoxTagsPredicatesAC:
         
         height_num_chars = CG.client_controller.new_options.GetInteger( 'ac_write_list_height_num_chars' )
         
@@ -3651,7 +3647,7 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
             
             return False
             
-        except:
+        except Exception as e:
             
             return False
             

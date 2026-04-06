@@ -30,8 +30,9 @@ Once the API is running, go to its entry in _services->review services_. Each ex
 
 * [Hydrus Web](https://github.com/floogulinc/hydrus-web): A web client for hydrus with an advanced but also phone-friendly interface.
 * [Hydrui](https://hydrui.dev) [(Repo)](https://github.com/hydrui/hydrui): A web client for hydrus with an interface similar to the regular client.
+* [hyAway](https://hyaway.com/) [(Repo)](https://github.com/hyaway/hyaway): A web client for hydrus, including browsing your current session. Includes swipe archive/delete filtering.
 * [Hybooru](https://github.com/funmaker/Hybooru): A read-only booru-like web wrapper for hydrus.
-* [Anime Boxes](https://www.animebox.es/): A booru browser, now supports adding your client as a Hydrus Server.
+* [Anime Boxes](https://www.animebox.es/): A booru browser, now supports adding your client as a 'Hydrus Server'.
 * [LoliSnatcher](https://github.com/NO-ob/LoliSnatcher_Droid): A booru client for Android that can talk to hydrus.
 * [Hyshare](https://github.com/floogulinc/hyshare): A way to share small galleries with friends--a replacement for the old 'local booru' system.
 * [Hydra Vista](https://github.com/konkrotte/hydravista): A macOS client for hydrus.
@@ -42,6 +43,10 @@ Once the API is running, go to its entry in _services->review services_. Each ex
 
 * [hydownloader](https://gitgud.io/thatfuckingbird/hydownloader): Hydrus-like download system based on gallery-dl. It solves many advanced problems the native downloader cannot handle.
 
+### AI integration
+
+* [HydrusMCP](https://github.com/TheElo/HydrusMCPServer): Teaches an AI model how to interact with the Client API so you can task it to work with hydrus with natural language.
+
 ### Auto-taggers
 
 * [hydrus-dd](https://gitgud.io/koto/hydrus-dd): DeepDanbooru tagging for Hydrus.
@@ -50,6 +55,7 @@ Once the API is running, go to its entry in _services->review services_. Each ex
 ### Misc
 
 * [Hydrus Video Deduplicator](https://github.com/hydrusvideodeduplicator/hydrus-video-deduplicator): Discovers duplicate videos in your client and queues them for the duplicate filter. 
+* [HydrusTools](https://github.com/GiovanH/HydrusTools): Toolkit for multiple kinds of metadata management and organisation.
 * [tagrank](https://github.com/matjojo/tagrank): Shows you comparison images and cleverly ranks your favourite tag.
 * [hyextract](https://github.com/floogulinc/hyextract): Extract archives from Hydrus and reimport with tags and URL associations.
 * [Send to Hydrus](https://github.com/Wyrrrd/send-to-hydrus): Send URLs from your Android device to your client.

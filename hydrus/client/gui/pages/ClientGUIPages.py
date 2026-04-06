@@ -25,7 +25,6 @@ from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIReviewWindowsQuick
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvas
 from hydrus.client.gui.pages import ClientGUIPagesCore
@@ -56,7 +55,7 @@ def ConvertNumSeedsToWeight( num_seeds: int ) -> int:
     return num_seeds * 20
     
 
-def GetParentNotebook( widget: QW.QWidget ):
+def GetParentNotebook( widget: QW.QWidget ) -> "PagesNotebook | None":
     
     parent = widget.parentWidget()
     
@@ -353,29 +352,18 @@ class Page( QW.QWidget ):
         # note focus isn't on the thumb panel but some innerwidget scroll gubbins
         had_focus_before = ClientGUIFunctions.IsQtAncestor( QW.QApplication.focusWidget(), old_panel )
         
-        if QtInit.WE_ARE_QT5:
+        if new_panel.parentWidget() == self._management_media_split:
             
-            # this takes ownership of new_panel
-            self._management_media_split.insertWidget( 1, new_panel )
+            # ideally, this does not occur. we always want to replace and reduce flicker
             
             old_panel.setParent( None )
             old_panel.setVisible( False )
             
         else:
             
-            if new_panel.parentWidget() == self._management_media_split:
-                
-                # ideally, this does not occur. we always want to replace and reduce flicker
-                
-                old_panel.setParent( None )
-                old_panel.setVisible( False )
-                
-            else:
-                
-                # this sets parent of new panel to self and sets parent of old panel to None
-                # rumao, it doesn't work if new_panel is already our child
-                self._management_media_split.replaceWidget( 1, new_panel )
-                
+            # this sets parent of new panel to self and sets parent of old panel to None
+            # rumao, it doesn't work if new_panel is already our child
+            self._management_media_split.replaceWidget( 1, new_panel )
             
         
         self._media_panel.setMinimumWidth( 120 )
@@ -1191,7 +1179,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+        page = typing.cast( Page | PagesNotebook, self.widget( index ) )
         
         if polite:
             
@@ -1340,7 +1328,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if 0 <= page_index <= self.count() - 1:
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( page_index ) )
+            page = typing.cast( Page | PagesNotebook, self.widget( page_index ) )
             
             hashes = page.GetHashes()
             
@@ -1371,7 +1359,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         for index in closees:
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+            page = typing.cast( Page | PagesNotebook, self.widget( index ) )
             
             hashes.extend( page.GetHashes() )
             
@@ -1403,7 +1391,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = typing.cast(  typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+        page = typing.cast(  Page | PagesNotebook, self.widget( index ) )
         
         only_changed_page_data = False
         about_to_save = False
@@ -1480,7 +1468,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         for ( page, index ) in ( ( self.widget( index ), index ) for index in range( self.count() ) ):
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], page )
+            page = typing.cast( Page | PagesNotebook, page )
             
             if page.GetPageKey() == page_key:
                 
@@ -1512,7 +1500,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self
         
     
-    def _GetPages( self ) -> list[ typing.Union[ Page, "PagesNotebook" ] ]:
+    def _GetPages( self ) -> "list[ Page | PagesNotebook ]":
         
         return [ self.widget( i ) for i in range( self.count() ) ]
         
@@ -1604,7 +1592,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         import_page_progress_display = new_options.GetBoolean( 'import_page_progress_display' )
         
-        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
+        page: Page | PagesNotebook = self.widget( index )
         
         if isinstance( page, Page ) and not page.IsInitialised():
             
@@ -1685,7 +1673,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return
             
         
-        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
+        page: Page | PagesNotebook = self.widget( index )
         
         current_name = page.GetName()
         
@@ -1836,7 +1824,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if click_over_tab:
             
-            page: typing.Union[ Page, PagesNotebook ] = self.widget( tab_index )
+            page: Page | PagesNotebook = self.widget( tab_index )
             
             click_over_page_of_pages = isinstance( page, PagesNotebook )
             
@@ -2723,7 +2711,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 file_import_options = urls_import.GetFileImportOptions()
                 
-                if not file_import_options.IsDefault() and file_import_options.GetDestinationLocationContext() == destination_location_context:
+                if not file_import_options.IsDefault() and file_import_options.GetLocationImportOptions().GetDestinationLocationContext() == destination_location_context:
                     
                     good_url_import_pages.append( url_import_page )
                     
@@ -2772,7 +2760,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
     
-    def GetPageFromPageKey( self, page_key ) -> typing.Optional[ Page ]:
+    def GetPageFromPageKey( self, page_key ) -> "Page | PagesNotebook | None":
         
         if self._page_key == page_key:
             
@@ -3640,7 +3628,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageHidden( self ):
         
-        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
+        result: Page | PagesNotebook = self.currentWidget()
         
         if result is not None:
             
@@ -3655,14 +3643,14 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if old_selection != -1 and old_selection < self.count():
             
-            old_page: typing.Union[ Page, PagesNotebook ] = self.widget( old_selection )
+            old_page: Page | PagesNotebook = self.widget( old_selection )
             
             old_page.PageHidden()
             
         
         if selection != -1:
             
-            new_page: typing.Union[ Page, PagesNotebook ] = self.widget( selection )
+            new_page: Page | PagesNotebook = self.widget( selection )
             
             new_page.PageShown()
             
@@ -3677,7 +3665,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageShown( self ):
         
-        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
+        result: Page | PagesNotebook = self.currentWidget()
         
         if result is not None:
             

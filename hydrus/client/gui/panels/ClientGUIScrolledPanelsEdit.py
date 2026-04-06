@@ -22,17 +22,17 @@ from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUIMPV
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.importing.options import NoteImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import NoteImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
@@ -49,12 +49,12 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         url_classes,
         parsers,
         url_class_keys_to_parser_keys: dict[ bytes, bytes ],
-        file_post_default_tag_import_options: TagImportOptions.TagImportOptions,
-        watchable_default_tag_import_options: TagImportOptions.TagImportOptions,
-        url_class_keys_to_tag_import_options: dict[ bytes, TagImportOptions.TagImportOptions ],
-        file_post_default_note_import_options: NoteImportOptions.NoteImportOptions,
-        watchable_default_note_import_options: NoteImportOptions.NoteImportOptions,
-        url_class_keys_to_note_import_options: dict[ bytes, NoteImportOptions.NoteImportOptions ]
+        file_post_default_tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy,
+        watchable_default_tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy,
+        url_class_keys_to_tag_import_options: dict[ bytes, TagImportOptionsLegacy.TagImportOptionsLegacy ],
+        file_post_default_note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy,
+        watchable_default_note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy,
+        url_class_keys_to_note_import_options: dict[ bytes, NoteImportOptionsLegacy.NoteImportOptionsLegacy ]
     ):
         
         super().__init__( parent )
@@ -72,12 +72,12 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = True
         allow_default_selection = False
         
-        self._file_post_default_import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._file_post_default_import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._file_post_default_import_options_button.SetTagImportOptions( file_post_default_tag_import_options )
         self._file_post_default_import_options_button.SetNoteImportOptions( file_post_default_note_import_options )
         
-        self._watchable_default_import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._watchable_default_import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._watchable_default_import_options_button.SetTagImportOptions( watchable_default_tag_import_options )
         self._watchable_default_import_options_button.SetNoteImportOptions( watchable_default_note_import_options )
@@ -86,7 +86,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DEFAULT_TAG_IMPORT_OPTIONS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 15, model, activation_callback = self._Edit )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 12, model, activation_callback = self._Edit )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -297,7 +297,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 show_downloader_options = True
                 allow_default_selection = True
                 
-                panel = ClientGUIImportOptions.EditImportOptionsPanel( dlg, show_downloader_options, allow_default_selection )
+                panel = ClientGUIImportOptionsLegacy.EditImportOptionsPanel( dlg, show_downloader_options, allow_default_selection )
                 
                 panel.SetTagImportOptions( tag_import_options )
                 panel.SetNoteImportOptions( note_import_options )
@@ -455,11 +455,11 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             unknown_import_options = HydrusSerialisable.CreateFromString( raw_text )
             
-            if isinstance( unknown_import_options, TagImportOptions.TagImportOptions ):
+            if isinstance( unknown_import_options, TagImportOptionsLegacy.TagImportOptionsLegacy ):
                 
                 insert_dict = self._url_class_keys_to_tag_import_options
                 
-            elif isinstance( unknown_import_options, NoteImportOptions.NoteImportOptions ):
+            elif isinstance( unknown_import_options, NoteImportOptionsLegacy.NoteImportOptionsLegacy ):
                 
                 insert_dict = self._url_class_keys_to_note_import_options
                 
@@ -896,7 +896,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     deletee_file_service_key = CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY
                     
-                    h = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY in m.GetLocationsManager().GetCurrent() ]
+                    h = [ m.GetHash() for m in self._media if m.GetLocationsManager().IsInCombinedLocalFileDomains() ]
                     
                     content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( h, 16 ) ]
                     
@@ -1331,7 +1331,7 @@ class EditFilesForcedFiletypePanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent: QW.QWidget, names_to_notes: dict[ str, str ], name_to_start_on: typing.Optional[ str ] ):
+    def __init__( self, parent: QW.QWidget, names_to_notes: dict[ str, str ], name_to_start_on: str | None ):
         
         super().__init__( parent )
         
@@ -1440,7 +1440,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
             
             control.setPlainText( note )
             
-        except:
+        except Exception as e:
             
             control.setPlainText( repr( note ) )
             
@@ -1544,7 +1544,6 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         note_import_options = NoteImportOptions.NoteImportOptions()
         
-        note_import_options.SetIsDefault( False )
         note_import_options.SetExtendExistingNoteIfPossible( True )
         note_import_options.SetConflictResolution( NoteImportOptions.NOTE_IMPORT_CONFLICT_RENAME )
         
@@ -1562,7 +1561,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
                     
                     control.setPlainText( note )
                     
-                except:
+                except Exception as e:
                     
                     control.setPlainText( repr( note ) )
                     
@@ -1848,20 +1847,9 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._preview_start_paused = QW.QCheckBox( self )
         self._preview_start_with_embed = QW.QCheckBox( self )
         
-        advanced_mode = CG.client_controller.new_options.GetBoolean( 'advanced_mode' )
-        
         for action in possible_show_actions:
             
             if action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV and not ClientGUIMPV.MPV_IS_AVAILABLE:
-                
-                continue
-                
-            
-            simple_mode = not advanced_mode
-            not_source = not HC.RUNNING_FROM_SOURCE
-            not_qt_6 = not QtInit.WE_ARE_QT6
-            
-            if action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER and ( simple_mode or not_source or not_qt_6 ):
                 
                 continue
                 
@@ -1943,9 +1931,16 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         text = 'Setting media view options for ' + HC.mime_string_lookup[ self._mime ] + '.'
         
-        if not ClientGUIMPV.MPV_IS_AVAILABLE:
+        if CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV in possible_show_actions:
             
-            text += ' MPV is not available for this client.'
+            if not ClientGUIMPV.MPV_IS_AVAILABLE:
+                
+                text += '\n\nmpv is not available for this client. Try the QtMediaPlayer as a fallback.'
+                
+            else:
+                
+                text += '\n\nmpv is higher quality but can be buggy. If you have problems, try the QtMediaPlayer as a fallback.'
+                
             
         
         QP.AddToLayout( vbox, ClientGUICommon.BetterStaticText(self,text), CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -1961,7 +1956,7 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         rows.append( ( 'preview starts paused: ', self._preview_start_paused ) )
         rows.append( ( 'preview starts covered with an embed button: ', self._preview_start_with_embed ) )
         
-        if set( possible_show_actions ).isdisjoint( { CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER } ):
+        if set( possible_show_actions ).isdisjoint( { CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER } ):
             
             self._media_scale_up.hide()
             self._media_scale_down.hide()

@@ -1,4 +1,4 @@
-def FloatToPercentage( f ):
+def FloatToPercentage( f, sf = 1 ):
     
     percent = f * 100
     
@@ -8,7 +8,8 @@ def FloatToPercentage( f ):
         
     else:
         
-        return f'{percent:.1f}%'
+        # this actually works!
+        return f'{percent:.{sf}f}%'
         
     
 
@@ -105,7 +106,7 @@ def ToHumanInt( num ):
         
         num = int( num )
         
-    except:
+    except Exception as e:
         
         return 'unknown'
         

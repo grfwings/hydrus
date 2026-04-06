@@ -35,7 +35,7 @@ def GetUgoiraProperties( path_to_zip ):
         
         return GetUgoiraPropertiesFromJSON( path_to_zip )
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -44,9 +44,16 @@ def GetUgoiraProperties( path_to_zip ):
         
         pil_image = GetUgoiraFramePIL( path_to_zip, 0 )
         
-        ( width, height ) = pil_image.size
+        try:
+            
+            ( width, height ) = pil_image.size
+            
+        finally:
+            
+            pil_image.close()
+            
         
-    except:
+    except Exception as e:
         
         ( width, height ) = ( 100, 100 )
         
@@ -55,7 +62,7 @@ def GetUgoiraProperties( path_to_zip ):
         
         num_frames = len(GetFramePathsFromUgoiraZip( path_to_zip ))
         
-    except:
+    except Exception as e:
         
         num_frames = None
         
@@ -75,7 +82,7 @@ def ZipLooksLikeUgoira( path_to_zip ):
             return True
             
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -160,7 +167,7 @@ def ZipLooksLikeUgoira( path_to_zip ):
                 reader.read()
                 
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -196,7 +203,7 @@ UgoiraFrame = typing.TypedDict('UgoiraFrame', {'file': str, 'delay': int})
 # this function is called multiple times for a single ugoira file 
 # and involves opening and parsing JSON so let's cache it
 @functools.lru_cache( maxsize = 8 )
-def GetUgoiraFrameDataJSON( path: str ) -> typing.Optional[list[UgoiraFrame]]:
+def GetUgoiraFrameDataJSON( path: str ) -> list[ UgoiraFrame ] | None:
     
     try:
         
@@ -212,7 +219,7 @@ def GetUgoiraFrameDataJSON( path: str ) -> typing.Optional[list[UgoiraFrame]]:
             return ugoiraJson['frames']
             
         
-    except:
+    except Exception as e:
         
         return None
         
@@ -234,7 +241,16 @@ def GetUgoiraPropertiesFromJSON( path ):
     
     firstFrame = GetUgoiraFramePIL( path, 0 )
     
-    return ( firstFrame.size, duration_ms, num_frames )
+    try:
+        
+        size = firstFrame.size
+        
+    finally:
+        
+        firstFrame.close()
+        
+    
+    return ( size, duration_ms, num_frames )
     
 
 # Combined Ugoira functions:
@@ -250,7 +266,7 @@ def GetFramePathsUgoira( path ):
             return [data['file'] for data in frameData]
             
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -273,9 +289,23 @@ def GenerateThumbnailNumPyFromUgoiraPath( path: str, target_resolution: tuple[in
     
     pil_image = GetUgoiraFramePIL( path, frame_index )
     
-    thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+    try:
+        
+        thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+        
+    finally:
+        
+        pil_image.close()
+        
     
-    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+    try:
+        
+        numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+        
+    finally:
+        
+        thumbnail_pil_image.close()
+        
     
     return numpy_image
     

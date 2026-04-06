@@ -268,7 +268,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOMAINS_TO_LOGIN_INFO.ID, self._ConvertDomainAndLoginInfoToDisplayTuple, self._ConvertDomainAndLoginInfoToSortTuple )
         
-        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, 16, model, use_simple_delete = True, activation_callback = self._EditCredentials )
+        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, 8, model, use_simple_delete = True, activation_callback = self._EditCredentials, max_height_num_chars = 12 )
         
         self._domains_and_login_info_panel.SetListCtrl( self._domains_and_login_info )
         
@@ -306,14 +306,14 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         vbox = QP.VBoxLayout()
         
-        warning = 'WARNING: Your credentials are stored in plaintext! For this and other reasons, I recommend you use throwaway accounts with hydrus!'
+        warning = 'WARNING: Never use important accounts with hydrus. Hydrus does not store credentials securely. You can also lose an account if the site suddenly changes their policies and bonks it. If you link an account to hydrus, always use a throwaway account you don\'t care much about.'
         warning += '\n' * 2
-        warning += 'This system is old and only works for simple sites. If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! Pixiv now requires this! If you do set up HC for an external login, I recommend you set the respective domain(s) you are logging into to "not active" here (hit "flip active" on them), so hydrus knows it is not supposed to be taking responsibility.'
+        warning += 'This system is very old and only works for simple sites. If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! If you do set up HC for an external login, delete any login scripts here that may apply to the same site.'
         warning += '\n' * 2
         warning += 'If you are looking for your login cookies, go to _network->data->review session cookies_.'
         
         warning_st = ClientGUICommon.BetterStaticText( self, warning )
-        warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
+        warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         warning_st.setWordWrap( True )
         warning_st.setObjectName( 'HydrusWarning' )
         
@@ -1293,7 +1293,7 @@ class ReviewTestResultPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 self._body.setPlainText( body )
                 
-            except:
+            except Exception as e:
                 
                 self._body.setPlainText( str( body ) )
                 
@@ -1369,7 +1369,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CREDENTIAL_DEFINITIONS.ID, self._ConvertCredentialDefinitionToDisplayTuple, self._ConvertCredentialDefinitionToSortTuple )
         
-        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions )
+        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions, max_height_num_chars = 8 )
         
         credential_definitions_panel.SetListCtrl( self._credential_definitions )
         
@@ -1397,7 +1397,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_EXAMPLE_DOMAINS_INFO.ID, self._ConvertExampleDomainInfoToDisplayTuple, self._ConvertExampleDomainInfoToSortTuple )
         
-        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, 6, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo )
+        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, 4, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo, max_height_num_chars = 12 )
         
         example_domains_info_panel.SetListCtrl( self._example_domains_info )
         
@@ -1417,7 +1417,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_LOGIN_SCRIPT_TEST_RESULTS.ID, self._ConvertTestResultToDisplayTuple, self._ConvertTestResultToSortTuple )
         
-        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, 6, model, activation_callback = self._ReviewTestResult )
+        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, 4, model, activation_callback = self._ReviewTestResult, max_height_num_chars = 12 )
         
         test_listctrl_panel.SetListCtrl( self._test_listctrl )
         
@@ -1973,7 +1973,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_LOGIN_SCRIPTS.ID, self._ConvertLoginScriptToDisplayTuple, self._ConvertLoginScriptToSortTuple )
         
-        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, 20, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
         
         login_scripts_panel.SetListCtrl( self._login_scripts )
         
@@ -1982,8 +1982,6 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         login_scripts_panel.AddDeleteButton()
         login_scripts_panel.AddSeparator()
         login_scripts_panel.AddImportExportButtons( ( ClientNetworkingLogin.LoginScriptDomain, ), self._AddLoginScript )
-        login_scripts_panel.AddSeparator()
-        login_scripts_panel.AddDefaultsButton( ClientDefaults.GetDefaultLoginScripts, self._AddLoginScript )
         
         #
         
@@ -1995,6 +1993,11 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         vbox = QP.VBoxLayout()
         
+        warning_st = ClientGUICommon.BetterStaticText( self, 'This system is very old and does not work well! Better to use a program like Hydrus Companion to sync cookies these days!' )
+        warning_st.setObjectName( 'HydrusWarning' )
+        warning_st.setWordWrap( True )
+        
+        QP.AddToLayout( vbox, warning_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, login_scripts_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( vbox )
