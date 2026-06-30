@@ -18,40 +18,139 @@ from hydrus.client import ClientPDFHandling # important to keep this in, even if
 
 from hydrus.client import ClientVideoHandling
 
-def GetAllFilePaths( raw_paths, do_human_sort = True, clear_out_sidecars = True ):
+class PathParsingJob( object ):
+    
+    def __init__( self, path: str, search_subdirectories: bool = True ):
+        
+        self.path = path
+        self.search_subdirectories = search_subdirectories
+        
+    
+    def GetFilePathsAndSubPathParsingJobs( self ) -> tuple[ list[ str ], list[ "PathParsingJob" ] ]:
+        
+        file_paths = []
+        sub_path_parsing_jobs = []
+        
+        if self.IsDir():
+            
+            try:
+                
+                # on Windows, some network file paths return True on isdir(). maybe something to do with path length or number of subdirs
+                path_listdir = os.listdir( self.path )
+                
+            except NotADirectoryError:
+                
+                file_paths.append( self.path )
+                
+                return ( file_paths, sub_path_parsing_jobs )
+                
+            
+            subpaths = [ os.path.join( self.path, filename ) for filename in path_listdir ]
+            
+            for subpath in subpaths:
+                
+                if os.path.isfile( subpath ):
+                    
+                    file_paths.append( subpath )
+                    
+                else:
+                    
+                    if self.search_subdirectories:
+                        
+                        sub_path_parsing_jobs.append( PathParsingJob( subpath, search_subdirectories = self.search_subdirectories ) )
+                        
+                    
+                
+            
+        else:
+            
+            file_paths.append( self.path )
+            
+        
+        return ( file_paths, sub_path_parsing_jobs )
+        
+    
+    def IsDir( self ):
+        
+        return os.path.isdir( self.path )
+        
+    
+
+def has_sidecar_ext( p ):
+    
+    return True in ( p.endswith( ext ) for ext in [ '.txt', '.json', '.xml' ] )
+    
+
+def get_comparable_sidecar_prefix( p ):
+    
+    ( path_dir, path_basename ) = os.path.split( p )
+    
+    if '.' in path_basename:
+        
+        path_basename_with_no_ext_guaranteed = path_basename.split( '.', 1 )[0]
+        
+    else:
+        
+        path_basename_with_no_ext_guaranteed = path_basename
+        
+    
+    return os.path.join( path_dir, path_basename_with_no_ext_guaranteed )
+    
+
+def GetAllFilePaths( path: str, search_subdirectories: bool, clear_out_sidecars = True, comparable_sidecar_prefixes = None ):
+    
+    if comparable_sidecar_prefixes is None:
+        
+        comparable_sidecar_prefixes = set()
+        
     
     file_paths = []
+    sidecar_paths = []
     
-    paths_to_process = list( raw_paths )
+    jobs_to_process = [ PathParsingJob( path, search_subdirectories ) ]
     
-    while len( paths_to_process ) > 0:
+    while len( jobs_to_process ) > 0:
         
-        next_paths_to_process = []
+        next_jobs_to_process = []
         
-        for path in paths_to_process:
+        for path_parsing_job in jobs_to_process:
             
             if HG.started_shutdown:
                 
                 raise HydrusExceptions.ShutdownException()
                 
             
-            if os.path.isdir( path ):
+            ( sub_file_paths, sub_path_parsing_jobs ) = path_parsing_job.GetFilePathsAndSubPathParsingJobs()
+            
+            file_paths.extend( sub_file_paths )
+            
+            next_jobs_to_process.extend( sub_path_parsing_jobs )
+            
+        
+        jobs_to_process = next_jobs_to_process
+        
+    
+    HydrusText.HumanTextSort( file_paths )
+    
+    for file_path in file_paths:
+        
+        if not has_sidecar_ext( file_path ):
+            
+            comparable_sidecar_prefixes.add( get_comparable_sidecar_prefix( file_path ) )
+            
+        
+    
+    if clear_out_sidecars:
+        
+        undifferentiated_file_paths = file_paths
+        
+        file_paths = []
+        
+        for path in undifferentiated_file_paths:
+            
+            if has_sidecar_ext( path ) and get_comparable_sidecar_prefix( path ) in comparable_sidecar_prefixes:
                 
-                try:
-                    
-                    # on Windows, some network file paths return True on isdir(). maybe something to do with path length or number of subdirs
-                    path_listdir = os.listdir( path )
-                    
-                except NotADirectoryError:
-                    
-                    file_paths.append( path )
-                    
-                    continue
-                    
-                
-                subpaths = [ os.path.join( path, filename ) for filename in path_listdir ]
-                
-                next_paths_to_process.extend( subpaths )
+                sidecar_paths.append( path )
                 
             else:
                 
@@ -59,57 +158,8 @@ def GetAllFilePaths( raw_paths, do_human_sort = True, clear_out_sidecars = True 
                 
             
         
-        paths_to_process = next_paths_to_process
-        
     
-    if do_human_sort:
-        
-        HydrusText.HumanTextSort( file_paths )
-        
-    
-    num_files_with_sidecars = len( file_paths )
-    
-    if clear_out_sidecars:
-        
-        exts = [ '.txt', '.json', '.xml' ]
-        
-        def has_sidecar_ext( p ):
-            
-            if True in ( p.endswith( ext ) for ext in exts ):
-                
-                return True
-                
-            
-            return False
-            
-        
-        def get_base_prefix_component( p ):
-            
-            base_prefix = os.path.basename( p )
-            
-            if '.' in base_prefix:
-                
-                base_prefix = base_prefix.split( '.', 1 )[0]
-                
-            
-            return base_prefix
-            
-        
-        # let's get all the 'Image123' in our 'path/to/Image123.jpg' list
-        all_non_ext_prefix_components = { get_base_prefix_component( file_path ) for file_path in file_paths if not has_sidecar_ext( file_path ) }
-        
-        def looks_like_a_sidecar( p ):
-            
-            # if we have Image123.txt, that's probably a sidecar!
-            return has_sidecar_ext( p ) and get_base_prefix_component( p ) in all_non_ext_prefix_components
-            
-        
-        file_paths = [ path for path in file_paths if not looks_like_a_sidecar( path ) ]
-        
-    
-    num_sidecars = num_files_with_sidecars - len( file_paths )
-    
-    return ( file_paths, num_sidecars )
+    return ( file_paths, sidecar_paths )
     
 
 def HasHumanReadableEmbeddedMetadata( path, mime, human_file_description = None ):
@@ -129,12 +179,19 @@ def HasHumanReadableEmbeddedMetadata( path, mime, human_file_description = None 
             
             pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
             
-        except:
+            try:
+                
+                has_human_readable_embedded_metadata = HydrusImageMetadata.HasHumanReadableEmbeddedMetadata( pil_image )
+                
+            finally:
+                
+                pil_image.close()
+                
+            
+        except Exception as e:
             
             return False
             
-        
-        has_human_readable_embedded_metadata = HydrusImageMetadata.HasHumanReadableEmbeddedMetadata( pil_image )
         
     
     return has_human_readable_embedded_metadata
@@ -162,8 +219,6 @@ def HasTransparency( path, mime, duration_ms = None, num_frames = None, resoluti
                 return False # something crazy going on, so let's bail out
                 
             
-            we_checked_alpha_channel = False
-            
             if mime in ( HC.ANIMATION_GIF, HC.ANIMATION_WEBP ):
                 
                 renderer = ClientVideoHandling.AnimationRendererPIL( path, num_frames, resolution )
@@ -173,24 +228,33 @@ def HasTransparency( path, mime, duration_ms = None, num_frames = None, resoluti
                 renderer = HydrusVideoHandling.VideoRendererFFMPEG( path, mime, duration_ms, num_frames, resolution )
                 
             
-            for i in range( num_frames ):
+            try:
                 
-                numpy_image = renderer.read_frame()
+                we_checked_for_just_alpha_channel = False
                 
-                if not we_checked_alpha_channel:
+                for i in range( num_frames ):
                     
-                    if not HydrusImageColours.NumPyImageHasAlphaChannel( numpy_image ):
+                    numpy_image = renderer.read_frame()
+                    
+                    if not we_checked_for_just_alpha_channel:
                         
-                        return False
+                        if not HydrusImageColours.NumPyImageHasAlphaChannel( numpy_image ):
+                            
+                            return False
+                            
+                        
+                        we_checked_for_just_alpha_channel = True
                         
                     
-                    we_checked_alpha_channel = True
+                    if HydrusImageColours.NumPyImageHasUsefulAlphaChannel( numpy_image ):
+                        
+                        return True
+                        
                     
                 
-                if HydrusImageColours.NumPyImageHasUsefulAlphaChannel( numpy_image ):
-                    
-                    return True
-                    
+            finally:
+                
+                renderer.close()
                 
             
         

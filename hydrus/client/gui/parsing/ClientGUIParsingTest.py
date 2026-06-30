@@ -16,7 +16,6 @@ from hydrus.core.files import HydrusFileHandling
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientStrings
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -30,7 +29,7 @@ class TestPanel( QW.QWidget ):
     
     MAX_CHARS_IN_PREVIEW = 1024 * 64
     
-    def __init__( self, parent, object_callable, test_data: typing.Optional[ ClientParsing.ParsingTestData ] = None ):
+    def __init__( self, parent, object_callable, test_data: ClientParsing.ParsingTestData | None = None ):
         
         super().__init__( parent )
         
@@ -51,13 +50,13 @@ class TestPanel( QW.QWidget ):
         
         self._example_data_raw_description = ClientGUICommon.BetterStaticText( raw_data_panel )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( raw_data_panel, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( raw_data_panel, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy the current example data to the clipboard.' ) )
         
-        self._fetch_button = ClientGUICommon.BetterBitmapButton( raw_data_panel, CC.global_pixmaps().link, self._FetchFromURL )
-        self._fetch_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Fetch data from a URL.' ) )
+        self._fetch_button = ClientGUICommon.IconButton( raw_data_panel, CC.global_icons().link, self._FetchFromURL )
+        self._fetch_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Fetch data from an URL.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( raw_data_panel, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( raw_data_panel, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste the current clipboard data into here.' ) )
         
         self._example_data_raw_preview = QW.QPlainTextEdit( raw_data_panel )
@@ -117,7 +116,7 @@ class TestPanel( QW.QWidget ):
         
         if len( test_data.texts ) > 0:
             
-            QP.CallAfter( self._SetExampleData, test_data.texts[0] )
+            CG.client_controller.CallAfterQtSafe( self, self._SetExampleData, test_data.texts[0] )
             
         
     
@@ -129,11 +128,6 @@ class TestPanel( QW.QWidget ):
     def _FetchFromURL( self ):
         
         def qt_code( example_data, example_bytes ):
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
             
             example_parsing_context = self._example_parsing_context.GetValue()
             
@@ -174,20 +168,26 @@ class TestPanel( QW.QWidget ):
                 HydrusData.ShowException( e )
                 
             
-            QP.CallAfter( qt_code, example_data, example_bytes )
+            CG.client_controller.CallAfterQtSafe( self, qt_code, example_data, example_bytes )
             
         
         message = 'Enter URL to fetch data for.'
         
-        with ClientGUIDialogs.DialogTextEntry( self, message, placeholder = 'enter url', allow_blank = False) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                url = dlg.GetValue()
-                
-                CG.client_controller.CallToThread( do_it, url )
-                
+            url = ClientGUIDialogsQuick.EnterText( self, message, placeholder = 'url' ).strip()
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        if url == '':
+            
+            return
+            
+        
+        CG.client_controller.CallToThread( do_it, url )
         
     
     def _Paste( self ):
@@ -200,7 +200,7 @@ class TestPanel( QW.QWidget ):
                 
                 raw_bytes = raw_text.decode( 'utf-8' )
                 
-            except:
+            except Exception as e:
                 
                 raw_bytes = None
                 
@@ -256,7 +256,7 @@ class TestPanel( QW.QWidget ):
                 
                 if example_bytes is not None:
                     
-                    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+                    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'example_data' )
                     
                     try:
                         
@@ -267,7 +267,7 @@ class TestPanel( QW.QWidget ):
                         
                         mime = HydrusFileHandling.GetMime( temp_path )
                         
-                    except:
+                    except Exception as e:
                         
                         mime = HC.APPLICATION_UNKNOWN
                         
@@ -296,7 +296,7 @@ class TestPanel( QW.QWidget ):
                         
                         example_data_to_show = json.dumps( j, indent = 4 )
                         
-                    except:
+                    except Exception as e:
                         
                         pass
                         
@@ -452,7 +452,7 @@ class TestPanelFormula( TestPanel ):
             
             texts = formula.Parse( example_parsing_context, self._example_data_raw, self._collapse_newlines )
             
-        except:
+        except Exception as e:
             
             texts = [ '' ]
             
@@ -472,10 +472,10 @@ class TestPanelPageParser( TestPanel ):
         
         self._example_data_post_conversion_description = ClientGUICommon.BetterStaticText( post_conversion_panel )
         
-        self._copy_button_post_conversion = ClientGUICommon.BetterBitmapButton( post_conversion_panel, CC.global_pixmaps().copy, self._CopyPostConversion )
+        self._copy_button_post_conversion = ClientGUICommon.IconButton( post_conversion_panel, CC.global_icons().copy, self._CopyPostConversion )
         self._copy_button_post_conversion.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy the current post conversion data to the clipboard.' ) )
         
-        self._refresh_post_conversion_button = ClientGUICommon.BetterBitmapButton( post_conversion_panel, CC.global_pixmaps().refresh, self._RefreshDataPreviews )
+        self._refresh_post_conversion_button = ClientGUICommon.IconButton( post_conversion_panel, CC.global_icons().refresh, self._RefreshDataPreviews )
         self._example_data_post_conversion_preview = QW.QPlainTextEdit( post_conversion_panel )
         self._example_data_post_conversion_preview.setReadOnly( True )
         
@@ -612,10 +612,10 @@ class TestPanelPageParserSubsidiary( TestPanelPageParser ):
         
         self._example_data_post_separation_description = ClientGUICommon.BetterStaticText( post_separation_panel )
         
-        self._copy_button_post_separation = ClientGUICommon.BetterBitmapButton( post_separation_panel, CC.global_pixmaps().copy, self._CopyPostSeparation )
+        self._copy_button_post_separation = ClientGUICommon.IconButton( post_separation_panel, CC.global_icons().copy, self._CopyPostSeparation )
         self._copy_button_post_separation.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy the current post separation data to the clipboard.' ) )
         
-        self._refresh_post_separation_button = ClientGUICommon.BetterBitmapButton( post_separation_panel, CC.global_pixmaps().refresh, self._RefreshDataPreviews )
+        self._refresh_post_separation_button = ClientGUICommon.IconButton( post_separation_panel, CC.global_icons().refresh, self._RefreshDataPreviews )
         self._example_data_post_separation_preview = QW.QPlainTextEdit( post_separation_panel )
         self._example_data_post_separation_preview.setReadOnly( True )
         

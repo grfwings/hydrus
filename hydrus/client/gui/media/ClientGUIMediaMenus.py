@@ -1,7 +1,6 @@
 import collections
 import collections.abc
 import random
-import typing
 
 from qtpy import QtWidgets as QW
 
@@ -10,7 +9,6 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusData
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusText
 from hydrus.core.files.images import HydrusImageHandling
 
 from hydrus.client import ClientApplicationCommand as CAC
@@ -20,6 +18,7 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIMenus
+from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.media import ClientGUIMediaModalActions
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.media import ClientMedia
@@ -40,12 +39,12 @@ def AddDuplicatesMenu( win: QW.QWidget, command_processor: CAC.ApplicationComman
     
     focused_hash = focus_media_result.GetHash()
     
-    combined_local_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+    combined_local_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
     
     if CG.client_controller.DBCurrentlyDoingJob():
         
         file_duplicate_info = {}
-        all_local_files_file_duplicate_info = {}
+        hydrus_local_file_storage_file_duplicate_info = {}
         
     else:
         
@@ -53,11 +52,11 @@ def AddDuplicatesMenu( win: QW.QWidget, command_processor: CAC.ApplicationComman
         
         if location_context.current_service_keys.isdisjoint( CG.client_controller.services_manager.GetServiceKeys( HC.SPECIFIC_LOCAL_FILE_SERVICES ) ):
             
-            all_local_files_file_duplicate_info = {}
+            hydrus_local_file_storage_file_duplicate_info = {}
             
         else:
             
-            all_local_files_file_duplicate_info = CG.client_controller.Read( 'file_duplicate_info', combined_local_location_context, focused_hash )
+            hydrus_local_file_storage_file_duplicate_info = CG.client_controller.Read( 'file_duplicate_info', combined_local_location_context, focused_hash )
             
         
     
@@ -80,9 +79,9 @@ def AddDuplicatesMenu( win: QW.QWidget, command_processor: CAC.ApplicationComman
             view_duplicate_relations_jobs.append( ( location_context, file_duplicate_info ) )
             
         
-        if len( all_local_files_file_duplicate_info ) > 0 and len( all_local_files_file_duplicate_info[ 'counts' ] ) > 0 and all_local_files_file_duplicate_info != file_duplicate_info:
+        if len( hydrus_local_file_storage_file_duplicate_info ) > 0 and len( hydrus_local_file_storage_file_duplicate_info[ 'counts' ] ) > 0 and hydrus_local_file_storage_file_duplicate_info != file_duplicate_info:
             
-            view_duplicate_relations_jobs.append( ( combined_local_location_context, all_local_files_file_duplicate_info ) )
+            view_duplicate_relations_jobs.append( ( combined_local_location_context, hydrus_local_file_storage_file_duplicate_info ) )
             
         
         for ( job_location_context, job_duplicate_info ) in view_duplicate_relations_jobs:
@@ -525,7 +524,7 @@ def AddKnownURLsViewCopyMenu( win: QW.QWidget, command_processor: CAC.Applicatio
             
             def call_generator( u ):
                 
-                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                 predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS, value = ( True, 'exact_match', u, f'has url {u}' ) ) ]
                 
                 page_name = 'url search'
@@ -542,7 +541,7 @@ def AddKnownURLsViewCopyMenu( win: QW.QWidget, command_processor: CAC.Applicatio
                 
                 ClientGUIMenus.AppendSeparator( urls_open_page_menu )
                 
-                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                 
                 url_preds = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS, value = ( True, 'exact_match', url, f'has url {url}' ) ) for ( label, url ) in focus_labels_and_urls ]
                 
@@ -672,69 +671,91 @@ def AddKnownURLsViewCopyMenu( win: QW.QWidget, command_processor: CAC.Applicatio
     ClientGUIMenus.AppendMenu( menu, urls_menu, 'urls' )
     
 
-def AddLocalFilesMoveAddToMenu( win: QW.QWidget, menu: QW.QMenu, local_duplicable_to_file_service_keys: collections.abc.Collection[ bytes ], local_moveable_from_and_to_file_service_keys: collections.abc.Collection[ tuple[ bytes, bytes ] ], multiple_selected: bool, process_application_command_call ):
+def AddLocalFilesMoveAddToMenu( win: QW.QWidget, menu: QW.QMenu, local_file_service_keys: collections.Counter[ bytes ], local_duplicable_to_file_service_keys: collections.Counter[ bytes ], local_movable_from_and_to_file_service_keys: collections.Counter[ tuple[ bytes, bytes ] ], local_mergable_from_and_to_file_service_keys: collections.Counter[ tuple[ bytes, bytes ] ], multiple_selected: bool, process_application_command_call ):
     
-    if len( local_duplicable_to_file_service_keys ) == 0 and len( local_moveable_from_and_to_file_service_keys ) == 0:
+    if len( local_file_service_keys ) > 0:
         
-        return
+        menu_tuples = []
+        
+        for ( s_k, count ) in local_file_service_keys.items():
+            
+            label = f'{CG.client_controller.services_manager.GetName( s_k )} ({HydrusNumbers.ToHumanInt(count)} files)'
+            description = label
+            call = None
+            
+            menu_tuples.append( ( label, description, call ) )
+            
+        
+        submenu_name = 'currently in'
+        
+        ClientGUIMenus.AppendMenuOrItem( menu, submenu_name, menu_tuples )
         
     
     if len( local_duplicable_to_file_service_keys ) > 0:
         
         menu_tuples = []
         
-        for s_k in local_duplicable_to_file_service_keys:
+        for ( s_k, count ) in local_duplicable_to_file_service_keys.items():
             
             application_command = CAC.ApplicationCommand(
                 command_type = CAC.APPLICATION_COMMAND_TYPE_CONTENT,
                 data = ( s_k, HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ADD, None )
             )
             
-            label = CG.client_controller.services_manager.GetName( s_k )
-            description = 'Duplicate the files to this local file service.'
+            label = f'{CG.client_controller.services_manager.GetName( s_k )} ({HydrusNumbers.ToHumanInt(count)} files)'
+            description = 'Duplicate the files to this local file domain.'
             call = HydrusData.Call( process_application_command_call, application_command )
             
             menu_tuples.append( ( label, description, call ) )
             
         
-        if multiple_selected:
-            
-            submenu_name = 'add selected to'
-            
-        else:
-            
-            submenu_name = 'add to'
-            
+        submenu_name = 'add to'
         
         ClientGUIMenus.AppendMenuOrItem( menu, submenu_name, menu_tuples )
         
     
-    if len( local_moveable_from_and_to_file_service_keys ) > 0:
+    if len( local_mergable_from_and_to_file_service_keys ) > 0:
         
         menu_tuples = []
         
-        for ( source_s_k, dest_s_k ) in local_moveable_from_and_to_file_service_keys:
+        for ( ( source_s_k, dest_s_k ), count ) in local_mergable_from_and_to_file_service_keys.items():
+            
+            application_command = CAC.ApplicationCommand(
+                command_type = CAC.APPLICATION_COMMAND_TYPE_CONTENT,
+                data = ( dest_s_k, HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_MOVE_MERGE, source_s_k )
+            )
+            
+            label = f'from {CG.client_controller.services_manager.GetName( source_s_k )} to {CG.client_controller.services_manager.GetName( dest_s_k )} ({HydrusNumbers.ToHumanInt(count)} files)'
+            description = 'Add the files to the destination and delete from the source. Works when files are already in the destination.'
+            call = HydrusData.Call( process_application_command_call, application_command )
+            
+            menu_tuples.append( ( label, description, call ) )
+            
+        
+        submenu_name = 'move (merge)'
+        
+        ClientGUIMenus.AppendMenuOrItem( menu, submenu_name, menu_tuples )
+        
+    
+    if len( local_movable_from_and_to_file_service_keys ) > 0:
+        
+        menu_tuples = []
+        
+        for ( ( source_s_k, dest_s_k ), count ) in local_movable_from_and_to_file_service_keys.items():
             
             application_command = CAC.ApplicationCommand(
                 command_type = CAC.APPLICATION_COMMAND_TYPE_CONTENT,
                 data = ( dest_s_k, HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_MOVE, source_s_k )
             )
             
-            label = 'from {} to {}'.format( CG.client_controller.services_manager.GetName( source_s_k ), CG.client_controller.services_manager.GetName( dest_s_k ) )
-            description = 'Add the files to the destination and delete from the source.'
+            label = f'from {CG.client_controller.services_manager.GetName( source_s_k )} to {CG.client_controller.services_manager.GetName( dest_s_k )} ({HydrusNumbers.ToHumanInt(count)} files)'
+            description = 'Add the files to the destination and delete from the source. Only works on files not already in the destination.'
             call = HydrusData.Call( process_application_command_call, application_command )
             
             menu_tuples.append( ( label, description, call ) )
             
         
-        if multiple_selected:
-            
-            submenu_name = 'move selected'
-            
-        else:
-            
-            submenu_name = 'move'
-            
+        submenu_name = 'move (strict)'
         
         ClientGUIMenus.AppendMenuOrItem( menu, submenu_name, menu_tuples )
         
@@ -751,7 +772,7 @@ def AddManageFileViewingStatsMenu( win: QW.QWidget, menu: QW.QMenu, flat_medias:
     ClientGUIMenus.AppendMenu( menu, submenu, 'viewing stats' )
     
 
-def AddOpenMenu( win: QW.QWidget, command_processor: CAC.ApplicationCommandProcessorMixin, menu: QW.QMenu, focused_media: typing.Optional[ ClientMedia.Media ], selected_media: collections.abc.Collection[ ClientMedia.Media ] ):
+def AddOpenMenu( win: QW.QWidget, command_processor: CAC.ApplicationCommandProcessorMixin, menu: QW.QMenu, focused_media: ClientMedia.Media | None, selected_media: collections.abc.Collection[ ClientMedia.Media ] ):
     
     if len( selected_media ) == 0:
         
@@ -905,55 +926,34 @@ def AddServiceKeysToMenu( menu, service_keys, submenu_name, description, bare_ca
     ClientGUIMenus.AppendMenuOrItem( menu, submenu_name, menu_tuples )
     
 
-def StartOtherHashesMenuFetch( win: QW.QWidget, media: ClientMedia.MediaSingleton, md5_menu_item: QW.QAction, sha1_menu_item: QW.QAction, sha512_menu_item: QW.QAction ):
+def StartOtherHashMenuFetch( win: QW.QWidget, media: ClientMedia.MediaSingleton, menu_item: QW.QAction, hash_type: str ):
+    
+    hash = media.GetHash()
     
     def work_callable():
         
-        hash = media.GetHash()
+        hashes_to_other_hashes = CG.client_controller.Read( 'file_hashes', ( hash, ), 'sha256', hash_type )
         
-        hashes_to_other_hashes = CG.client_controller.Read( 'file_hashes', ( hash, ), 'sha256', 'md5' )
-        
-        if hash in hashes_to_other_hashes:
-            
-            md5_hash = hashes_to_other_hashes[ hash ]
-            
-            md5_menu_item.setText( f'md5 ({md5_hash.hex()})' )
-            
-        else:
-            
-            md5_menu_item.setText( 'md5 (unknown)' )
-            
-        
-        hashes_to_other_hashes = CG.client_controller.Read( 'file_hashes', ( hash, ), 'sha256', 'sha1' )
-        
-        if hash in hashes_to_other_hashes:
-            
-            sha1_hash = hashes_to_other_hashes[ hash ]
-            
-            sha1_menu_item.setText( f'sha1 ({sha1_hash.hex()})' )
-            
-        else:
-            
-            sha1_menu_item.setText( 'sha1 (unknown)' )
-            
-        
-        hashes_to_other_hashes = CG.client_controller.Read( 'file_hashes', ( hash, ), 'sha256', 'sha512' )
-        
-        if hash in hashes_to_other_hashes:
-            
-            sha512_hash = hashes_to_other_hashes[ hash ]
-            
-            sha512_menu_item.setText( f'sha512 ({HydrusText.ElideText( sha512_hash.hex(), 64, elide_center = True )})' )
-            
-        else:
-            
-            sha512_menu_item.setText( 'sha512 (unknown)' )
-            
+        return hashes_to_other_hashes
         
     
-    def publish_callable( result ):
+    def publish_callable( hashes_to_other_hashes: dict[ bytes, bytes ] ):
         
-        pass
+        if not QP.isValid( menu_item ):
+            
+            return
+            
+        
+        if hash in hashes_to_other_hashes:
+            
+            desired_hash = hashes_to_other_hashes[ hash ]
+            
+            menu_item.setText( f'{hash_type} ({desired_hash.hex()})' )
+            
+        else:
+            
+            menu_item.setText( f'{hash_type} (unknown)' )
+            
         
     
     job = ClientGUIAsync.AsyncQtJob( win, work_callable, publish_callable )
@@ -961,7 +961,7 @@ def StartOtherHashesMenuFetch( win: QW.QWidget, media: ClientMedia.MediaSingleto
     job.start()
     
 
-def AddShareMenu( win: QW.QWidget, command_processor: CAC.ApplicationCommandProcessorMixin, menu: QW.QMenu, focused_media: typing.Optional[ ClientMedia.Media ], selected_media: collections.abc.Collection[ ClientMedia.Media ] ):
+def AddShareMenu( win: QW.QWidget, command_processor: CAC.ApplicationCommandProcessorMixin, menu: QW.QMenu, focused_media: ClientMedia.Media | None, selected_media: collections.abc.Collection[ ClientMedia.Media ] ):
     
     if focused_media is not None:
         
@@ -1085,7 +1085,9 @@ def AddShareMenu( win: QW.QWidget, command_processor: CAC.ApplicationCommandProc
         sha1_menu_item = ClientGUIMenus.AppendMenuItem( copy_hash_menu, 'sha1', 'Copy this file\'s SHA1 hash to your clipboard. Your client may not know this.', command_processor.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_COPY_FILE_HASHES, simple_data = ( CAC.FILE_COMMAND_TARGET_FOCUSED_FILE, 'sha1' ) ) )
         sha512_menu_item = ClientGUIMenus.AppendMenuItem( copy_hash_menu, 'sha512', 'Copy this file\'s SHA512 hash to your clipboard. Your client may not know this.', command_processor.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_COPY_FILE_HASHES, simple_data = ( CAC.FILE_COMMAND_TARGET_FOCUSED_FILE, 'sha512' ) ) )
         
-        StartOtherHashesMenuFetch( share_menu, focused_media, md5_menu_item, sha1_menu_item, sha512_menu_item )
+        StartOtherHashMenuFetch( copy_hash_menu, focused_media, md5_menu_item, 'md5' )
+        StartOtherHashMenuFetch( copy_hash_menu, focused_media, sha1_menu_item, 'sha1' )
+        StartOtherHashMenuFetch( copy_hash_menu, focused_media, sha512_menu_item, 'sha512' )
         
         file_info_manager = focused_media.GetMediaResult().GetFileInfoManager()
         

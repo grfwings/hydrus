@@ -29,29 +29,32 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
 
 === "macOS"
 
-    *   Get the App .zip. Double-click it, which should extract the App. Drag the App to your Applications.
-    *   Hydrus is an unsigned application, so you have to instruct macOS to trust it:
-        * Once Hydrus Network.app is installed in your Applications, control-click (or right-click) it and choose Open. By choosing Open, you are telling macOS that you want to bypass the security checks for that app only.
-        * If this fails, go to `Apple Menu -> System Preferences -> Security (or Security & Privacy)`. Change "Allow apps downloaded from:" to "Anywhere".
-    *   _This App has always been a little buggy. Many macOS users have better success [running from source](running_from_source.md). I encourage all macOS users to try it out._
-    *   _Also, for difficult technical reasons, the App is currently built for the Intel chipset. If you are on Apple Silicon, we again recommend you [run from source](running_from_source.md)!_
-  
-    !!! info "App Database Location"
-        Unlike a normal install of hydrus, the Hydrus App is **non-portable** and puts your database in `~/Library/Hydrus` (i.e. `/Users/[You]/Library/Hydrus`). You can update simply by replacing the old App with the new, but if you wish to backup your database, you should be looking at `~/Library/Hydrus`, not the App itself.
-  
+    * I used to have an Intel App, but unfortunately the move to Apple Silicon presented too many technical hurdles to keep going.
+    * The program has always worked better on macOS when [run from source](running_from_source.md), and this is now the only option here.
+
     !!! info "mpv on macOS"
-        macOS users have no mpv support for now, so no audio, and video (which has to be rendered with the software-based native viewer) may be laggy. Sorry!
+        macOS users have no mpv support for now. Use the QtMediaPlayer instead!
 
 === "Linux"
     
-    !!! warning "Wayland"
-        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will often not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. [Running from source](running_from_source.md) may improve the situation, but some of these issues seem to be intractable for now.
+    !!! warning "Wayland (and MPV)"
+        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. Newer versions are less buggy, and [running from source](running_from_source.md) may improve the situation, but some of these issues, particularly mpv embedding, seem to be intractable.
         
-        User testing suggests that the best solution for now is just to launch the program in X11, and I now encourage this for all Wayland users. Launching with the environment variable `QT_QPA_PLATFORM=xcb` should do it. The 'xcb' forces X11.
+        If mpv is the only problem, then switch to the QtMediaPlayer under `options->media playback`.
         
-        If that fails, another user says setting `WAYLAND_DISPLAY= ` (as in setting it to nothing), which forces hydrus (and its embedded mpv windows) to use Xwayland, is another solution! You might need to do `sudo apt install xwayland` first.
+        If you really want mpv or have other UI issues, user testing suggests that the best solution for now is just to launch the program in X11. Launch the program _without_ the WAYLAND_DISPLAY variable and _with_ `QT_QPA_PLATFORM=xcb`, which you can achieve with `unset WAYLAND_DISPLAY` and `export QT_QPA_PLATFORM=xcb` in a boot script that launches `hydrus_client`. You might need to do `sudo apt install xwayland` first.
         
-        I expect to revisit this question in future versions of Qt and Wayland--we'll see if the situation stabilises.
+        You should be able to see which window manager hydrus thinks it is running under in `help->about`, on the "Qt" row.
+        
+        I expect to revisit this question in future versions of Qt and Wayland, and I plan to try a different mpv embedding technique that I know Wayland should support--we'll see if the situation stabilises.
+    
+    ??? warning "MangoHUD and MPV"
+        A user notes that MangoHUD may also interfere with mpv, causing crashes.
+        
+        Try `unset MANGOHUD` or `export MANGOHUD=0` to remove the MangoHUD environment variable in your hydrus launch script to fix this!
+    
+    ??? warning "KDE and QtMediaPlayer"
+        A user notes that those on KDE may need the `mit-krb5` package to get QtMediaPlayer working. Hit up `help->about` and the "Optional Libraries" tab once you are up to see if QtMultimedia loaded ok.
     
     !!! note "Qt compatibility"
         
@@ -71,11 +74,13 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
         
         Or check your OS's package manager.
         
+        One user reports that Fedora might need `libxkbcommon` too.
+        
     
     *   Get the .tag.gz. Extract it somewhere useful and create shortcuts to 'hydrus_client' and 'hydrus_server' as you like. The build is made on Ubuntu, so if you run something else, compatibility is hit and miss.
     *   If you have problems running the Ubuntu build, [running from source](running_from_source.md) is usually an improvement, and it is easy to set up these days.
     *   You might need to get 'libmpv1' or 'libmpv2' to get mpv working and playing video/audio. This is the mpv _library_, not the necessarily the player. Check _help->about_ to see if it is available--if not, see if you can get it like so:
-        * `apt install libmpv1` or `apt install libmpv2`
+        * `sudo apt install libmpv1` or `sudo apt install libmpv2`
         * Use _options->media_ to set your audio/video/animations to 'show using mpv' once you have it installed.
         * If the about window provides you an mpv error popup like this:  
     ```
@@ -87,7 +92,7 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
             1. Search your /usr/ dir for `libgmodule*`. You are looking for something like `libgmodule-2.0.so`. Users report finding it in `/usr/lib64/` and `/usr/lib/x86_64-linux-gnu`.
             2. Copy that .so file to the hydrus install base directory.
             3. Boot the client and hit _help->about_ to see if it reports a version.
-            4. If it all seems good, hit _options->media_ to set up mpv as your player for video/audio and try to view some things.
+            4. If it all seems good, hit _options->media playback_ to set up mpv as your player for video/audio and try to view some things.
             5. If it still doesn't work, see if you can do the same for libmpv.so and libcdio.so--or consider [running from source](running_from_source.md)
     *   You can also try [running the Windows version in wine](wine.md).
     *   **Third parties (not maintained by Hydrus Developer)**:  
@@ -102,20 +107,20 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
 
 === "From Source"
 
-    *   You can also [run from source](running_from_source.md). This is often the best way to fix compatibility problems, and it is the most pleasant way to run and update the program (you can update in five seconds!), although it requires a bit more work to set up the first time. It is not too complicated to do, though--my guide will walk you through each step.
+    *   You can also [run from source](running_from_source.md). This is often the best way to fix compatibility problems, the only way to run on macOS, and the most pleasant way to run and update the program (you can update in five seconds!), although it requires a bit more work to set up the first time. It is not too complicated to do, though--my guide will walk you through each step.
 
 By default, hydrus stores all its data—options, files, subscriptions, _everything_—entirely inside its own directory. You can extract it to a usb stick, move it from one place to another, have multiple installs for multiple purposes, wrap it all up inside an encrypted volume, whatever you like. The .exe installer writes some unavoidable uninstall registry stuff to Windows, but the 'installed' client itself will run fine if you manually move it.
 
 !!! danger "Bad Locations"
     **Do not install to a network location!** (i.e. on a different computer's hard drive) The SQLite database is sensitive to interruption and requires good file locking, which network interfaces often fake. There are [ways of splitting your client up](database_migration.md) so the database is on a local SSD but the files are on a network--this is fine--but you really should not put the database on a remote machine unless you know what you are doing and have a backup in case things go wrong.
     
-    **Do not install to a location with filesystem-level compression enabled! (e.g. BTRFS)** It may work ok to start, but when the SQLite database grows to large size, this can cause extreme access latency and I/O errors and corruption.
+    **Be careful installing to a location with filesystem-level compression or versioning enabled!** It may work ok to start, but when the SQLite database grows to large size, this can cause extreme access latency. I have been told that BTRFS works well these days, and they have been working specifically to improve SQLite performance, but keep it in mind if you are using anything else. Using NTFS compression mode on the database files is not a good idea. Compressing a hydrus database backup is fine, but the live db is sensitive.
 
 ## Anti-virus { id="anti_virus" }
 
 Hydrus is made by an Anon out of duct tape and string. It combines file parsing tech with lots of network and database code in unusual and powerful ways, and all through a hacked-together executable that isn't signed by any big official company.
 
-Unfortunately, we have been hit by anti-virus false positives throughout development. Every few months, one or more of the larger anti-virus programs sees some code that looks like something bad, or they run the program in a testbed and don't like something it does, and then they quarantine it. Every single instance of this so far has been a false positive. They usually go away the next week or two when the next set of definitions roll out. Some hydrus users are kind enough to report the program as a false positive to the anti-virus companies themselves, which also helps here.
+Unfortunately, we have been hit by anti-virus false positives throughout development. Every few months, one or more of the larger anti-virus programs sees some code that looks like something bad, or they run the program in a testbed and don't like something it does, and then they quarantine it. Every single instance of this so far has been a false positive. They usually go away the next week or two when the next set of definitions roll out. Some hydrus users are kind enough to report the program as a false positive to the anti-virus companies themselves, which also helps.
 
 Some users have never had the problem, some get hit regularly. The situation is obviously worse on Windows. If you try to extract the zip and hydrus_client.exe or the whole folder suddenly disappears, please check your anti-virus software.
 
@@ -136,14 +141,11 @@ To run the client:
     *   For the installer, run the Start menu shortcut it added.
     *   For the extract, run 'hydrus_client.exe' in the base directory, or make a shortcut to it.
 
-=== "macOS"
-
-    *   Run the App you installed.
-
 === "Linux"
 
-    *   Run the 'client' executable in the base directory. You may be able to double-click it, otherwise you are running `./client` from the terminal.
+    *   Run the 'client' executable in the base directory. You may be able to double-click it, otherwise you are running `./hydrus_client` from the terminal.
     *   If you experience virtual memory crashes, please review [this thorough guide](Fixing_Hydrus_Random_Crashes_Under_Linux.md) by a user.
+    *   Making a .desktop shortcut is ideal--check `install_dir/static/io.github.hydrusnetwork.hydrus.desktop` for an example template.
 
 ## Updating
 
@@ -161,7 +163,6 @@ The update process:
 * Update your install:
     1. **If you use the installer**, just download the new installer and run it. It should detect where the last install was and overwrite everything automatically.
     2. **If you use the extract**, then just extract the new version right on top of your current install and overwrite manually. *It is wise to extract it straight from the archive to your install folder.*
-    3. **If you use the macOS App**, just extract the new App from the zip and drag and drop to your Applications as normal.
     4. **If you run from source**, then run `git pull` as normal. If it has been a few months since you made your venv, or the changelog talks about a new library version specifically, you might like to run `setup_venv` again.
 * Start your client or server. It may take a few minutes to update its database. I will say in the release post if it is likely to take longer.
 
@@ -192,22 +193,27 @@ However, you need to be careful not to delete your database! It sounds silly, bu
 
 *   Make a backup if you can!
 *   Go to your install directory.
-*   Delete all the files and folders except the 'db' dir (and all of its contents, obviously).
+*   Delete all the files and folders except the 'db' dir and its contents. The 'db' dir is where all your stuff is, so don't delete it!
 *   Extract the new version of hydrus as you normally do.
 
-After that, you'll have a 'clean' version of hydrus that only has the latest version's dlls. If hydrus still will not boot, I recommend you roll back to your last working backup and let me, hydrus dev, know what your error is.
+!!! note "Since v662"
+    Before v662, the install was messy, with 100+ folders and dlls in the base directory. A clean install there involves selecting a whole bunch of stuff other than the db dir and clearing it out.
+    
+    Ever since v662, you should just have a couple executables and a 'db' and a 'lib' dir. A clean install with the new structure follows the same script, but since it is now so simple, the only thing you really need to delete is the 'lib' dir.
 
-*Note that macOS App users will not ever have to do a clean install because every App is self-contained and non-merging with previous Apps. Source users similarly do not have to worry about this issue, although if they update their system python, they'll want to recreate their venv. Windows Installer users basically get a clean install every time, so they shouldn't have to worry about this.*
+After you have re-extracted, you'll have a 'clean' version of hydrus that is as if you had installed for the first time, with only the latest dlls, but still with your old db. If hydrus still will not boot, I recommend you roll back to your last working backup and let me, hydrus dev, know what your error is.
+
+*Note that source users do not have to worry about clean installs, although if they update their system python, they'll want to recreate their venv. Also, Windows Installer users basically get a clean install every time, so they shouldn't have to worry about this.*
 
 ## Big updates { id="big_updates" }
 
 If you have not updated in some time--say twenty versions or more--doing it all in one jump, like v290->v330, may not work. I am doing a lot of unusual stuff with hydrus, change my code at a fast pace, and do not have a ton of testing in place. Hydrus update code often falls to [bit rot](https://en.wikipedia.org/wiki/Software_rot), and so some underlying truth I assumed for the v299->v300 code may not still apply six months later. If you try to update more than 50 versions at once (i.e. trying to perform more than a year of updates in one go), the client will give you a polite error rather than even try.
 
-As a result, if you get a failure on trying to do a big update, try cutting the distance in half--try v290->v310 first, and boot it. If the database updates correctly and the program boots, then shut down and move on to v310->v330. If the update does not work, cut down the gap and try v290->v300, and so on. **Again, it is very important you make a backup before starting a process like this so you can roll back and try a different version if things go wrong.**
+As a result, if you get a failure on trying to do a big update, try cutting the distance in half--try v290->v310 first, and boot it once. If the database updates correctly and the program launches ok, then shut down and move on to v310->v330. If the update does not work, cut down the gap and try v290->v300, and so on. **Again, it is very important you make a backup before starting a process like this so you can roll back and try a different version if things go wrong.**
 
 If you narrow the gap down to just one version and still get an error, please let me know. If the problem is ever quick to appear and ugly/serious-looking, and perhaps talking about a "bootloader" or "dll" issue, then try doing a clean install as above. I am very interested in these sorts of problems and will be happy to help figure out a fix with you (and everyone else who might be affected).
 
-_All that said, and while updating is complex and every client is different, various user reports over the years suggest this route works and is efficient: 204 > 238 > 246 > 291 > 328 > 335 (clean install) > 376 > 421 > 466 (clean install) > 474 > 480 > 521 (maybe clean install) > 527 (special clean install) > 535 > 558 > 571 (clean install) > 603_ 
+_All that said, and while updating is complex and every client is different, various user reports over the years suggest this route works and is efficient: 204 > 238 > 246 > 291 > 328 > 335 (clean install) > 376 > 421 > 466 (clean install) > 474 > 480 > 521 (maybe clean install) > 527 (special clean install) > 535 > 558 > 571 (clean install) > 603 > 652 > 662 (clean install)_ 
 
 ??? note "334->335"
     We moved from python 2 to python 3.
@@ -250,11 +256,21 @@ _All that said, and while updating is complex and every client is different, var
     * If you use the macOS app, there are no special instructions. Update as normal.
     * If you run from source, there are no special instructions. Update as normal.
 
+??? note "661->662"
+    662 moved the "contents" of the PyInstaller package all up to a 'lib' dir, to tidy up the base directory. Testing suggests it doesn't actually _need_ a clean install, but we should be tidy and not entertain two programs in the same directory!
+    
+    If you need to update from 661 or before to 662 or later, then:
+    
+    * If you use the Windows installer, install as normal.
+    * If you use one of the normal extract builds, you will have to do a 'clean install', as above.
+    * We no longer have the macOS App, sorry!
+    * If you run from source, there are no special instructions. Update as normal.
+
 ## Backing up
 
 !!! danger "I am not joking around: if you end up liking hydrus, you should back up your database"
 
-**Maintaining a regular backup is important for hydrus.** The program stores a lot of complicated data that you will put hours and hours of work into, and if you only have one copy and your hard drive breaks, you could lose everything. This has happened before--to people who thought it would never happen to them--and it sucks big time to go through. **Don't let it be you.**
+**Maintaining a regular backup is important for hydrus.** The program stores a lot of complicated data that you will put hours and hours of work into. If you only have one copy and your hard drive breaks, you could lose everything. This has happened before--to people who thought it would never happen to them--and it sucks big time to go through. **Don't let it be you.**
 
 Hydrus's database engine, SQLite, is excellent at keeping data safe, but it cannot work in a faulty environment. Ways in which users of hydrus have damaged/lost their database:
 
@@ -271,7 +287,7 @@ Hydrus's database engine, SQLite, is excellent at keeping data safe, but it cann
 * Network drive location not guaranteeing accurate file locks
 * Windows NVMe driver bugs necessitating a different SQLite journalling method
 
-Some of those you can mitigate (don't run the database over a network!) and some will always be a problem, but if you have a backup, none of them can kill you.
+Some of those you can mitigate (don't run the database over a network!) and some will always be a concern, but if you have a backup, none of them can kill you.
 
 !!! note "This mostly means your database, not your files"
     Note that nearly all the serious and difficult-to-fix problems occur to the _database_, which is four large .db files, not your media. All your images and movies are read-only in hydrus, and there's less worry if they are on a network share with bad locks or a machine that suddenly loses power. The database, however, maintains a live connection, with regular complex writes, and here a hardware failure can lead to corruption (basically the failure scrambles the data that is written, so when you try to boot back up, a small section of the database is incomprehensible garbage).

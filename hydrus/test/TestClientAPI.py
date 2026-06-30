@@ -9,7 +9,8 @@ import unittest
 import urllib
 import urllib.parse
 
-from mock import patch
+from unittest import mock
+
 from twisted.internet import reactor
 
 from hydrus.core import HydrusConstants as HC
@@ -17,9 +18,11 @@ from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusPaths
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
+from hydrus.core.files import HydrusFilesPhysicalStorage
 from hydrus.core.files.images import HydrusImageHandling
 
 from hydrus.client import ClientAPI
@@ -29,6 +32,7 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientServices
 from hydrus.client import ClientTime
 from hydrus.client.duplicates import ClientDuplicates
+from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.media import ClientMediaManagers
 from hydrus.client.media import ClientMediaResult
@@ -49,7 +53,7 @@ try:
     import cbor2
     import base64
     CBOR_AVAILABLE = True
-except:
+except Exception as e:
     pass
 
 def wash_example_json_response( obj ):
@@ -67,7 +71,7 @@ def GetExampleServicesDict():
         '6c6f63616c2074616773': {
             'name' : 'my tags',
             'type' : 5,
-            'type_pretty' : 'local tag service'
+            'type_pretty' : 'local tag domain'
         },
         TG.test_controller.example_tag_repo_service_key.hex() : {
             'name' : 'example tag repo',
@@ -95,43 +99,96 @@ def GetExampleServicesDict():
             'type_pretty' : 'hydrus file repository'
         },
         '616c6c206c6f63616c2066696c6573' : {
-            'name' : 'all local files',
+            'name' : 'hydrus local file storage',
             'type' : 15,
-            'type_pretty' : 'virtual combined local file service'
+            'type_pretty' : 'virtual combined local file domain'
         },
         '616c6c206c6f63616c206d65646961' : {
-            'name' : 'all my files',
+            'name' : 'combined local file domains',
             'type' : 21,
-            'type_pretty' : 'virtual combined local media service'
+            'type_pretty' : 'virtual combined local media domain'
         },
         '616c6c206b6e6f776e2066696c6573' : {
             'name' : 'all known files',
             'type' : 11,
-            'type_pretty' : 'virtual combined file service'
+            'type_pretty' : 'virtual combined file domain'
         },
         '616c6c206b6e6f776e2074616773' : {
             'name' : 'all known tags',
             'type' : 10,
-            'type_pretty' : 'virtual combined tag service'
+            'type_pretty' : 'virtual combined tag domain'
         },
         TG.test_controller.example_like_rating_service_key.hex() : {
             'name' : 'example local rating like service',
             'type' : 7,
             'type_pretty' : 'local like/dislike rating service',
-            'star_shape' : 'circle'
+            'star_shape' : 'svg',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'dislike': {
+                    'brush': '#C85078',
+                    'pen': '#000000'
+                },
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+                'null': {
+                    'brush': '#BFBFBF',
+                    'pen': '#000000'
+                }
+            },
         },
         TG.test_controller.example_numerical_rating_service_key.hex() : {
             'name' : 'example local rating numerical service',
             'type' : 6,
             'type_pretty' : 'local numerical rating service',
+            'allows_zero' : True,
             'min_stars' : 0,
             'max_stars' : 5,
-            'star_shape' : 'circle'
+            'star_shape' : 'circle',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'dislike': {
+                    'brush': '#FFFFFF',
+                    'pen': '#000000'
+                },
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+                'null': {
+                    'brush': '#BFBFBF',
+                    'pen': '#000000'
+                }
+            },
         },
         TG.test_controller.example_incdec_rating_service_key.hex() : {
             'name' : 'example local rating inc/dec service',
             'type' : 22,
-            'type_pretty' : 'local inc/dec rating service'
+            'type_pretty' : 'local inc/dec rating service',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+            },
         },
         '7472617368' : {
             'name' : 'trash',
@@ -183,7 +240,7 @@ class TestClientAPI( unittest.TestCase ):
         
         #
         
-        with open( os.path.join( HC.STATIC_DIR, 'hydrus.ico' ), 'rb' ) as f:
+        with open( HydrusStaticDir.GetStaticPath( 'hydrus.ico' ), 'rb' ) as f:
             
             favicon = f.read()
             
@@ -213,8 +270,8 @@ class TestClientAPI( unittest.TestCase ):
         cbor_headers = dict( headers )
         cbor_headers[ 'Accept' ] = 'application/cbor'
         
-        url = 'http://safebooru.org/index.php?page=post&s=view&id=2753608'
-        normalised_url = 'https://safebooru.org/index.php?id=2753608&page=post&s=view'
+        url = 'http://otherbooru.org/index.php?page=post&s=view&id=123456'
+        normalised_url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         expected_result = {}
         
@@ -222,8 +279,9 @@ class TestClientAPI( unittest.TestCase ):
         expected_result[ 'normalised_url' ] = normalised_url
         expected_result[ 'url_type' ] = HC.URL_TYPE_POST
         expected_result[ 'url_type_string' ] = 'post url'
-        expected_result[ 'match_name' ] = 'safebooru file page'
-        expected_result[ 'can_parse' ] = True
+        expected_result[ 'match_name' ] = 'otherbooru file page'
+        expected_result[ 'can_parse' ] = False
+        expected_result[ 'cannot_parse_reason' ] = 'Could not find a parser for otherbooru file page URL Class!'
         
         cbor_expected_result = dict( expected_result )
         
@@ -762,7 +820,7 @@ class TestClientAPI( unittest.TestCase ):
                     'name' : 'my tags',
                     'service_key' : '6c6f63616c2074616773',
                     'type': 5,
-                    'type_pretty': 'local tag service'
+                    'type_pretty': 'local tag domain'
                 }
             ],
             'tag_repositories' : [
@@ -803,19 +861,19 @@ class TestClientAPI( unittest.TestCase ):
                 }
             ],
             'all_local_files' : [
-                { 
-                    'name' : 'all local files',
+                {
+                    'name' : 'hydrus local file storage',
                     'service_key' : '616c6c206c6f63616c2066696c6573',
                     'type' : 15,
-                    'type_pretty' : 'virtual combined local file service'
+                    'type_pretty' : 'virtual combined local file domain'
                 }
             ],
             'all_local_media' : [
                 {
-                    'name' : 'all my files',
+                    'name' : 'combined local file domains',
                     'service_key' : '616c6c206c6f63616c206d65646961',
                     'type': 21,
-                    'type_pretty': 'virtual combined local media service'
+                    'type_pretty': 'virtual combined local media domain'
                 }
             ],
             'all_known_files' : [
@@ -823,7 +881,7 @@ class TestClientAPI( unittest.TestCase ):
                     'name' : 'all known files',
                     'service_key' : '616c6c206b6e6f776e2066696c6573',
                     'type' : 11,
-                    'type_pretty' : 'virtual combined file service'
+                    'type_pretty' : 'virtual combined file domain'
                 }
             ],
             'all_known_tags' : [
@@ -831,7 +889,7 @@ class TestClientAPI( unittest.TestCase ):
                     'name' : 'all known tags',
                     'service_key' : '616c6c206b6e6f776e2074616773',
                     'type' : 10,
-                    'type_pretty' : 'virtual combined tag service'
+                    'type_pretty' : 'virtual combined tag domain'
                 }
             ],
             'trash' : [
@@ -940,6 +998,47 @@ class TestClientAPI( unittest.TestCase ):
             
         
     
+    def _test_get_service_svg( self, connection, set_up_permissions ):
+        
+        api_permissions = set_up_permissions[ 'add_files' ]
+        
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
+        
+        #
+        
+        path = f'/get_service_rating_svg?service_key={TG.test_controller.example_like_rating_service_key.hex()}'
+        
+        connection.request( 'GET', path, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        self.assertEqual( response.getheader( 'content-type' ), 'image/svg+xml' )
+        
+        svg_path = HydrusStaticDir.GetRatingSVGPath( 'star' )
+        
+        svg_file = open( svg_path, 'rb' )
+        
+        svg_content = svg_file.read()
+        
+        self.assertEqual( data, svg_content )
+        
+        #
+        
+        path = f'/get_service_rating_svg?service_key={TG.test_controller.example_numerical_rating_service_key.hex()}'
+        
+        connection.request( 'GET', path, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        self.assertEqual( response.status, 404 )
+        
+    
     def _test_add_files_add_file( self, connection, set_up_permissions ):
         
         api_permissions = set_up_permissions[ 'add_files' ]
@@ -990,7 +1089,7 @@ class TestClientAPI( unittest.TestCase ):
         
         TG.test_controller.SetRead( 'hash_status', f )
         
-        hydrus_png_path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        hydrus_png_path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         with open( hydrus_png_path, 'rb' ) as f:
             
@@ -1134,16 +1233,16 @@ class TestClientAPI( unittest.TestCase ):
         
         magic_now = 150
         
-        with patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
+        with mock.patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
             
             hash = HydrusData.GenerateKey()
             
             media_result = HF.GetFakeMediaResult( hash )
             
-            media_result.GetLocationsManager()._current = { CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY }
+            media_result.GetLocationsManager()._current = { CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY }
             media_result.GetLocationsManager()._service_keys_to_filenames = {
-                CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 100,
-                CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : 100,
+                CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 100,
+                CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : 100,
                 CC.LOCAL_FILE_SERVICE_KEY : 100
             }
             
@@ -1176,7 +1275,7 @@ class TestClientAPI( unittest.TestCase ):
         
         magic_now = 150
         
-        with patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
+        with mock.patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
             
             hash = HydrusData.GenerateKey()
             
@@ -1184,10 +1283,10 @@ class TestClientAPI( unittest.TestCase ):
             
             some_file_service_key = HydrusData.GenerateKey()
             
-            media_result.GetLocationsManager()._current = { CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, some_file_service_key }
+            media_result.GetLocationsManager()._current = { CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, some_file_service_key }
             media_result.GetLocationsManager()._service_keys_to_filenames = {
-                CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 100,
-                CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : 100,
+                CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 100,
+                CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : 100,
                 some_file_service_key : 100
             }
             
@@ -1210,6 +1309,8 @@ class TestClientAPI( unittest.TestCase ):
             data = response.read()
             
             self.assertEqual( response.status, 200 )
+            
+            time.sleep( 0.25 )
             
             [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
             
@@ -1256,7 +1357,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { hash }, reason = 'Deleted via Client API.' ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { hash }, reason = 'Deleted via Client API.' ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1282,7 +1383,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { hash }, reason = 'Deleted via Client API.' ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { hash }, reason = 'Deleted via Client API.' ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1308,7 +1409,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = 'Deleted via Client API.' ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = 'Deleted via Client API.' ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1334,7 +1435,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = 'Deleted via Client API.' ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = 'Deleted via Client API.' ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1362,7 +1463,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = reason ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = reason ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1406,7 +1507,7 @@ class TestClientAPI( unittest.TestCase ):
         
         path = '/add_files/delete_files'
         
-        body_dict = { 'hashes' : [ h.hex() for h in hashes ], 'file_service_key' : CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY.hex() }
+        body_dict = { 'hashes' : [ h.hex() for h in hashes ], 'file_service_key' : CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY.hex() }
         
         body = json.dumps( body_dict )
         
@@ -1438,7 +1539,7 @@ class TestClientAPI( unittest.TestCase ):
         
         path = '/add_files/delete_files'
         
-        body_dict = { 'hashes' : [ h.hex() for h in hashes ], 'file_service_key' : CC.COMBINED_LOCAL_FILE_SERVICE_KEY.hex() }
+        body_dict = { 'hashes' : [ h.hex() for h in hashes ], 'file_service_key' : CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY.hex() }
         
         body = json.dumps( body_dict )
         
@@ -1482,7 +1583,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_UNDELETE, { hash } ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_UNDELETE, { hash } ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1510,7 +1611,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_UNDELETE, hashes ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_UNDELETE, hashes ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1544,8 +1645,8 @@ class TestClientAPI( unittest.TestCase ):
         deleted_timestamp_ms = 5000000
         previously_imported_timestamp_ms = 2500000
         
-        deleted_to_timestamps_ms = { CC.COMBINED_LOCAL_FILE_SERVICE_KEY : deleted_timestamp_ms, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : deleted_timestamp_ms, CC.LOCAL_FILE_SERVICE_KEY : deleted_timestamp_ms }
-        deleted_to_previously_imported_timestamp_ms = { CC.COMBINED_LOCAL_FILE_SERVICE_KEY : previously_imported_timestamp_ms, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : previously_imported_timestamp_ms, CC.LOCAL_FILE_SERVICE_KEY : previously_imported_timestamp_ms }
+        deleted_to_timestamps_ms = { CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : deleted_timestamp_ms, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : deleted_timestamp_ms, CC.LOCAL_FILE_SERVICE_KEY : deleted_timestamp_ms }
+        deleted_to_previously_imported_timestamp_ms = { CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : previously_imported_timestamp_ms, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : previously_imported_timestamp_ms, CC.LOCAL_FILE_SERVICE_KEY : previously_imported_timestamp_ms }
         
         times_manager = ClientMediaManagers.TimesManager()
         
@@ -1585,7 +1686,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, { hash } ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, { hash } ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1609,7 +1710,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, { hash } ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, { hash } ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1633,7 +1734,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, hashes ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, hashes ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1657,7 +1758,7 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, { hash } ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, { hash } ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
@@ -1681,9 +1782,91 @@ class TestClientAPI( unittest.TestCase ):
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, hashes ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, hashes ) ] )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
+        
+    
+    def _test_add_files_generate_hashes( self, connection, set_up_permissions ):
+        
+        api_permissions = set_up_permissions[ 'add_files' ]
+        
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        
+        # as body
+        
+        hash = b'\xadm5\x99\xa6\xc4\x89\xa5u\xeb\x19\xc0&\xfa\xce\x97\xa9\xcdey\xe7G(\xb0\xce\x94\xa6\x01\xd22\xf3\xc3'
+        
+        f = ClientImportFiles.FileImportStatus.STATICGetUnknownStatus()
+        
+        f.hash = hash
+        
+        hydrus_png_path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
+        
+        with open( hydrus_png_path, 'rb' ) as f:
+            
+            HYDRUS_PNG_BYTES = f.read()
+            
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex, 'Content-Type' : HC.mime_mimetype_string_lookup[ HC.APPLICATION_OCTET_STREAM ] }
+        
+        path = '/add_files/generate_hashes'
+        
+        body = HYDRUS_PNG_BYTES
+        
+        connection.request( 'POST', path, body = body, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        response_json = json.loads( text )
+        
+        expected_result = { 'hash' : hash.hex(), 'perceptual_hashes' : ["b44dc7b24dcb381c"] , 'pixel_hash' : 'e12db22bf8ecf1f54ae1df3f0675a34a64e0c8f0801ae816b8aaae00f5d7f4fc' }
+        
+        wash_example_json_response( expected_result )
+        
+        self.assertEqual( response_json, expected_result )
+        
+        # do hydrus png as path
+        
+        hash = b'\xadm5\x99\xa6\xc4\x89\xa5u\xeb\x19\xc0&\xfa\xce\x97\xa9\xcdey\xe7G(\xb0\xce\x94\xa6\x01\xd22\xf3\xc3'
+        
+        f = ClientImportFiles.FileImportStatus.STATICGetUnknownStatus()
+        
+        f.hash = hash
+        
+        hydrus_png_path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex, 'Content-Type' : HC.mime_mimetype_string_lookup[ HC.APPLICATION_JSON ] }
+        
+        path = '/add_files/generate_hashes'
+        
+        body_dict = { 'path' : hydrus_png_path }
+        
+        body = json.dumps( body_dict )
+        
+        connection.request( 'POST', path, body = body, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        response_json = json.loads( text )
+        
+        expected_result = { 'hash' : hash.hex(), 'perceptual_hashes' : ["b44dc7b24dcb381c"] , 'pixel_hash' : 'e12db22bf8ecf1f54ae1df3f0675a34a64e0c8f0801ae816b8aaae00f5d7f4fc' }
+        
+        wash_example_json_response( expected_result )
+        
+        self.assertEqual( response_json, expected_result )
         
     
     def _test_add_notes( self, connection, set_up_permissions ):
@@ -2026,7 +2209,7 @@ class TestClientAPI( unittest.TestCase ):
         
         magic_now = 123456789
         
-        with patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
+        with mock.patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
             
             for ( request_args, media_result, canvas_type, new_timestamp_ms, new_views, new_viewtime ) in jobs:
                 
@@ -2056,7 +2239,7 @@ class TestClientAPI( unittest.TestCase ):
                 content_update_row = ( hash, canvas_type, timestamp_we_expect, new_views, new_viewtime )
                 
                 expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates(
-                    CC.COMBINED_LOCAL_FILE_SERVICE_KEY,
+                    CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY,
                     [
                         ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILE_VIEWING_STATS, HC.CONTENT_UPDATE_ADD, content_update_row )
                     ]
@@ -2198,7 +2381,7 @@ class TestClientAPI( unittest.TestCase ):
         
         magic_now = 123456789
         
-        with patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
+        with mock.patch.object( HydrusTime, 'GetNowMS', return_value = magic_now ):
             
             for ( request_args, media_result, canvas_type, new_timestamp_ms, new_views, new_viewtime ) in jobs:
                 
@@ -2227,7 +2410,7 @@ class TestClientAPI( unittest.TestCase ):
                 content_update_row = ( hash, canvas_type, new_timestamp_ms, new_views, new_viewtime )
                 
                 expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates(
-                    CC.COMBINED_LOCAL_FILE_SERVICE_KEY,
+                    CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY,
                     [
                         ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILE_VIEWING_STATS, HC.CONTENT_UPDATE_SET, content_update_row )
                     ]
@@ -2757,15 +2940,15 @@ class TestClientAPI( unittest.TestCase ):
         
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_IMPORTED,
-            'file_service_key' : CC.COMBINED_LOCAL_FILE_SERVICE_KEY.hex(),
+            'file_service_key' : CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY.hex(),
             'timestamp_ms' : 123456789
         }
         
         media_result = HF.GetFakeMediaResult( hash )
         
-        media_result.GetTimesManager().SetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, HydrusTime.GetNowMS() )
+        media_result.GetTimesManager().SetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, HydrusTime.GetNowMS() )
         
-        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_IMPORTED, location = CC.COMBINED_LOCAL_FILE_SERVICE_KEY, timestamp_ms = 123456789 )
+        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_IMPORTED, location = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, timestamp_ms = 123456789 )
         
         jobs.append( ( request_args, media_result, HC.CONTENT_UPDATE_SET, result_timestamp_data ) )
         
@@ -2773,15 +2956,15 @@ class TestClientAPI( unittest.TestCase ):
         
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_DELETED,
-            'file_service_key' : CC.COMBINED_LOCAL_FILE_SERVICE_KEY.hex(),
+            'file_service_key' : CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY.hex(),
             'timestamp_ms' : 123456789
         }
         
         media_result = HF.GetFakeMediaResult( hash )
         
-        media_result.GetTimesManager().SetDeletedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, HydrusTime.GetNowMS() )
+        media_result.GetTimesManager().SetDeletedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, HydrusTime.GetNowMS() )
         
-        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_DELETED, location = CC.COMBINED_LOCAL_FILE_SERVICE_KEY, timestamp_ms = 123456789 )
+        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_DELETED, location = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, timestamp_ms = 123456789 )
         
         jobs.append( ( request_args, media_result, HC.CONTENT_UPDATE_SET, result_timestamp_data ) )
         
@@ -2789,15 +2972,15 @@ class TestClientAPI( unittest.TestCase ):
         
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED,
-            'file_service_key' : CC.COMBINED_LOCAL_FILE_SERVICE_KEY.hex(),
+            'file_service_key' : CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY.hex(),
             'timestamp_ms' : 123456789
         }
         
         media_result = HF.GetFakeMediaResult( hash )
         
-        media_result.GetTimesManager().SetPreviouslyImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, HydrusTime.GetNowMS() )
+        media_result.GetTimesManager().SetPreviouslyImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, HydrusTime.GetNowMS() )
         
-        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED, location = CC.COMBINED_LOCAL_FILE_SERVICE_KEY, timestamp_ms = 123456789 )
+        result_timestamp_data = ClientTime.TimestampData( HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED, location = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, timestamp_ms = 123456789 )
         
         jobs.append( ( request_args, media_result, HC.CONTENT_UPDATE_SET, result_timestamp_data ) )
         
@@ -2826,7 +3009,7 @@ class TestClientAPI( unittest.TestCase ):
             
             content_update_package = ClientContentUpdates.ContentUpdatePackage()
             
-            expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TIMESTAMP, action, ( [ media_result.GetHash() ], result_timestamp_data ) ) ] )
+            expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TIMESTAMP, action, ( [ media_result.GetHash() ], result_timestamp_data ) ) ] )
             
             [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
             
@@ -2925,7 +3108,7 @@ class TestClientAPI( unittest.TestCase ):
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_IMPORTED,
             'timestamp_ms' : None,
-            'file_service_key' : CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY.hex()
+            'file_service_key' : CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY.hex()
         }
         
         problem_jobs.append( ( request_args, 400 ) )
@@ -2935,7 +3118,7 @@ class TestClientAPI( unittest.TestCase ):
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_DELETED,
             'timestamp_ms' : None,
-            'file_service_key' : CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY.hex()
+            'file_service_key' : CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY.hex()
         }
         
         problem_jobs.append( ( request_args, 400 ) )
@@ -2945,7 +3128,7 @@ class TestClientAPI( unittest.TestCase ):
         request_args = {
             'timestamp_type' : HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED,
             'timestamp_ms' : None,
-            'file_service_key' : CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY.hex()
+            'file_service_key' : CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY.hex()
         }
         
         problem_jobs.append( ( request_args, 400 ) )
@@ -3000,7 +3183,7 @@ class TestClientAPI( unittest.TestCase ):
         
         # clean tags
         
-        tags = [ " bikini ", "blue    eyes", " character : samus aran ", ":)", "   ", "", "10", "11", "9", "system:wew", "-flower" ]
+        tags = [ " bikini ", "blue    eyes", " character : space bounty hunter ", ":)", "   ", "", "10", "11", "9", "system:wew", "-flower" ]
         
         json_tags = json.dumps( tags )
         
@@ -3020,7 +3203,7 @@ class TestClientAPI( unittest.TestCase ):
         
         expected_result = {}
         
-        clean_tags = [ "bikini", "blue eyes", "character:samus aran", "::)", "10", "11", "9", "wew", "flower" ]
+        clean_tags = [ "bikini", "blue eyes", "character:space bounty hunter", "::)", "10", "11", "9", "wew", "flower" ]
         
         clean_tags = HydrusTags.SortNumericTags( clean_tags )
         
@@ -3230,7 +3413,8 @@ class TestClientAPI( unittest.TestCase ):
         
         media_results = [ HF.GetFakeMediaResult( bytes.fromhex( hash_hex ) ) for hash_hex in [ hash_hex, hash2_hex ] ]
         
-        media_results[1].GetTagsManager().GetDeleted( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_STORAGE ).add( 'test_add' ) # cannot add when there is a deletion record
+        # cannot add when there is a deletion record
+        media_results[1].GetTagsManager().ProcessContentUpdate( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_DELETE, ( 'test_add', { hash2 } ) ) )
         
         TG.test_controller.SetRead( 'media_results', media_results )
         
@@ -3268,7 +3452,8 @@ class TestClientAPI( unittest.TestCase ):
         
         media_results = [ HF.GetFakeMediaResult( bytes.fromhex( hash_hex ) ) for hash_hex in [ hash_hex, hash2_hex ] ]
         
-        media_results[0].GetTagsManager().GetCurrent( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_STORAGE ).add( 'test_delete' ) # can only delete when it already exists
+        # can only delete when it already exists
+        media_results[0].GetTagsManager().ProcessContentUpdate( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'test_delete', { hash } ) ) )
         
         TG.test_controller.SetRead( 'media_results', media_results )
         
@@ -3419,29 +3604,29 @@ class TestClientAPI( unittest.TestCase ):
             ]
         }
         
-        db_data[ 'samus aran' ] = {
+        db_data[ 'space bounty hunter' ] = {
             CC.DEFAULT_LOCAL_TAG_SERVICE_KEY : [
                 {
-                    "samus aran",
-                    "samus_aran",
-                    "character:samus aran"
+                    "space bounty hunter",
+                    "space_bounty_hunter",
+                    "character:space bounty hunter"
                 },
-                'character:samus aran',
+                'character:space bounty hunter',
                 {
-                    "character:samus aran (zero suit)"
-                    "cosplay:samus aran"
+                    "character:space bounty hunter (zero suit)"
+                    "cosplay:space bounty hunter"
                 },
                 {
-                    "series:metroid",
-                    "studio:nintendo"
+                    "series:bountyvania",
+                    "studio:cool project house"
                 }
             ],
             TG.test_controller.example_tag_repo_service_key : [
-                { 'samus aran' },
-                'samus aran',
+                { 'space bounty hunter' },
+                'space bounty hunter',
                 {
-                    "zero suit samus",
-                    "samus_aran_(cosplay)"
+                    "zero suit space bounty hunter",
+                    "space_bounty_hunter_(cosplay)"
                 },
                 set()
             ]
@@ -3459,7 +3644,7 @@ class TestClientAPI( unittest.TestCase ):
         
         #
         
-        path = '/add_tags/get_siblings_and_parents?tags={}'.format( urllib.parse.quote( json.dumps( [ 'blue eyes', 'samus aran' ] ) ) )
+        path = '/add_tags/get_siblings_and_parents?tags={}'.format( urllib.parse.quote( json.dumps( [ 'blue eyes', 'space bounty hunter' ] ) ) )
         
         connection.request( 'GET', path, headers = headers )
         
@@ -3481,7 +3666,7 @@ class TestClientAPI( unittest.TestCase ):
         
         #
         
-        path = '/add_tags/get_siblings_and_parents?tags={}'.format( urllib.parse.quote( json.dumps( [ 'blue eyes', 'samus aran' ] ) ) )
+        path = '/add_tags/get_siblings_and_parents?tags={}'.format( urllib.parse.quote( json.dumps( [ 'blue eyes', 'space bounty hunter' ] ) ) )
         
         connection.request( 'GET', path, headers = headers )
         
@@ -3556,6 +3741,90 @@ class TestClientAPI( unittest.TestCase ):
         d = json.loads( text )
         
         expected_result = {
+            'autocomplete_text' : {
+                'search_text' : 'gre',
+                'inclusive' : True,
+            },
+            'tags' : [
+                {
+                    'value' : 'green',
+                    'count' : 2
+                }
+            ]
+        }
+        
+        wash_example_json_response( expected_result )
+        
+        self.assertEqual( expected_result, d )
+        
+        # doing an exclusive search
+        
+        predicates = [
+            ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, 'green', count = ClientSearchPredicate.PredicateCount( 2, 0, None, None ) ),
+            ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, 'green car', count = ClientSearchPredicate.PredicateCount( 5, 0, None, None ) )
+        ]
+        
+        TG.test_controller.SetRead( 'autocomplete_predicates', predicates )
+        
+        path = '/add_tags/search_tags?search={}'.format( '-gre' )
+        
+        connection.request( 'GET', path, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        expected_result = {
+            'autocomplete_text' : {
+                'search_text' : 'gre',
+                'inclusive' : False,
+            },
+            'tags' : [
+                {
+                    'value' : 'green',
+                    'count' : 2
+                }
+            ]
+        }
+        
+        wash_example_json_response( expected_result )
+        
+        self.assertEqual( expected_result, d )
+        
+        # doing an exclusive search
+        
+        predicates = [
+            ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, 'green', count = ClientSearchPredicate.PredicateCount( 2, 0, None, None ) ),
+            ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, 'green car', count = ClientSearchPredicate.PredicateCount( 5, 0, None, None ) )
+        ]
+        
+        TG.test_controller.SetRead( 'autocomplete_predicates', predicates )
+        
+        path = '/add_tags/search_tags?search={}'.format( 'gr*n' )
+        
+        connection.request( 'GET', path, headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        expected_result = {
+            'autocomplete_text' : {
+                'search_text' : 'gr*n',
+                'inclusive' : True,
+            },
             'tags' : [
                 {
                     'value' : 'green',
@@ -3593,6 +3862,10 @@ class TestClientAPI( unittest.TestCase ):
         d = json.loads( text )
         
         expected_result = {
+            'autocomplete_text' : {
+                'search_text' : '',
+                'inclusive' : True,
+            },
             'tags' : []
         }
         
@@ -3622,6 +3895,10 @@ class TestClientAPI( unittest.TestCase ):
         
         # note this also tests sort
         expected_result = {
+            'autocomplete_text' : {
+                'search_text' : 'gre',
+                'inclusive' : True,
+            },
             'tags' : [
                 {
                     'value' : 'green car',
@@ -3660,6 +3937,10 @@ class TestClientAPI( unittest.TestCase ):
         
         # note this also tests sort
         expected_result = {
+            'autocomplete_text' : {
+                'search_text' : 'gre',
+                'inclusive' : True,
+            },
             'tags' : [
                 {
                     'value' : 'green car',
@@ -3699,6 +3980,10 @@ class TestClientAPI( unittest.TestCase ):
         
         # note this also tests sort
         expected_result = {
+            'autocomplete_text' : {
+                'search_text' : '*',
+                'inclusive' : True,
+            },
             'tags' : []
         }
         
@@ -3748,8 +4033,8 @@ class TestClientAPI( unittest.TestCase ):
         
         # some
         
-        url = 'http://safebooru.org/index.php?s=view&page=post&id=2753608'
-        normalised_url = 'https://safebooru.org/index.php?id=2753608&page=post&s=view'
+        url = 'http://otherbooru.org/index.php?s=view&page=post&id=123456'
+        normalised_url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         hash = os.urandom( 32 )
         
@@ -3823,9 +4108,9 @@ class TestClientAPI( unittest.TestCase ):
         
         # known
         
-        url = 'http://boards.holotower.org/hlgg/res/123456.html'
-        request_url = 'https://boards.holotower.org/hlgg/res/123456.json'
-        normalised_url = 'https://boards.holotower.org/hlgg/res/123456.html'
+        url = 'http://boards.someimageboard.org/diy/res/123456.html'
+        request_url = 'https://boards.someimageboard.org/diy/res/123456.json'
+        normalised_url = 'https://boards.someimageboard.org/diy/res/123456.html'
         # http so we can test normalised is https
         
         path = '/add_urls/get_url_info?url={}'.format( urllib.parse.quote( url, safe = '' ) )
@@ -3848,8 +4133,9 @@ class TestClientAPI( unittest.TestCase ):
         expected_result[ 'normalised_url' ] = normalised_url
         expected_result[ 'url_type' ] = HC.URL_TYPE_WATCHABLE
         expected_result[ 'url_type_string' ] = 'watchable url'
-        expected_result[ 'match_name' ] = 'holotower thread'
-        expected_result[ 'can_parse' ] = True
+        expected_result[ 'match_name' ] = 'some imageboard thread'
+        expected_result[ 'can_parse' ] = False
+        expected_result[ 'cannot_parse_reason' ] = 'Could not find a parser for some imageboard thread api URL Class!'
         
         wash_example_json_response( expected_result )
         
@@ -3857,8 +4143,8 @@ class TestClientAPI( unittest.TestCase ):
         
         # known post url
         
-        url = 'http://safebooru.org/index.php?page=post&s=view&id=2753608'
-        normalised_url = 'https://safebooru.org/index.php?id=2753608&page=post&s=view'
+        url = 'http://otherbooru.org/index.php?page=post&s=view&id=123456'
+        normalised_url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         hash = os.urandom( 32 )
         
@@ -3882,8 +4168,9 @@ class TestClientAPI( unittest.TestCase ):
         expected_result[ 'normalised_url' ] = normalised_url
         expected_result[ 'url_type' ] = HC.URL_TYPE_POST
         expected_result[ 'url_type_string' ] = 'post url'
-        expected_result[ 'match_name' ] = 'safebooru file page'
-        expected_result[ 'can_parse' ] = True
+        expected_result[ 'match_name' ] = 'otherbooru file page'
+        expected_result[ 'can_parse' ] = False
+        expected_result[ 'cannot_parse_reason' ] = 'Could not find a parser for otherbooru file page URL Class!'
         
         wash_example_json_response( expected_result )
         
@@ -3895,7 +4182,7 @@ class TestClientAPI( unittest.TestCase ):
         
         headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex, 'Content-Type' : HC.mime_mimetype_string_lookup[ HC.APPLICATION_JSON ] }
         
-        url = 'http://boards.holotower.org/hlgg/res/123456.html'
+        url = 'http://boards.someimageboard.org/diy/res/123456.html'
         
         request_dict = { 'url' : url }
         
@@ -3913,8 +4200,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         self.assertEqual( TG.test_controller.GetWrite( 'import_url_test' ), [ ( ( url, set(), ClientTags.ServiceKeysToTags(), None, None, False, None ), {} ) ] )
         
@@ -3924,7 +4211,7 @@ class TestClientAPI( unittest.TestCase ):
         
         headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex, 'Content-Type' : HC.mime_mimetype_string_lookup[ HC.APPLICATION_JSON ] }
         
-        url = 'http://boards.holotower.org/hlgg/res/123456.html'
+        url = 'http://boards.someimageboard.org/diy/res/123456.html'
         
         request_dict = { 'url' : url, 'file_service_key' : CC.LOCAL_FILE_SERVICE_KEY.hex() }
         
@@ -3942,8 +4229,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         self.assertEqual( TG.test_controller.GetWrite( 'import_url_test' ), [ ( ( url, set(), ClientTags.ServiceKeysToTags(), None, None, False, ClientLocation.LocationContext.STATICCreateSimple( CC.LOCAL_FILE_SERVICE_KEY ) ), {} ) ] )
         
@@ -3967,8 +4254,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         self.assertEqual( TG.test_controller.GetWrite( 'import_url_test' ), [ ( ( url, set(), ClientTags.ServiceKeysToTags(), 'muh /tv/', None, False, None ), {} ) ] )
         
@@ -3995,8 +4282,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         self.assertEqual( TG.test_controller.GetWrite( 'import_url_test' ), [ ( ( url, set(), ClientTags.ServiceKeysToTags(), None, page_key, False, None ), {} ) ] )
         
@@ -4020,8 +4307,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         filterable_tags = [ 'filename:yo' ]
         additional_service_keys_to_tags = ClientTags.ServiceKeysToTags( { CC.DEFAULT_LOCAL_TAG_SERVICE_KEY : { '/tv/ thread' } } )
@@ -4048,8 +4335,8 @@ class TestClientAPI( unittest.TestCase ):
         
         response_json = json.loads( text )
         
-        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.holotower.org/hlgg/res/123456.html" URL added successfully.' )
-        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.holotower.org/hlgg/res/123456.html' )
+        self.assertEqual( response_json[ 'human_result_text' ], '"https://boards.someimageboard.org/diy/res/123456.html" URL added successfully.' )
+        self.assertEqual( response_json[ 'normalised_url' ], 'https://boards.someimageboard.org/diy/res/123456.html' )
         
         filterable_tags = [ 'filename:yo' ]
         additional_service_keys_to_tags = ClientTags.ServiceKeysToTags( { CC.DEFAULT_LOCAL_TAG_SERVICE_KEY : { '/tv/ thread' } } )
@@ -4070,7 +4357,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        url = 'https://rule34.xxx/index.php?id=2588418&page=post&s=view'
+        url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         request_dict = { 'url_to_add' : url, 'hash' : hash.hex() }
         
@@ -4084,7 +4371,7 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4095,7 +4382,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        url = 'https://rule34.xxx/index.php?id=2588418&page=post&s=view'
+        url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         request_dict = { 'urls_to_add' : [ url ], 'hashes' : [ hash.hex() ] }
         
@@ -4111,7 +4398,7 @@ class TestClientAPI( unittest.TestCase ):
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4122,7 +4409,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        url = 'http://rule34.xxx/index.php?id=2588418&page=post&s=view'
+        url = 'http://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         request_dict = { 'url_to_delete' : url, 'hash' : hash.hex() }
         
@@ -4136,7 +4423,7 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_DELETE, ( [ url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_DELETE, ( [ url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4147,7 +4434,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        url = 'http://rule34.xxx/index.php?id=2588418&page=post&s=view'
+        url = 'http://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         request_dict = { 'urls_to_delete' : [ url ], 'hashes' : [ hash.hex() ] }
         
@@ -4161,7 +4448,7 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_DELETE, ( [ url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_DELETE, ( [ url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4172,8 +4459,8 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        unnormalised_url = 'https://rule34.xxx/index.php?page=post&id=2588418&s=view'
-        normalised_url = 'https://rule34.xxx/index.php?id=2588418&page=post&s=view'
+        unnormalised_url = 'https://otherbooru.org/index.php?page=post&id=123456&s=view'
+        normalised_url = 'https://otherbooru.org/index.php?id=123456&page=post&s=view'
         
         request_dict = { 'urls_to_add' : [ unnormalised_url ], 'hashes' : [ hash.hex() ] }
         
@@ -4187,7 +4474,7 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ normalised_url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ normalised_url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4198,7 +4485,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.ClearWrites( 'content_updates' )
         
         hash = bytes.fromhex( '3b820114f658d768550e4e3d4f1dced3ff8db77443472b5ad93700647ad2d3ba' )
-        unnormalised_url = 'https://rule34.xxx/index.php?page=post&id=2588418&s=view'
+        unnormalised_url = 'https://otherbooru.org/index.php?page=post&id=123456&s=view'
         
         request_dict = { 'urls_to_add' : [ unnormalised_url ], 'hashes' : [ hash.hex() ], 'normalise_urls' : False }
         
@@ -4212,13 +4499,13 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ unnormalised_url ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ unnormalised_url ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
         HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
         
-        # normalisation - crazy url error
+        # normalisation - crazy url now causes no error
         
         TG.test_controller.ClearWrites( 'content_updates' )
         
@@ -4235,9 +4522,15 @@ class TestClientAPI( unittest.TestCase ):
         
         data = response.read()
         
-        self.assertEqual( response.status, 400 )
+        self.assertEqual( response.status, 200 )
         
-        # normalisation - crazy url ok
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ crazy_nonsense ], { hash } ) ) ] )
+        
+        [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
+        
+        HF.compare_content_update_packages( self, content_update_package, expected_content_update_package )
+        
+        # normalisation - crazy url ok here too
         
         TG.test_controller.ClearWrites( 'content_updates' )
         
@@ -4256,7 +4549,7 @@ class TestClientAPI( unittest.TestCase ):
         
         self.assertEqual( response.status, 200 )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ crazy_nonsense ], { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( [ crazy_nonsense ], { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -4486,7 +4779,17 @@ class TestClientAPI( unittest.TestCase ):
                     'approved': 'approved',
                     'reason': 'This is the default User-Agent identifier for the client for all network connections.',
                     'value' : ClientDefaults.DEFAULT_USER_AGENT
-                }
+                },
+                'Cache-Control': {
+                    'approved': 'approved',
+                    'reason': 'Tells CDNs not to deliver "optimised" versions of files. May not be honoured.',
+                    'value': 'no-transform'
+                },
+                'Accept': {
+                    'approved': 'approved',
+                    'reason': 'Prefers jpeg/png over webp, but provides graceful fallback.',
+                    'value': 'image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8'
+                },
             }
         }
         
@@ -4539,11 +4842,21 @@ class TestClientAPI( unittest.TestCase ):
                     'reason': 'This is the default User-Agent identifier for the client for all network connections.',
                     'value' : ClientDefaults.DEFAULT_USER_AGENT
                 },
+                'Cache-Control': {
+                    'approved': 'approved',
+                    'reason': 'Tells CDNs not to deliver "optimised" versions of files. May not be honoured.',
+                    'value': 'no-transform'
+                },
+                'Accept': {
+                    'approved': 'approved',
+                    'reason': 'Prefers jpeg/png over webp, but provides graceful fallback.',
+                    'value': 'image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8'
+                },
                 'Test' : {
                     'approved': 'approved',
                     'reason': 'Set by Client API',
                     'value' : 'test_value'
-                }
+                },
             }
         }
         
@@ -4595,6 +4908,16 @@ class TestClientAPI( unittest.TestCase ):
                     'approved': 'approved',
                     'reason': 'This is the default User-Agent identifier for the client for all network connections.',
                     'value' : ClientDefaults.DEFAULT_USER_AGENT
+                },
+                'Cache-Control': {
+                    'approved': 'approved',
+                    'reason': 'Tells CDNs not to deliver "optimised" versions of files. May not be honoured.',
+                    'value': 'no-transform'
+                },
+                'Accept': {
+                    'approved': 'approved',
+                    'reason': 'Prefers jpeg/png over webp, but provides graceful fallback.',
+                    'value': 'image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8'
                 },
                 'Test' : {
                     'approved': 'approved',
@@ -4902,7 +5225,7 @@ class TestClientAPI( unittest.TestCase ):
         
         headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
         
-        default_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        default_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         # file relationships
         
@@ -5066,182 +5389,7 @@ class TestClientAPI( unittest.TestCase ):
         self.assertEqual( pixel_duplicates, test_pixel_duplicates )
         self.assertEqual( max_hamming_distance, test_max_hamming_distance )
         
-        # get pairs
-        
-        default_max_num_pairs = 250
-        test_max_num_pairs = 20
-        
-        test_hash_pairs = [ ( os.urandom( 32 ), os.urandom( 32 ) ) for i in range( 10 ) ]
-        test_media_result_pairs = [ ( HF.GetFakeMediaResult( h1 ), HF.GetFakeMediaResult( h2 ) ) for ( h1, h2 ) in test_hash_pairs ]
-        test_hash_pairs_hex = [ [ h1.hex(), h2.hex() ] for ( h1, h2 ) in test_hash_pairs ]
-        
-        TG.test_controller.SetRead( 'duplicate_pairs_for_filtering', test_media_result_pairs )
-        
-        path = '/manage_file_relationships/get_potential_pairs'
-        
-        connection.request( 'GET', path, headers = headers )
-        
-        response = connection.getresponse()
-        
-        data = response.read()
-        
-        text = str( data, 'utf-8' )
-        
-        self.assertEqual( response.status, 200 )
-        
-        d = json.loads( text )
-        
-        self.assertEqual( d[ 'potential_duplicate_pairs' ], test_hash_pairs_hex )
-        
-        [ ( args, kwargs ) ] = TG.test_controller.GetRead( 'duplicate_pairs_for_filtering' )
-        
-        ( potential_duplicates_search_context, ) = args
-        
-        max_num_pairs = kwargs[ 'max_num_pairs' ]
-        
-        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
-        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
-        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
-        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
-        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
-        
-        self.assertEqual( file_search_context_1.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
-        self.assertEqual( file_search_context_2.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
-        self.assertEqual( potentials_search_type, default_potentials_search_type )
-        self.assertEqual( pixel_duplicates, default_pixel_duplicates )
-        self.assertEqual( max_hamming_distance, default_max_hamming_distance )
-        self.assertEqual( max_num_pairs, default_max_num_pairs )
-        
-        # get pairs with params
-        
-        TG.test_controller.SetRead( 'duplicate_pairs_for_filtering', test_media_result_pairs )
-        
-        path = '/manage_file_relationships/get_potential_pairs?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}&max_num_pairs={}'.format(
-            test_tag_service_key_1.hex(),
-            urllib.parse.quote( json.dumps( test_tags_1 ) ),
-            test_tag_service_key_2.hex(),
-            urllib.parse.quote( json.dumps( test_tags_2 ) ),
-            test_potentials_search_type,
-            test_pixel_duplicates,
-            test_max_hamming_distance,
-            test_max_num_pairs
-        )
-        
-        connection.request( 'GET', path, headers = headers )
-        
-        response = connection.getresponse()
-        
-        data = response.read()
-        
-        text = str( data, 'utf-8' )
-        
-        self.assertEqual( response.status, 200 )
-        
-        d = json.loads( text )
-        
-        self.assertEqual( d[ 'potential_duplicate_pairs' ], test_hash_pairs_hex )
-        
-        [ ( args, kwargs ) ] = TG.test_controller.GetRead( 'duplicate_pairs_for_filtering' )
-
-        ( potential_duplicates_search_context, ) = args
-        
-        max_num_pairs = kwargs[ 'max_num_pairs' ]
-        
-        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
-        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
-        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
-        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
-        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
-        
-        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
-        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
-        self.assertEqual( potentials_search_type, test_potentials_search_type )
-        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
-        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
-        self.assertEqual( max_num_pairs, test_max_num_pairs )
-        
-        # get random
-        
-        test_hashes = [ os.urandom( 32 ) for i in range( 6 ) ]
-        test_hash_pairs_hex = [ h.hex() for h in test_hashes ]
-        
-        TG.test_controller.SetRead( 'random_potential_duplicate_hashes', test_hashes )
-        
-        path = '/manage_file_relationships/get_random_potentials'
-        
-        connection.request( 'GET', path, headers = headers )
-        
-        response = connection.getresponse()
-        
-        data = response.read()
-        
-        text = str( data, 'utf-8' )
-        
-        self.assertEqual( response.status, 200 )
-        
-        d = json.loads( text )
-        
-        self.assertEqual( d[ 'random_potential_duplicate_hashes' ], test_hash_pairs_hex )
-        
-        [ ( args, kwargs ) ] = TG.test_controller.GetRead( 'random_potential_duplicate_hashes' )
-        
-        ( potential_duplicates_search_context, ) = args
-        
-        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
-        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
-        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
-        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
-        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
-        
-        self.assertEqual( file_search_context_1.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
-        self.assertEqual( file_search_context_2.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
-        self.assertEqual( potentials_search_type, default_potentials_search_type )
-        self.assertEqual( pixel_duplicates, default_pixel_duplicates )
-        self.assertEqual( max_hamming_distance, default_max_hamming_distance )
-        
-        # get random with params
-        
-        TG.test_controller.SetRead( 'random_potential_duplicate_hashes', test_hashes )
-        
-        path = '/manage_file_relationships/get_random_potentials?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}'.format(
-            test_tag_service_key_1.hex(),
-            urllib.parse.quote( json.dumps( test_tags_1 ) ),
-            test_tag_service_key_2.hex(),
-            urllib.parse.quote( json.dumps( test_tags_2 ) ),
-            test_potentials_search_type,
-            test_pixel_duplicates,
-            test_max_hamming_distance
-        )
-        
-        connection.request( 'GET', path, headers = headers )
-        
-        response = connection.getresponse()
-        
-        data = response.read()
-        
-        text = str( data, 'utf-8' )
-        
-        self.assertEqual( response.status, 200 )
-        
-        d = json.loads( text )
-        
-        self.assertEqual( d[ 'random_potential_duplicate_hashes' ], test_hash_pairs_hex )
-        
-        [ ( args, kwargs ) ] = TG.test_controller.GetRead( 'random_potential_duplicate_hashes' )
-
-        ( potential_duplicates_search_context, ) = args
-        
-        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
-        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
-        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
-        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
-        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
-        
-        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
-        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
-        self.assertEqual( potentials_search_type, test_potentials_search_type )
-        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
-        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        #
         
         # set relationship
         
@@ -5326,7 +5474,7 @@ class TestClientAPI( unittest.TestCase ):
                 
                 self.assertTrue( len( content_update_packages ) == 1 )
                 
-                expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { bytes.fromhex( r_dict[ 'hash_b' ] ) }, reason = 'From Client API (duplicates processing).' ) )
+                expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { bytes.fromhex( r_dict[ 'hash_b' ] ) }, reason = 'From Client API (duplicates processing).' ) )
                 
                 HF.compare_content_update_packages( self, content_update_packages[0], expected_content_update_package )
                 
@@ -5393,6 +5541,637 @@ class TestClientAPI( unittest.TestCase ):
         [ ( args1, kwargs1 ), ( args2, kwargs2 ) ] = TG.test_controller.GetWrite( 'duplicate_set_king' )
         
         self.assertEqual( { args1[0], args2[0] }, { bytes.fromhex( h ) for h in test_hashes } )
+        
+    
+    def _test_manage_duplicate_potential_pairs( self, connection, set_up_permissions ):
+        
+        def fragmentary_fetch_factory( result ):
+            
+            def the_callable( fragmentary_search, *args, **kwargs ):
+                
+                while not fragmentary_search.SearchDone():
+                    
+                    fragmentary_search.PopBlock()
+                    
+                
+                return result
+                
+            
+            return the_callable
+            
+        
+        #
+        
+        api_permissions = set_up_permissions[ 'everything' ]
+        
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
+        
+        default_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
+        
+        #
+        
+        tag_context = ClientSearchTagContext.TagContext( CC.COMBINED_TAG_SERVICE_KEY )
+        predicates = [ ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_EVERYTHING ) ]
+        
+        default_file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = default_location_context, tag_context = tag_context, predicates = predicates )
+        
+        default_potentials_search_type = ClientDuplicates.DUPE_SEARCH_ONE_FILE_MATCHES_ONE_SEARCH
+        default_pixel_duplicates = ClientDuplicates.SIMILAR_FILES_PIXEL_DUPES_ALLOWED
+        default_max_hamming_distance = 4
+        
+        test_tag_service_key_1 = CC.DEFAULT_LOCAL_TAG_SERVICE_KEY
+        test_tags_1 = [ 'skirt', 'system:width<400' ]
+        
+        test_tag_context_1 = ClientSearchTagContext.TagContext( test_tag_service_key_1 )
+        test_predicates_1 = ClientLocalServerCore.ConvertTagListToPredicates( None, test_tags_1, do_permission_check = False )
+        
+        test_file_search_context_1 = ClientSearchFileSearchContext.FileSearchContext( location_context = default_location_context, tag_context = test_tag_context_1, predicates = test_predicates_1 )
+        
+        test_tag_service_key_2 = TG.test_controller.example_tag_repo_service_key
+        test_tags_2 = [ 'system:untagged' ]
+        
+        test_tag_context_2 = ClientSearchTagContext.TagContext( test_tag_service_key_2 )
+        test_predicates_2 = ClientLocalServerCore.ConvertTagListToPredicates( None, test_tags_2, do_permission_check = False )
+        
+        test_file_search_context_2 = ClientSearchFileSearchContext.FileSearchContext( location_context = default_location_context, tag_context = test_tag_context_2, predicates = test_predicates_2 )
+        
+        test_potentials_search_type = ClientDuplicates.DUPE_SEARCH_BOTH_FILES_MATCH_DIFFERENT_SEARCHES
+        test_pixel_duplicates = ClientDuplicates.SIMILAR_FILES_PIXEL_DUPES_EXCLUDED
+        test_max_hamming_distance = 8
+        
+        #
+        
+        test_mr_pairs_and_distances = []
+        
+        hash_id = 0
+        
+        for i in range( 20 ):
+            
+            mr_1 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+            mr_2 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+            
+            mr_1.GetFileInfoManager().size = random.randint( 500, 50000 )
+            mr_2.GetFileInfoManager().size = random.randint( 500, 50000 )
+            
+            if mr_1.GetFileInfoManager().size == mr_2.GetFileInfoManager().size:
+                mr_2.GetFileInfoManager().size = mr_1.GetFileInfoManager().size + 1
+            
+            mr_1.GetFileInfoManager().hash_id = hash_id
+            hash_id += 1
+            
+            mr_2.GetFileInfoManager().hash_id = hash_id
+            hash_id += 1
+            
+            test_mr_pairs_and_distances.append( ( mr_1, mr_2, 0 ) )
+            
+        
+        test_potential_duplicate_id_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateIdPairsAndDistances(
+            [ ( mr_1.GetFileInfoManager().hash_id, mr_2.GetFileInfoManager().hash_id, distance ) for ( mr_1, mr_2, distance ) in test_mr_pairs_and_distances ]
+        )
+        
+        test_potential_duplicate_media_result_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateMediaResultPairsAndDistances( test_mr_pairs_and_distances )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate = test_potential_duplicate_media_result_pairs_and_distances.Duplicate()
+        
+        path = '/manage_file_relationships/get_potential_pairs'
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances', test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddCallable( 'potential_duplicate_media_result_pairs_and_distances_fragmentary', fragmentary_fetch_factory( test_potential_duplicate_media_result_pairs_and_distances ) )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 2 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'potential_duplicate_id_pairs_and_distances' )
+            self.assertEqual( all_read_calls[0].args[1], default_location_context )
+            
+            self.assertEqual( all_read_calls[1].args[0], 'potential_duplicate_media_result_pairs_and_distances_fragmentary' )
+            self.assertTrue( isinstance( all_read_calls[1].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context = all_read_calls[1].args[1].GetPotentialDuplicatesSearchContext()
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        hashes_we_got_back_hex = d[ 'potential_duplicate_pairs' ]
+        hashes_we_got_back = [ ( bytes.fromhex( hash_hex_1 ), bytes.fromhex( hash_hex_2 ) ) for ( hash_hex_1, hash_hex_2 ) in hashes_we_got_back_hex ]
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.Sort( ClientDuplicates.DUPE_PAIR_SORT_MAX_FILESIZE, False )
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.ABPairsUsingFastComparisonScore()
+        
+        hashes_we_expect = [ ( mr_1.GetHash(), mr_2.GetHash() ) for ( mr_1, mr_2 ) in test_potential_duplicate_media_result_pairs_and_distances_duplicate.GetPairs() ]
+        
+        self.assertEqual( hashes_we_got_back, hashes_we_expect )
+        
+        file_search_context_1 = read_potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, default_potentials_search_type )
+        self.assertEqual( pixel_duplicates, default_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, default_max_hamming_distance )
+        
+        # get pairs with params
+        
+        test_potential_duplicate_media_result_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateMediaResultPairsAndDistances( test_mr_pairs_and_distances )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate = test_potential_duplicate_media_result_pairs_and_distances.Duplicate()
+        
+        path = '/manage_file_relationships/get_potential_pairs?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}'.format(
+            test_tag_service_key_1.hex(),
+            urllib.parse.quote( json.dumps( test_tags_1 ) ),
+            test_tag_service_key_2.hex(),
+            urllib.parse.quote( json.dumps( test_tags_2 ) ),
+            test_potentials_search_type,
+            test_pixel_duplicates,
+            test_max_hamming_distance
+        )
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances', test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddCallable( 'potential_duplicate_media_result_pairs_and_distances_fragmentary', fragmentary_fetch_factory( test_potential_duplicate_media_result_pairs_and_distances ) )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 2 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'potential_duplicate_id_pairs_and_distances' )
+            self.assertEqual( all_read_calls[0].args[1], default_location_context )
+            
+            self.assertEqual( all_read_calls[1].args[0], 'potential_duplicate_media_result_pairs_and_distances_fragmentary' )
+            self.assertTrue( isinstance( all_read_calls[1].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context = all_read_calls[1].args[1].GetPotentialDuplicatesSearchContext()
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        hashes_we_got_back_hex = d[ 'potential_duplicate_pairs' ]
+        hashes_we_got_back = [ ( bytes.fromhex( hash_hex_1 ), bytes.fromhex( hash_hex_2 ) ) for ( hash_hex_1, hash_hex_2 ) in hashes_we_got_back_hex ]
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.Sort( ClientDuplicates.DUPE_PAIR_SORT_MAX_FILESIZE, False )
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.ABPairsUsingFastComparisonScore()
+        
+        hashes_we_expect = [ ( mr_1.GetHash(), mr_2.GetHash() ) for ( mr_1, mr_2 ) in test_potential_duplicate_media_result_pairs_and_distances_duplicate.GetPairs() ]
+        
+        self.assertEqual( hashes_we_got_back, hashes_we_expect )
+        
+        file_search_context_1 = read_potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        
+        # get pairs with max num
+        
+        test_potential_duplicate_media_result_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateMediaResultPairsAndDistances( test_mr_pairs_and_distances )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate = test_potential_duplicate_media_result_pairs_and_distances.Duplicate()
+        
+        test_max_num_pairs = 10
+        
+        path = '/manage_file_relationships/get_potential_pairs?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}&max_num_pairs={}'.format(
+            test_tag_service_key_1.hex(),
+            urllib.parse.quote( json.dumps( test_tags_1 ) ),
+            test_tag_service_key_2.hex(),
+            urllib.parse.quote( json.dumps( test_tags_2 ) ),
+            test_potentials_search_type,
+            test_pixel_duplicates,
+            test_max_hamming_distance,
+            test_max_num_pairs
+        )
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances', test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddCallable( 'potential_duplicate_media_result_pairs_and_distances_fragmentary', fragmentary_fetch_factory( test_potential_duplicate_media_result_pairs_and_distances ) )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 2 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'potential_duplicate_id_pairs_and_distances' )
+            self.assertEqual( all_read_calls[0].args[1], default_location_context )
+            
+            self.assertEqual( all_read_calls[1].args[0], 'potential_duplicate_media_result_pairs_and_distances_fragmentary' )
+            self.assertTrue( isinstance( all_read_calls[1].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context = all_read_calls[1].args[1].GetPotentialDuplicatesSearchContext()
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        hashes_we_got_back_hex = d[ 'potential_duplicate_pairs' ]
+        hashes_we_got_back = [ ( bytes.fromhex( hash_hex_1 ), bytes.fromhex( hash_hex_2 ) ) for ( hash_hex_1, hash_hex_2 ) in hashes_we_got_back_hex ]
+        
+        self.assertEqual( len( hashes_we_got_back ), test_max_num_pairs )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.Sort( ClientDuplicates.DUPE_PAIR_SORT_MAX_FILESIZE, False )
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.ABPairsUsingFastComparisonScore()
+        
+        hashes_we_expect = [ ( mr_1.GetHash(), mr_2.GetHash() ) for ( mr_1, mr_2 ) in test_potential_duplicate_media_result_pairs_and_distances_duplicate.GetPairs() ]
+        
+        self.assertTrue( set( hashes_we_expect ).issuperset( set( hashes_we_got_back ) ) )
+        
+        hashes_we_got_back_fast = set( hashes_we_got_back )
+        
+        hashes_we_expect_cut_down_and_in_order = [ pair for pair in hashes_we_expect if pair in hashes_we_got_back_fast ]
+        
+        self.assertEqual( hashes_we_got_back, hashes_we_expect_cut_down_and_in_order )
+        
+        file_search_context_1 = read_potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        
+        # now sort them
+        
+        test_potential_duplicate_media_result_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateMediaResultPairsAndDistances( test_mr_pairs_and_distances )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate = test_potential_duplicate_media_result_pairs_and_distances.Duplicate()
+        
+        test_max_num_pairs = 10
+        
+        path = '/manage_file_relationships/get_potential_pairs?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}&max_num_pairs={}&duplicate_pair_sort_type={}&duplicate_pair_sort_asc={}'.format(
+            test_tag_service_key_1.hex(),
+            urllib.parse.quote( json.dumps( test_tags_1 ) ),
+            test_tag_service_key_2.hex(),
+            urllib.parse.quote( json.dumps( test_tags_2 ) ),
+            test_potentials_search_type,
+            test_pixel_duplicates,
+            test_max_hamming_distance,
+            test_max_num_pairs,
+            ClientDuplicates.DUPE_PAIR_SORT_MIN_FILESIZE,
+            'true'
+        )
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances', test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddCallable( 'potential_duplicate_media_result_pairs_and_distances_fragmentary', fragmentary_fetch_factory( test_potential_duplicate_media_result_pairs_and_distances ) )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 2 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'potential_duplicate_id_pairs_and_distances' )
+            self.assertEqual( all_read_calls[0].args[1], default_location_context )
+            
+            self.assertEqual( all_read_calls[1].args[0], 'potential_duplicate_media_result_pairs_and_distances_fragmentary' )
+            self.assertTrue( isinstance( all_read_calls[1].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context = all_read_calls[1].args[1].GetPotentialDuplicatesSearchContext()
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        hashes_we_got_back_hex = d[ 'potential_duplicate_pairs' ]
+        hashes_we_got_back = [ ( bytes.fromhex( hash_hex_1 ), bytes.fromhex( hash_hex_2 ) ) for ( hash_hex_1, hash_hex_2 ) in hashes_we_got_back_hex ]
+        
+        self.assertEqual( len( hashes_we_got_back ), test_max_num_pairs )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.Sort( ClientDuplicates.DUPE_PAIR_SORT_MIN_FILESIZE, True )
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.ABPairsUsingFastComparisonScore()
+        
+        hashes_we_expect = [ ( mr_1.GetHash(), mr_2.GetHash() ) for ( mr_1, mr_2 ) in test_potential_duplicate_media_result_pairs_and_distances_duplicate.GetPairs() ]
+        
+        self.assertTrue( set( hashes_we_expect ).issuperset( set( hashes_we_got_back ) ) )
+        
+        hashes_we_got_back_fast = set( hashes_we_got_back )
+        
+        hashes_we_expect_cut_down_and_in_order = [ pair for pair in hashes_we_expect if pair in hashes_we_got_back_fast ]
+        
+        self.assertEqual( hashes_we_got_back, hashes_we_expect_cut_down_and_in_order )
+        
+        file_search_context_1 = read_potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        
+        # now group mode
+        
+        group_test_mr_pairs_and_distances = []
+        test_mr_pairs_and_distances = []
+        
+        hash_id = 0
+        
+        mr_1 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+        mr_1.GetFileInfoManager().size = random.randint( 500, 50000 )
+        
+        mr_1.GetFileInfoManager().hash_id = hash_id
+        hash_id += 1
+        
+        for i in range( 5 ):
+            
+            mr_2 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+            
+            mr_2.GetFileInfoManager().size = random.randint( 500, 50000 )
+            
+            mr_2.GetFileInfoManager().hash_id = hash_id
+            hash_id += 1
+            
+            group_test_mr_pairs_and_distances.append( ( mr_1, mr_2, 0 ) )
+            test_mr_pairs_and_distances.append( ( mr_1, mr_2, 0 ) )
+            
+        
+        for i in range( 20 ):
+            
+            mr_1 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+            mr_2 = HF.GetFakeMediaResult( os.urandom( 32 ) )
+            
+            mr_1.GetFileInfoManager().size = random.randint( 500, 50000 )
+            mr_2.GetFileInfoManager().size = random.randint( 500, 50000 )
+            
+            mr_1.GetFileInfoManager().hash_id = hash_id
+            hash_id += 1
+            
+            mr_2.GetFileInfoManager().hash_id = hash_id
+            hash_id += 1
+            
+            test_mr_pairs_and_distances.append( ( mr_1, mr_2, 0 ) )
+            
+        
+        test_potential_duplicate_id_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateIdPairsAndDistances(
+            [ ( mr_1.GetFileInfoManager().hash_id, mr_2.GetFileInfoManager().hash_id, distance ) for ( mr_1, mr_2, distance ) in test_mr_pairs_and_distances ]
+        )
+        
+        group_test_potential_duplicate_id_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateIdPairsAndDistances(
+            [ ( mr_1.GetFileInfoManager().hash_id, mr_2.GetFileInfoManager().hash_id, distance ) for ( mr_1, mr_2, distance ) in group_test_mr_pairs_and_distances ]
+        )
+        
+        test_potential_duplicate_media_result_pairs_and_distances = ClientPotentialDuplicatesSearchContext.PotentialDuplicateMediaResultPairsAndDistances( group_test_mr_pairs_and_distances )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate = test_potential_duplicate_media_result_pairs_and_distances.Duplicate()
+        
+        path = '/manage_file_relationships/get_potential_pairs?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}&duplicate_pair_sort_type={}&duplicate_pair_sort_asc={}&group_mode={}'.format(
+            test_tag_service_key_1.hex(),
+            urllib.parse.quote( json.dumps( test_tags_1 ) ),
+            test_tag_service_key_2.hex(),
+            urllib.parse.quote( json.dumps( test_tags_2 ) ),
+            test_potentials_search_type,
+            test_pixel_duplicates,
+            test_max_hamming_distance,
+            ClientDuplicates.DUPE_PAIR_SORT_MIN_FILESIZE,
+            'true',
+            'true'
+        )
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances', test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddResult( 'potential_duplicate_id_pairs_and_distances_fragmentary', group_test_potential_duplicate_id_pairs_and_distances )
+        read_db_side_effect.AddResult( 'potential_duplicate_media_result_pairs_and_distances', test_potential_duplicate_media_result_pairs_and_distances )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 3 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'potential_duplicate_id_pairs_and_distances' )
+            self.assertEqual( all_read_calls[0].args[1], default_location_context )
+            
+            self.assertEqual( all_read_calls[1].args[0], 'potential_duplicate_id_pairs_and_distances_fragmentary' )
+            self.assertTrue( isinstance( all_read_calls[1].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context_for_ids = all_read_calls[1].args[1].GetPotentialDuplicatesSearchContext()
+            read_potential_duplicate_id_pairs_and_distances_for_ids = all_read_calls[1].args[1]._potential_duplicate_id_pairs_and_distances_search_space
+            
+            self.assertEqual( all_read_calls[2].args[0], 'potential_duplicate_media_result_pairs_and_distances' )
+            self.assertTrue( isinstance( all_read_calls[2].args[1], ClientPotentialDuplicatesSearchContext.PotentialDuplicatePairsFragmentarySearch ) )
+            
+            read_potential_duplicates_search_context_for_media_results = all_read_calls[2].args[1].GetPotentialDuplicatesSearchContext()
+            read_potential_duplicate_id_pairs_and_distances_for_media_results = all_read_calls[2].args[1]._potential_duplicate_id_pairs_and_distances_search_space
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        hashes_we_got_back_hex = d[ 'potential_duplicate_pairs' ]
+        hashes_we_got_back = [ ( bytes.fromhex( hash_hex_1 ), bytes.fromhex( hash_hex_2 ) ) for ( hash_hex_1, hash_hex_2 ) in hashes_we_got_back_hex ]
+        
+        self.assertEqual( len( hashes_we_got_back ), 5 )
+        
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.Sort( ClientDuplicates.DUPE_PAIR_SORT_MIN_FILESIZE, True )
+        test_potential_duplicate_media_result_pairs_and_distances_duplicate.ABPairsUsingFastComparisonScore()
+        
+        hashes_we_expect = [ ( mr_1.GetHash(), mr_2.GetHash() ) for ( mr_1, mr_2 ) in test_potential_duplicate_media_result_pairs_and_distances_duplicate.GetPairs() ]
+        
+        self.assertTrue( set( hashes_we_expect ).issuperset( set( hashes_we_got_back ) ) )
+        
+        hashes_we_got_back_fast = set( hashes_we_got_back )
+        
+        hashes_we_expect_cut_down_and_in_order = [ pair for pair in hashes_we_expect if pair in hashes_we_got_back_fast ]
+        
+        self.assertEqual( hashes_we_got_back, hashes_we_expect_cut_down_and_in_order )
+        
+        file_search_context_1 = read_potential_duplicates_search_context_for_ids.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context_for_ids.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context_for_ids.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context_for_ids.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context_for_ids.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        
+        self.assertEqual( read_potential_duplicate_id_pairs_and_distances_for_ids.GetPairs(), test_potential_duplicate_id_pairs_and_distances.GetPairs() )
+        
+        self.assertEqual( set( read_potential_duplicate_id_pairs_and_distances_for_media_results.GetPairs() ), set( group_test_potential_duplicate_id_pairs_and_distances.GetPairs() ) ) # jumbled by this point
+        
+        file_search_context_1 = read_potential_duplicates_search_context_for_media_results.GetFileSearchContext1()
+        file_search_context_2 = read_potential_duplicates_search_context_for_media_results.GetFileSearchContext2()
+        potentials_search_type = read_potential_duplicates_search_context_for_media_results.GetDupeSearchType()
+        pixel_duplicates = read_potential_duplicates_search_context_for_media_results.GetPixelDupesPreference()
+        max_hamming_distance = read_potential_duplicates_search_context_for_media_results.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
+        
+        # get random
+        
+        test_hashes = [ os.urandom( 32 ) for i in range( 6 ) ]
+        test_hash_pairs_hex = [ h.hex() for h in test_hashes ]
+        
+        path = '/manage_file_relationships/get_random_potentials'
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'random_potential_duplicate_hashes', test_hashes )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 1 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'random_potential_duplicate_hashes' )
+            
+            potential_duplicates_search_context = all_read_calls[0].args[1]
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        self.assertEqual( d[ 'random_potential_duplicate_hashes' ], test_hash_pairs_hex )
+        
+        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), default_file_search_context.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, default_potentials_search_type )
+        self.assertEqual( pixel_duplicates, default_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, default_max_hamming_distance )
+        
+        # get random with params
+        
+        path = '/manage_file_relationships/get_random_potentials?tag_service_key_1={}&tags_1={}&tag_service_key_2={}&tags_2={}&potentials_search_type={}&pixel_duplicates={}&max_hamming_distance={}'.format(
+            test_tag_service_key_1.hex(),
+            urllib.parse.quote( json.dumps( test_tags_1 ) ),
+            test_tag_service_key_2.hex(),
+            urllib.parse.quote( json.dumps( test_tags_2 ) ),
+            test_potentials_search_type,
+            test_pixel_duplicates,
+            test_max_hamming_distance
+        )
+        
+        read_db_side_effect = HF.DBSideEffect()
+        read_db_side_effect.AddResult( 'random_potential_duplicate_hashes', test_hashes )
+        
+        with mock.patch.object( TG.test_controller, 'Read', side_effect = read_db_side_effect ) as read_mock_object:
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            all_read_calls = read_mock_object.call_args_list
+            
+            self.assertEqual( len( all_read_calls ), 1 )
+            
+            self.assertEqual( all_read_calls[0].args[0], 'random_potential_duplicate_hashes' )
+            
+            potential_duplicates_search_context = all_read_calls[0].args[1]
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        self.assertEqual( d[ 'random_potential_duplicate_hashes' ], test_hash_pairs_hex )
+        
+        file_search_context_1 = potential_duplicates_search_context.GetFileSearchContext1()
+        file_search_context_2 = potential_duplicates_search_context.GetFileSearchContext2()
+        potentials_search_type = potential_duplicates_search_context.GetDupeSearchType()
+        pixel_duplicates = potential_duplicates_search_context.GetPixelDupesPreference()
+        max_hamming_distance = potential_duplicates_search_context.GetMaxHammingDistance()
+        
+        self.assertEqual( file_search_context_1.GetSerialisableTuple(), test_file_search_context_1.GetSerialisableTuple() )
+        self.assertEqual( file_search_context_2.GetSerialisableTuple(), test_file_search_context_2.GetSerialisableTuple() )
+        self.assertEqual( potentials_search_type, test_potentials_search_type )
+        self.assertEqual( pixel_duplicates, test_pixel_duplicates )
+        self.assertEqual( max_hamming_distance, test_max_hamming_distance )
         
     
     def _test_manage_pages( self, connection, set_up_permissions ):
@@ -5476,6 +6255,43 @@ class TestClientAPI( unittest.TestCase ):
         self.assertEqual( result, expected_result )
         
     
+    def _test_manage_pages_media_viewers( self, connection, set_up_permissions ):
+        
+        api_permissions = set_up_permissions[ 'manage_pages' ]
+        
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
+        
+        #
+        
+        # this sucks as a test tbh
+        # it would be nice if we had the actual Client GUI, but that's not easy atm so maybe we pull the api generating code out of there and test that separately or whatever with fake UI objects
+        
+        expected_response = [ 1, 2, 3 ]
+        
+        with mock.patch.object( TG.test_controller.gui, 'GetMediaViewersAPIInfo', return_value = expected_response ):
+            
+            path = '/manage_pages/get_media_viewers'
+            
+            connection.request( 'GET', path, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+        
+        text = str( data, 'utf-8' )
+        
+        self.assertEqual( response.status, 200 )
+        
+        d = json.loads( text )
+        
+        media_viewers = d[ 'media_viewers' ]
+        
+        self.assertEqual( media_viewers, expected_response )
+        
+    
     def _test_manage_services( self, connection, set_up_permissions ):
         
         # this stuff is super dependent on the db requests, which aren't tested in this class, but we can do the arg parsing and wrapper
@@ -5486,7 +6302,7 @@ class TestClientAPI( unittest.TestCase ):
         
         headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
         
-        default_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        default_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         # get pending counts
         
@@ -5769,7 +6585,7 @@ class TestClientAPI( unittest.TestCase ):
         
         ( file_search_context, ) = args
         
-        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY } )
+        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY } )
         self.assertEqual( file_search_context.GetTagContext().service_key, CC.COMBINED_TAG_SERVICE_KEY )
         self.assertEqual( file_search_context.GetTagContext().include_current_tags, True )
         self.assertEqual( file_search_context.GetTagContext().include_pending_tags, True )
@@ -5890,7 +6706,7 @@ class TestClientAPI( unittest.TestCase ):
         
         ( file_search_context, ) = args
         
-        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY } )
+        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY } )
         self.assertEqual( file_search_context.GetTagContext().service_key, CC.COMBINED_TAG_SERVICE_KEY )
         self.assertEqual( set( file_search_context.GetPredicates() ), { ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, tag ) for tag in tags } )
         
@@ -5951,7 +6767,7 @@ class TestClientAPI( unittest.TestCase ):
         
         ( file_search_context, ) = args
         
-        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY } )
+        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY } )
         self.assertEqual( file_search_context.GetTagContext().service_key, CC.COMBINED_TAG_SERVICE_KEY )
         self.assertEqual( set( file_search_context.GetPredicates() ), { ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, tag ) for tag in tags } )
         
@@ -6000,7 +6816,7 @@ class TestClientAPI( unittest.TestCase ):
         
         ( file_search_context, ) = args
         
-        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY } )
+        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY } )
         self.assertEqual( file_search_context.GetTagContext().service_key, CC.COMBINED_TAG_SERVICE_KEY )
         self.assertEqual( set( file_search_context.GetPredicates() ), { ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, tag ) for tag in tags } )
         
@@ -6041,7 +6857,7 @@ class TestClientAPI( unittest.TestCase ):
         
         ( file_search_context, ) = args
         
-        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY } )
+        self.assertEqual( file_search_context.GetLocationContext().current_service_keys, { CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY } )
         self.assertEqual( file_search_context.GetTagContext().service_key, CC.COMBINED_TAG_SERVICE_KEY )
         self.assertEqual( set( file_search_context.GetPredicates() ), { ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, tag ) for tag in tags } )
         
@@ -6429,7 +7245,7 @@ class TestClientAPI( unittest.TestCase ):
         media_results = []
         file_info_managers = []
         
-        urls = { "https://gelbooru.com/index.php?page=post&s=view&id=4841557", "https://img2.gelbooru.com/images/80/c8/80c8646b4a49395fb36c805f316c49a9.jpg" }
+        urls = { "https://otherbooru.org/index.php?page=post&s=view&id=123456", "https://img.weirdbooru.com/images/ab/cd/abcdblahblahblah.jpg" }
         
         sorted_urls = sorted( urls )
         
@@ -6731,8 +7547,8 @@ class TestClientAPI( unittest.TestCase ):
             detailed_known_urls_metadata_row = dict( metadata_row )
             
             detailed_known_urls_metadata_row[ 'detailed_known_urls' ] = [
-                {'normalised_url' : 'https://gelbooru.com/index.php?id=4841557&page=post&s=view', 'url_type' : 0, 'url_type_string' : 'post url', 'match_name' : 'gelbooru file page', 'can_parse' : True},
-                {'normalised_url' : 'https://img2.gelbooru.com/images/80/c8/80c8646b4a49395fb36c805f316c49a9.jpg', 'url_type' : 5, 'url_type_string' : 'unknown url', 'match_name' : 'unknown url', 'can_parse' : False, 'cannot_parse_reason' : 'unknown url class'}
+                {'normalised_url' : 'https://img.weirdbooru.com/images/ab/cd/abcdblahblahblah.jpg', 'url_type' : 5, 'url_type_string' : 'unknown url', 'match_name' : 'unknown url', 'can_parse' : False, 'cannot_parse_reason' : 'unknown url class'},
+                {'normalised_url' : 'https://otherbooru.org/index.php?id=123456&page=post&s=view', 'url_type' : 0, 'url_type_string' : 'post url', 'match_name' : 'otherbooru file page', 'can_parse' : False, 'cannot_parse_reason' : 'Could not find a parser for otherbooru file page URL Class!' },
             ]
             
             detailed_known_urls_metadata.append( detailed_known_urls_metadata_row )
@@ -7280,7 +8096,7 @@ class TestClientAPI( unittest.TestCase ):
         
         times_manager = ClientMediaManagers.TimesManager()
         
-        locations_manager = ClientMediaManagers.LocationsManager( { CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager )
+        locations_manager = ClientMediaManagers.LocationsManager( { CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager )
         ratings_manager = ClientMediaManagers.RatingsManager( {} )
         notes_manager = ClientMediaManagers.NotesManager( {} )
         file_viewing_stats_manager = ClientMediaManagers.FileViewingStatsManager.STATICGenerateEmptyManager( times_manager )
@@ -7290,7 +8106,7 @@ class TestClientAPI( unittest.TestCase ):
         TG.test_controller.SetRead( 'media_result', media_result )
         TG.test_controller.SetRead( 'media_results_from_ids', ( media_result, ) )
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         file_path = TG.test_controller.client_files_manager.GetFilePath( hash, HC.IMAGE_PNG, check_file_exists = False )
         
@@ -7298,7 +8114,7 @@ class TestClientAPI( unittest.TestCase ):
         
         thumb_hash = b'\x17\xde\xd6\xee\x1b\xfa\x002\xbdj\xc0w\x92\xce5\xf0\x12~\xfe\x915\xb3\xb3tA\xac\x90F\x95\xc2T\xc5'
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus_small.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus_small.png' )
         
         thumb_path = TG.test_controller.client_files_manager._GenerateExpectedThumbnailPath( hash )
         
@@ -7625,7 +8441,7 @@ class TestClientAPI( unittest.TestCase ):
         
         data = response.read()
         
-        with open( os.path.join( HC.STATIC_DIR, 'image.png' ), 'rb' ) as f:
+        with open( HydrusStaticDir.GetStaticPath( 'hydrus.png' ), 'rb' ) as f:
             
             expected_data = f.read()
             
@@ -7662,7 +8478,7 @@ class TestClientAPI( unittest.TestCase ):
         self.assertEqual( locations[0][ 'ideal_weight' ], 1 )
         self.assertEqual( locations[0][ 'max_num_bytes' ], None )
         self.assertEqual( locations[0][ 'path' ], os.path.join( TG.test_controller.db_dir, 'client_files' ) )
-        self.assertEqual( set( locations[0][ 'prefixes' ] ), { f'f{p}' for p in HydrusData.IterateHexPrefixes() }.union( { f't{p}' for p in HydrusData.IterateHexPrefixes() } ) )
+        self.assertEqual( set( locations[0][ 'prefixes' ] ), set( HydrusFilesPhysicalStorage.IteratePrefixes( 'f', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ) ).union( HydrusFilesPhysicalStorage.IteratePrefixes( 't', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ) ) )
         
     
     def _test_permission_failures( self, connection, set_up_permissions ):
@@ -7682,11 +8498,13 @@ class TestClientAPI( unittest.TestCase ):
         self._test_basics( connection )
         set_up_permissions = self._test_client_api_basics( connection )
         self._test_get_services( connection, set_up_permissions )
+        self._test_get_service_svg( connection, set_up_permissions )
         self._test_manage_database( connection, set_up_permissions )
         self._test_options( connection, set_up_permissions )
         self._test_add_files_add_file( connection, set_up_permissions )
         self._test_add_files_other_actions( connection, set_up_permissions )
         self._test_add_files_migrate_files( connection, set_up_permissions )
+        self._test_add_files_generate_hashes( connection, set_up_permissions )
         self._test_add_notes( connection, set_up_permissions )
         self._test_edit_ratings( connection, set_up_permissions )
         self._test_edit_times( connection, set_up_permissions )
@@ -7699,8 +8517,10 @@ class TestClientAPI( unittest.TestCase ):
         self._test_associate_urls( connection, set_up_permissions )
         self._test_manage_services( connection, set_up_permissions )
         self._test_manage_duplicates( connection, set_up_permissions )
+        self._test_manage_duplicate_potential_pairs( connection, set_up_permissions )
         self._test_manage_cookies( connection, set_up_permissions )
         self._test_manage_headers( connection, set_up_permissions )
+        self._test_manage_pages_media_viewers( connection, set_up_permissions )
         self._test_manage_pages( connection, set_up_permissions )
         self._test_search_files( connection, set_up_permissions )
         

@@ -17,27 +17,26 @@ from hydrus.core import HydrusText
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUIMPV
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
-from hydrus.client.gui.widgets import ClientGUIRegex
 from hydrus.client.importing.options import NoteImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import NoteImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
+from hydrus.client.networking import ClientNetworkingFunctions
 
 # TODO: ok the general plan here is to move rich panels to topical gui.xxx modules
 # this new gui.panels is going to be for basic panel template stuff
@@ -50,12 +49,12 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         url_classes,
         parsers,
         url_class_keys_to_parser_keys: dict[ bytes, bytes ],
-        file_post_default_tag_import_options: TagImportOptions.TagImportOptions,
-        watchable_default_tag_import_options: TagImportOptions.TagImportOptions,
-        url_class_keys_to_tag_import_options: dict[ bytes, TagImportOptions.TagImportOptions ],
-        file_post_default_note_import_options: NoteImportOptions.NoteImportOptions,
-        watchable_default_note_import_options: NoteImportOptions.NoteImportOptions,
-        url_class_keys_to_note_import_options: dict[ bytes, NoteImportOptions.NoteImportOptions ]
+        file_post_default_tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy,
+        watchable_default_tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy,
+        url_class_keys_to_tag_import_options: dict[ bytes, TagImportOptionsLegacy.TagImportOptionsLegacy ],
+        file_post_default_note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy,
+        watchable_default_note_import_options: NoteImportOptionsLegacy.NoteImportOptionsLegacy,
+        url_class_keys_to_note_import_options: dict[ bytes, NoteImportOptionsLegacy.NoteImportOptionsLegacy ]
     ):
         
         super().__init__( parent )
@@ -73,12 +72,12 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = True
         allow_default_selection = False
         
-        self._file_post_default_import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._file_post_default_import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._file_post_default_import_options_button.SetTagImportOptions( file_post_default_tag_import_options )
         self._file_post_default_import_options_button.SetNoteImportOptions( file_post_default_note_import_options )
         
-        self._watchable_default_import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._watchable_default_import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._watchable_default_import_options_button.SetTagImportOptions( watchable_default_tag_import_options )
         self._watchable_default_import_options_button.SetNoteImportOptions( watchable_default_note_import_options )
@@ -87,7 +86,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DEFAULT_TAG_IMPORT_OPTIONS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 15, model, activation_callback = self._Edit )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 12, model, activation_callback = self._Edit )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -298,7 +297,7 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 show_downloader_options = True
                 allow_default_selection = True
                 
-                panel = ClientGUIImportOptions.EditImportOptionsPanel( dlg, show_downloader_options, allow_default_selection )
+                panel = ClientGUIImportOptionsLegacy.EditImportOptionsPanel( dlg, show_downloader_options, allow_default_selection )
                 
                 panel.SetTagImportOptions( tag_import_options )
                 panel.SetNoteImportOptions( note_import_options )
@@ -456,11 +455,11 @@ class EditDefaultImportOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             unknown_import_options = HydrusSerialisable.CreateFromString( raw_text )
             
-            if isinstance( unknown_import_options, TagImportOptions.TagImportOptions ):
+            if isinstance( unknown_import_options, TagImportOptionsLegacy.TagImportOptionsLegacy ):
                 
                 insert_dict = self._url_class_keys_to_tag_import_options
                 
-            elif isinstance( unknown_import_options, NoteImportOptions.NoteImportOptions ):
+            elif isinstance( unknown_import_options, NoteImportOptionsLegacy.NoteImportOptionsLegacy ):
                 
                 insert_dict = self._url_class_keys_to_note_import_options
                 
@@ -723,7 +722,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self.widget().setLayout( vbox )
         
-        QP.CallAfter( self._SetFocus )
+        CG.client_controller.CallAfterQtSafe( self, self._SetFocus )
         
     
     def _GetExistingSharedFileDeletionReason( self ):
@@ -799,23 +798,23 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         possible_file_service_keys.extend( ( ( lfs.GetServiceKey(), lfs.GetServiceKey() ) for lfs in local_file_service_domains ) )
         
-        possible_file_service_keys.append( ( CC.TRASH_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY ) )
+        possible_file_service_keys.append( ( CC.TRASH_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY ) )
         
         if we_are_advanced_delete_dialog:
             
-            possible_file_service_keys.append( ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY ) )
+            possible_file_service_keys.append( ( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY ) )
             
         else:
             
             # if not advanced, we still want regular users, in odd fixing situations, able to delete update files
-            possible_file_service_keys.append( ( CC.LOCAL_UPDATE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY ) )
+            possible_file_service_keys.append( ( CC.LOCAL_UPDATE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY ) )
             
         
         possible_file_service_keys.extend( ( ( rfs.GetServiceKey(), rfs.GetServiceKey() ) for rfs in CG.client_controller.services_manager.GetServices( ( HC.FILE_REPOSITORY, ) ) ) )
         
         def PhysicalDeleteLockOK( s_k: bytes, media_result: ClientMediaResult.MediaResult ):
             
-            if s_k in ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.TRASH_SERVICE_KEY ):
+            if s_k in ( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.TRASH_SERVICE_KEY ):
                 
                 return not media_result.IsPhysicalDeleteLocked()
                 
@@ -825,8 +824,8 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         keys_to_hashes = { ( selection_file_service_key, deletee_file_service_key ) : [ m.GetHash() for m in self._media if selection_file_service_key in m.GetLocationsManager().GetCurrent() if PhysicalDeleteLockOK( deletee_file_service_key, m.GetMediaResult() ) ] for ( selection_file_service_key, deletee_file_service_key ) in possible_file_service_keys }
         
-        trashed_key = ( CC.TRASH_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
-        combined_key = ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+        trashed_key = ( CC.TRASH_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
+        combined_key = ( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
         
         if trashed_key in keys_to_hashes and combined_key in keys_to_hashes and keys_to_hashes[ trashed_key ] == keys_to_hashes[ combined_key ]:
             
@@ -880,9 +879,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 text = template.format( file_desc, deletee_service.GetName() )
                 
-                chunks_of_hashes = HydrusLists.SplitListIntoChunks( hashes, 64 )
-                
-                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
+                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( hashes, 16 ) ]
                 
                 content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( deletee_file_service_key, content_update ) for content_update in content_updates ]
                 
@@ -897,13 +894,11 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     self._permitted_action_choices.append( ( text, ( deletee_file_service_key, content_update_packages, save_reason, hashes_physically_deleted, text ) ) )
                     
-                    deletee_file_service_key = CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY
+                    deletee_file_service_key = CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY
                     
-                    h = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY in m.GetLocationsManager().GetCurrent() ]
+                    h = [ m.GetHash() for m in self._media if m.GetLocationsManager().IsInCombinedLocalFileDomains() ]
                     
-                    chunks_of_hashes = HydrusLists.SplitListIntoChunks( h, 64 )
-                    
-                    content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
+                    content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( h, 16 ) ]
                     
                     content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( deletee_file_service_key, content_update ) for content_update in content_updates ]
                     
@@ -951,7 +946,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     hashes_physically_deleted = []
                     
                 
-            elif deletee_file_service_key == CC.COMBINED_LOCAL_FILE_SERVICE_KEY:
+            elif deletee_file_service_key == CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY:
                 
                 possibilities_involve_spicy_physical_delete = True
                 
@@ -979,11 +974,9 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 text = 'Permanently delete {}?'.format( suffix )
                 
-                chunks_of_hashes = HydrusLists.SplitListIntoChunks( hashes, 64 )
+                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in HydrusLists.SplitListIntoChunks( hashes, 16 ) ]
                 
-                content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
-                
-                content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update ) for content_update in content_updates ]
+                content_update_packages = [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update ) for content_update in content_updates ]
                 
                 save_reason = True
                 
@@ -1003,7 +996,7 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if CG.client_controller.new_options.GetBoolean( 'use_advanced_file_deletion_dialog' ):
             
-            hashes = [ m.GetHash() for m in self._media if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in m.GetLocationsManager().GetCurrent() if PhysicalDeleteLockOK( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, m.GetMediaResult() ) ]
+            hashes = [ m.GetHash() for m in self._media if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in m.GetLocationsManager().GetCurrent() if PhysicalDeleteLockOK( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, m.GetMediaResult() ) ]
             
             num_to_delete = len( hashes )
             
@@ -1018,17 +1011,17 @@ class EditDeleteFilesPanel( ClientGUIScrolledPanels.EditPanel ):
                     text = 'Permanently delete these ' + HydrusNumbers.ToHumanInt( num_to_delete ) + ' files and do not save a deletion record?'
                     
                 
-                chunks_of_hashes = list( HydrusLists.SplitListIntoChunks( hashes, 64 ) ) # iterator, so list it to use it more than once, jej
+                chunks_of_hashes = list( HydrusLists.SplitListIntoChunks( hashes, 16 ) ) # iterator, so list it to use it more than once, jej
                 
                 content_update_packages = []
                 
                 content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
                 
-                content_update_packages.extend( [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update ) for content_update in content_updates ] )
+                content_update_packages.extend( [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update ) for content_update in content_updates ] )
                 
                 content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, chunk_of_hashes ) for chunk_of_hashes in chunks_of_hashes ]
                 
-                content_update_packages.extend( [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update ) for content_update in content_updates ] )
+                content_update_packages.extend( [ ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update ) for content_update in content_updates ] )
                 
                 save_reason = False
                 
@@ -1338,7 +1331,7 @@ class EditFilesForcedFiletypePanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent: QW.QWidget, names_to_notes: dict[ str, str ], name_to_start_on: typing.Optional[ str ] ):
+    def __init__( self, parent: QW.QWidget, names_to_notes: dict[ str, str ], name_to_start_on: str | None ):
         
         super().__init__( parent )
         
@@ -1355,10 +1348,10 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit current name', self._EditName )
         self._delete_button = ClientGUICommon.BetterButton( self, 'delete current note', self._DeleteNote )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy all notes to the clipboard.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste from a copy from another notes dialog.' ) )
         
         #
@@ -1423,17 +1416,20 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         existing_names = set( names_to_notes.keys() )
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the note.', allow_blank = False ) as dlg:
+        message = 'Enter the name for the note.'
+        
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                name = dlg.GetValue()
-                
-                name = HydrusData.GetNonDupeName( name, existing_names )
-                
-                self._AddNotePanel( name, '' )
-                
+            name = ClientGUIDialogsQuick.EnterText( self, message )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        name = HydrusData.GetNonDupeName( name, existing_names )
+        
+        self._AddNotePanel( name, '' )
         
     
     def _AddNotePanel( self, name, note ):
@@ -1444,7 +1440,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
             
             control.setPlainText( note )
             
-        except:
+        except Exception as e:
             
             control.setPlainText( repr( note ) )
             
@@ -1457,11 +1453,11 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         if CG.client_controller.new_options.GetBoolean( 'start_note_editing_at_end' ):
             
-            CG.client_controller.CallAfterQtSafe( control, 'moving cursor to end', control.moveCursor, QG.QTextCursor.MoveOperation.End )
+            CG.client_controller.CallAfterQtSafe( control, control.moveCursor, QG.QTextCursor.MoveOperation.End )
             
         else:
             
-            CG.client_controller.CallAfterQtSafe( control, 'moving cursor to start', control.moveCursor, QG.QTextCursor.MoveOperation.Start )
+            CG.client_controller.CallAfterQtSafe( control, control.moveCursor, QG.QTextCursor.MoveOperation.Start )
             
         
         self._UpdateButtons()
@@ -1548,7 +1544,6 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         note_import_options = NoteImportOptions.NoteImportOptions()
         
-        note_import_options.SetIsDefault( False )
         note_import_options.SetExtendExistingNoteIfPossible( True )
         note_import_options.SetConflictResolution( NoteImportOptions.NOTE_IMPORT_CONFLICT_RENAME )
         
@@ -1566,7 +1561,7 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
                     
                     control.setPlainText( note )
                     
-                except:
+                except Exception as e:
                     
                     control.setPlainText( repr( note ) )
                     
@@ -1613,17 +1608,20 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         
         existing_names.discard( name )
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the note.', allow_blank = False, default = name ) as dlg:
+        message = 'Enter the name for the note.'
+        
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                name = dlg.GetValue()
-                
-                name = HydrusData.GetNonDupeName( name, existing_names )
-                
-                self._notebook.setTabText( index, name )
-                
+            name = ClientGUIDialogsQuick.EnterText( self, message, default = name )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        name = HydrusData.GetNonDupeName( name, existing_names )
+        
+        self._notebook.setTabText( index, name )
         
     
     def _TabBarDoubleClicked( self, index: int ):
@@ -1849,20 +1847,9 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._preview_start_paused = QW.QCheckBox( self )
         self._preview_start_with_embed = QW.QCheckBox( self )
         
-        advanced_mode = CG.client_controller.new_options.GetBoolean( 'advanced_mode' )
-        
         for action in possible_show_actions:
             
             if action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV and not ClientGUIMPV.MPV_IS_AVAILABLE:
-                
-                continue
-                
-            
-            simple_mode = not advanced_mode
-            not_source = not HC.RUNNING_FROM_SOURCE
-            not_qt_6 = not QtInit.WE_ARE_QT6
-            
-            if action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER and ( simple_mode or not_source or not_qt_6 ):
                 
                 continue
                 
@@ -1944,9 +1931,16 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         text = 'Setting media view options for ' + HC.mime_string_lookup[ self._mime ] + '.'
         
-        if not ClientGUIMPV.MPV_IS_AVAILABLE:
+        if CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV in possible_show_actions:
             
-            text += ' MPV is not available for this client.'
+            if not ClientGUIMPV.MPV_IS_AVAILABLE:
+                
+                text += '\n\nmpv is not available for this client. Try the QtMediaPlayer as a fallback.'
+                
+            else:
+                
+                text += '\n\nmpv is higher quality but can be buggy. If you have problems, try the QtMediaPlayer as a fallback.'
+                
             
         
         QP.AddToLayout( vbox, ClientGUICommon.BetterStaticText(self,text), CC.FLAGS_EXPAND_PERPENDICULAR )
@@ -1962,7 +1956,7 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         rows.append( ( 'preview starts paused: ', self._preview_start_paused ) )
         rows.append( ( 'preview starts covered with an embed button: ', self._preview_start_with_embed ) )
         
-        if set( possible_show_actions ).isdisjoint( { CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER } ):
+        if set( possible_show_actions ).isdisjoint( { CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER } ):
             
             self._media_scale_up.hide()
             self._media_scale_down.hide()
@@ -2117,133 +2111,6 @@ class EditMediaViewOptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
     
 
-class EditRegexFavourites( ClientGUIScrolledPanels.EditPanel ):
-    
-    def __init__( self, parent: QW.QWidget, regex_favourites ):
-        
-        super().__init__( parent )
-        
-        regex_listctrl_panel = ClientGUIListCtrl.BetterListCtrlPanel( self )
-        
-        model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_REGEX_FAVOURITES.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
-        
-        self._regexes = ClientGUIListCtrl.BetterListCtrlTreeView( regex_listctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
-        
-        regex_listctrl_panel.SetListCtrl( self._regexes )
-        
-        regex_listctrl_panel.AddButton( 'add', self._Add )
-        regex_listctrl_panel.AddButton( 'edit', self._Edit, enabled_only_on_single_selection = True )
-        regex_listctrl_panel.AddDeleteButton()
-        
-        #
-        
-        self._regexes.SetData( regex_favourites )
-        
-        self._regexes.Sort()
-        
-        #
-        
-        vbox = QP.VBoxLayout()
-        
-        QP.AddToLayout( vbox, regex_listctrl_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        
-        self.widget().setLayout( vbox )
-        
-    
-    def _Add( self ):
-        
-        current_data = self._regexes.GetData()
-        
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter regex.' ) as dlg:
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                regex_phrase = dlg.GetValue()
-                
-                with ClientGUIDialogs.DialogTextEntry( self, 'Enter description.' ) as dlg_2:
-                    
-                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        description = dlg_2.GetValue()
-                        
-                        row = ( regex_phrase, description )
-                        
-                        if row in current_data:
-                            
-                            ClientGUIDialogsMessage.ShowWarning( self, 'That regex and description are already in the list!' )
-                            
-                            return
-                            
-                        
-                        self._regexes.AddData( row, select_sort_and_scroll = True )
-                        
-                    
-                
-            
-        
-    
-    def _ConvertDataToDisplayTuple( self, row ):
-        
-        ( regex_phrase, description ) = row
-        
-        display_tuple = ( regex_phrase, description )
-        
-        return display_tuple
-        
-    
-    _ConvertDataToSortTuple = _ConvertDataToDisplayTuple
-    
-    def _Edit( self ):
-        
-        data = self._regexes.GetTopSelectedData()
-        
-        if data is None:
-            
-            return
-            
-        
-        row = data
-        
-        ( regex_phrase, description ) = row
-        
-        with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit regex' ) as dlg:
-            
-            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
-            
-            control = ClientGUIRegex.RegexInput( panel )
-            
-            control.SetValue( regex_phrase )
-            
-            panel.SetControl( control, perpendicular = True )
-            
-            dlg.SetPanel( panel )
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                regex_phrase = control.GetValue()
-                
-                with ClientGUIDialogs.DialogTextEntry( self, 'Update description.', default = description ) as dlg_2:
-                    
-                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        description = dlg_2.GetValue()
-                        
-                        edited_row = ( regex_phrase, description )
-                        
-                        self._regexes.ReplaceData( row, edited_row, sort_and_scroll = True )
-                        
-                    
-                
-            
-        
-        
-    
-    def GetValue( self ):
-        
-        return self._regexes.GetData()
-        
-    
-
 class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPanels.EditPanel ):
     
     def __init__( self, parent, medias: collections.abc.Collection[ ClientMedia.MediaSingleton ] ):
@@ -2273,10 +2140,10 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
         self._url_input = QW.QLineEdit( self )
         self._url_input.installEventFilter( ClientGUICommon.TextCatchEnterEventFilter( self._url_input, self.AddURL ) )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy selected URLs to the clipboard, or all URLs if none are selected.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste URLs from the clipboard.' ) )
         
         self._urls_to_add = set()
@@ -2334,6 +2201,8 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             try:
                 
+                ClientNetworkingFunctions.CheckLooksLikeAFullURL( url )
+                
                 normalised_url = CG.client_controller.network_engine.domain_manager.NormaliseURL( url, for_server = True )
                 
                 normalised_urls.append( normalised_url )
@@ -2362,7 +2231,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             normalised_urls.extend( weird_urls )
             
         
-        normalised_urls = HydrusData.DedupeList( normalised_urls )
+        normalised_urls = HydrusLists.DedupeList( normalised_urls )
         
         for normalised_url in normalised_urls:
             
@@ -2386,7 +2255,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
                 
                 for m in addee_media:
                     
-                    m.GetMediaResult().ProcessContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                    m.GetMediaResult().ProcessContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                     
                 
                 self._pending_content_updates.append( content_update )
@@ -2445,7 +2314,7 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
             for m in removee_media:
                 
-                m.GetMediaResult().ProcessContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                m.GetMediaResult().ProcessContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                 
             
             self._pending_content_updates.append( content_update )

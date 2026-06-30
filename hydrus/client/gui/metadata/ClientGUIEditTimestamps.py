@@ -1,6 +1,5 @@
 import collections.abc
 import json
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -16,7 +15,6 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientTime
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -61,7 +59,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOMAIN_MODIFIED_TIMESTAMPS.ID, self._ConvertDomainToDomainModifiedDisplayTuple, self._ConvertDomainToDomainModifiedSortTuple )
         
-        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, 8, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp )
+        self._domain_modified_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._domain_modified_list_ctrl_panel, 4, model, use_simple_delete = True, activation_callback = self._EditDomainModifiedTimestamp, max_height_num_chars = 12 )
         
         self._domain_modified_list_ctrl_panel.SetListCtrl( self._domain_modified_list_ctrl )
         
@@ -77,7 +75,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SERVICE_TIMESTAMPS.ID, self._ConvertDataRowToFileServiceDisplayTuple, self._ConvertDataRowToFileServiceSortTuple )
         
-        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, 8, model, activation_callback = self._EditFileServiceTimestamp )
+        self._file_services_list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._file_services_list_ctrl_panel, 4, model, activation_callback = self._EditFileServiceTimestamp, max_height_num_chars = 12 )
         
         self._file_services_list_ctrl_panel.SetListCtrl( self._file_services_list_ctrl )
         
@@ -253,18 +251,18 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'all times', 'Copy every time here for pasting in another file\'s dialog.', self._Copy ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'all times', 'Copy every time here for pasting in another file\'s dialog.', self._Copy ) )
         
         c = HydrusData.Call( self._Copy, allowed_timestamp_types = ( HC.TIMESTAMP_TYPE_IMPORTED, HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED, HC.TIMESTAMP_TYPE_DELETED ) )
         
-        menu_items.append( ( 'normal', 'all file service times', 'Copy every imported/deleted/previously imported time here for pasting in another file\'s dialog.', c ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'all file service times', 'Copy every imported/deleted/previously imported time here for pasting in another file\'s dialog.', c ) )
         
-        self._copy_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().copy, menu_items )
+        self._copy_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().copy, menu_template_items )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy timestamps to the clipboard.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste timestamps from another timestamps dialog.\n\nCannot be simple strings, this needs to be rich data from another dialog. It also cannot create new web domain entries if the new file does not share entries which what was copied!' ) )
         
         #
@@ -403,55 +401,56 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
     
     def _AddDomainModifiedTimestamp( self ):
         
-        message = 'Enter domain'
+        message = 'Enter domain.'
         
-        with ClientGUIDialogs.DialogTextEntry( self, message, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+            domain = ClientGUIDialogsQuick.EnterText( self, message )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        for existing_domain in self._domain_modified_list_ctrl.GetData():
+            
+            if domain == existing_domain:
                 
-                domain = dlg.GetValue()
+                ClientGUIDialogsMessage.ShowWarning( self, 'Sorry, that domain already exists!' )
                 
-                for existing_domain in self._domain_modified_list_ctrl.GetData():
-                    
-                    if domain == existing_domain:
-                        
-                        ClientGUIDialogsMessage.ShowWarning( self, 'Sorry, that domain already exists!' )
-                        
-                        return
-                        
-                    
+                return
                 
-                with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit datetime' ) as dlg_2:
-                    
-                    hashes = [ m.GetHash() for m in self._ordered_medias ]
-                    
-                    panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg_2 )
-                    
-                    control = ClientGUITime.DateTimesCtrl( self, seconds_allowed = True, milliseconds_allowed = True, none_allowed = False, only_past_dates = True )
-                    
-                    datetime_value_range = ClientGUITime.DateTimeWidgetValueRange()
-                    
-                    qt_datetime = QC.QDateTime.currentDateTime()
-                    
-                    datetime_value_range.AddValueQtDateTime( qt_datetime, num_to_add = len( hashes ) )
-                    
-                    control.SetValue( datetime_value_range )
-                    
-                    panel.SetControl( control )
-                    
-                    dlg_2.SetPanel( panel )
-                    
-                    if dlg_2.exec() == QW.QDialog.DialogCode.Accepted: # no 'haschanges' check here, we are ok with starting value
-                        
-                        new_datetime_value_range = control.GetValue()
-                        
-                        user_has_edited = True
-                        
-                        self._domain_modified_list_ctrl_data_dict[ domain ] = ( hashes, new_datetime_value_range, user_has_edited )
-                        
-                        self._domain_modified_list_ctrl.AddData( domain, select_sort_and_scroll = True )
-                        
-                    
+            
+        
+        with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit datetime' ) as dlg_2:
+            
+            hashes = [ m.GetHash() for m in self._ordered_medias ]
+            
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg_2 )
+            
+            control = ClientGUITime.DateTimesCtrl( self, seconds_allowed = True, milliseconds_allowed = True, none_allowed = False, only_past_dates = True )
+            
+            datetime_value_range = ClientGUITime.DateTimeWidgetValueRange()
+            
+            qt_datetime = QC.QDateTime.currentDateTime()
+            
+            datetime_value_range.AddValueQtDateTime( qt_datetime, num_to_add = len( hashes ) )
+            
+            control.SetValue( datetime_value_range )
+            
+            panel.SetControl( control )
+            
+            dlg_2.SetPanel( panel )
+            
+            if dlg_2.exec() == QW.QDialog.DialogCode.Accepted: # no 'haschanges' check here, we are ok with starting value
+                
+                new_datetime_value_range = control.GetValue()
+                
+                user_has_edited = True
+                
+                self._domain_modified_list_ctrl_data_dict[ domain ] = ( hashes, new_datetime_value_range, user_has_edited )
+                
+                self._domain_modified_list_ctrl.AddData( domain, select_sort_and_scroll = True )
                 
             
         
@@ -929,7 +928,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         self._file_modified_time_warning_st.setVisible( False )
         
     
-    def GetFileModifiedUpdateData( self ) -> typing.Optional[ tuple[ collections.abc.Collection[ bytes ], int, int ] ]:
+    def GetFileModifiedUpdateData( self ) -> tuple[ collections.abc.Collection[ bytes ], int, int ] | None:
         
         for ( hashes, timestamp_data, step_ms ) in self._GetValidTimestampDatas( only_changes = True ):
             
@@ -977,7 +976,7 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                 
             
         
-        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_updates )
+        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_updates )
         
         return content_update_package
         

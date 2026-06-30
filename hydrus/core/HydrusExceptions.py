@@ -14,7 +14,7 @@ class HydrusException( Exception ):
                     
                     s.append( str( arg ) )
                     
-                except:
+                except Exception as e:
                     
                     s.append( repr( arg ) )
                     
@@ -53,6 +53,7 @@ class DirectoryMissingException( HydrusException ): pass
 class SerialisationException( HydrusException ): pass
 class NameException( HydrusException ): pass
 class ShutdownException( HydrusException ): pass
+class SubprocessTimedOut( HydrusException ): pass
 class QtDeadWindowException( HydrusException ): pass
 
 class FileImportBlockException( HydrusException ): pass
@@ -65,6 +66,7 @@ class LimitedSupportFileException( HydrusException ): pass
 
 class EncryptedFileException( LimitedSupportFileException ): pass
 class NoThumbnailFileException( LimitedSupportFileException ): pass
+class NoRenderFileException( LimitedSupportFileException ): pass
 class NoResolutionFileException( LimitedSupportFileException ): pass
 
 class VetoException( HydrusException ): pass
@@ -93,6 +95,7 @@ class FirewallException( NetworkInfrastructureException ): pass
 class RouterException( NetworkInfrastructureException ): pass
 class CloudFlareException( NetworkInfrastructureException ): pass
 class BandwidthException( NetworkInfrastructureException ): pass
+class CensorshipException( NetworkInfrastructureException ): pass
 class ServerException( NetworkInfrastructureException ): pass
 class ServerBusyException( NetworkInfrastructureException ): pass
 

@@ -137,6 +137,65 @@ def WrapInGrid( parent, rows, expand_text = False, expand_single_widgets = False
     return gridbox
     
 
+def WrapInTable( parent, rows, spacing = 2, expand_text = False, expand_single_widgets = False ):
+    
+    text_flags = CC.FLAGS_EXPAND_BOTH_WAYS if expand_text else CC.FLAGS_ON_LEFT
+    control_flags = CC.FLAGS_CENTER_PERPENDICULAR if expand_single_widgets else CC.FLAGS_EXPAND_SIZER_PERPENDICULAR
+    columns = 1
+    padded_rows = []
+    
+    for row in rows:
+        
+        if HydrusLists.IsAListLikeCollection( row ):
+            
+            columns = max( columns, len( row ) )
+            
+        else:
+            
+            columns = max( columns, 1 )
+            
+        
+    gridbox = QP.GridLayout( cols = columns, spacing = spacing )
+    
+    for row in rows:
+        
+        if HydrusLists.IsAListLikeCollection( row ):
+            
+            padded_row = list( row ) + [ '' ] * ( columns - len( row ) )
+            
+        else:
+            
+            padded_row = [ row ] + [ '' ] * ( columns - 1 )
+            
+        padded_rows.append( padded_row )
+        
+    
+    
+    for display_row in padded_rows:
+        
+        for i in range( len( display_row ) ):
+            
+            item = display_row[ i ]
+            
+            if isinstance( item, str ):
+                
+                display_cell = BetterStaticText( parent, item )
+                
+                QP.AddToLayout( gridbox, display_cell, text_flags )
+                
+            elif isinstance( item, BetterStaticText ):
+                
+                QP.AddToLayout( gridbox, item, text_flags )
+                
+            else:
+                
+                QP.AddToLayout( gridbox, item, control_flags )
+                
+            
+        
+    return gridbox
+    
+
 def WrapInText( control, parent, text, object_name = None ):
     
     hbox = QP.HBoxLayout()
@@ -257,78 +316,7 @@ class ShortcutAwareToolTipMixin( object ):
         self._RefreshToolTip()
         
     
-class BetterBitmapButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
-    
-    def __init__( self, parent, bitmap, func, *args, **kwargs ):
-        
-        super().__init__( parent )
-        
-        self.SetToolTipCallable( self.setToolTip )
-        
-        self.setIcon( QG.QIcon( bitmap ) )
-        self.setIconSize( bitmap.size() )
-        self.setSizePolicy( QW.QSizePolicy.Policy.Maximum, QW.QSizePolicy.Policy.Maximum )
-        
-        self._func = func
-        self._args = args
-        self._kwargs = kwargs
-        
-        self.clicked.connect( self.EventButton )
-        
-    
-    def EventButton( self ):
-        
-        self._func( *self._args,  **self._kwargs )
-        
-    
-class BetterBitmapWindowDragButton( BetterBitmapButton ):
-    
-    def __init__( self, parent, bitmap, func, target_window ):
-        
-        super().__init__( parent, bitmap, func )
-        
-        self._target_window = target_window
-        
-        self._original_icon = bitmap
-        
-    
-    def mousePressEvent( self, event ):
-        
-        if event.button() == QC.Qt.MouseButton.LeftButton:
-            
-            self._startDrag()
-            
-            self.setIcon( CC.global_pixmaps().move_cursor )
-            
-        elif event.button() == QC.Qt.MouseButton.RightButton:
-            
-            self._func()
-            
-        else:
-            
-            super().mousePressEvent( event )
-        
-    
-    def mouseReleaseEvent(self, event):
-        
-        if event.button() == QC.Qt.MouseButton.LeftButton:
-            
-            self.setIcon(self._original_icon)
-            
-        super().mouseReleaseEvent(event)
-        
-    
-    def _startDrag( self ):
-        
-        if self._target_window is not None:
-            
-            window_handle = self._target_window.windowHandle()
-            
-            if window_handle is not None:
-                
-                window_handle.startSystemMove()
-        
-    
+
 class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
     
     def __init__( self, parent, label, func, *args, **kwargs ):
@@ -346,6 +334,10 @@ class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
         self._yes_no_text = None
         
         self.clicked.connect( self.EventButton )
+        
+        # default is Minimum horizontal, but Preferred says we can go down to minSizeHint
+        # QPushButton minSizeHint is actually the same as sizeHint though, so maybe this does nothing hooray
+        self.setSizePolicy( QW.QSizePolicy.Policy.Preferred, QW.QSizePolicy.Policy.Fixed )
         
     
     def EventButton( self ):
@@ -384,6 +376,101 @@ class BetterButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
         button_label = ClientGUIFunctions.EscapeMnemonics( label )
         
         QW.QPushButton.setText( self, button_label )
+        
+    
+
+class ExpandCollapseArrowButton( BetterButton ):
+    
+    expanded = QC.Signal()
+    collapsed = QC.Signal()
+    expandCollapseFlipped = QC.Signal()
+    
+    UP_ARROW = '\u25B2'
+    DOWN_ARROW = '\u25BC'
+    
+    def __init__( self, parent: QW.QWidget, expands_downward: bool ):
+        
+        super().__init__( parent, label = self.UP_ARROW, func = self.ExpandCollapseFlip )
+        
+        self.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self, 4 ) )
+        
+        self._is_collapsed = True
+        self._expands_downward = expands_downward
+        
+        self._UpdateLabel()
+        
+    
+    def _SetIsCollapsed( self, value ):
+        
+        if self._is_collapsed == value:
+            
+            return
+            
+        
+        self._is_collapsed = value
+        
+        self._UpdateLabel()
+        
+        if self._is_collapsed:
+            
+            self.collapsed.emit()
+            
+        else:
+            
+            self.expanded.emit()
+            
+        
+        self.expandCollapseFlipped.emit()
+        
+    
+    def _UpdateLabel( self ):
+        
+        if self._is_collapsed:
+            
+            if self._expands_downward:
+                
+                label = self.DOWN_ARROW
+                
+            else:
+                
+                label = self.UP_ARROW
+                
+            
+            object_name = 'HydrusCollapseArrowCollapsed'
+            
+        else:
+            
+            if self._expands_downward:
+                
+                label = self.UP_ARROW
+                
+            else:
+                
+                label = self.DOWN_ARROW
+                
+            
+            object_name = 'HydrusCollapseArrowExpanded'
+            
+        
+        self.setText( label )
+        self.setObjectName( object_name )
+        
+        self.style().polish( self )
+        
+    
+    def Collapse( self ):
+        
+        self._SetIsCollapsed( True )
+        
+    
+    def Expand( self ):
+        
+        self._SetIsCollapsed( False )
+        
+    
+    def ExpandCollapseFlip( self ):
+        
+        self._SetIsCollapsed( not self._is_collapsed )
         
     
 
@@ -498,6 +585,11 @@ class BetterCheckBoxList( QW.QListWidget ):
     def SetHeightNumChars( self, num_chars: int, clip_virtual_size_too = False ):
         
         row_height = self.sizeHintForRow( 0 )
+        
+        if row_height == -1:
+            
+            ( width_gumpf, row_height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 20, 1 ) )
+            
         
         # ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 10, num_chars ) )
         
@@ -874,7 +966,7 @@ class BetterRadioBox( QW.QFrame ):
             
             self.SetValue( data )
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -891,10 +983,8 @@ class BetterRadioBox( QW.QFrame ):
 
 class BetterStaticText( QP.EllipsizedLabel ):
     
-    def __init__( self, parent, label = None, tooltip_label = False, **kwargs ):
+    def __init__( self, parent, label = None, tooltip_label = False, ellipsize_end = False, ellipsized_ideal_width_chars = 24 ):
         
-        ellipsize_end = 'ellipsize_end' in kwargs and kwargs[ 'ellipsize_end' ]
-
         super().__init__( parent, ellipsize_end = ellipsize_end )
         
         # otherwise by default html in 'this is a <hr> parsing step' stuff renders fully lmaoooo
@@ -902,7 +992,7 @@ class BetterStaticText( QP.EllipsizedLabel ):
         
         self._tooltip_label = tooltip_label
         
-        if 'ellipsize_end' in kwargs and kwargs[ 'ellipsize_end' ]:
+        if ellipsize_end:
             
             self._tooltip_label = True
             
@@ -946,20 +1036,20 @@ class BetterHyperLink( BetterStaticText ):
     
     def __init__( self, parent, label, url ):
         
-        super().__init__( parent, label )
+        self._colours = {
+            'link_color' : QG.QColor( 0, 0, 255 )
+        }
         
         self._url = url
+        
+        super().__init__( parent, label )
+        
+        self.setObjectName( 'HydrusHyperlink' )
         
         self.setToolTip( ClientNetworkingFunctions.ConvertURLToHumanString( self._url ) )
         
         self.setTextFormat( QC.Qt.TextFormat.RichText )
         self.setTextInteractionFlags( QC.Qt.TextInteractionFlag.LinksAccessibleByMouse | QC.Qt.TextInteractionFlag.LinksAccessibleByKeyboard )
-        
-        self._colours = {
-            'link_color' : QG.QColor( 0, 0, 255 )
-        }
-        
-        self.setObjectName( 'HydrusHyperlink' )
         
         # need this polish to load the QSS property and update self._colours
         self.style().polish( self )
@@ -986,90 +1076,13 @@ class BetterHyperLink( BetterStaticText ):
     
     link_color = QC.Property( QG.QColor, get_link_color, set_link_color )
     
-class BufferedWindow( QW.QWidget ):
-    
-    def __init__( self, *args, **kwargs ):
-        
-        super().__init__( *args )
-        
-        if 'size' in kwargs:
-            
-            size = kwargs[ 'size' ]
-            
-            if isinstance( size, QC.QSize ):
-                
-                self.setFixedSize( kwargs[ 'size' ] )
-                
-            
-        
-    
-    def _Draw( self, painter ):
-        
-        raise NotImplementedError()
-        
-    
-    def paintEvent( self, event ):
-        
-        painter = QG.QPainter( self )
-        
-        self._Draw( painter )
-        
-    
-class BufferedWindowIcon( BufferedWindow ):
-    
-    def __init__( self, parent, pixmap: QG.QPixmap, click_callable = None ):
-        
-        device_independant_size = pixmap.size() / pixmap.devicePixelRatio()
-        
-        super().__init__( parent, size = device_independant_size )
-        
-        self._pixmap = pixmap
-        self._click_callable = click_callable
-        
-    
-    def _Draw( self, painter ):
-        
-        background_colour = QP.GetBackgroundColour( self.parentWidget() )
-        
-        painter.setBackground( QG.QBrush( background_colour ) )
-        
-        painter.eraseRect( painter.viewport() )
-        
-        painter.setRenderHint( QG.QPainter.RenderHint.SmoothPixmapTransform, True ) # makes any scaling here due to jank thumbs look good
-        
-        device_independant_pixmap_width = self._pixmap.width() / self._pixmap.devicePixelRatio()
-        device_independant_pixmap_height = self._pixmap.height() / self._pixmap.devicePixelRatio()
-        
-        x_offset = int( ( self.width() - device_independant_pixmap_width ) / 2 )
-        y_offset = int( ( self.height() - device_independant_pixmap_height ) / 2 )
-        
-        if isinstance( self._pixmap, QG.QImage ):
-            
-            painter.drawImage( x_offset, y_offset, self._pixmap )
-            
-        else:
-            
-            painter.drawPixmap( x_offset, y_offset, self._pixmap )
-            
-        
-    
-    def mousePressEvent( self, event ):
-        
-        if self._click_callable is None:
-            
-            return BufferedWindow.mousePressEvent( self, event )
-            
-        else:
-            
-            self._click_callable()
-            
-        
-    
+
 class BusyCursor( object ):
     
     def __enter__( self ):
         
         QW.QApplication.setOverrideCursor( QC.Qt.CursorShape.WaitCursor )
+        
     
     def __exit__( self, exc_type, exc_val, exc_tb ):
         
@@ -1078,14 +1091,27 @@ class BusyCursor( object ):
     
 class CheckboxManager( object ):
     
+    def __init__( self ):
+        
+        self._additional_notify_calls = []
+        
+    
     def GetCurrentValue( self ):
         
         raise NotImplementedError()
         
     
+    def AddNotifyCall( self, func ):
+        
+        self._additional_notify_calls.append( func )
+        
+    
     def Invert( self ):
         
-        raise NotImplementedError()
+        for func in self._additional_notify_calls:
+            
+            func()
+            
         
     
 class CheckboxManagerBoolean( CheckboxManager ):
@@ -1119,7 +1145,10 @@ class CheckboxManagerBoolean( CheckboxManager ):
         
         setattr( self._obj, self._name, not value )
         
+        super().Invert()
+        
     
+
 class CheckboxManagerCalls( CheckboxManager ):
     
     def __init__( self, invert_call, value_call ):
@@ -1139,7 +1168,10 @@ class CheckboxManagerCalls( CheckboxManager ):
         
         self._invert_call()
         
+        super().Invert()
+        
     
+
 class CheckboxManagerOptions( CheckboxManager ):
     
     def __init__( self, boolean_name ):
@@ -1169,6 +1201,8 @@ class CheckboxManagerOptions( CheckboxManager ):
         
         CG.client_controller.pub( 'checkbox_manager_inverted' )
         CG.client_controller.pub( 'notify_new_menu_option' )
+        
+        super().Invert()
         
     
 
@@ -1311,6 +1345,165 @@ class Gauge( QW.QProgressBar ):
         self.SetValue( 0 )
         
         self._is_pulsing = True
+        
+    
+
+class IconButton( ShortcutAwareToolTipMixin, QW.QPushButton ):
+    
+    def __init__( self, parent, bitmap_or_icon, func, *args, **kwargs ):
+        
+        super().__init__( parent )
+        
+        self.SetToolTipCallable( self.setToolTip )
+        
+        if isinstance( bitmap_or_icon, QG.QPixmap ):
+            
+            icon = QG.QIcon( bitmap_or_icon )
+            icon_size = bitmap_or_icon.size()
+            
+        else:
+            
+            icon = bitmap_or_icon
+            icon_size = None # QC.QSize( 16, 16 )
+            
+        
+        self.last_icon_set = icon
+        
+        self.setIcon( icon )
+        
+        if icon_size is not None:
+            
+            self.setIconSize( icon_size ) # if and when we move to SVG, maybe we'll do devicePixelRatio stuff here? 16x16 * dpr?
+            
+        
+        #self.setSizePolicy( QW.QSizePolicy.Policy.Maximum, QW.QSizePolicy.Policy.Maximum )
+        
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+        
+        self.clicked.connect( self.EventButton )
+        
+    
+    def EventButton( self ):
+        
+        self._func( *self._args,  **self._kwargs )
+        
+    
+    def SetIconSmart( self, icon: QG.QIcon ):
+        
+        # this is actually useful as I understand. the jump to C++ copies the icon and Qt doesn't know it is the same guy
+        
+        if icon is self.last_icon_set:
+            
+            return
+            
+        
+        self.setIcon( icon )
+        
+        self.last_icon_set = icon
+        
+    
+
+class IconButtonMultiClickable( IconButton ):
+    
+    def __init__( self, parent, icon, func, right_click_func = None, middle_click_func = None ):
+        
+        super().__init__( parent, icon, func )
+        
+        self._left_click_func = func
+        self._right_click_func = right_click_func
+        self._middle_click_func = middle_click_func
+        
+    
+    def mousePressEvent( self, event ):
+        
+        if event.button() == QC.Qt.MouseButton.RightButton and self._right_click_func is not None:
+            
+            self._right_click_func()
+            
+        elif event.button() == QC.Qt.MouseButton.MiddleButton and self._middle_click_func is not None:
+            
+            self._middle_click_func()
+            
+        else:
+            
+            self._left_click_func()
+            
+        
+    
+
+class NamespaceWidget( QW.QWidget ):
+    
+    def __init__( self, parent ):
+        
+        super().__init__( parent )
+        
+        # think about updating to this to have ':' for 'namespaced', but either optionall or (ideally) all users of it would need to support that too
+        
+        choice_tuples = [
+            ( 'any namespace', '*' ),
+            ( 'unnamespaced', '' ),
+            ( 'namespace', 'specific' )
+        ]
+        
+        self._selector = BetterRadioBox( self, choice_tuples, vertical = True )
+        
+        self._namespace = QW.QLineEdit( self )
+        
+        self._namespace.setPlaceholderText( 'e.g. character' )
+        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'No trailing colon. Wildcards are ok!' ) )
+        
+        vbox = QP.VBoxLayout( margin = 0 )
+        
+        QP.AddToLayout( vbox, self._selector, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._namespace, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        self.setLayout( vbox )
+        
+        self._selector.radioBoxChanged.connect( self._UpdateControls )
+        
+        self.SetValue( '*' )
+        
+    
+    def _UpdateControls( self ):
+        
+        value = self._selector.GetValue()
+        
+        self._namespace.setEnabled( value == 'specific' )
+        
+    
+    def GetValue( self ):
+        
+        value = self._selector.GetValue()
+        
+        if value in ( '', '*' ):
+            
+            return value
+            
+        
+        return self._namespace.text()
+        
+    
+    def SetValue( self, value ):
+        
+        if value is None:
+            
+            value = '*'
+            
+        
+        if value in ( '', '*' ):
+            
+            self._selector.SetValue( value )
+            
+        else:
+            
+            self._selector.SetValue( 'specific' )
+            
+            self._namespace.setText( value )
+            
+        
+        self._UpdateControls()
         
     
 
@@ -1548,7 +1741,7 @@ class NoneableTextCtrl( QW.QWidget ):
 
     valueChanged = QC.Signal()
     
-    def __init__( self, parent, default_text, message = '', placeholder_text = '', none_phrase = 'none', min_chars_width: typing.Optional[ int ] = None ):
+    def __init__( self, parent, default_text, message = '', placeholder_text = '', none_phrase = 'none', min_chars_width: int | None = None ):
         
         super().__init__( parent )
         
@@ -1747,8 +1940,7 @@ class StaticBox( QW.QFrame ):
         
         self._expanded_size_vertical_policy = expanded_size_vertical_policy
         
-        self._expand_button = BetterButton( self, label = '\u25B2', func = self.ExpandCollapse )
-        self._expand_button.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._expand_button, 4 ) )
+        self._expand_button = ExpandCollapseArrowButton( self, True )
         
         self._content_panel = QW.QWidget( self )
         
@@ -1781,11 +1973,14 @@ class StaticBox( QW.QFrame ):
         
         self._sizer.addSpacerItem( self._spacer )
         
+        self._expand_button.Expand()
         self._expanded = True
+        
+        self._expand_button.expandCollapseFlipped.connect( self.ExpandCollapse )
         
         if not start_expanded:
             
-            self.ExpandCollapse()
+            self._expand_button.Collapse()
             
         
     
@@ -1802,8 +1997,6 @@ class StaticBox( QW.QFrame ):
         
         if self._expanded:
             
-            new_label = '\u25BC'
-            
             size_policy = self.sizePolicy()
             
             size_policy.setVerticalPolicy( QW.QSizePolicy.Policy.Fixed )
@@ -1812,16 +2005,12 @@ class StaticBox( QW.QFrame ):
             
         else:
             
-            new_label = '\u25B2'
-            
             size_policy = self.sizePolicy()
             
             size_policy.setVerticalPolicy( self._expanded_size_vertical_policy )
             
             self.setSizePolicy( size_policy )
             
-        
-        self._expand_button.setText( new_label )
         
         self._expanded = not self._expanded
         
@@ -1878,6 +2067,7 @@ class TextCatchEnterEventFilter( QC.QObject ):
         return False
         
     
+
 class TextAndGauge( QW.QWidget ):
     
     def __init__( self, parent ):
@@ -1897,23 +2087,67 @@ class TextAndGauge( QW.QWidget ):
     
     def SetText( self, text ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         self._st.setText( text )
         
     
     def SetValue( self, text, value, range ):
-        
-        if not self or not QP.isValid( self ):
-            
-            return
-            
         
         self._st.setText( text )
         
         self._gauge.SetRange( range )
         self._gauge.SetValue( value )
         
+    
+
+class WindowDragButton( IconButton ):
+    
+    def __init__( self, parent, icon, func, target_window ):
+        
+        super().__init__( parent, icon, func )
+        
+        self._target_window = target_window
+        
+        self._original_icon = icon
+        
+    
+    def mousePressEvent( self, event ):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self._startDrag()
+            
+            self.SetIconSmart( CC.global_icons().move_cursor )
+            
+        elif event.button() == QC.Qt.MouseButton.RightButton:
+            
+            self._func()
+            
+        else:
+            
+            super().mousePressEvent( event )
+            
+        
+    
+    def mouseReleaseEvent(self, event):
+        
+        if event.button() == QC.Qt.MouseButton.LeftButton:
+            
+            self.SetIconSmart( self._original_icon )
+            
+        
+        super().mouseReleaseEvent( event )
+        
+    
+    def _startDrag( self ):
+        
+        if self._target_window is not None:
+            
+            window_handle = self._target_window.windowHandle()
+            
+            if window_handle is not None:
+                
+                window_handle.startSystemMove()
+                
+            
+        
+    

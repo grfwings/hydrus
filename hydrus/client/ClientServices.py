@@ -6,12 +6,11 @@ import random
 import threading
 import time
 import traceback
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
@@ -132,6 +131,7 @@ def GenerateDefaultServiceDictionary( service_type ):
                 dictionary[ 'num_stars' ] = 5
                 dictionary[ 'allow_zero' ] = True
                 dictionary[ 'custom_pad' ] = ClientGUIRatings.STAR_PAD.width()
+                dictionary[ 'show_fraction_beside_stars' ] = ClientRatings.DRAW_NO
                 
             
         
@@ -193,6 +193,157 @@ def GenerateService( service_key, service_type, name, dictionary = None ):
     
     return cl( service_key, service_type, name, dictionary )
     
+
+class ServiceSpecifier( HydrusSerialisable.SerialisableBase ):
+    
+    SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_SERVICE_SPECIFIER
+    SERIALISABLE_NAME = 'Service Specifier'
+    SERIALISABLE_VERSION = 1
+    
+    def __init__( self, service_types = None, service_keys = None ):
+        
+        if service_types is None:
+            
+            service_types = set()
+            
+        
+        if service_keys is None:
+            
+            service_keys = set()
+            
+        
+        super().__init__()
+        
+        self._service_types = set( service_types )
+        self._service_keys = set( service_keys )
+        
+    
+    def __eq__( self, other ):
+        
+        if isinstance( other, ServiceSpecifier ):
+            
+            return self.__hash__() == other.__hash__()
+            
+        
+        return NotImplemented
+        
+    
+    def __hash__( self ):
+        
+        return ( tuple( sorted( self._service_types ) ), tuple( sorted( self._service_keys ) ) ).__hash__()
+        
+    
+    def _GetSerialisableInfo( self ):
+        
+        serialisable_service_types = sorted( self._service_types )
+        serialisable_service_keys = sorted( ( key.hex() for key in self._service_keys ) )
+        
+        return ( serialisable_service_types, serialisable_service_keys )
+        
+    
+    def _InitialiseFromSerialisableInfo( self, serialisable_info ):
+        
+        ( serialisable_service_types, serialisable_service_keys ) = serialisable_info
+        
+        self._service_types = set( serialisable_service_types )
+        self._service_keys = { bytes.fromhex( key_hex ) for key_hex in serialisable_service_keys }
+        
+    
+    def GetServiceKeys( self ):
+        
+        return self._service_keys
+        
+    
+    def GetServiceTypes( self ):
+        
+        return self._service_types
+        
+    
+    def GetSpecificKeys( self ) -> set[ bytes ]:
+        
+        try:
+            
+            if len( self._service_types ) > 0:
+                
+                service_keys = CG.client_controller.services_manager.GetServiceKeys( self._service_types )
+                
+            else:
+                
+                service_keys = CG.client_controller.services_manager.FilterValidServiceKeys( self._service_keys )
+                
+                if len( service_keys ) != self._service_keys:
+                    
+                    self._service_keys = set( service_keys )
+                    
+                
+            
+        except Exception as e:
+            
+            service_keys = set()
+            
+        
+        return set( service_keys )
+        
+    
+    def IsAllRatings( self ):
+        
+        return self._service_types == set( HC.LOCAL_RATINGS_SERVICES )
+        
+    
+    def IsEmpty( self ):
+        
+        return len( self._service_types ) == 0 and len( self._service_keys ) == 0
+        
+    
+    def IsOneServiceKey( self ):
+        
+        return len( self._service_types ) == 0 and len( self._service_keys ) == 1
+        
+    
+    def ToString( self ) -> str:
+        
+        if self.IsEmpty():
+            
+            return '(no services selected)'
+            
+        elif len( self._service_types ) > 0:
+            
+            if self.IsAllRatings():
+                
+                return 'ratings'
+                
+            else:
+                
+                return ', '.join( sorted( ( HC.service_string_lookup_short[ service_type ] for service_type in self._service_types ) ) )
+                
+            
+        else:
+            
+            if len( self._service_keys ) == 1:
+                
+                try:
+                    
+                    ( service_key, ) = self._service_keys
+                    
+                    name = CG.client_controller.services_manager.GetServiceName( service_key )
+                    
+                except Exception as e:
+                    
+                    name = 'unknown service'
+                    
+                
+            else:
+                
+                name = f'{HydrusNumbers.ToHumanInt(len(self._service_keys))} services'
+                
+            
+            return name
+            
+        
+    
+
+HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_SERVICE_SPECIFIER ] = ServiceSpecifier
+
 class Service( object ):
     
     def __init__( self, service_key, service_type, name, dictionary = None ):
@@ -336,7 +487,7 @@ class Service( object ):
                 
                 return True
                 
-            except:
+            except Exception as e:
                 
                 return False
                 
@@ -518,6 +669,7 @@ class ServiceLocalRating( Service ):
         dictionary[ 'colours' ] = list(self._colours.items())
         dictionary[ 'show_in_thumbnail' ] = self._show_in_thumbnail
         dictionary[ 'show_in_thumbnail_even_when_null' ] = self._show_in_thumbnail_even_when_null        
+        
         return dictionary
         
     
@@ -537,6 +689,15 @@ class ServiceLocalRating( Service ):
             return self._colours[ rating_state ]
             
         
+    
+    def GetColours( self ):
+        
+        with self._lock:
+            
+            return dict( self._colours )
+            
+        
+    
 
     def GetShowInThumbnail( self ):
         
@@ -554,7 +715,7 @@ class ServiceLocalRating( Service ):
             
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         raise NotImplementedError()
         
@@ -562,7 +723,7 @@ class ServiceLocalRating( Service ):
 
 class ServiceLocalRatingIncDec( ServiceLocalRating ):
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ int ] ):
+    def ConvertNoneableRatingToString( self, rating: int | None ):
         
         if rating is None:
             
@@ -617,7 +778,7 @@ class ServiceLocalRatingStars( ServiceLocalRating ):
         self._rating_svg = dictionary[ 'rating_svg' ]
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         raise NotImplementedError()
         
@@ -630,9 +791,10 @@ class ServiceLocalRatingStars( ServiceLocalRating ):
             
         
     
+
 class ServiceLocalRatingLike( ServiceLocalRatingStars ):
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         if rating is None:
             
@@ -677,6 +839,7 @@ class ServiceLocalRatingLike( ServiceLocalRatingStars ):
             
         
     
+
 class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
     
     def _GetSerialisableDictionary( self ):
@@ -686,6 +849,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
         dictionary[ 'num_stars' ] = self._num_stars
         dictionary[ 'allow_zero' ] = self._allow_zero
         dictionary[ 'custom_pad' ] = self._custom_pad
+        dictionary[ 'show_fraction_beside_stars' ] = self._show_fraction_beside_stars
         
         return dictionary
         
@@ -697,6 +861,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
         self._num_stars = dictionary[ 'num_stars' ]
         self._allow_zero = dictionary[ 'allow_zero' ]
         self._custom_pad = dictionary[ 'custom_pad' ]
+        self._show_fraction_beside_stars = dictionary[ 'show_fraction_beside_stars' ]
         
     
     def AllowZero( self ):
@@ -707,7 +872,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
             
         
     
-    def ConvertNoneableRatingToString( self, rating: typing.Optional[ float ] ):
+    def ConvertNoneableRatingToString( self, rating: float | None ):
         
         if rating is None:
             
@@ -769,6 +934,7 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
             return self._custom_pad
             
         
+    
     def GetOneStarValue( self ):
         
         num_choices = self._num_stars
@@ -781,6 +947,14 @@ class ServiceLocalRatingNumerical( ServiceLocalRatingStars ):
         one_star_value = 1.0 / ( num_choices - 1 )
         
         return one_star_value
+        
+    
+    def GetShowFractionBesideStars( self ):
+        
+        with self._lock:
+            
+            return self._show_fraction_beside_stars
+            
         
     
 class ServiceRemote( Service ):
@@ -991,7 +1165,7 @@ class ServiceRestricted( ServiceRemote ):
             
             return True
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -1172,7 +1346,7 @@ class ServiceRestricted( ServiceRemote ):
                 
                 return True
                 
-            except:
+            except Exception as e:
                 
                 return False
                 
@@ -1470,7 +1644,7 @@ class ServiceRestricted( ServiceRemote ):
                                         
                                         HydrusData.ShowText( message )
                                         
-                                    except:
+                                    except Exception as e:
                                         
                                         pass
                                         
@@ -1547,7 +1721,7 @@ class ServiceRepository( ServiceRestricted ):
             
             return not self._update_downloading_paused
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -1670,11 +1844,6 @@ class ServiceRepository( ServiceRestricted ):
         CG.client_controller.frame_splash_status.SetText( popup_message, print_to_log = False )
         job_status.SetStatusText( popup_message, 2 )
         
-        if HG.profile_mode:
-            
-            CG.client_controller.PrintProfile( popup_message )
-            
-        
     
     def _SyncDownloadMetadata( self ):
         
@@ -1782,11 +1951,11 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( i, update_hash ) in enumerate( update_hashes ):
                     
-                    status = 'update ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, len( update_hashes ) )
+                    status = HydrusNumbers.ValueRangeToPrettyString( i, len( update_hashes ) )
                     
                     CG.client_controller.frame_splash_status.SetText( status, print_to_log = False )
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( update_hashes ) ) )
+                    job_status.SetGauge( i, len( update_hashes ) )
                     
                     with self._lock:
                         
@@ -1912,7 +2081,7 @@ class ServiceRepository( ServiceRestricted ):
                     
                 
                 job_status.SetStatusText( 'finished' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
             finally:
                 
@@ -1980,16 +2149,16 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( definition_hash, content_types ) in definition_hashes_and_content_types:
                     
-                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done + 1, num_updates_to_do )
+                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done, num_updates_to_do )
                     
-                    splash_title = '{} sync: processing updates {}'.format( self._name, progress_string )
+                    splash_title = '{} sync: processing updates: {}'.format( self._name, progress_string )
                     
                     CG.client_controller.frame_splash_status.SetTitleText( splash_title, clear_undertexts = False, print_to_log = False )
                     
-                    status = 'processing {}'.format( progress_string )
+                    status = 'processing: {}'.format( progress_string )
                     
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_updates_done, num_updates_to_do ) )
+                    job_status.SetGauge( num_updates_done, num_updates_to_do )
                     
                     try:
                         
@@ -2011,7 +2180,7 @@ class ServiceRepository( ServiceRestricted ):
                         
                         definition_update = HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
                         
-                    except:
+                    except Exception as e:
                         
                         CG.client_controller.WriteSynchronous( 'schedule_repository_update_file_maintenance', self._service_key, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_INTEGRITY_DATA_REMOVE_RECORD )
                         
@@ -2039,25 +2208,25 @@ class ServiceRepository( ServiceRestricted ):
                         
                         if CG.client_controller.CurrentlyVeryIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_very_idle' ) / 100
                             
                         elif CG.client_controller.CurrentlyIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_idle' ) / 100
                             
                         else:
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_normal' ) / 100
                             
                         
                         start_time = HydrusTime.GetNowPrecise()
                         
-                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_definitions', self._service_key, definition_hash, iterator_dict, content_types, job_status, work_time )
+                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_definitions', self._service_key, definition_hash, iterator_dict, content_types, job_status, expected_work_period )
                         
-                        time_it_took = HydrusTime.GetNowPrecise() - start_time
+                        actual_work_period = HydrusTime.GetNowPrecise() - start_time
                         
                         rows_done_in_this_update += num_rows_done
                         total_definition_rows_completed += num_rows_done
@@ -2076,7 +2245,7 @@ class ServiceRepository( ServiceRestricted ):
                             return
                             
                         
-                        reasonable_work_time = min( 5 * work_time, time_it_took )
+                        reasonable_work_time = min( 5 * expected_work_period, actual_work_period )
                         
                         time.sleep( reasonable_work_time * rest_ratio )
                         
@@ -2109,16 +2278,16 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( content_hash, content_types ) in content_hashes_and_content_types:
                     
-                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done + 1, num_updates_to_do )
+                    progress_string = HydrusNumbers.ValueRangeToPrettyString( num_updates_done, num_updates_to_do )
                     
-                    splash_title = '{} sync: processing updates {}'.format( self._name, progress_string )
+                    splash_title = '{} sync: processing updates: {}'.format( self._name, progress_string )
                     
                     CG.client_controller.frame_splash_status.SetTitleText( splash_title, clear_undertexts = False, print_to_log = False )
                     
-                    status = 'processing {}'.format( progress_string )
+                    status = 'processing: {}'.format( progress_string )
                     
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( num_updates_done, num_updates_to_do ) )
+                    job_status.SetGauge( num_updates_done, num_updates_to_do )
                     
                     try:
                         
@@ -2140,7 +2309,7 @@ class ServiceRepository( ServiceRestricted ):
                         
                         content_update = HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
                         
-                    except:
+                    except Exception as e:
                         
                         CG.client_controller.WriteSynchronous( 'schedule_repository_update_file_maintenance', self._service_key, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_INTEGRITY_DATA_REMOVE_RECORD )
                         
@@ -2167,8 +2336,8 @@ class ServiceRepository( ServiceRestricted ):
                     
                     if HC.CONTENT_TYPE_MAPPINGS in content_types:
                         
-                        iterator_dict[ 'new_mappings' ] = HydrusData.SmoothOutMappingIterator( content_update.GetNewMappings(), 50 )
-                        iterator_dict[ 'deleted_mappings' ] = HydrusData.SmoothOutMappingIterator( content_update.GetDeletedMappings(), 50 )
+                        iterator_dict[ 'new_mappings' ] = HydrusLists.SmoothOutMappingIterator( content_update.GetNewMappings(), 50 )
+                        iterator_dict[ 'deleted_mappings' ] = HydrusLists.SmoothOutMappingIterator( content_update.GetDeletedMappings(), 50 )
                         
                     
                     if HC.CONTENT_TYPE_TAG_PARENTS in content_types:
@@ -2189,25 +2358,25 @@ class ServiceRepository( ServiceRestricted ):
                         
                         if CG.client_controller.CurrentlyVeryIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_very_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_very_idle' ) / 100
                             
                         elif CG.client_controller.CurrentlyIdle():
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_idle' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_idle' ) / 100
                             
                         else:
                             
-                            work_time = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
+                            expected_work_period = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'repository_processing_work_time_ms_normal' ) )
                             rest_ratio = CG.client_controller.new_options.GetInteger( 'repository_processing_rest_percentage_normal' ) / 100
                             
                         
                         start_time = HydrusTime.GetNowPrecise()
                         
-                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_content', self._service_key, content_hash, iterator_dict, content_types, job_status, work_time )
+                        num_rows_done = CG.client_controller.WriteSynchronous( 'process_repository_content', self._service_key, content_hash, iterator_dict, content_types, job_status, expected_work_period )
                         
-                        time_it_took = HydrusTime.GetNowPrecise() - start_time
+                        actual_work_period = HydrusTime.GetNowPrecise() - start_time
                         
                         rows_done_in_this_update += num_rows_done
                         total_content_rows_completed += num_rows_done
@@ -2226,7 +2395,7 @@ class ServiceRepository( ServiceRestricted ):
                             return
                             
                         
-                        reasonable_work_time = min( 5 * work_time, time_it_took )
+                        reasonable_work_time = min( 5 * expected_work_period, actual_work_period )
                         
                         time.sleep( reasonable_work_time * rest_ratio )
                         
@@ -2288,8 +2457,8 @@ class ServiceRepository( ServiceRestricted ):
                 
             
             job_status.DeleteStatusText()
-            job_status.DeleteStatusText( 2 )
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteStatusText( level = 2 )
+            job_status.DeleteGauge()
             
             job_status.FinishAndDismiss( 3 )
             
@@ -2728,11 +2897,11 @@ class ServiceRepository( ServiceRestricted ):
                 
                 for ( i, thumbnail_hash ) in enumerate( thumbnail_hashes ):
                     
-                    status = 'thumbnail ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_to_do )
+                    status = HydrusNumbers.ValueRangeToPrettyString( i, num_to_do )
                     
                     CG.client_controller.frame_splash_status.SetText( status, print_to_log = False )
                     job_status.SetStatusText( status )
-                    job_status.SetVariable( 'popup_gauge_1', ( i + 1, num_to_do ) )
+                    job_status.SetGauge( i, num_to_do )
                     
                     with self._lock:
                         
@@ -2784,7 +2953,7 @@ class ServiceRepository( ServiceRestricted ):
                     
                 
                 job_status.SetStatusText( 'finished' )
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
             finally:
                 
@@ -2988,8 +3157,8 @@ class ServiceIPFS( ServiceRemote ):
                     return
                     
                 
-                job_status.SetStatusText( 'ensuring files are pinned: ' + HydrusNumbers.ValueRangeToPrettyString( i + 1, len( hashes ) ) )
-                job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( hashes ) ) )
+                job_status.SetStatusText( 'ensuring files are pinned: ' + HydrusNumbers.ValueRangeToPrettyString( i, len( hashes ) ) )
+                job_status.SetGauge( i, len( hashes ) )
                 
                 media_result = CG.client_controller.Read( 'media_result', hash )
                 
@@ -3032,7 +3201,7 @@ class ServiceIPFS( ServiceRemote ):
                 
             
             job_status.SetStatusText( 'creating directory' )
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             dag_json_encoded = json.dumps( dag_object )
             
@@ -3083,7 +3252,7 @@ class ServiceIPFS( ServiceRemote ):
             
         finally:
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             job_status.Finish()
             
@@ -3238,6 +3407,7 @@ class ServicesManager( object ):
         self._keys_to_services = { service.GetServiceKey() : service for service in services }
         
         self._keys_to_services[ CC.TEST_SERVICE_KEY ] = GenerateService( CC.TEST_SERVICE_KEY, HC.TEST_SERVICE, 'test service' )
+        self._keys_to_services[ CC.PREVIEW_RATINGS_SERVICE_KEY ] = GenerateService( CC.PREVIEW_RATINGS_SERVICE_KEY, HC.LOCAL_RATING_NUMERICAL, 'preview rating object service' )
         
         key = lambda s: s.GetName().lower()
         
@@ -3400,6 +3570,18 @@ class ServicesManager( object ):
         with self._lock:
             
             return service_key in self._keys_to_services
+            
+        
+    
+    def SetTestServiceData( self, service_key: bytes, service_type: int, data: dict, name: str = 'test service' ):
+        
+        with self._lock:
+            
+            if service_key not in [ CC.TEST_SERVICE_KEY, CC.PREVIEW_RATINGS_SERVICE_KEY ]:
+                
+                raise HydrusExceptions.TooComplicatedM8( 'Please don\'t directly set any non system services!' )
+                
+            self._keys_to_services[ service_key ] = GenerateService( service_key, service_type, name, data )
             
         
     

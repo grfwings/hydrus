@@ -52,13 +52,13 @@ def MimeFromMicrosoftOpenXMLDocument(path: str):
             return None
             
         
-    except:
+    except Exception as e:
         
         return None
         
     
 
-def GenerateThumbnailNumPyFromOfficePath( path: str, target_resolution: tuple[ int, int ] ) -> bytes:
+def GenerateThumbnailNumPyFromOfficePath( path: str, target_resolution: tuple[ int, int ] ):
     
     try:
         
@@ -71,9 +71,23 @@ def GenerateThumbnailNumPyFromOfficePath( path: str, target_resolution: tuple[ i
     
     pil_image = HydrusImageHandling.GeneratePILImage( zip_path_file_obj )
     
-    thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+    try:
+        
+        thumbnail_pil_image = pil_image.resize( target_resolution, PILImage.Resampling.LANCZOS )
+        
+    finally:
+        
+        pil_image.close()
+        
     
-    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+    try:
+        
+        numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( thumbnail_pil_image )
+        
+    finally:
+        
+        thumbnail_pil_image.close()
+        
     
     return numpy_image
     
@@ -124,7 +138,7 @@ def GetPPTXInfo( path: str ):
         
         ( width, height ) = PowerPointResolution( path )
         
-    except:
+    except Exception as e:
         
         ( width, height ) = ( None, None )
     
@@ -132,7 +146,7 @@ def GetPPTXInfo( path: str ):
         
         num_words = OfficeDocumentWordCount( path )
         
-    except:
+    except Exception as e:
         
         num_words = None
         
@@ -145,7 +159,7 @@ def GetDOCXInfo( path:str ):
         
         num_words = OfficeDocumentWordCount( path )
         
-    except:
+    except Exception as e:
         
         num_words = None
         

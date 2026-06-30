@@ -1,6 +1,5 @@
 import os
 import time
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -11,8 +10,8 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
@@ -33,6 +32,7 @@ from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIPathWidgets
 from hydrus.client.media import ClientMedia
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientMetadataMigrationExporters
@@ -50,7 +50,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_EXPORT_FOLDERS.ID, self._ConvertExportFolderToDisplayTuple, self._ConvertExportFolderToSortTuple )
         
-        self._export_folders = ClientGUIListCtrl.BetterListCtrlTreeView( self._export_folders_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._export_folders = ClientGUIListCtrl.BetterListCtrlTreeView( self._export_folders_panel, 4, model, use_simple_delete = True, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         self._export_folders_panel.SetListCtrl( self._export_folders )
         
@@ -112,7 +112,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
                 
             
         
-        period = 15 * 60
+        period = 86400
         
         export_folder = ClientExportingFiles.ExportFolder(
             name,
@@ -135,7 +135,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 export_folder = panel.GetValue()
                 
-                export_folder.SetNonDupeName( self._GetExistingNames() )
+                export_folder.SetNonDupeName( self._GetExistingNames(), do_casefold = True )
                 
                 self._export_folders.AddData( export_folder, select_sort_and_scroll = True )
                 
@@ -183,7 +183,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def _Edit( self ):
         
-        export_folder: typing.Optional[ ClientExportingFiles.ExportFolder ] = self._export_folders.GetTopSelectedData()
+        export_folder: ClientExportingFiles.ExportFolder | None = self._export_folders.GetTopSelectedData()
         
         if export_folder is None:
             
@@ -206,7 +206,7 @@ class EditExportFoldersPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     existing_names.discard( export_folder.GetName() )
                     
-                    edited_export_folder.SetNonDupeName( existing_names )
+                    edited_export_folder.SetNonDupeName( existing_names, do_casefold = True )
                     
                 
                 self._export_folders.ReplaceData( export_folder, edited_export_folder, sort_and_scroll = True )
@@ -242,7 +242,7 @@ class EditExportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._name = QW.QLineEdit( self._path_box )
         
-        self._path = QP.DirPickerCtrl( self._path_box )
+        self._path = ClientGUIPathWidgets.DirPickerCtrl( self._path_box )
         
         #
         
@@ -295,6 +295,9 @@ class EditExportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._metadata_routers_box = ClientGUICommon.StaticBox( self, 'sidecar exporting' )
         
+        self._overwrite_sidecars_on_next_run = QW.QCheckBox( self._metadata_routers_box )
+        self._always_overwrite_sidecars = QW.QCheckBox( self._metadata_routers_box )
+        
         metadata_routers = export_folder.GetMetadataRouters()
         allowed_importer_classes = [ ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaTags, ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaNotes, ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaURLs, ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaTimestamps ]
         allowed_exporter_classes = [ ClientMetadataMigrationExporters.SingleFileMetadataExporterTXT, ClientMetadataMigrationExporters.SingleFileMetadataExporterJSON ]
@@ -325,6 +328,9 @@ class EditExportFolderPanel( ClientGUIScrolledPanels.EditPanel ):
         self._show_working_popup.setChecked( export_folder.ShowWorkingPopup() )
         
         self._pattern.setText( phrase )
+        
+        self._overwrite_sidecars_on_next_run.setChecked( export_folder.GetOverwriteSidecarsOnNextRun() )
+        self._always_overwrite_sidecars.setChecked( export_folder.GetAlwaysOverwriteSidecars() )
         
         #
         
@@ -380,10 +386,25 @@ If you select synchronise, be careful!'''
         
         self._phrase_box.Add( phrase_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
-        st = ClientGUICommon.BetterStaticText( self._metadata_routers_box, label = 'An export folder will not update pre-existing sidecar files. If you change the sidecar actions here on an export folder that has run before, delete the sidecars you want to refresh and on next run it will regenerate them.' )
+        label = 'By default, an export folder will not update pre-existing sidecar files. If you change the sidecar actions here, or if the metadata has changed and you want those updates, hit the "overwrite all sidecars on next run" checkbox.'
+        label += '\n\n'
+        label += 'You can force the export folder to regenerate all your sidecars on every run, but this is an expensive operation. It is only appropriate for an export folder that runs manually or rarely.'
+        label += '\n\n'
+        label += 'DO NOT SET YOUR EXPORT FOLDER TO REGEN ALL YOUR SIDECARS EVERY THIRTY MINUTES.'
+        
+        st = ClientGUICommon.BetterStaticText( self._metadata_routers_box, label = label )
         st.setWordWrap( True )
         
         self._metadata_routers_box.Add( st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        rows = []
+        
+        rows.append( ( 'overwrite all sidecars on next run: ', self._overwrite_sidecars_on_next_run ) )
+        rows.append( ( 'DANGEROUS: always overwrite all sidecars on every run: ', self._always_overwrite_sidecars ) )
+        
+        gridbox = ClientGUICommon.WrapInGrid( self._period_box, rows )
+        
+        self._metadata_routers_box.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         self._metadata_routers_box.Add( self._metadata_routers_button, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._metadata_routers_box.Add( self._update_test_context_factory_button, CC.FLAGS_ON_RIGHT )
         
@@ -559,6 +580,9 @@ If you select synchronise, be careful!'''
             show_working_popup = show_working_popup
         )
         
+        export_folder.SetOverwriteSidecarsOnNextRun( self._overwrite_sidecars_on_next_run.isChecked() )
+        export_folder.SetAlwaysOverwriteSidecars( self._always_overwrite_sidecars.isChecked() )
+        
         return export_folder
         
     
@@ -589,13 +613,13 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_EXPORT_FILES.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._paths = ClientGUIListCtrl.BetterListCtrlTreeView( self, 24, model, delete_key_callback = self._DeletePaths )
+        self._paths = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self._DeletePaths )
         
         self._paths.Sort()
         
         self._export_path_box = ClientGUICommon.StaticBox( self, 'export path' )
         
-        self._directory_picker = QP.DirPickerCtrl( self._export_path_box )
+        self._directory_picker = ClientGUIPathWidgets.DirPickerCtrl( self._export_path_box )
         self._directory_picker.dirPickerChanged.connect( self._RefreshPaths )
         
         self._open_location = QW.QPushButton( 'open this location', self._export_path_box )
@@ -695,7 +719,7 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         if do_export_and_then_quit:
             
-            CG.client_controller.CallAfterQtSafe( self, 'doing export before dialog quit', self._DoExport, True )
+            CG.client_controller.CallAfterQtSafe( self, self._DoExport, True )
             
         
     
@@ -850,30 +874,18 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         to_do = [ ( media, self._GetPath( media ) ) for media in flat_media ]
         
-        num_to_do = len( to_do )
-        
         def qt_update_label( text ):
-            
-            if not QP.isValid( self ) or not QP.isValid( self._export ) or not self._export:
-                
-                return
-                
             
             self._export.setText( text )
             
         
         def qt_done( quit_afterwards ):
             
-            if not QP.isValid( self ) or not QP.isValid( self._export ) or not self._export:
-                
-                return
-                
-            
             self._export.setEnabled( True )
             
             if quit_afterwards:
                 
-                QP.CallAfter( self.parentWidget().close )
+                CG.client_controller.CallAfterQtSafe( self, self.parentWidget().close )
                 
             
         
@@ -889,6 +901,8 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             actually_done_ok = []
             
+            num_to_do = len( to_do )
+            
             for ( index, ( media, dest_path ) ) in enumerate( to_do ):
                 
                 number = media_to_number_indices[ media ]
@@ -900,12 +914,12 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 try:
                     
-                    x_of_y = HydrusNumbers.ValueRangeToPrettyString( index + 1, num_to_do )
+                    x_of_y = HydrusNumbers.ValueRangeToPrettyString( index, num_to_do )
                     
-                    job_status.SetStatusText( 'Done {}'.format( x_of_y ) )
-                    job_status.SetVariable( 'popup_gauge_1', ( index + 1, num_to_do ) )
+                    job_status.SetStatusText( 'Exporting: {}'.format( x_of_y ) )
+                    job_status.SetGauge( index, num_to_do )
                     
-                    QP.CallAfter( qt_update_label, x_of_y )
+                    CG.client_controller.CallAfterQtSafe( self, qt_update_label, x_of_y )
                     
                     hash = media.GetHash()
                     mime = media.GetMime()
@@ -963,14 +977,7 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                     
                 except Exception as e:
                     
-                    if QP.isValid( self ):
-                        
-                        win = self
-                        
-                    else:
-                        
-                        win = CG.client_controller.gui
-                        
+                    win = CG.client_controller.GetMainTLW()
                     
                     HydrusData.PrintException( e, do_wait = False )
                     
@@ -984,13 +991,11 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
             
             if not job_status.IsCancelled() and delete_afterwards:
                 
-                QP.CallAfter( qt_update_label, 'deleting' )
+                CG.client_controller.CallAfterQtSafe( self, qt_update_label, 'deleting' )
                 
                 actually_done_media_results = [ m.GetMediaResult() for m in actually_done_ok ]
                 
-                chunks_of_deletee_media_results = HydrusLists.SplitListIntoChunks( actually_done_media_results, 64 )
-                
-                for chunk_of_deletee_media_results in chunks_of_deletee_media_results:
+                for ( num_done, num_to_do, chunk_of_deletee_media_results ) in HydrusLists.SplitListIntoChunksRich( actually_done_media_results, 64 ):
                     
                     reason = 'Deleted after manual export to "{}".'.format( directory )
                     
@@ -998,22 +1003,22 @@ class ReviewExportFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes, reason = reason )
                     
-                    CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, content_update ) )
+                    CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, content_update ) )
                     
                 
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             job_status.SetStatusText( 'Done!' )
             
             job_status.FinishAndDismiss( 5 )
             
-            QP.CallAfter( qt_update_label, 'done!' )
+            CG.client_controller.CallAfterQtSafe( self, qt_update_label, 'done!' )
             
             time.sleep( 1 )
             
-            QP.CallAfter( qt_update_label, 'export' )
+            CG.client_controller.CallAfterQtSafe( self, qt_update_label, 'export' )
             
-            QP.CallAfter( qt_done, quit_afterwards )
+            CG.client_controller.CallAfterQtSafe( self, qt_done, quit_afterwards )
             
         
         CG.client_controller.CallToThread( do_it, directory, metadata_routers, delete_afterwards, export_symlinks, quit_afterwards, self._media_to_number_indices )

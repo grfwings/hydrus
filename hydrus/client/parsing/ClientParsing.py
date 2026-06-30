@@ -10,6 +10,7 @@ import warnings
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
@@ -83,7 +84,7 @@ def GetHTMLTagString( tag: bs4.Tag ):
             all_strings.append( str( sub_tag ) )
             
         
-    except:
+    except Exception as e:
         
         all_strings = []
         
@@ -151,7 +152,7 @@ def ParseHashesFromRawHexText( hash_type, hex_hashes_raw ):
     
     hex_hashes = [ hex_hash for hex_hash in hex_hashes if len( hex_hash ) % 2 == 0 ]
     
-    hex_hashes = HydrusData.DedupeList( hex_hashes )
+    hex_hashes = HydrusLists.DedupeList( hex_hashes )
     
     hashes = tuple( [ bytes.fromhex( hex_hash ) for hex_hash in hex_hashes ] )
     
@@ -202,10 +203,10 @@ def RenderJSONParseRule( rule ):
 
 class ParsingTestData( object ):
     
-    def __init__( self, parsing_context, texts ):
+    def __init__( self, parsing_context: dict, texts: collections.abc.Collection[ str ] ):
         
         self.parsing_context = parsing_context
-        self.texts = texts
+        self.texts = list( texts )
         
     
     def LooksLikeHTML( self ):
@@ -272,6 +273,9 @@ class ParseFormula( HydrusSerialisable.SerialisableBase ):
         raw_texts = self._ParseRawTexts( parsing_context, parsing_text, collapse_newlines )
         
         raw_texts = HydrusText.CleanseImportTexts( raw_texts )
+        
+        # TODO: it would be useful to have a formula checkbox that said 'yes strip what I parse'
+        # probably related to newline handling improvements too. that RemoveNewlines strips too btw
         
         if collapse_newlines:
             
@@ -1425,7 +1429,7 @@ class ParseFormulaJSON( ParseFormula ):
                             
                             text = str( node )
                             
-                        except:
+                        except Exception as e:
                             
                             continue
                             
@@ -2308,10 +2312,10 @@ class ContentParser( HydrusSerialisable.SerialisableBase ):
                 
                 def remove_pre_url_gubbins( u ):
                     
-                    # clears up when a source field starts with gubbins for some reason. e.g.:
-                    # (jap characters).avi | ranken [pixiv] http://www.pixiv.net/member_illust.php?illust_id=48114073&mode=medium
+                    # clears up when a source field starts with descriptive human gubbins:
+                    # "filename | [sitename] URL"
                     # ->
-                    # http://www.pixiv.net/member_illust.php?illust_id=48114073&mode=medium
+                    # URL
                     
                     gumpf_until_scheme = r'^.*\s(?P<scheme>https?://)'
                     
@@ -2354,7 +2358,7 @@ class ContentParser( HydrusSerialisable.SerialisableBase ):
                             
                             unclean_url = urllib.parse.urljoin( base_url, unclean_url )
                             
-                        except:
+                        except Exception as e:
                             
                             pass # welp
                             
@@ -2376,7 +2380,7 @@ class ContentParser( HydrusSerialisable.SerialisableBase ):
                 # handling &amp; gubbins that come through JSON, although the better answer is to convert to an html parser
                 parsed_texts = [ html.unescape( parsed_text ) for parsed_text in parsed_texts ]
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.Print( f'Could not unescape parsed title text: {parsing_context}' )
                 

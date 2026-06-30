@@ -3,7 +3,6 @@ import typing
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
-from hydrus.core import HydrusData
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
@@ -11,10 +10,8 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
-from hydrus.client.gui import ClientGUICore as CGC
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIDialogsQuick
-from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.pages import ClientGUIPageManager
@@ -24,6 +21,7 @@ from hydrus.client.gui.pages import ClientGUIMediaResultsPanelThumbnails
 from hydrus.client.gui.pages import ClientGUISidebarCore
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
@@ -42,11 +40,21 @@ class SystemHashLockPanel( ClientGUICommon.StaticBox ):
         self._unlock_button = ClientGUICommon.BetterButton( self, 'initialising', self.unlockSearch.emit )
         self._unlock_button.setToolTip( ClientGUIFunctions.WrapToolTip( desc_tt ) )
         
-        self._cog_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().cog, self._ShowCogMenu )
-        
         self._syncs_new = syncs_new
         self._syncs_removes = syncs_removes
         self._num_files = num_files
+        
+        menu_template_items = []
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls( self._FlipSyncsNew, lambda: self._syncs_new )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'update when files added to page', 'If this is checked, then the underlying system:hash behind this page will add new files that are added here.', check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerCalls( self._FlipSyncsRemoves, lambda: self._syncs_removes )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'update when files removed from page', 'If this is checked, then the underlying system:hash behind this page will remove files that are removed from here. If you want to remove files temporarily and then re-run the query to get them back again, uncheck this.', check_manager ) )
+        
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self, menu_template_items )
         
         hbox = QP.HBoxLayout()
         
@@ -70,16 +78,6 @@ class SystemHashLockPanel( ClientGUICommon.StaticBox ):
         self._syncs_removes = not self._syncs_removes
         
         self.newSettings.emit()
-        
-    
-    def _ShowCogMenu( self ):
-        
-        menu = ClientGUIMenus.GenerateMenu( self )
-        
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'update when files added to page', 'If this is checked, then the underlying system:hash behind this page will add new files that are added here.', self._syncs_new, self._FlipSyncsNew )
-        ClientGUIMenus.AppendMenuCheckItem( menu, 'update when files removed from page', 'If this is checked, then the underlying system:hash behind this page will remove files that are removed from here. If you want to remove files temporarily and then re-run the query to get them back again, uncheck this.', self._syncs_removes, self._FlipSyncsRemoves )
-        
-        CGC.core().PopupMenu( self._cog_button, menu )
         
     
     def _UpdateLabel( self ):
@@ -107,6 +105,9 @@ class SystemHashLockPanel( ClientGUICommon.StaticBox ):
 
 class SidebarQuery( ClientGUISidebarCore.Sidebar ):
     
+    searchQueryGrown = QC.Signal( list )
+    searchQueryShrunk = QC.Signal( list )
+    
     def __init__( self, parent, page, page_manager: ClientGUIPageManager.PageManager ):
         
         super().__init__( parent, page, page_manager )
@@ -119,11 +120,15 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         self._query_job_status.Finish()
         
-        self._search_panel = ClientGUICommon.StaticBox( self, 'search' )
+        self._search_panel = ClientGUICommon.StaticBox( self, 'search', start_expanded = True, can_expand = True )
         
         synchronised = self._page_manager.GetVariable( 'synchronised' )
         
         self._tag_autocomplete = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self._search_panel, self._page_key, file_search_context, media_sort_widget = self._media_sort_widget, media_collect_widget = self._media_collect_widget, media_callable = self._page.GetMedia, synchronised = synchronised, show_lock_search_button = True )
+        
+        self.last_seen_predicates = set()
+        self.searchQueryGrown.connect( CG.client_controller.gui.SetPredicateHistoryAdded, QC.Qt.ConnectionType.QueuedConnection )
+        self.searchQueryShrunk.connect( CG.client_controller.gui.SetPredicateHistoryRemoved, QC.Qt.ConnectionType.QueuedConnection )
         
         self._tag_autocomplete.searchCancelled.connect( self._CancelSearch )
         
@@ -208,9 +213,11 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
     
     def _MakeCurrentSelectionTagsBox( self, sizer, **kwargs ):
         
+        tag_display_type = CG.client_controller.new_options.GetInteger( 'tag_list_tag_display_type_sidebar' )
+        
         self._current_selection_tags_box = ClientGUIListBoxes.StaticBoxSorterForListBoxTags( self, 'selection tags', CC.TAG_PRESENTATION_SEARCH_PAGE )
         
-        self._current_selection_tags_list = ClientGUISidebarCore.ListBoxTagsMediaSidebar( self._current_selection_tags_box, self._page_manager, self._page_key, tag_autocomplete = self._tag_autocomplete )
+        self._current_selection_tags_list = ClientGUISidebarCore.ListBoxTagsMediaSidebar( self._current_selection_tags_box, self._page_manager, self._page_key, tag_display_type = tag_display_type, tag_autocomplete = self._tag_autocomplete )
         
         self._current_selection_tags_box.SetTagsBox( self._current_selection_tags_list )
         
@@ -357,6 +364,11 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         self._UpdateSystemLockedVisibilityAndControls()
         
     
+    def ActivateFavouriteSearch( self, fav_search: tuple[ str, str ] ):
+        
+        return self._tag_autocomplete.ActivateFavouriteSearch(fav_search)
+        
+    
     def ConnectMediaResultsPanelSignals( self, media_panel: ClientGUIMediaResultsPanel.MediaResultsPanel ):
         
         super().ConnectMediaResultsPanelSignals( media_panel )
@@ -382,6 +394,11 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         self._tag_autocomplete.CancelCurrentResultsFetchJob()
         
         self._query_job_status.Cancel()
+        
+    
+    def EnterPredicates( self, page_key, predicates ):
+        
+        self._tag_autocomplete.EnterPredicates( page_key, predicates )
         
     
     def GetPredicates( self ):
@@ -458,7 +475,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             existing_lock_hashes = self._GetExistingLockHashes()
             
-            updated_hashes = HydrusData.DedupeList( existing_lock_hashes + hashes )
+            updated_hashes = HydrusLists.DedupeList( existing_lock_hashes + hashes )
             
             self._UpdateSystemLockFiles( updated_hashes )
             
@@ -508,6 +525,26 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
     def SearchChanged( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
         
         file_search_context = self._tag_autocomplete.GetFileSearchContext()
+        
+        if self.last_seen_predicates != file_search_context.GetPredicates():
+            
+            old_preds = set( self.last_seen_predicates )
+            new_preds = set( file_search_context.GetPredicates() )
+            
+            added = list( new_preds - old_preds )
+            removed = list( old_preds - new_preds )
+            
+            if len( added ) > 0:
+                
+                self.searchQueryGrown.emit( added )
+                
+            if len( removed ) > 0:
+                
+                self.searchQueryShrunk.emit( removed )
+                
+            
+            self.last_seen_predicates = file_search_context.GetPredicates()
+            
         
         self._page_manager.SetVariable( 'file_search_context', file_search_context.Duplicate() )
         
@@ -569,11 +606,11 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         file_search_context.FixMissingServices( CG.client_controller.services_manager.FilterValidServiceKeys )
         
-        initial_predicates = file_search_context.GetPredicates()
+        self.last_seen_predicates = file_search_context.GetPredicates()
         
-        if len( initial_predicates ) > 0 and not file_search_context.IsComplete():
+        if len( self.last_seen_predicates ) > 0 and not file_search_context.IsComplete():
             
-            QP.CallAfter( self.RefreshQuery )
+            CG.client_controller.CallAfterQtSafe( self, self.RefreshQuery )
             
         
     
@@ -590,15 +627,10 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             query_job_status.Finish()
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self.ShowFinishedQuery( query_job_status, media_results )
             
         
-        QUERY_CHUNK_SIZE = 256
+        QUERY_CHUNK_SIZE = 100
         
         CG.client_controller.file_viewing_stats_manager.Flush()
         
@@ -609,9 +641,14 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             return
             
         
+        # it is a good bet that ids that are close to each other will search faster than those that are all over the place, so let's query them in order
+        # the query_hash_ids were just sorted according to any overarching sort, but this'll be re-done once they are sent to the media panel so no worries
+        # if it proves a problem, we can reassemble this after fetch with media result hash ids
+        query_hash_ids = sorted( query_hash_ids )
+        
         media_results = []
         
-        for sub_query_hash_ids in HydrusLists.SplitListIntoChunks( query_hash_ids, QUERY_CHUNK_SIZE ):
+        for ( num_done, num_to_do, sub_query_hash_ids ) in HydrusLists.SplitListIntoChunksRich( query_hash_ids, QUERY_CHUNK_SIZE ):
             
             if query_job_status.IsCancelled():
                 
@@ -622,7 +659,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             media_results.extend( more_media_results )
             
-            CG.client_controller.pub( 'set_num_query_results', page_key, len( media_results ), len( query_hash_ids ) )
+            CG.client_controller.pub( 'set_num_query_results', page_key, num_done, num_to_do )
             
             CG.client_controller.WaitUntilViewFree()
             
@@ -633,7 +670,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         page_manager.SetDirty()
         
-        QP.CallAfter( qt_code )
+        CG.client_controller.CallAfterQtSafe( self, qt_code )
         
     
     def REPEATINGPageUpdate( self ):

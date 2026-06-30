@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -33,7 +32,7 @@ FLESH_OUT_SYSTEM_PRED_TYPES = {
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DIMENSIONS,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_WIDTH,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HEIGHT,
-    ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE,
+    ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS,
@@ -62,7 +61,7 @@ FLESH_OUT_SYSTEM_PRED_TYPES = {
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS
 }
 
-def EditPredicates( widget: QW.QWidget, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ], empty_file_search_context: typing.Optional[ ClientSearchFileSearchContext.FileSearchContext ] = None ) -> list[ ClientSearchPredicate.Predicate ]:
+def EditPredicates( widget: QW.QWidget, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ], empty_file_search_context: ClientSearchFileSearchContext.FileSearchContext | None = None, for_metadata_conditional: bool = False ) -> list[ ClientSearchPredicate.Predicate ]:
     
     ( editable_predicates, only_invertible_predicates, non_editable_predicates ) = GetEditablePredicates( predicates )
     
@@ -91,7 +90,7 @@ def EditPredicates( widget: QW.QWidget, predicates: collections.abc.Collection[ 
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( window, title ) as dlg:
             
-            panel = EditPredicatesPanel( dlg, predicates, empty_file_search_context = empty_file_search_context )
+            panel = EditPredicatesPanel( dlg, predicates, empty_file_search_context = empty_file_search_context, for_metadata_conditional = for_metadata_conditional )
             
             dlg.SetPanel( panel )
             
@@ -111,6 +110,7 @@ def EditPredicates( widget: QW.QWidget, predicates: collections.abc.Collection[ 
     
     raise HydrusExceptions.CancelledException()
     
+
 def FilterAndConvertLabelPredicates( predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ] ) -> list[ ClientSearchPredicate.Predicate ]:
     
     good_predicates = []
@@ -135,9 +135,10 @@ def FilterAndConvertLabelPredicates( predicates: collections.abc.Collection[ Cli
     
     return good_predicates
     
+
 def FleshOutPredicates( widget: QW.QWidget, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ] ) -> list[ ClientSearchPredicate.Predicate ]:
     
-    window = None
+    window = widget.window()
     
     predicates = FilterAndConvertLabelPredicates( predicates )
     
@@ -149,14 +150,6 @@ def FleshOutPredicates( widget: QW.QWidget, predicates: collections.abc.Collecti
         predicate_type = predicate.GetType()
         
         if value is None and predicate_type in FLESH_OUT_SYSTEM_PRED_TYPES:
-            
-            if window is None:
-                
-                if QP.isValid( widget ):
-                    
-                    window = widget.window()
-                    
-                
             
             from hydrus.client.gui import ClientGUITopLevelWindowsPanels
             
@@ -184,6 +177,7 @@ def FleshOutPredicates( widget: QW.QWidget, predicates: collections.abc.Collecti
     
     return good_predicates
     
+
 def GetEditablePredicates( predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ] ):
     
     editable_predicates = [ predicate for predicate in predicates if predicate.IsEditable() ]
@@ -195,7 +189,7 @@ def GetEditablePredicates( predicates: collections.abc.Collection[ ClientSearchP
 
 class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ], empty_file_search_context: typing.Optional[ ClientSearchFileSearchContext.FileSearchContext ] = None ):
+    def __init__( self, parent, predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ], empty_file_search_context: ClientSearchFileSearchContext.FileSearchContext | None = None, for_metadata_conditional: bool = False ):
         
         super().__init__( parent )
         
@@ -214,7 +208,7 @@ class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
         # then we can just have a dict type->panel_class lookup or whatever
         # also it would be nice to have proper rating editing here, think about it
         
-        AGE_DELTA_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '>', 'delta', ( 2000, 1, 1, 1 ) ) )
+        AGE_DELTA_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '>', 'delta', ( 2000, 1, 1, 1 ) ) )
         LAST_VIEWED_DELTA_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, ( '>', 'delta', ( 2000, 1, 1, 1 ) ) )
         ARCHIVED_DELTA_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME, ( '>', 'delta', ( 2000, 1, 1, 1 ) ) )
         MODIFIED_DELTA_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, ( '>', 'delta', ( 2000, 1, 1, 1 ) ) )
@@ -229,13 +223,13 @@ class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
             
             if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_OR_CONTAINER:
                 
-                self._editable_pred_panels.append( ClientGUIPredicatesOR.ORPredicateControl( self, predicate, empty_file_search_context = empty_file_search_context ) )
+                self._editable_pred_panels.append( ClientGUIPredicatesOR.ORPredicateControl( self, predicate, empty_file_search_context = empty_file_search_context, for_metadata_conditional = for_metadata_conditional ) )
                 
             elif predicate_type in ( ClientSearchPredicate.PREDICATE_TYPE_TAG, ClientSearchPredicate.PREDICATE_TYPE_NAMESPACE, ClientSearchPredicate.PREDICATE_TYPE_WILDCARD ):
                 
                 self._editable_pred_panels.append( ClientGUIPredicatesSingle.PanelPredicateSimpleTagTypes( self, predicate ) )
                 
-            elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE:
+            elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
                 
                 if predicate.IsUIEditable( AGE_DELTA_PRED ):
                     
@@ -397,6 +391,10 @@ class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
                     self._editable_pred_panels.append( ClientGUIPredicatesSingle.PanelPredicateSystemFileViewingStatsViewtime( self, predicate ) )
                     
                 
+            elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                self._editable_pred_panels.append( ClientGUIPredicatesSingle.PredicateSystemRatingAdvanced( self, predicate ) )
+                
             elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING:
                 
                 rating_preds.append( predicate )
@@ -537,11 +535,11 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
         
         do_static_preds_in_two_column_table = False
         
-        if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE:
+        if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
             
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 1, 0 ) ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 7, 0 ) ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 1, 0, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 1, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 7, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 1, 0, 0 ) ) ), ), show_remove_button = False ) )
             
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemAgeDelta, predicate ) )
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemAgeDate, predicate ) )
@@ -558,11 +556,11 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
             
         elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TIME:
             
-            recent_predicate_types = [ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE ]
+            recent_predicate_types = [ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME ]
             
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 1, 0 ) ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 7, 0 ) ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 1, 0, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 1, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 7, 0 ) ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 1, 0, 0 ) ) ), ), show_remove_button = False ) )
             
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemAgeDelta, predicate ) )
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemAgeDate, predicate ) )
@@ -641,8 +639,8 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
             
             static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '>', 0 ) ), ), show_remove_button = False ) )
             static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 0 ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 30 ) ), ), show_remove_button = False ) )
-            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 60 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE, ClientNumberTest.NumberTest( operator = ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE, value = 30, extra_value = 1 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE, ClientNumberTest.NumberTest( operator = ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE, value = 60, extra_value = 1 ) ), ), show_remove_button = False ) )
             
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemDuration, predicate ) )
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemFramerate, predicate ) )
@@ -791,6 +789,11 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
             rating_services = services_manager.GetServices( HC.RATINGS_SERVICES )
             
             if len( rating_services ) > 0:
+                
+                if len( rating_services ) > 1:
+                    
+                    editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PredicateSystemRatingAdvanced, predicate ) )
+                    
                 
                 for service_type_in_order in [ HC.LOCAL_RATING_LIKE, HC.LOCAL_RATING_NUMERICAL, HC.LOCAL_RATING_INCDEC ]:
                     
@@ -1039,7 +1042,7 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
             
             super().__init__( parent )
             
-            self._defaults_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().star, self._DefaultsMenu )
+            self._defaults_button = ClientGUICommon.IconButton( self, CC.global_icons().star, self._DefaultsMenu )
             self._defaults_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set a new default.' ) )
             
             self._predicate_panel = predicate_panel_class( self, *args )

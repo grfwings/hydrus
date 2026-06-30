@@ -1,7 +1,6 @@
 import collections
 import collections.abc
 import random
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -10,6 +9,7 @@ from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusTime
 from hydrus.core.files.images import HydrusBlurhash
 
 from hydrus.client import ClientConstants as CC
@@ -90,6 +90,22 @@ sort_data_to_blurhash_to_sortable_calls = {
 def GetBlurhashToSortableCall( sort_data: int ):
     
     return sort_data_to_blurhash_to_sortable_calls.get( sort_data, HydrusBlurhash.ConvertBlurhashToSortableLightness )
+    
+
+def GetLocalFileServiceKeys( flat_medias: collections.abc.Collection[ "MediaSingleton" ] ):
+    
+    local_media_file_service_keys = set( CG.client_controller.services_manager.GetServiceKeys( ( HC.LOCAL_FILE_DOMAIN, ) ) )
+    
+    local_file_service_keys_counter = collections.Counter()
+    
+    for m in flat_medias:
+        
+        locations_manager = m.GetLocationsManager()
+        
+        local_file_service_keys_counter.update( local_media_file_service_keys.intersection( locations_manager.GetCurrent() ) )
+        
+    
+    return local_file_service_keys_counter
     
 
 def GetMediasTags( pool, tag_service_key, tag_display_type, content_statuses ):
@@ -321,7 +337,7 @@ class Media( object ):
         raise NotImplementedError()
         
     
-    def GetDurationMS( self ) -> typing.Optional[ int ]:
+    def GetDurationMS( self ) -> int | None:
         
         raise NotImplementedError()
         
@@ -356,7 +372,7 @@ class Media( object ):
         raise NotImplementedError()
         
     
-    def GetNumFrames( self ) -> typing.Optional[ int ]:
+    def GetNumFrames( self ) -> int | None:
         
         raise NotImplementedError()
         
@@ -366,7 +382,7 @@ class Media( object ):
         raise NotImplementedError()
         
     
-    def GetNumWords( self ) -> typing.Optional[ int ]:
+    def GetNumWords( self ) -> int | None:
         
         raise NotImplementedError()
         
@@ -407,6 +423,11 @@ class Media( object ):
         
     
     def HasDuration( self ) -> bool:
+        
+        raise NotImplementedError()
+        
+    
+    def HasSimulatedDuration( self ) -> bool:
         
         raise NotImplementedError()
         
@@ -567,6 +588,7 @@ class MediaList( object ):
         self._hashes_to_collected_media = {}
         
         self._media_sort = MediaSort( ( 'system', CC.SORT_FILES_BY_FILESIZE ), CC.SORT_ASC )
+        self._secondary_media_sort = None
         self._media_collect = MediaCollect()
         
         self._sorted_media = HydrusLists.FastIndexUniqueList( [ self._GenerateMediaSingleton( media_result ) for media_result in media_results ] )
@@ -574,6 +596,8 @@ class MediaList( object ):
         
         self._singleton_media = set( self._sorted_media )
         self._collected_media = set()
+        
+        self._media_index_history = []
         
         self._RecalcHashes()
         
@@ -713,6 +737,45 @@ class MediaList( object ):
             
         
     
+    def _GetRandom( self, media ):
+        
+        if len( self._sorted_media ) == 0 or media is None:
+            
+            return None
+            
+        
+        if len( self._sorted_media ) == 1:
+            
+            return media
+            
+        
+        curr_index = self._sorted_media.index( media )
+        
+        self._media_index_history.append( curr_index )
+        
+        while True:
+            
+            random_index = random.randrange( len( self._sorted_media ) )
+            
+            if random_index != curr_index:
+                
+                return self._sorted_media[ random_index ]
+                
+            
+        
+    
+    def _UndoRandom( self, media ):
+        
+        if len ( self._media_index_history ) == 0:
+            
+            return media
+            
+        
+        recent_index = self._media_index_history.pop()
+        
+        return self._sorted_media[ recent_index ]
+        
+    
     def _HasHashes( self, hashes ):
         
         for hash in hashes:
@@ -768,6 +831,8 @@ class MediaList( object ):
                 self._hashes_to_singleton_media[ hash ] = m
                 
             
+        
+        self._media_index_history = []
         
     
     def _RemoveMediaByHashes( self, hashes ):
@@ -943,11 +1008,21 @@ class MediaList( object ):
         
         d[ 'hash_ids' ] = [ m.GetMediaResult().GetHashId() for m in flat_media ]
         
+        selected_media = self.GetSelectedMedia()
+        flat_selected_media = FlattenMedia( selected_media )
+        
+        d[ 'num_files_selected' ] = len( flat_selected_media )
+        d[ 'hash_ids_selected' ] = [ m.GetMediaResult().GetHashId() for m in flat_selected_media ]
+        
         if not simple:
             
             hashes = self.GetHashes( ordered = True )
             
             d[ 'hashes' ] = [ hash.hex() for hash in hashes ]
+            
+            selected_hashes = [ m.GetHash() for m in flat_selected_media ]
+            
+            d[ 'hashes_selected' ] = [ hash.hex() for hash in selected_hashes ]
             
         
         return d
@@ -1143,6 +1218,16 @@ class MediaList( object ):
         return self._GetPrevious( media )
         
     
+    def GetRandom( self, media ):
+        
+        return self._GetRandom( media )
+        
+    
+    def UndoRandom( self, media ):
+        
+        return self._UndoRandom( media )
+        
+    
     def GetSelectedMedia( self ):
         
         return self._selected_media
@@ -1238,15 +1323,15 @@ class MediaList( object ):
                     if action in ( HC.CONTENT_UPDATE_DELETE, HC.CONTENT_UPDATE_DELETE_FROM_SOURCE_AFTER_MIGRATE ):
                         
                         local_file_domains = CG.client_controller.services_manager.GetServiceKeys( ( HC.LOCAL_FILE_DOMAIN, ) )
-                        all_local_file_services = set( list( local_file_domains ) + [ CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, CC.TRASH_SERVICE_KEY, CC.LOCAL_UPDATE_SERVICE_KEY ] )
+                        all_local_file_services = set( list( local_file_domains ) + [ CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, CC.TRASH_SERVICE_KEY, CC.LOCAL_UPDATE_SERVICE_KEY ] )
                         
                         #
                         
-                        physically_deleted = service_key == CC.COMBINED_LOCAL_FILE_SERVICE_KEY
-                        possibly_trashed = ( service_key in local_file_domains or service_key == CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) and action == HC.CONTENT_UPDATE_DELETE
+                        physically_deleted = service_key == CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY
+                        possibly_trashed = ( service_key in local_file_domains or service_key == CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ) and action == HC.CONTENT_UPDATE_DELETE
                         
                         deleted_specifically_from_our_domain = self._location_context.IsOneDomain() and service_key in self._location_context.current_service_keys
-                        deleted_implicitly_from_our_domain = set( self._location_context.current_service_keys ).issubset( local_file_domains ) and service_key == CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY
+                        deleted_implicitly_from_our_domain = set( self._location_context.current_service_keys ).issubset( local_file_domains ) and service_key == CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY
                         deleted_from_our_domain = deleted_specifically_from_our_domain or deleted_implicitly_from_our_domain
                         
                         we_are_looking_at_trash = self._location_context.IsOneDomain() and CC.TRASH_SERVICE_KEY in self._location_context.current_service_keys
@@ -1343,26 +1428,36 @@ class MediaList( object ):
         self._tag_context = tag_context
         
     
-    def Sort( self, media_sort = None ):
+    def Sort( self, media_sort: "MediaSort | None" = None, secondary_sort: "MediaSort | None" = None ):
+        
+        # TODO: TBH, I think I should stop caching the last sort and just take params every time. that's KISS
         
         if media_sort is None:
             
             media_sort = self._media_sort
             
         
-        for media in self._collected_media:
+        if secondary_sort is None:
             
-            media.Sort( media_sort )
+            if self._secondary_media_sort is None:
+                
+                secondary_sort = CG.client_controller.new_options.GetFallbackSort()
+                
+            else:
+                
+                secondary_sort = self._secondary_media_sort
+                
             
         
         self._media_sort = media_sort
+        self._secondary_media_sort = secondary_sort
         
-        media_sort_fallback = CG.client_controller.new_options.GetFallbackSort()
+        for media in self._collected_media:
+            
+            media.Sort( media_sort = media_sort, secondary_sort = secondary_sort )
+            
         
-        media_sort_fallback.Sort( self._location_context, self._tag_context, self._sorted_media )
-        
-        # this is a stable sort, so the fallback order above will remain for equal items
-        
+        self._secondary_media_sort.Sort( self._location_context, self._tag_context, self._sorted_media )
         self._media_sort.Sort( self._location_context, self._tag_context, self._sorted_media )
         
         self._RecalcHashes()
@@ -1403,6 +1498,8 @@ class MediaCollection( MediaList, Media ):
         self._tags_manager = None
         self._locations_manager = None
         self._file_viewing_stats_manager = None
+        
+        self._has_simulated_duration = False
         
         self._internals_dirty = False
         
@@ -1595,6 +1692,8 @@ class MediaCollection( MediaList, Media ):
         if duration_sum > 0: self._duration = duration_sum
         else: self._duration = None
         
+        self._has_simulated_duration = True in ( media.HasSimulatedDuration() for media in self._sorted_media )
+        
         self._has_audio = True in ( media.HasAudio() for media in self._sorted_media )
         
         self._has_notes = True in ( media.HasNotes() for media in self._sorted_media )
@@ -1659,7 +1758,7 @@ class MediaCollection( MediaList, Media ):
         self._RecalcInternals()
         
     
-    def GetDisplayMedia( self ) -> typing.Optional[ "MediaSingleton" ]:
+    def GetDisplayMedia( self ) -> "MediaSingleton | None":
         
         first = self._GetFirst()
         
@@ -1686,6 +1785,30 @@ class MediaCollection( MediaList, Media ):
     def GetFileViewingStatsManager( self ):
         
         return self._file_viewing_stats_manager
+        
+    
+    def GetFramerate( self ):
+        
+        duration_ms = self.GetDurationMS()
+        num_frames = self.GetNumFrames()
+        
+        # I wanted to do `num_frames <= 1`, but it caused complications in db search, so KISS
+        
+        if duration_ms is None or duration_ms == 0 or num_frames is None or num_frames <= 0:
+            
+            return None
+            
+        else:
+            
+            try:
+                
+                return num_frames / HydrusTime.SecondiseMSFloat( duration_ms )
+                
+            except Exception as e:
+                
+                return None
+                
+            
         
     
     def GetHash( self ):
@@ -1782,6 +1905,11 @@ class MediaCollection( MediaList, Media ):
         return self._duration is not None
         
     
+    def HasSimulatedDuration( self ) -> bool:
+        
+        return self._has_simulated_duration
+        
+    
     def HasStaticImages( self ):
         
         return True in ( media.HasStaticImages() for media in self._sorted_media )
@@ -1869,6 +1997,11 @@ class MediaSingleton( Media ):
     def GetFileViewingStatsManager( self ):
         
         return self._media_result.GetFileViewingStatsManager()
+        
+    
+    def GetFramerate( self ):
+        
+        return self._media_result.GetFileInfoManager().GetFramerate()
         
     
     def GetHash( self ):
@@ -2005,6 +2138,11 @@ class MediaSingleton( Media ):
     def HasDuration( self ):
         
         return self._media_result.HasDuration()
+        
+    
+    def HasSimulatedDuration( self ) -> bool:
+        
+        return self._media_result.HasSimulatedDuration()
         
     
     def HasStaticImages( self ):
@@ -2311,7 +2449,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext ):
+    def GetSortKeyAndReverse( self, location_context: ClientLocation.LocationContext ):
         
         ( sort_metadata, sort_data ) = self.sort_type
         
@@ -2476,21 +2614,16 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                 
                 def sort_key( x ):
                     
-                    num_frames = x.GetNumFrames()
+                    framerate = x.GetFramerate()
                     
-                    if num_frames is None or num_frames == 0:
+                    if framerate is None:
                         
                         return -1
                         
-                    
-                    duration_ms = x.GetDurationMS()
-                    
-                    if duration_ms is None or duration_ms == 0:
+                    else:
                         
-                        return -1
+                        return framerate
                         
-                    
-                    return num_frames / duration_ms
                     
                 
             elif sort_data == CC.SORT_FILES_BY_NUM_COLLECTION_FILES:
@@ -2602,7 +2735,9 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
                     
                     tags_manager = x.GetTagsManager()
                     
-                    return len( tags_manager.GetCurrentAndPending( tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
+                    # this is self.tag_context, not the given tag context
+                    
+                    return len( tags_manager.GetCurrentAndPending( self.tag_context.service_key, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
                     
                 
             elif sort_data == CC.SORT_FILES_BY_MIME:
@@ -2756,6 +2891,9 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
     
     def Sort( self, location_context: ClientLocation.LocationContext, tag_context: ClientSearchTagContext.TagContext, media_results_list: HydrusLists.FastIndexUniqueList ):
         
+        # the tag context here is that of the page overall. I removed it from GetSortKeyAndReverse when I started sucking it from the media sort here for num_tags, but maybe in future we'll want some
+        # sophisticated logic somewhere that soys 'use the page' instead of what the sort has. so don't remove it too aggressively m8
+        
         ( sort_metadata, sort_data ) = self.sort_type
         
         if sort_data == CC.SORT_FILES_BY_RANDOM:
@@ -2764,7 +2902,7 @@ class MediaSort( HydrusSerialisable.SerialisableBase ):
             
         else:
             
-            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context, tag_context )
+            ( sort_key, reverse ) = self.GetSortKeyAndReverse( location_context )
             
             media_results_list.sort( key = sort_key, reverse = reverse )
             

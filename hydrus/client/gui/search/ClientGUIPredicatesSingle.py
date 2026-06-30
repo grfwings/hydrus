@@ -1,6 +1,5 @@
 import os
 import re
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -8,6 +7,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core.files import HydrusFileHandling
@@ -16,6 +16,7 @@ from hydrus.core.files.images import HydrusImageHandling
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
+from hydrus.client import ClientServices
 from hydrus.client.files.images import ClientImagePerceptualHashes
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIFunctions
@@ -23,6 +24,7 @@ from hydrus.client.gui import ClientGUIOptionsPanels
 from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.metadata import ClientGUITime
+from hydrus.client.gui.services import ClientGUIServiceSpecifier
 from hydrus.client.gui.widgets import ClientGUIBytes
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUINumberTest
@@ -55,7 +57,7 @@ class StaticSystemPredicateButton( QW.QWidget ):
             
         
         self._predicates_button = ClientGUICommon.BetterButton( self, label, self._DoPredicatesChoose )
-        self._remove_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().trash_delete, self._DoPredicatesRemove )
+        self._remove_button = ClientGUICommon.IconButton( self, CC.global_icons().trash_delete, self._DoPredicatesRemove )
         
         hbox = QP.HBoxLayout()
         
@@ -464,7 +466,7 @@ class PanelPredicateSystemAgeDate( PanelPredicateSystemDate ):
     
     def _GetPredicateType( self ) -> int:
         
-        return ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE
+        return ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME
         
     
     def GetDefaultPredicate( self ) -> ClientSearchPredicate.Predicate:
@@ -575,12 +577,12 @@ class PanelPredicateSystemAgeDelta( PanelPredicateSystemSingle ):
     
     def GetDefaultPredicate( self ):
         
-        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 7, 0 ) ) )
+        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 7, 0 ) ) )
         
     
     def GetPredicates( self ):
         
-        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( self._sign.GetValue(), 'delta', (self._years.value(), self._months.value(), self._days.value(), self._hours.value() ) ) ), )
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( self._sign.GetValue(), 'delta', (self._years.value(), self._months.value(), self._days.value(), self._hours.value() ) ) ), )
         
         return predicates
         
@@ -832,8 +834,10 @@ class PanelPredicateSystemDuration( PanelPredicateSystemSingle ):
             ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_NOT_EQUAL,
             ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN,
-            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO
         ]
         
         self._number_test = ClientGUITime.NumberTestWidgetDuration( self, allowed_operators = allowed_operators, appropriate_absolute_plus_or_minus_default = 30000, appropriate_percentage_plus_or_minus_default = 5 )
@@ -1100,11 +1104,9 @@ class PanelPredicateSystemFramerate( PanelPredicateSystemSingle ):
         
         allowed_operators = [
             ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
-            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE,
             ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT,
-            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN,
-            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN
         ]
         
         self._number_test = ClientGUINumberTest.NumberTestWidget( self, allowed_operators = allowed_operators, max = 1000000, unit_string = 'fps', appropriate_absolute_plus_or_minus_default = 1, appropriate_percentage_plus_or_minus_default = 5 )
@@ -1119,6 +1121,15 @@ class PanelPredicateSystemFramerate( PanelPredicateSystemSingle ):
         
         #
         
+        vbox = QP.VBoxLayout()
+        
+        label = 'Framerate is approximate. A "30fps" file may actually be 30.005fps internally.\nIf you use < or >, include some padding: "> 59", not "> 60".'
+        
+        st = ClientGUICommon.BetterStaticText( self, label = label )
+        st.setWordWrap( True )
+        
+        QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
         hbox = QP.HBoxLayout()
         
         QP.AddToLayout( hbox, ClientGUICommon.BetterStaticText( self, 'system:framerate' ), CC.FLAGS_CENTER_PERPENDICULAR )
@@ -1126,7 +1137,9 @@ class PanelPredicateSystemFramerate( PanelPredicateSystemSingle ):
         
         hbox.addStretch( 0 )
         
-        self.setLayout( hbox )
+        QP.AddToLayout( vbox, hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        self.setLayout( vbox )
         
         self.setFocusProxy( self._number_test )
         
@@ -1678,7 +1691,7 @@ class PanelPredicateSystemKnownURLsURLClass( PanelPredicateSystemSingle ):
         operator = True
         rule_type = 'url_class'
         rule = ClientNetworkingURLClass.URLClass(
-            name = 'safebooru post url'
+            name = 'booru post url'
         )
         description = ''
         
@@ -1932,9 +1945,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
         
         super().__init__( parent )
         
-        self._namespace = QW.QLineEdit( self )
-        self._namespace.setPlaceholderText( 'Leave empty for unnamespaced, \'*\' for all namespaces' )
-        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'Leave empty for unnamespaced, \'*\' for all namespaces. Other wildcards also supported.' ) )
+        self._namespace = ClientGUICommon.NamespaceWidget( self )
         
         choices = ['<',HC.UNICODE_APPROX_EQUAL,'=','>']
         
@@ -1953,7 +1964,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
             namespace = '*'
             
         
-        self._namespace.setText( namespace )
+        self._namespace.SetValue( namespace )
         
         self._sign.SetValue( sign )
         
@@ -1986,7 +1997,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
     
     def GetPredicates( self ):
         
-        ( namespace, operator, value ) = ( self._namespace.text(), self._sign.GetValue(), self._num_tags.value() )
+        ( namespace, operator, value ) = ( self._namespace.GetValue(), self._sign.GetValue(), self._num_tags.value() )
         
         predicate = None
         
@@ -2015,6 +2026,7 @@ class PanelPredicateSystemNumTags( PanelPredicateSystemSingle ):
         return predicates
         
     
+
 class PanelPredicateSystemNumNotes( PanelPredicateSystemSingle ):
     
     def __init__( self, parent, predicate ):
@@ -2185,9 +2197,122 @@ class PanelPredicateSystemNumWords( PanelPredicateSystemSingle ):
         
     
 
+class PredicateSystemRatingAdvanced( PanelPredicateSystemSingle ):
+    
+    def __init__( self, parent: QW.QWidget, predicate: ClientSearchPredicate.Predicate | None ):
+        
+        super().__init__( parent )
+        
+        predicate = self._GetPredicateToInitialisePanelWith( predicate )
+        
+        ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = predicate.GetValue()
+        
+        choice_tuples = [
+            ( 'all', HC.LOGICAL_OPERATOR_ALL ),
+            ( 'any', HC.LOGICAL_OPERATOR_ANY ),
+            ( 'only', HC.LOGICAL_OPERATOR_ONLY ),
+        ]
+        
+        self._logical_choice = ClientGUICommon.BetterRadioBox( self, choice_tuples, vertical = True )
+        tt = '"only" here means that all the ratings set on the left will be (rated/not rated) and all the remainder on the right will be (not rated/rated).\n\nUse it to do "find the files that are rated this way and no other way" without having to stack up two finicky competing "all x has/no rating" predicates.'
+        self._logical_choice.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
+        self._service_specifier_primary = ClientGUIServiceSpecifier.ServiceSpecifierButton( self, service_specifier_primary, HC.LOCAL_RATINGS_SERVICES )
+        
+        self._secondary_panel = QW.QWidget( self )
+        
+        of_label = ClientGUICommon.BetterStaticText( self._secondary_panel, label = ' amongst ' )
+        
+        self._service_specifier_secondary = ClientGUIServiceSpecifier.ServiceSpecifierButton( self, service_specifier_secondary, HC.LOCAL_RATINGS_SERVICES )
+        
+        choice_tuples = [
+            ( 'rated', True ),
+            ( 'not rated', False ),
+        ]
+        
+        self._rated_choice = ClientGUICommon.BetterRadioBox( self, choice_tuples, vertical = True )
+        
+        self._logical_choice.SetValue( logical_operator )
+        self._rated_choice.SetValue( rated )
+        
+        #
+        
+        secondary_hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( secondary_hbox, of_label, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( secondary_hbox, self._service_specifier_secondary, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        self._secondary_panel.setLayout( secondary_hbox )
+        
+        hbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( hbox, self._logical_choice, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( hbox, self._service_specifier_primary, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( hbox, self._secondary_panel, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( hbox, self._rated_choice, CC.FLAGS_CENTER_PERPENDICULAR )
+        
+        self.setLayout( hbox )
+        
+        self._logical_choice.radioBoxChanged.connect( self._UpdateControls )
+        
+        self._service_specifier_primary.valueChanged.connect( self._MakeSureSecondaryIsLargeEnough )
+        self._service_specifier_secondary.valueChanged.connect( self._MakeSureSecondaryIsLargeEnough )
+        
+        self._UpdateControls()
+        
+    
+    def _MakeSureSecondaryIsLargeEnough( self ):
+        
+        service_specifier_primary = self._service_specifier_primary.GetValue()
+        service_specifier_secondary = self._service_specifier_secondary.GetValue()
+        
+        primary_keys = service_specifier_primary.GetSpecificKeys()
+        secondary_keys = service_specifier_secondary.GetSpecificKeys()
+        
+        if not primary_keys.issubset( secondary_keys ):
+            
+            service_specifier_secondary = ClientServices.ServiceSpecifier( service_keys = secondary_keys.union( primary_keys ) )
+            
+            self._service_specifier_secondary.SetValue( service_specifier_secondary )
+            
+        
+    
+    def _UpdateControls( self ):
+        
+        self._secondary_panel.setVisible( self._logical_choice.GetValue() == HC.LOGICAL_OPERATOR_ONLY )
+        
+    
+    def GetDefaultPredicate( self ):
+        
+        logical_operator = HC.LOGICAL_OPERATOR_ANY
+        service_specifier_primary = ClientServices.ServiceSpecifier( service_types = set( HC.LOCAL_RATINGS_SERVICES ) )
+        service_specifier_secondary = ClientServices.ServiceSpecifier( service_types = set( HC.LOCAL_RATINGS_SERVICES ) )
+        rated = True
+        
+        return ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED, ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) )
+        
+    
+    def GetPredicates( self ):
+        
+        logical_operator = self._logical_choice.GetValue()
+        service_specifier_primary = self._service_specifier_primary.GetValue()
+        service_specifier_secondary = self._service_specifier_secondary.GetValue()
+        rated = self._rated_choice.GetValue()
+        
+        if logical_operator == HC.LOGICAL_OPERATOR_ONLY and service_specifier_primary == service_specifier_secondary:
+            
+            logical_operator = HC.LOGICAL_OPERATOR_ALL
+            
+        
+        predicate = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED, ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) )
+        
+        return [ predicate ]
+        
+    
+
 class PredicateSystemRatingIncDec( PanelPredicateSystemSingle ):
     
-    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
+    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: ClientSearchPredicate.Predicate | None ):
         
         super().__init__( parent )
         
@@ -2199,7 +2324,7 @@ class PredicateSystemRatingIncDec( PanelPredicateSystemSingle ):
             
             name = service.GetName()
             
-        except:
+        except Exception as e:
             
             name = 'unknown service'
             
@@ -2310,7 +2435,7 @@ class PredicateSystemRatingIncDec( PanelPredicateSystemSingle ):
 
 class PredicateSystemRatingLike( PanelPredicateSystemSingle ):
     
-    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
+    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: ClientSearchPredicate.Predicate | None ):
         
         super().__init__( parent )
         
@@ -2339,7 +2464,7 @@ class PredicateSystemRatingLike( PanelPredicateSystemSingle ):
         
         self._choice = ClientGUICommon.BetterRadioBox( self, choice_tuples, vertical = True )
         
-        self._rating_control = ClientGUIRatings.RatingLikeDialog( self, service_key )
+        self._rating_control = ClientGUIRatings.RatingLikeDialog( self, service_key, CC.CANVAS_DIALOG )
         
         #
         
@@ -2465,7 +2590,7 @@ class PredicateSystemRatingLike( PanelPredicateSystemSingle ):
 
 class PredicateSystemRatingNumerical( PanelPredicateSystemSingle ):
     
-    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: typing.Optional[ ClientSearchPredicate.Predicate ] ):
+    def __init__( self, parent: QW.QWidget, service_key: bytes, predicate: ClientSearchPredicate.Predicate | None ):
         
         super().__init__( parent )
         
@@ -2681,7 +2806,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         self._clear_button = ClientGUICommon.BetterButton( self, 'clear', self._Clear )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setText( 'Paste image!')
         
         self._pixel_hashes = QW.QPlainTextEdit( self )
@@ -2697,6 +2822,8 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         self._perceptual_hashes.setMaximumHeight( init_height )
         
         self._max_hamming = ClientGUICommon.BetterSpinBox( self, max=256, width = 60 )
+        self._max_hamming.setSingleStep( 2 )
+        self._max_hamming.setToolTip( ClientGUIFunctions.WrapToolTip( 'The max "hamming distance" allowed in the search. The higher you go, the slower the search and the more false positives.' ) )
         
         #
         
@@ -2735,7 +2862,11 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         big_vbox = QP.VBoxLayout()
         
-        st = ClientGUICommon.BetterStaticText( self, label = 'Use this if you want to look up a file without needing to import it. Just copy its file path or image data to your clipboard and paste, and hydrus will figure out the hash data.' )
+        label = 'Use this if you want to look up a file without needing to import it. Just copy its file path or image data to your clipboard and paste, and hydrus will figure out the search hash data.'
+        label += '\n\n'
+        label += 'You only need one hash, but allowing both is fine and will add files that match either. Pixel hash is very fast and always returns exact pixel matches. Perceptual hash is the same "looks similar to" system used in "potential duplicates" discovery and the "files" mode of this predicate and uses the 0/2/4/8 "search distance".'
+        
+        st = ClientGUICommon.BetterStaticText( self, label = label )
         
         st.setWordWrap( True )
         st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
@@ -2857,7 +2988,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         new_text_lines.append( pixel_hash.hex() )
         
-        new_text_lines = HydrusData.DedupeList( new_text_lines )
+        new_text_lines = HydrusLists.DedupeList( new_text_lines )
         
         self._pixel_hashes.setPlainText( '\n'.join( new_text_lines ) )
         
@@ -2865,7 +2996,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         new_text_lines.extend( [ perceptual_hash.hex() for perceptual_hash in perceptual_hashes ] )
         
-        new_text_lines = HydrusData.DedupeList( new_text_lines )
+        new_text_lines = HydrusLists.DedupeList( new_text_lines )
         
         self._perceptual_hashes.setPlainText( '\n'.join( new_text_lines ) )
         
@@ -2911,6 +3042,8 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         self._hashes.setMaximumHeight( init_height )
         
         self._max_hamming = ClientGUICommon.BetterSpinBox( self, max=256, width = 60 )
+        self._max_hamming.setSingleStep( 2 )
+        self._max_hamming.setToolTip( ClientGUIFunctions.WrapToolTip( 'The max "hamming distance" allowed in the search. The higher you go, the slower the search and the more false positives.' ) )
         
         #
         
@@ -2937,7 +3070,7 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         
         hbox.addStretch( 0 )
         
-        st = ClientGUICommon.BetterStaticText( self, label = 'This searches for files that look like each other within your database, just like in the duplicates system. It uses the SHA256 hash. Paste the files\' hash(es) here, and the results will look like any of them.' )
+        st = ClientGUICommon.BetterStaticText( self, label = 'This searches for files that look like each other within your database, just like in the duplicates system. It uses the SHA256 hash and will find all similar-looking files of any of the hashes you paste, regardless of whether they are currently set as potential duplicates, duplicates, alternates, or false positive.' )
         
         st.setWordWrap( True )
         st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
@@ -3083,7 +3216,7 @@ class PanelPredicateSystemTagAdvanced( PanelPredicateSystemSingle ):
         self._tag_autocomplete = ClientGUIACDropdown.AutoCompleteDropdownTagsWrite(
             self,
             self._AutoCompleteEntersTags,
-            ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ),
+            ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ),
             CC.COMBINED_TAG_SERVICE_KEY
         )
         
@@ -3174,7 +3307,7 @@ class PanelPredicateSystemTagAdvanced( PanelPredicateSystemSingle ):
             
             HydrusTags.CheckTagNotEmpty( tag )
             
-        except:
+        except Exception as e:
             
             tag = 'invalid tag'
             
@@ -3191,7 +3324,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
         
         super().__init__( parent )
         
-        self._namespace = QW.QLineEdit( self )
+        self._namespace = ClientGUICommon.NamespaceWidget( self )
         
         choices = [ '<', HC.UNICODE_APPROX_EQUAL, '>' ]
         
@@ -3205,10 +3338,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
         
         ( namespace, sign, num ) = predicate.GetValue()
         
-        self._namespace.setText( namespace )
-        self._namespace.setPlaceholderText( 'Leave empty for unnamespaced, \'*\' for all namespaces' )
-        self._namespace.setToolTip( ClientGUIFunctions.WrapToolTip( 'Leave empty for unnamespaced, \'*\' for all namespaces. Other wildcards also supported.' ) )
-        
+        self._namespace.SetValue( namespace )
         self._sign.SetValue( sign )
         self._num.setValue( num )
         
@@ -3237,7 +3367,7 @@ class PanelPredicateSystemTagAsNumber( PanelPredicateSystemSingle ):
     
     def GetPredicates( self ):
         
-        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER, ( self._namespace.text(), self._sign.GetValue(), self._num.value() ) ), )
+        predicates = ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_AS_NUMBER, ( self._namespace.GetValue(), self._sign.GetValue(), self._num.value() ) ), )
         
         return predicates
         

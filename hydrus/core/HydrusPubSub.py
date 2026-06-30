@@ -57,7 +57,7 @@ class HydrusPubSub( object ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -83,8 +83,6 @@ class HydrusPubSub( object ):
         self._doing_work = True
         
         try:
-            
-            callable_tuples = []
             
             with self._lock:
                 
@@ -114,7 +112,7 @@ class HydrusPubSub( object ):
                         HydrusData.ShowText( ( topic, args, kwargs, callable_tuples ) )
                         
                     
-                    if HG.profile_mode and not_a_report:
+                    if HydrusProfiling.IsProfileMode( 'ui' ) and not_a_report:
                         
                         summary = 'Profiling pubsub: {}'.format( topic )
                         
@@ -122,7 +120,7 @@ class HydrusPubSub( object ):
                             
                             try:
                                 
-                                HydrusProfiling.Profile( summary, 'callable( *args, **kwargs )', globals(), locals(), min_duration_ms = HG.pubsub_profile_min_job_time_ms )
+                                HydrusProfiling.Profile( summary, HydrusData.Call( callable, *args, **kwargs ), min_duration_ms = HG.pubsub_profile_min_job_time_ms )
                                 
                             except HydrusExceptions.ShutdownException:
                                 

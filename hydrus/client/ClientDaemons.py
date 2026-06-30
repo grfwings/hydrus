@@ -2,12 +2,12 @@ import threading
 import time
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client.metadata import ClientContentUpdates
 
@@ -52,6 +52,11 @@ def DAEMONMaintainTrash():
     
     controller = CG.client_controller
     
+    if not controller.CurrentlyIdle() and not controller.new_options.GetBoolean( 'maintain_trash_in_normal_time' ):
+        
+        return
+        
+    
     if HC.options[ 'trash_max_size' ] is not None:
         
         max_size = HC.options[ 'trash_max_size' ] * 1048576
@@ -67,7 +72,7 @@ def DAEMONMaintainTrash():
                 return
                 
             
-            for group_of_hashes in HydrusData.SplitIteratorIntoChunks( hashes, 8 ):
+            for group_of_hashes in HydrusLists.SplitIteratorIntoChunks( hashes, 8 ):
                 
                 if HydrusThreading.IsThreadShuttingDown():
                     
@@ -76,7 +81,7 @@ def DAEMONMaintainTrash():
                 
                 content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, group_of_hashes )
                 
-                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                 
                 controller.WriteSynchronous( 'content_updates', content_update_package )
                 
@@ -102,7 +107,7 @@ def DAEMONMaintainTrash():
         
         while len( hashes ) > 0:
             
-            for group_of_hashes in HydrusData.SplitIteratorIntoChunks( hashes, 8 ):
+            for group_of_hashes in HydrusLists.SplitIteratorIntoChunks( hashes, 8 ):
                 
                 if HydrusThreading.IsThreadShuttingDown():
                     
@@ -111,7 +116,7 @@ def DAEMONMaintainTrash():
                 
                 content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, group_of_hashes )
                 
-                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                 
                 controller.WriteSynchronous( 'content_updates', content_update_package )
                 
@@ -129,19 +134,35 @@ class ManagerWithMainLoop( object ):
     
     def __init__( self, controller: "CG.ClientController.Controller", pre_loop_wait_time: int ):
         
+        # TODO: move work_time/rest_time into this superclass
+        # maybe some methods that can be overridden to get current rest time ratio and stuff in the subclasses
+        # but otherwise this guy should take more responsibility for the mainloop code, and the subclasses should basically only implement 'dojob()' for the loop proper
+        # one logical implementation!
+        
+        # I think we want one master self._Wait command that takes time took and work_still_to_do/work_done, which is what a work packet should return to our mainloop
+        # that sleep guy decides which sleep to do and such
+        
+        # note it looks like we'll need a 'CleanUpAfterMainLoop' guy in a finally, so Subs at least can clean up
+        
         self._controller = controller
         
         self._pre_loop_wait_time = pre_loop_wait_time
         
         self._lock = threading.Lock()
         
-        self._wake_event = threading.Event()
+        self._wake_from_work_sleep_event = threading.Event()
+        self._wake_from_idle_sleep_event = threading.Event()
         self._shutdown = False
         self._mainloop_is_finished = False
         self._serious_error_encountered = False
         
         self._controller.sub( self, 'Shutdown', 'shutdown' )
         self._controller.sub( self, 'Wake', 'wake_daemons' )
+        
+    
+    def __str__( self ):
+        
+        return f'MainLoop: {self.GetName()}'
         
     
     def _CheckShutdown( self ):
@@ -166,6 +187,7 @@ class ManagerWithMainLoop( object ):
             time_to_start = HydrusTime.GetNowFloat() + self._pre_loop_wait_time
             
         
+        # stupid wait here because we are in init and a failure to launch may not trigger nice wake signals as things are unwound
         while not HydrusTime.TimeHasPassedFloat( time_to_start ):
             
             with self._lock:
@@ -173,9 +195,9 @@ class ManagerWithMainLoop( object ):
                 self._CheckShutdown()
                 
             
-            self._wake_event.wait( 1 )
+            self._wake_from_idle_sleep_event.wait( 1 )
             
-            if self._wake_event.is_set():
+            if self._wake_from_idle_sleep_event.is_set():
                 
                 break
                 
@@ -235,6 +257,12 @@ class ManagerWithMainLoop( object ):
     
     def Wake( self ):
         
-        self._wake_event.set()
+        self._wake_from_work_sleep_event.set()
+        self._wake_from_idle_sleep_event.set()
+        
+    
+    def WakeIfNotWorking( self ):
+        
+        self._wake_from_idle_sleep_event.set()
         
     

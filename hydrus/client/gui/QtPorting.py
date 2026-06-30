@@ -6,7 +6,7 @@
 # so, if I just got hit by a bus and you are wondering what the hell is going on here, that's what's going on here
 
 import collections.abc
-import os
+import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -16,13 +16,12 @@ from collections import defaultdict
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
-from hydrus.core import HydrusProfiling
 from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import QtInit
 
@@ -74,11 +73,16 @@ class VBoxLayout( QW.QVBoxLayout ):
 
 class LabelledSlider( QW.QWidget ):
     
+    valueChanged = QC.Signal( int )
+    finishedEditing  = QC.Signal( int )
+    
     def __init__( self, parent = None ):
         
         super().__init__( parent )
         
-        self.setLayout( VBoxLayout( spacing = 2 ) )
+        vbox = VBoxLayout( spacing = 2 )
+        
+        self.setLayout( vbox )
         
         top_layout = HBoxLayout( spacing = 2 )
         
@@ -94,12 +98,14 @@ class LabelledSlider( QW.QWidget ):
         top_layout.addWidget( self._slider )
         top_layout.addWidget( self._max_label )
         
-        self.layout().addLayout( top_layout )
-        self.layout().addWidget( self._value_label )
+        vbox.addLayout( top_layout )
+        vbox.addWidget( self._value_label )
         self._value_label.setAlignment( QC.Qt.AlignmentFlag.AlignVCenter | QC.Qt.AlignmentFlag.AlignHCenter )
-        self.layout().setAlignment( self._value_label, QC.Qt.AlignmentFlag.AlignHCenter )
+        vbox.setAlignment( self._value_label, QC.Qt.AlignmentFlag.AlignHCenter )
         
         self._slider.valueChanged.connect( self._UpdateLabels )
+        self._slider.valueChanged.connect( self.valueChanged )
+        self._slider.sliderReleased.connect( lambda: self.finishedEditing.emit( self._slider.value() ) )
         
         self._UpdateLabels()
         
@@ -112,7 +118,14 @@ class LabelledSlider( QW.QWidget ):
     def GetValue( self ):
         
         return self._slider.value()
+        
     
+    def SetInterval( self, interval ):
+        
+        self._slider.setTickInterval( interval )
+        
+        self._UpdateLabels()
+        
     def SetRange( self, min, max ):
         
         self._slider.setRange( min, max )
@@ -137,185 +150,6 @@ def SplitterVisibleCount( splitter ):
     
     return count
     
-
-class DirPickerCtrl( QW.QWidget ):
-
-    dirPickerChanged = QC.Signal()
-    
-    def __init__( self, parent ):
-        
-        super().__init__( parent )
-        
-        layout = HBoxLayout( spacing = 2 )
-        
-        self._path_edit = QW.QLineEdit( self )
-        
-        self._button = QW.QPushButton( 'browse', self )
-        
-        self._button.clicked.connect( self._Browse )
-        
-        self._path_edit.textEdited.connect( self._TextEdited )
-        
-        layout.addWidget( self._path_edit )
-        layout.addWidget( self._button )
-        
-        self.setLayout( layout )
-        
-    
-    def SetPath( self, path ):
-        
-        self._path_edit.setText( path )
-        
-    
-    def GetPath( self ):
-        
-        return self._path_edit.text()
-        
-    
-    def _Browse( self ):
-        
-        existing_path = self._path_edit.text()
-        
-        kwargs = {}
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            # careful here, QW.QFileDialog.Options doesn't exist on PyQt6
-            kwargs[ 'options' ] = QW.QFileDialog.Option.DontUseNativeDialog
-            
-        
-        path = QW.QFileDialog.getExistingDirectory( self, '', existing_path, **kwargs )
-        
-        if path == '':
-            
-            return
-            
-        
-        path = os.path.normpath( path )
-        
-        self._path_edit.setText( path )
-        
-        if os.path.exists( path ):
-            
-            self.dirPickerChanged.emit()
-            
-        
-    
-    def _TextEdited( self, text ):
-        
-        if os.path.exists( text ):
-            
-            self.dirPickerChanged.emit()
-            
-        
-
-class FilePickerCtrl( QW.QWidget ):
-    
-    filePickerChanged = QC.Signal()
-
-    def __init__( self, parent = None, wildcard = None, starting_directory = None ):
-        
-        super().__init__( parent )
-
-        layout = HBoxLayout( spacing = 2 )
-
-        self._path_edit = QW.QLineEdit( self )
-
-        self._button = QW.QPushButton( 'browse', self )
-
-        self._button.clicked.connect( self._Browse )
-
-        self._path_edit.textEdited.connect( self._TextEdited )
-
-        layout.addWidget( self._path_edit )
-        layout.addWidget( self._button )
-
-        self.setLayout( layout )
-        
-        self._save_mode = False
-        
-        self._wildcard = wildcard
-        
-        self._starting_directory = starting_directory
-        
-
-    def SetPath( self, path ):
-        
-        self._path_edit.setText( path )
-        
-
-    def GetPath( self ):
-        
-        return self._path_edit.text()
-        
-    
-    def SetSaveMode( self, save_mode ):
-        
-        self._save_mode = save_mode
-        
-
-    def _Browse( self ):
-        
-        existing_path = self._path_edit.text()
-        
-        if existing_path == '' and self._starting_directory is not None:
-            
-            existing_path = self._starting_directory
-            
-        
-        kwargs = {}
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            # careful here, QW.QFileDialog.Options doesn't exist on PyQt6
-            kwargs[ 'options' ] = QW.QFileDialog.Option.DontUseNativeDialog
-            
-        
-        if self._save_mode:
-            
-            if self._wildcard:
-                
-                path = QW.QFileDialog.getSaveFileName( self, '', existing_path, filter = self._wildcard, selectedFilter = self._wildcard, **kwargs )[0]
-                
-            else:
-                
-                path = QW.QFileDialog.getSaveFileName( self, '', existing_path, **kwargs )[0]
-                
-            
-        else:
-            
-            if self._wildcard:
-                
-                path = QW.QFileDialog.getOpenFileName( self, '', existing_path, filter = self._wildcard, selectedFilter = self._wildcard, **kwargs )[0]
-                
-            else:
-                
-                path = QW.QFileDialog.getOpenFileName( self, '', existing_path, **kwargs )[0]
-                
-            
-        
-        if path == '':
-            
-            return
-            
-        
-        path = os.path.normpath( path )
-        
-        self._path_edit.setText( path )
-        
-        if self._save_mode or os.path.exists( path ):
-            
-            self.filePickerChanged.emit()
-            
-        
-
-    def _TextEdited( self, text ):
-        
-        if self._save_mode or os.path.exists( text ):
-            
-            self.filePickerChanged.emit()
-            
-        
 
 class TabBar( QW.QTabBar ):
     
@@ -527,7 +361,7 @@ class TabBar( QW.QTabBar ):
                 return
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -956,7 +790,7 @@ class TabWidgetWithDnD( QW.QTabWidget ):
                     page_key = source_notebook.GetPageKey()
                     
                 
-                CallAfter( CG.client_controller.gui.ShowPage, page_key )
+                CG.client_controller.CallAfterQtSafe( self, CG.client_controller.gui.ShowPage, page_key )
                 
             
         
@@ -1292,31 +1126,7 @@ def AdjustOpacity( image: QG.QImage, opacity_factor ):
 
 def ToKeySequence( modifiers, key ):
     
-    if QtInit.WE_ARE_QT5:
-        
-        # noinspection PyUnresolvedReferences
-        if isinstance( modifiers, QC.Qt.KeyboardModifiers ):
-            
-            seq_str = ''
-            
-            for modifier in [ QC.Qt.KeyboardModifier.ShiftModifier, QC.Qt.KeyboardModifier.ControlModifier, QC.Qt.KeyboardModifier.AltModifier, QC.Qt.KeyboardModifier.MetaModifier, QC.Qt.KeyboardModifier.KeypadModifier, QC.Qt.KeyboardModifier.GroupSwitchModifier ]:
-                
-                if modifiers & modifier: seq_str += QG.QKeySequence( modifier ).toString()
-                
-            
-            seq_str += QG.QKeySequence( key ).toString()
-            
-            return QG.QKeySequence( seq_str )
-            
-        else:
-            
-            return QG.QKeySequence( key + modifiers )
-            
-        
-    else:
-        
-        return QG.QKeySequence( QC.QKeyCombination( modifiers, key ) ) # pylint: disable=E1101
-        
+    return QG.QKeySequence( QC.QKeyCombination( modifiers, key ) ) # pylint: disable=E1101
     
 
 def AddShortcut( widget, modifier, key, func: collections.abc.Callable, *args ):
@@ -1333,79 +1143,6 @@ def AddShortcut( widget, modifier, key, func: collections.abc.Callable, *args ):
 def GetBackgroundColour( widget ):
     
     return widget.palette().color( QG.QPalette.ColorRole.Window )
-    
-
-CallAfterEventType = registerEventType()
-
-class CallAfterEvent( QC.QEvent ):
-    
-    def __init__( self, fn, *args, **kwargs ):
-        
-        super().__init__( CallAfterEventType )
-        
-        self._fn = fn
-        self._args = args
-        self._kwargs = kwargs
-        
-    
-    def Execute( self ):
-        
-        if self._fn is not None:
-            
-            self._fn( *self._args, **self._kwargs )
-            
-        
-    
-
-# TODO: CallAfter gubbins may be replaceable by QMetaObject.invokeMethod( obj, "methodname", Qt.QueuedConnection/Qt.BlockingQueuedConnection ) and such???
-
-class CallAfterEventCatcher( QC.QObject ):
-    
-    def __init__( self, parent ):
-        
-        super().__init__( parent )
-        
-        self.installEventFilter( self )
-        
-    
-    def eventFilter( self, watched, event ):
-        
-        try:
-            
-            if event.type() == CallAfterEventType and isinstance( event, CallAfterEvent ):
-                
-                if HG.profile_mode:
-                    
-                    summary = 'Profiling CallAfter Event: {}'.format( event._fn )
-                    
-                    HydrusProfiling.Profile( summary, 'event.Execute()', globals(), locals(), min_duration_ms = HG.callto_profile_min_job_time_ms )
-                    
-                else:
-                    
-                    event.Execute()
-                    
-                
-                event.accept()
-                
-                return True
-                
-            
-        except Exception as e:
-            
-            HydrusData.ShowException( e )
-            
-            return True
-            
-        
-        return False
-        
-    
-
-def CallAfter( fn, *args, **kwargs ):
-    
-    QW.QApplication.instance().postEvent( QW.QApplication.instance().call_after_catcher, CallAfterEvent( fn, *args, **kwargs ) )
-    
-    QW.QApplication.instance().eventDispatcher().wakeUp()
     
 
 def ClearLayout( layout, delete_widgets = False ):
@@ -1459,6 +1196,7 @@ def SetInitialSize( widget, size ):
         widget.SetInitialSize( size )
         
         return
+        
     
     if isinstance( size, tuple ):
         
@@ -1480,7 +1218,7 @@ def SetBackgroundColour( widget, colour ):
         object_name = str( id( widget ) )
 
         widget.setObjectName( object_name )
-    
+        
     if isinstance( colour, QG.QColor ):
         
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, colour.name()) )
@@ -1492,7 +1230,7 @@ def SetBackgroundColour( widget, colour ):
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, colour.name() ) )
         
     else:
-
+        
         widget.setStyleSheet( '#{} {{ background-color: {} }}'.format( object_name, QG.QColor( colour ).name() ) )
         
     
@@ -1573,26 +1311,32 @@ class UIActionSimulator:
         ev1 = QG.QKeyEvent( QC.QEvent.Type.KeyPress, key, QC.Qt.KeyboardModifier.NoModifier, text = text )
         ev2 = QG.QKeyEvent( QC.QEvent.Type.KeyRelease, key, QC.Qt.KeyboardModifier.NoModifier, text = text )
         
-        QW.QApplication.instance().postEvent( widget, ev1 )
-        QW.QApplication.instance().postEvent( widget, ev2 )
+        QW.QApplication.postEvent( widget, ev1 )
+        QW.QApplication.postEvent( widget, ev2 )
         
     
 
 # Adapted from https://doc.qt.io/qt-5/qtwidgets-widgets-elidedlabel-example.html
 class EllipsizedLabel( QW.QLabel ):
     
-    def __init__( self, parent = None, ellipsize_end = False ):
+    def __init__( self, parent = None, ellipsize_end = False, ellipsized_ideal_width_chars = 24 ):
         
         super().__init__( parent )
         
         self._ellipsize_end = ellipsize_end
+        self._ellipsized_ideal_width_chars = ellipsized_ideal_width_chars
         
     
     def minimumSizeHint( self ):
         
         if self._ellipsize_end:
             
-            return self.sizeHint()
+            num_lines = self.text().count( '\n' ) + 1
+            
+            line_width = self.fontMetrics().lineWidth()
+            line_height = self.fontMetrics().lineSpacing()
+            
+            return QC.QSize( 3 * line_width, num_lines * line_height )
             
         else:
             
@@ -1618,12 +1362,11 @@ class EllipsizedLabel( QW.QLabel ):
         
         if self._ellipsize_end:
             
-            num_lines = self.text().count( '\n' ) + 1
+            parent_size_hint = QW.QLabel.sizeHint( self )
             
             line_width = self.fontMetrics().lineWidth()
-            line_height = self.fontMetrics().lineSpacing()
             
-            size_hint = QC.QSize( 3 * line_width, num_lines * line_height )
+            size_hint = QC.QSize( min( parent_size_hint.width(), self._ellipsized_ideal_width_chars * line_width ), parent_size_hint.height() )
             
         else:
             
@@ -1635,83 +1378,90 @@ class EllipsizedLabel( QW.QLabel ):
     
     def paintEvent( self, event ):
         
-        if not self._ellipsize_end:
+        try:
             
-            QW.QLabel.paintEvent( self, event )
-            
-            return
-            
-        
-        painter = QG.QPainter( self )
-
-        fontMetrics = painter.fontMetrics()
-
-        text_lines = self.text().splitlines()
-        
-        line_spacing = fontMetrics.lineSpacing()
-        
-        current_y = 0
-        
-        done = False
-        
-        my_width = self.width()
-        
-        for text_line in text_lines:
-            
-            elided_line = fontMetrics.elidedText( text_line, QC.Qt.TextElideMode.ElideRight, my_width )
-            
-            x = 0
-            width = my_width
-            height = line_spacing
-            flags = self.alignment()
-            
-            painter.drawText( x, current_y, width, height, flags, elided_line )
-            
-            # old hacky line that doesn't support alignment flags
-            #painter.drawText( QC.QPoint( 0, current_y + fontMetrics.ascent() ), elided_line )
-            
-            current_y += line_spacing
-            
-            # old code that did multiline wrap width stuff
-            '''
-            text_layout = QG.QTextLayout( text_line, painter.font() )
-            
-            text_layout.beginLayout()
-            
-            while True:
-            
-                line = text_layout.createLine()
+            if not self._ellipsize_end:
                 
-                if not line.isValid(): break
+                QW.QLabel.paintEvent( self, event )
                 
-                line.setLineWidth( self.width() )
+                return
                 
-                next_line_y = y + line_spacing
             
-                if self.height() >= next_line_y + line_spacing:
+            painter = QG.QPainter( self )
             
-                    line.draw( painter, QC.QPoint( 0, y ) )
+            fontMetrics = painter.fontMetrics()
+            
+            text_lines = self.text().splitlines()
+            
+            line_spacing = fontMetrics.lineSpacing()
+            
+            current_y = 0
+            
+            done = False
+            
+            my_width = self.width()
+            
+            for text_line in text_lines:
                 
-                    y = next_line_y
+                elided_line = fontMetrics.elidedText( text_line, QC.Qt.TextElideMode.ElideRight, my_width )
+                
+                x = 0
+                width = my_width
+                height = line_spacing
+                flags = self.alignment()
+                
+                painter.drawText( x, current_y, width, height, flags, elided_line )
+                
+                # old hacky line that doesn't support alignment flags
+                #painter.drawText( QC.QPoint( 0, current_y + fontMetrics.ascent() ), elided_line )
+                
+                current_y += line_spacing
+                
+                # old code that did multiline wrap width stuff
+                '''
+                text_layout = QG.QTextLayout( text_line, painter.font() )
+                
+                text_layout.beginLayout()
+                
+                while True:
                     
-                else:
-
-                    last_line = text_line[ line.textStart(): ]
-                
-                    elided_last_line = fontMetrics.elidedText( last_line, QC.Qt.TextElideMode.ElideRight, self.width() )
-                
-                    painter.drawText( QC.QPoint( 0, y + fontMetrics.ascent() ), elided_last_line )
+                    line = text_layout.createLine()
                     
-                    done = True
+                    if not line.isValid(): break
                     
-                    break
+                    line.setLineWidth( self.width() )
+                    
+                    next_line_y = y + line_spacing
+                    
+                    if self.height() >= next_line_y + line_spacing:
+                        
+                        line.draw( painter, QC.QPoint( 0, y ) )
+                        
+                        y = next_line_y
+                        
+                    else:
+                        
+                        last_line = text_line[ line.textStart(): ]
+                        
+                        elided_last_line = fontMetrics.elidedText( last_line, QC.Qt.TextElideMode.ElideRight, self.width() )
+                        
+                        painter.drawText( QC.QPoint( 0, y + fontMetrics.ascent() ), elided_last_line )
+                        
+                        done = True
+                        
+                        break
+                        
                     
                 
-
-            text_layout.endLayout()
+                text_layout.endLayout()
+                
+                if done: break
+                '''
+                
             
-            if done: break
-            '''
+        except Exception as e:
+            
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -1793,7 +1543,9 @@ class PasswordEntryDialog( Dialog ):
         self._password = QW.QLineEdit( self )
         self._password.setEchoMode( QW.QLineEdit.EchoMode.Password )
         
-        self.setLayout( QW.QVBoxLayout() )
+        vbox = QW.QVBoxLayout()
+        
+        self.setLayout( vbox )
         
         entry_layout = QW.QHBoxLayout()
         
@@ -1806,135 +1558,13 @@ class PasswordEntryDialog( Dialog ):
         button_layout.addWidget( self._cancel_button )
         button_layout.addWidget( self._ok_button )
         
-        self.layout().addLayout( entry_layout )
-        self.layout().addLayout( button_layout )
+        vbox.addLayout( entry_layout )
+        vbox.addLayout( button_layout )
         
 
     def GetValue( self ):
         
         return self._password.text()
-        
-    
-
-class DirDialog( QW.QFileDialog ):
-    
-    def __init__( self, parent = None, message = None ):
-        
-        super().__init__( parent )
-        
-        if message is not None: self.setWindowTitle( message )
-        
-        self.setAcceptMode( QW.QFileDialog.AcceptMode.AcceptOpen )
-        
-        self.setFileMode( QW.QFileDialog.FileMode.Directory )
-        
-        self.setOption( QW.QFileDialog.Option.ShowDirsOnly, True )
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            self.setOption( QW.QFileDialog.Option.DontUseNativeDialog, True )
-            
-        
-    
-    def __enter__( self ):
-        
-        return self
-        
-    
-    def __exit__( self, exc_type, exc_val, exc_tb ):
-        
-        self.deleteLater()
-        
-    
-    def _GetSelectedFiles( self ):
-        
-        return [ os.path.normpath( path ) for path in self.selectedFiles() ]
-        
-    
-    def GetPath(self):
-        
-        sel = self._GetSelectedFiles()
-        
-        if len( sel ) > 0:
-            
-            return sel[0]
-            
-        
-        return None
-        
-    
-
-class FileDialog( QW.QFileDialog ):
-    
-    def __init__( self, parent = None, message = None, acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFile, default_filename = None, default_directory = None, wildcard = None, defaultSuffix = None ):
-        
-        super().__init__( parent )
-        
-        if message is not None:
-            
-            self.setWindowTitle( message )
-            
-        
-        self.setAcceptMode( acceptMode )
-        
-        self.setFileMode( fileMode )
-        
-        if default_directory is not None:
-            
-            self.setDirectory( default_directory )
-            
-        
-        if defaultSuffix is not None:
-            
-            self.setDefaultSuffix( defaultSuffix )
-            
-        
-        if default_filename is not None:
-            
-            self.selectFile( default_filename )
-            
-        
-        if wildcard:
-            
-            self.setNameFilters( [ wildcard, 'Any files (*)' ] )
-            
-        
-        if CG.client_controller.new_options.GetBoolean( 'use_qt_file_dialogs' ):
-            
-            self.setOption( QW.QFileDialog.Option.DontUseNativeDialog, True )
-            
-        
-    
-    def __enter__( self ):
-        
-        return self
-        
-
-    def __exit__( self, exc_type, exc_val, exc_tb ):
-        
-        self.deleteLater()
-        
-
-    def _GetSelectedFiles( self ):
-        
-        return [ os.path.normpath( path ) for path in self.selectedFiles() ]
-        
-    
-    def GetPath( self ):
-        
-        sel = self._GetSelectedFiles()
-
-        if len( sel ) > 0:
-            
-            return sel[ 0 ]
-            
-
-        return None
-        
-    
-    def GetPaths( self ):
-        
-        return self._GetSelectedFiles()
         
     
 
@@ -2032,7 +1662,6 @@ class WidgetEventFilter ( QC.QObject ):
         
         self._callback_map = defaultdict( list )
         
-        self._user_moved_window = False # There is no EVT_MOVE_END in Qt so some trickery is required.
     
     def _ExecuteCallbacks( self, event_name, event ):
         
@@ -2059,13 +1688,9 @@ class WidgetEventFilter ( QC.QObject ):
             
             event_killed = False
             
-            if type == QC.QEvent.Type.WindowStateChange:
+            if type == QC.QEvent.Type.MouseButtonDblClick:
                 
-                if isValid( self._parent_widget ):
-                    
-                    if self._parent_widget.isMaximized() or (event.oldState() & QC.Qt.WindowState.WindowMaximized): event_killed = event_killed or self._ExecuteCallbacks( 'EVT_MAXIMIZE', event )
-                
-            elif type == QC.QEvent.Type.MouseButtonDblClick:
+                event = typing.cast( QG.QMouseEvent, event )
                 
                 if event.button() == QC.Qt.MouseButton.LeftButton:
                     
@@ -2078,6 +1703,8 @@ class WidgetEventFilter ( QC.QObject ):
                 
             elif type == QC.QEvent.Type.MouseButtonPress:
                 
+                event = typing.cast( QG.QMouseEvent, event )
+                
                 if event.buttons() & QC.Qt.MouseButton.LeftButton: event_killed = event_killed or self._ExecuteCallbacks( 'EVT_LEFT_DOWN', event )
                 
                 if event.buttons() & QC.Qt.MouseButton.MiddleButton: event_killed = event_killed or self._ExecuteCallbacks( 'EVT_MIDDLE_DOWN', event )
@@ -2086,35 +1713,14 @@ class WidgetEventFilter ( QC.QObject ):
                 
             elif type == QC.QEvent.Type.MouseButtonRelease:
                 
+                event = typing.cast( QG.QMouseEvent, event )
+                
                 if event.buttons() & QC.Qt.MouseButton.LeftButton: event_killed = event_killed or self._ExecuteCallbacks( 'EVT_LEFT_UP', event )
-                
-            elif type == QC.QEvent.Type.Move:
-                
-                event_killed = event_killed or self._ExecuteCallbacks( 'EVT_MOVE', event )
-                
-                if isValid( self._parent_widget ) and self._parent_widget.isVisible():
-                    
-                    self._user_moved_window = True
-                    
                 
             elif type == QC.QEvent.Type.Resize:
                 
                 event_killed = event_killed or self._ExecuteCallbacks( 'EVT_SIZE', event )
                 
-            elif type == QC.QEvent.Type.NonClientAreaMouseButtonPress:
-                
-                self._user_moved_window = False
-                
-            elif type == QC.QEvent.Type.NonClientAreaMouseButtonRelease:
-                
-                if self._user_moved_window:
-                    
-                    event_killed = event_killed or self._ExecuteCallbacks( 'EVT_MOVE_END', event )
-                    
-                    self._user_moved_window = False
-                    
-                
-            
             if event_killed:
                 
                 event.accept()
@@ -2158,21 +1764,9 @@ class WidgetEventFilter ( QC.QObject ):
         
         self._AddCallback( 'EVT_LEFT_UP', callback )
 
-    def EVT_MAXIMIZE( self, callback ):
-        
-        self._AddCallback( 'EVT_MAXIMIZE', callback )
-
     def EVT_MIDDLE_DOWN( self, callback ):
         
         self._AddCallback( 'EVT_MIDDLE_DOWN', callback )
-
-    def EVT_MOVE( self, callback ):
-        
-        self._AddCallback( 'EVT_MOVE', callback )
-
-    def EVT_MOVE_END( self, callback ):
-        
-        self._AddCallback( 'EVT_MOVE_END', callback )
 
     def EVT_RIGHT_DOWN( self, callback ):
         

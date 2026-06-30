@@ -96,13 +96,13 @@ class HydrusResourceClientAPIRestrictedAddTagsAddTags( HydrusResourceClientAPIRe
                 
                 for ( parsed_content_action, tags ) in parsed_actions_to_tags.items():
                     
-                    HydrusNetworkVariableHandling.TestVariableType( 'action in actions_to_tags', parsed_content_action, str )
+                    HydrusNetworkVariableHandling.TestVariableType( 'parsed_content_action', parsed_content_action, str )
                     
                     try:
                         
                         content_action = int( parsed_content_action )
                         
-                    except:
+                    except Exception as e:
                         
                         raise HydrusExceptions.BadRequestException( 'Sorry, got an action, "{}", that was not an integer!'.format( parsed_content_action ) )
                         
@@ -111,14 +111,14 @@ class HydrusResourceClientAPIRestrictedAddTagsAddTags( HydrusResourceClientAPIRe
                         
                         if content_action not in ( HC.CONTENT_UPDATE_ADD, HC.CONTENT_UPDATE_DELETE ):
                             
-                            raise HydrusExceptions.BadRequestException( 'Sorry, you submitted a content action of "{}" for service "{}", but you can only add/delete on a local tag service!'.format( parsed_content_action, service_key.hex() ) )
+                            raise HydrusExceptions.BadRequestException( 'Sorry, you submitted a content action of "{}" for service "{}", but you can only add/delete on a local tag domain!'.format( parsed_content_action, service_key.hex() ) )
                             
                         
                     else:
                         
                         if content_action in ( HC.CONTENT_UPDATE_ADD, HC.CONTENT_UPDATE_DELETE ):
                             
-                            raise HydrusExceptions.BadRequestException( 'Sorry, you submitted a content action of "{}" for service "{}", but you cannot add/delete on a remote tag service!'.format( parsed_content_action, service_key.hex() ) )
+                            raise HydrusExceptions.BadRequestException( 'Sorry, you submitted a content action of "{}" for service "{}", but you cannot add/delete on a remote tag repository!'.format( parsed_content_action, service_key.hex() ) )
                             
                         
                     
@@ -188,7 +188,7 @@ class HydrusResourceClientAPIRestrictedAddTagsAddTags( HydrusResourceClientAPIRe
                         
                         tag = HydrusTags.CleanTag( tag )
                         
-                    except:
+                    except Exception as e:
                         
                         continue
                         
@@ -262,8 +262,6 @@ class HydrusResourceClientAPIRestrictedAddTagsSearchTags( HydrusResourceClientAP
         
         parsed_autocomplete_text = ClientSearchAutocomplete.ParsedAutocompleteText( search, tag_autocomplete_options, collapse_search_characters )
         
-        parsed_autocomplete_text.SetInclusive( True )
-        
         return parsed_autocomplete_text
         
     
@@ -277,7 +275,7 @@ class HydrusResourceClientAPIRestrictedAddTagsSearchTags( HydrusResourceClientAP
             
             autocomplete_search_text = parsed_autocomplete_text.GetSearchText( True )
             
-            location_context = ClientLocalServerCore.ParseLocationContext( request, ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) )
+            location_context = ClientLocalServerCore.ParseLocationContext( request, ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ) )
             
             file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context )
             
@@ -294,6 +292,8 @@ class HydrusResourceClientAPIRestrictedAddTagsSearchTags( HydrusResourceClientAP
             matches = ClientSearchAutocomplete.FilterPredicatesBySearchText( display_tag_service_key, autocomplete_search_text, predicates )
             
             matches = ClientSearchPredicate.SortPredicates( matches )
+            
+            ClientSearchPredicate.SetPredicatesInclusivity( predicates, parsed_autocomplete_text.inclusive )
             
         
         return matches
@@ -317,7 +317,13 @@ class HydrusResourceClientAPIRestrictedAddTagsSearchTags( HydrusResourceClientAP
         
         body_dict = {}
         
+        body_dict[ 'autocomplete_text' ] = {
+            'search_text' : parsed_autocomplete_text.GetSearchText( False, allow_auto_wildcard_conversion = False ),
+            'inclusive' : parsed_autocomplete_text.inclusive,
+        }
+        
         # TODO: Ok so we could add sibling/parent info here if the tag display type is storage, or in both cases. probably only if client asks for it
+        # these predicates are now aware that they are inclusive/exclusive, also. adding an 'inclusive' feels spammy, but consider it
         
         tags = [ { 'value' : match.GetValue(), 'count' : match.GetCount().GetMinCount() } for match in matches ]
         

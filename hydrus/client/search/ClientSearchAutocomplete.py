@@ -1,7 +1,7 @@
 import collections.abc
 import re
 
-from hydrus.core import HydrusData
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTags
 
 from hydrus.client.metadata import ClientTagsHandling
@@ -295,7 +295,7 @@ class ParsedAutocompleteText( object ):
                     search_texts.append( self._GetSearchText( False, allow_auto_wildcard_conversion = allow_unnamespaced_search_gives_any_namespace_wildcards, force_do_not_collapse = True ) )
                     
                 
-                search_texts = HydrusData.DedupeList( search_texts )
+                search_texts = HydrusLists.DedupeList( search_texts )
                 
                 predicates.extend( ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_WILDCARD, search_text, self.inclusive ) for search_text in search_texts ) )
                 
@@ -417,7 +417,7 @@ class ParsedAutocompleteText( object ):
             
             results = ClientSearchParseSystemPredicates.ParseSystemPredicateStringsToPredicates( [ self.raw_input ] )
             
-        except:
+        except Exception as e:
             
             results = []
             
@@ -443,7 +443,7 @@ class ParsedAutocompleteText( object ):
                     return True
                     
                 
-            except:
+            except Exception as e:
                 
                 return False
                 
@@ -543,7 +543,7 @@ class PredicateResultsCacheTag( PredicateResultsCache ):
             
             if subtag_to_namespace_search:
                 
-                # if a user searches 'char*' and then later 'character:samus*', we may have the results
+                # if a user searches 'char*' and then later 'character:dave*', we may have the results
                 # namespace changed, so if we do not satisfy this slim case, we can't provide any results
                 we_searched_namespace_as_subtag = strict_search_text_namespace.startswith( self._strict_search_text_subtag )
                 
@@ -573,7 +573,7 @@ class PredicateResultsCacheTag( PredicateResultsCache ):
             
             #
             
-            # 'sam' will match 'samus', character:sam will match character:samus
+            # 'dav' will match 'dave', character:dav will match character:dave
             
             return strict_search_text_subtag.startswith( self._strict_search_text_subtag )
             

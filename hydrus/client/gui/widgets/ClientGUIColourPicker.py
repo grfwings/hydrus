@@ -73,7 +73,7 @@ def EditColour( win: QW.QWidget, colour: QG.QColor ):
         
         qt_version_is_dangerzone = qt_version_tuple[0] == 6 and qt_version_tuple[1] < 6
         
-    except:
+    except Exception as e:
         
         qt_version_is_dangerzone = False # who knows what is going on, but let's not spam stylesheets on this crazy Qt!?
         
@@ -116,6 +116,8 @@ def EditColour( win: QW.QWidget, colour: QG.QColor ):
 
 class ColourPickerButton( QW.QPushButton ):
     
+    colourChanged = QC.Signal()
+    
     def __init__( self, parent = None ):
         
         super().__init__( parent )
@@ -130,7 +132,9 @@ class ColourPickerButton( QW.QPushButton ):
     def SetColour( self, colour ):
         
         self._colour = colour
-
+        
+        self.colourChanged.emit()
+        
         self._UpdatePixmap()
         
 

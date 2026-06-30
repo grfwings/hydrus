@@ -32,9 +32,9 @@ Let's look at the tag autocomplete dropdown:
     
 *   **file/tag domains**
     
-    By default, you will search in 'my files' and 'all known tags' domain. This is the intersection of your local media files (on your hard disk) and the union of all known tag searches. If you search for `character:samus aran`, then you will get file results from your 'my files' domain that have `character:samus aran` in any known tag service. For most purposes, this combination is fine, but as you use the client more, you will sometimes want to access different search domains.
+    By default, you will search in 'my files' and 'all known tags' domain. This is the intersection of your local media files (on your hard disk) and the union of all known tag searches. If you search for `character:my cool character`, then you will get file results from your 'my files' domain that have `character:my cool character` in any known tag service. For most purposes, this combination is fine, but as you use the client more, you will sometimes want to access different search domains.
     
-    For instance, if you change the file domain to 'trash', then you will instead get files that are in your trash. Setting the tag domain to 'my tags' will ignore other tag services (e.g. the PTR) for all tag search predicates, so a `system:num_tags` or a `character:samus aran` will only look 'my tags'.
+    For instance, if you change the file domain to 'trash', then you will instead get files that are in your trash. Setting the tag domain to 'my tags' will ignore other tag services (e.g. the PTR) for all tag search predicates, so a `system:num_tags` or a `character:my cool character` will only look 'my tags'.
     
     Turning on 'advanced mode' gives access to more search domains. Some of them are subtly complicated, run extremely slowly, and only useful for clever jobs--most of the time, you still want 'my files' and 'all known tags'.
     
@@ -43,7 +43,7 @@ Let's look at the tag autocomplete dropdown:
     Once you are more experienced, have a play with this. It lets you save your common searches for future, so you don't have to either keep re-entering them or keep them open all the time. If you close big things down when you aren't using them, you will keep your client lightweight and save time.
     
 
-When you type a tag in a search page, Hydrus will treat a space the same way as an underscore. Searching `character:samus aran` will find files tagged with `character:samus aran` and `character:samus_aran`. This is true of some other syntax characters, `[](){}/\"'-`, too.
+When you type a tag in a search page, Hydrus will treat a space the same way as an underscore. Searching `character:my cool character` will find files tagged with `character:my cool character` and `character:my_cool_character`. This is true of some other syntax characters, `[](){}/\"'-`, too.
 
 Tags will be searchable by all their [siblings](advanced_siblings.md). If there's a sibling for `large` -> `huge` then typing `large` will provide `huge` as a suggestion. This goes for the whole sibling chain, no matter how deep or a tag's position in it.
 
@@ -114,11 +114,29 @@ Default sort order and more `sort by: namespace` are found in `file -> options -
 
 ### Sorting with `system:limit`
 
-If you add `system:limit` to a search, the client will consider what that page's file sort currently is. If it is simple enough--something like file size or import time--then it will sort your results before they come back and clip the limit according to that sort, getting the n 'largest file size' or 'newest imports' and so on. This can be a great way to set up a lightweight filtering page for 'the 256 biggest videos in my inbox'.
+If you add `system:limit` to a search, the client will consider what that page's current file sort. If the sort is simple--something like file size or import time--then it will sort your results before they come back and clip the limit according to that sort, getting the n 'largest file size' or 'newest imports' and so on. This can be a great way to set up a lightweight filtering page for 'the 256 biggest videos in my inbox'.
 
-If you change the sort, hydrus will not refresh the search, it'll just re-sort the n files you have. Hit F5 to refresh the search with a new sort.
+If you change the sort, hydrus will try to refresh the search to match the new 'biggest' or 'thinnest' n files it needs to fetch. Hit F5 to force-refresh.
 
-Not all sorts are supported. Anything complicated like tag sort will result in a random sample instead.
+However, anything complicated--e.g. tag sort--will result in a _random_ system:limit sample instead; the sort will be applied post-hoc.
+
+!!! Info "Example"
+    Let's say you have 3 files in your inbox. One file is tagged with `creator:pablo picasso`, the second is tagged with `creator:salvador dali`, and the third is tagged with `creator:vincent van gogh`. If you were to sort by the `creator` tag namespace in a search with the following predicates:
+    
+    - `system:inbox`
+    - `system:limit is 2`
+    
+    You would get a random sample of 2 out of 3 of these files, and *then* the client will display them to you sorted by the `creator` tag namespace. In other words, the possible random outcomes for this search are:
+    
+    - The file tagged with `creator:pablo picasso`, followed by the file tagged with `creator:salvador dali`, *or*
+    - the file tagged with `creator:pablo picasso`, followed by the file tagged with `creator:vincent van gogh`, *or*
+    - the file tagged with `creator:salvador dali`, followed by the file tagged with `creator:vincent van gogh`.
+    
+    Note that the results are displayed always in alphabetical order along the `creator` tag namespace, but even though `pablo picasso` comes alphabetically before `salvador dali` and `vincent van gogh`, it does not always appear in the search. This is because the random sample occured before the sort does.
+
+The tooltip on the sort controls will say whether you are currently simple enough or too complicated to do a pre-sampling sort.
+
+A common reason for users wondering why they get random results for their sorted searches is their implicit `system:limit` set under `options -> file search` is lower than the number of results their search would return, and they forgot about it. To address it, depending on your hardware specs and performance needs, you can either increase/remove the implicit `system:limit`, or you can explicitly add a high `system:limit` to queries only when exhaustive results are needed.
 
 ## Collecting
 Collection is found under the `sort by: ` dropdown and uses namespaces listed in the `sort by: namespace` sort options. The new namespaces will only be available in new pages.

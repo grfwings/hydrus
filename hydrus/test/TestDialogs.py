@@ -54,6 +54,7 @@ def PressKey( window, key ):
     
     uias.Char( window, key )
     
+
 class TestDBDialogs( unittest.TestCase ):
     
     def test_dialog_manage_subs( self ):
@@ -68,8 +69,6 @@ class TestDBDialogs( unittest.TestCase ):
                 
                 dlg.SetPanel( panel )
                 
-                TG.test_controller.CallLaterQtSafe( dlg, 2, 'test job', panel.Add )
-                
                 TG.test_controller.CallLaterQtSafe( dlg, 4, 'test job', OKChildDialog, panel )
                 
                 TG.test_controller.CallLaterQtSafe( dlg, 6, 'test job', HitCancelButton, dlg )
@@ -80,7 +79,7 @@ class TestDBDialogs( unittest.TestCase ):
                 
             
         
-        TG.test_controller.CallBlockingToQt( TG.test_controller.win, qt_code )
+        TG.test_controller.CallBlockingToQtTLW( qt_code )
         
     
 class TestNonDBDialogs( unittest.TestCase ):
@@ -125,6 +124,6 @@ class TestNonDBDialogs( unittest.TestCase ):
                 
             
         
-        TG.test_controller.CallBlockingToQt( TG.test_controller.win, qt_code )
+        TG.test_controller.CallBlockingToQtTLW( qt_code )
         
     

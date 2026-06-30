@@ -1,6 +1,5 @@
 import collections.abc
 import re
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -14,12 +13,12 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
+from hydrus.client.gui.metadata import ClientGUITagFilter
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIRegex
@@ -118,7 +117,7 @@ class MultilineStringConversionTestPanel( QW.QWidget ):
             
             results = self._string_processor.ProcessStrings( texts, max_steps_allowed = step_index + 1 )
             
-        except:
+        except Exception as e:
             
             results = []
             
@@ -269,7 +268,7 @@ class SingleStringConversionTestPanel( QW.QWidget ):
                     example_text = t
                     
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -320,7 +319,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
         # I'm doing all sorts of moveup/down and other adjustments to our # here, but who cares about displaying and maintaining that--there is only one appropriate sort
         
         # TODO: Yo, if I converted the conversion steps to their own serialisable object, this guy could have import/export/duplicate buttons nice and easy
-        self._conversions = ClientGUIListCtrl.BetterListCtrlTreeView( conversions_panel, 7, model, delete_key_callback = self._DeleteConversion, activation_callback = self._EditConversion )
+        self._conversions = ClientGUIListCtrl.BetterListCtrlTreeView( conversions_panel, 6, model, delete_key_callback = self._DeleteConversion, activation_callback = self._EditConversion, max_height_num_chars = 12 )
         
         conversions_panel.SetListCtrl( self._conversions )
         
@@ -386,7 +385,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
                 ( conversion_type, data ) = default_conversions[0]
                 
             
-        except:
+        except Exception as e:
             
             conversion_type = ClientStrings.STRING_CONVERSION_APPEND_TEXT
             data = 'extra text'
@@ -398,7 +397,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             example_string_at_this_point = string_converter.Convert( self._example_string.text() )
             
-        except:
+        except Exception as e:
             
             example_string_at_this_point = self._example_string.text()
             
@@ -559,7 +558,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             example_string_at_this_point = string_converter.Convert( self._example_string.text(), number - 1 )
             
-        except:
+        except Exception as e:
             
             example_string_at_this_point = self._example_string.text()
             
@@ -723,7 +722,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
             tt = 'This hashes the string\'s UTF-8-decoded bytes to hexadecimal.'
             self._data_hash_function.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
             
-            for e in ( ClientStrings.ENCODING_TYPE_HEX_UTF8, ClientStrings.ENCODING_TYPE_BASE64_UTF8, ClientStrings.ENCODING_TYPE_URL_PERCENT, ClientStrings.ENCODING_TYPE_UNICODE_ESCAPE, ClientStrings.ENCODING_TYPE_HTML_ENTITIES ):
+            for e in ( ClientStrings.ENCODING_TYPE_HEX_UTF8, ClientStrings.ENCODING_TYPE_BASE64_UTF8, ClientStrings.ENCODING_TYPE_BASE64URL_UTF8, ClientStrings.ENCODING_TYPE_URL_PERCENT, ClientStrings.ENCODING_TYPE_UNICODE_ESCAPE, ClientStrings.ENCODING_TYPE_HTML_ENTITIES ):
                 
                 self._data_encoding.addItem( ClientStrings.encoding_type_str_lookup[ e ], e )
                 self._data_decoding.addItem( ClientStrings.encoding_type_str_lookup[ e ], e )
@@ -1088,7 +1087,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     self._example_conversion.setText( str( example_conversion ) )
                     
-                except:
+                except Exception as e:
                     
                     self._example_conversion.setText( repr( example_conversion ) )
                     
@@ -1190,7 +1189,7 @@ class EditStringConverterPanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditStringJoinerPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, string_joiner: ClientStrings.StringJoiner, test_data: typing.Optional[ collections.abc.Sequence[ str ] ] = None ):
+    def __init__( self, parent, string_joiner: ClientStrings.StringJoiner, test_data: collections.abc.Sequence[ str ] | None = None ):
         
         if test_data is None:
             
@@ -1322,7 +1321,7 @@ class EditStringJoinerPanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditStringMatchPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent: QW.QWidget, string_match: ClientStrings.StringMatch, test_data = typing.Optional[ ClientParsing.ParsingTestData ] ):
+    def __init__( self, parent: QW.QWidget, string_match: ClientStrings.StringMatch, test_data = ClientParsing.ParsingTestData | None ):
         
         # TODO: make this a widget so I can embed it in other places without scrollbar fun
         # search all instances afterwards and fix whack layout flags. shouldn't have to expand since scrollbar is no longer in the way of min size calcs
@@ -1345,7 +1344,9 @@ class EditStringMatchPanel( ClientGUIScrolledPanels.EditPanel ):
         self._match_value_flexible_input.addItem( 'alphanumeric characters (a-zA-Z0-9)', ClientStrings.FLEXIBLE_MATCH_ALPHANUMERIC )
         self._match_value_flexible_input.addItem( 'numeric characters (0-9)', ClientStrings.FLEXIBLE_MATCH_NUMERIC )
         self._match_value_flexible_input.addItem( 'hexadecimal characters (0-9a-fA-F)', ClientStrings.FLEXIBLE_MATCH_HEX )
-        self._match_value_flexible_input.addItem( 'base-64 characters (a-zA-z0-9+/, = padding)', ClientStrings.FLEXIBLE_MATCH_BASE64 )
+        self._match_value_flexible_input.addItem( 'base64 characters (a-zA-z0-9+/ with = padding)', ClientStrings.FLEXIBLE_MATCH_BASE64 )
+        self._match_value_flexible_input.addItem( 'base64url characters (a-zA-z0-9-_ optionally with = padding)', ClientStrings.FLEXIBLE_MATCH_BASE64URL )
+        self._match_value_flexible_input.addItem( 'base64 characters (url encoded) (a-zA-z0-9 %2B %2F with %3D padding)', ClientStrings.FLEXIBLE_MATCH_BASE64_URL_ENCODED )
         
         self._min_chars = ClientGUICommon.NoneableSpinCtrl( self, 16, min = 1, max = 65535, unit = 'characters', none_phrase = 'no limit' )
         self._max_chars = ClientGUICommon.NoneableSpinCtrl( self, 64, min = 1, max = 65535, unit = 'characters', none_phrase = 'no limit' )
@@ -1576,7 +1577,7 @@ SELECT_RANGE = 1
 
 class EditStringSlicerPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, string_slicer: ClientStrings.StringSlicer, test_data: typing.Optional[ collections.abc.Sequence[ str ] ] = None ):
+    def __init__( self, parent, string_slicer: ClientStrings.StringSlicer, test_data: collections.abc.Sequence[ str ] | None = None ):
         
         if test_data is None:
             
@@ -1772,7 +1773,7 @@ class EditStringSlicerPanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditStringSorterPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent, string_sorter: ClientStrings.StringSorter, test_data: typing.Optional[ collections.abc.Sequence[ str ] ] = None ):
+    def __init__( self, parent, string_sorter: ClientStrings.StringSorter, test_data: collections.abc.Sequence[ str ] | None = None ):
         
         if test_data is None:
             
@@ -1900,7 +1901,7 @@ class EditStringSorterPanel( ClientGUIScrolledPanels.EditPanel ):
                         s = '{} (regex: {})'.format( s, m.group() )
                         
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -2070,7 +2071,7 @@ class EditStringSplitterPanel( ClientGUIScrolledPanels.EditPanel ):
 
 class EditStringTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
     
-    def __init__( self, parent: QW.QWidget, string_tag_filter: ClientStrings.StringTagFilter, test_data = typing.Optional[ ClientParsing.ParsingTestData ] ):
+    def __init__( self, parent: QW.QWidget, string_tag_filter: ClientStrings.StringTagFilter, test_data: ClientParsing.ParsingTestData | None = None ):
         
         super().__init__( parent )
         
@@ -2078,7 +2079,7 @@ class EditStringTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
         
         tag_filter = string_tag_filter.GetTagFilter()
         
-        self._tag_filter_button = ClientGUITags.TagFilterButton( self, message, tag_filter )
+        self._tag_filter_button = ClientGUITagFilter.TagFilterButton( self, message, tag_filter )
         
         self._example_string = QW.QLineEdit( self )
         
@@ -2090,7 +2091,7 @@ class EditStringTagFilterPanel( ClientGUIScrolledPanels.EditPanel ):
             
             if len( test_data.texts ) > 0:
                 
-                self._example_string.setText( list( test_data.texts )[0] )
+                self._example_string.setText( test_data.texts[0] )
                 
             
         

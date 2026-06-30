@@ -1,13 +1,14 @@
 import collections
 import collections.abc
+import functools
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTime
@@ -17,6 +18,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.networking import ClientNetworkingContexts
+from hydrus.client.networking import ClientNetworkingGUG
 from hydrus.client.networking import ClientNetworkingFunctions
 from hydrus.client.networking import ClientNetworkingURLClass
 
@@ -28,6 +30,12 @@ valid_str_lookup = {
     VALID_DENIED : 'denied',
     VALID_APPROVED : 'approved',
     VALID_UNKNOWN : 'pending'
+}
+
+valid_desc_lookup = {
+    VALID_DENIED : 'denied - will not use it',
+    VALID_APPROVED : 'approved - will use it',
+    VALID_UNKNOWN : 'pending - will ask the user on next use'
 }
 
 valid_enum_lookup = { value : key for ( key, value ) in valid_str_lookup.items() }
@@ -54,21 +62,23 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         self._url_class_keys_to_display = set()
         self._url_class_keys_to_parser_keys = HydrusSerialisable.SerialisableBytesDictionary()
         
-        self._second_level_domains_to_url_classes = collections.defaultdict( list )
+        self._url_domain_masks_to_url_classes = collections.defaultdict( list )
         
-        self._second_level_domains_to_network_infrastructure_errors = collections.defaultdict( list )
+        # TODO: Replace this with DomainStatus and do Cleanse/IsStub clearing on load
+        # one question is whether to store by domains or networkcontexts. consider this, but perhaps not a big deal for now
+        self._domains_to_network_infrastructure_errors = collections.defaultdict( list )
         
-        from hydrus.client.importing.options import TagImportOptions
+        from hydrus.client.importing.options import TagImportOptionsLegacy
         
-        self._file_post_default_tag_import_options = TagImportOptions.TagImportOptions()
-        self._watchable_default_tag_import_options = TagImportOptions.TagImportOptions()
+        self._file_post_default_tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
+        self._watchable_default_tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
         
         self._url_class_keys_to_default_tag_import_options = {}
         
-        from hydrus.client.importing.options import NoteImportOptions
+        from hydrus.client.importing.options import NoteImportOptionsLegacy
         
-        self._file_post_default_note_import_options = NoteImportOptions.NoteImportOptions()
-        self._watchable_default_note_import_options = NoteImportOptions.NoteImportOptions()
+        self._file_post_default_note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
+        self._watchable_default_note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
         
         self._url_class_keys_to_default_note_import_options = {}
         
@@ -100,7 +110,7 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def _GetDefaultNoteImportOptionsForURL( self, referral_url: typing.Optional[ str ], file_or_post_url: str ):
+    def _GetDefaultNoteImportOptionsForURL( self, referral_url: str | None, file_or_post_url: str ):
         
         urls_to_examine_in_order = [ file_or_post_url ]
         
@@ -162,7 +172,7 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         return self._file_post_default_note_import_options
         
     
-    def _GetDefaultTagImportOptionsForURL( self, referral_url: typing.Optional[ str ], file_or_post_url: str ):
+    def _GetDefaultTagImportOptionsForURL( self, referral_url: str | None, file_or_post_url: str ):
         
         urls_to_examine_in_order = [ file_or_post_url ]
         
@@ -224,9 +234,19 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         return self._file_post_default_tag_import_options
         
     
-    def _GetGUG( self, gug_key_and_name ):
+    def _GetGUG( self, gug_key_and_name: tuple[ bytes, str ] | None ):
+        
+        if gug_key_and_name is None:
+            
+            return None
+            
         
         ( gug_key, gug_name ) = gug_key_and_name
+        
+        if gug_name == '':
+            
+            return None
+            
         
         if gug_key in self._gug_keys_to_gugs:
             
@@ -326,11 +346,20 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
     
     def _GetURLClass( self, url ):
         
-        domain = ClientNetworkingFunctions.ConvertURLIntoSecondLevelDomain( url )
-        
-        if domain in self._second_level_domains_to_url_classes:
+        try:
             
-            url_classes = self._second_level_domains_to_url_classes[ domain ]
+            domain = ClientNetworkingFunctions.ConvertURLIntoDomain( url )
+            
+        except HydrusExceptions.URLClassException:
+            
+            return None
+            
+        
+        url_domain_masks = self._GetURLDomainMasks( domain )
+        
+        for url_domain_mask in url_domain_masks:
+            
+            url_classes = self._url_domain_masks_to_url_classes[ url_domain_mask ]
             
             for url_class in url_classes:
                 
@@ -348,6 +377,24 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
         return None
+        
+    
+    @functools.lru_cache( 128 )
+    def _GetURLDomainMasks( self, domain ) -> list[ ClientNetworkingURLClass.URLDomainMask ]:
+        
+        url_domain_masks = []
+        
+        for url_domain_mask in self._url_domain_masks_to_url_classes.keys():
+            
+            if url_domain_mask.Matches( domain ):
+                
+                url_domain_masks.append( url_domain_mask )
+                
+            
+        
+        url_domain_masks.sort( key = lambda udm: udm.GetSortingComplexity(), reverse = True )
+        
+        return url_domain_masks
         
     
     def _GetURLToFetch( self, url: str ):
@@ -439,16 +486,16 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
     
     def _RecalcCache( self ):
         
-        self._second_level_domains_to_url_classes = collections.defaultdict( list )
+        self._GetURLDomainMasks.cache_clear()
+        
+        self._url_domain_masks_to_url_classes = collections.defaultdict( list )
         
         for url_class in self._url_classes:
             
-            domain = ClientNetworkingFunctions.ConvertDomainIntoSecondLevelDomain( url_class.GetDomain() )
-            
-            self._second_level_domains_to_url_classes[ domain ].append( url_class )
+            self._url_domain_masks_to_url_classes[ url_class.GetURLDomainMask() ].append( url_class )
             
         
-        for url_classes in self._second_level_domains_to_url_classes.values():
+        for url_classes in self._url_domain_masks_to_url_classes.values():
             
             ClientNetworkingURLClass.SortURLClassesListDescendingComplexity( url_classes )
             
@@ -557,10 +604,10 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
             ( serialisable_url_classes, serialisable_url_class_keys_to_display, serialisable_url_class_keys_to_parser_keys, serialisable_parsing_parsers, serialisable_network_contexts_to_custom_header_dicts ) = old_serialisable_info
             
-            from hydrus.client.importing.options import TagImportOptions
+            from hydrus.client.importing.options import TagImportOptionsLegacy
             
-            file_post_default_tag_import_options = TagImportOptions.TagImportOptions()
-            watchable_default_tag_import_options = TagImportOptions.TagImportOptions()
+            file_post_default_tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
+            watchable_default_tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
             
             url_class_keys_to_default_tag_import_options = {}
             
@@ -607,10 +654,10 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
             ( serialisable_gugs, serialisable_gug_keys_to_display, serialisable_url_classes, serialisable_url_class_keys_to_display, serialisable_url_class_keys_to_parser_keys, serialisable_default_tag_import_options_tuple, serialisable_parsing_parsers, serialisable_network_contexts_to_custom_header_dicts ) = old_serialisable_info
             
-            from hydrus.client.importing.options import NoteImportOptions
+            from hydrus.client.importing.options import NoteImportOptionsLegacy
             
-            file_post_default_note_import_options = NoteImportOptions.NoteImportOptions()
-            watchable_default_note_import_options = NoteImportOptions.NoteImportOptions()
+            file_post_default_note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
+            watchable_default_note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
             
             url_class_keys_to_default_note_import_options = {}
             
@@ -953,7 +1000,7 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
                             
                         except HydrusExceptions.URLClassException:
                             
-                            continue
+                            domain = 'unknown'
                             
                         
                         unmatched_url_tuples.append( ( domain, url ) )
@@ -966,6 +1013,20 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
                     if url_class_key in self._url_class_keys_to_display:
                         
                         url_class_name = url_class.GetName()
+                        
+                        if not url_class.GetURLDomainMask().IsSingleRawDomain():
+                            
+                            try:
+                                
+                                domain = ClientNetworkingFunctions.ConvertURLIntoDomain( url )
+                                
+                            except HydrusExceptions.URLClassException:
+                                
+                                domain = 'unknown'
+                                
+                            
+                            url_class_name = f'{url_class_name} ({domain})'
+                            
                         
                         url_tuples.append( ( url_class_name, url ) )
                         
@@ -1082,9 +1143,11 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
             try:
                 
-                domain = ClientNetworkingFunctions.ConvertURLIntoSecondLevelDomain( url )
+                domain = ClientNetworkingFunctions.ConvertURLIntoDomain( url )
                 
-            except:
+                domains = ClientNetworkingFunctions.ConvertDomainIntoAllApplicableDomains( domain )
+                
+            except Exception as e:
                 
                 return True
                 
@@ -1092,30 +1155,33 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             # this will become flexible and customisable when I have domain profiles/status/ui
             # also should extend it to 'global', so if multiple domains are having trouble, we maybe assume the whole connection is down? it would really be nicer to have a better sockets-level check there
             
-            if domain in self._second_level_domains_to_network_infrastructure_errors:
+            for domain in domains:
                 
-                number_of_errors = CG.client_controller.new_options.GetInteger( 'domain_network_infrastructure_error_number' )
-                
-                if number_of_errors == 0:
+                if domain in self._domains_to_network_infrastructure_errors:
                     
-                    return True
+                    number_of_errors = CG.client_controller.new_options.GetInteger( 'domain_network_infrastructure_error_number' )
                     
-                
-                error_time_delta = CG.client_controller.new_options.GetInteger( 'domain_network_infrastructure_error_time_delta' )
-                
-                network_infrastructure_errors = self._second_level_domains_to_network_infrastructure_errors[ domain ]
-                
-                network_infrastructure_errors = [ timestamp for timestamp in network_infrastructure_errors if not HydrusTime.TimeHasPassed( timestamp + error_time_delta ) ]
-                
-                self._second_level_domains_to_network_infrastructure_errors[ domain ] = network_infrastructure_errors
-                
-                if len( network_infrastructure_errors ) >= number_of_errors:
+                    if number_of_errors == 0:
+                        
+                        return True
+                        
                     
-                    return False
+                    error_time_delta = CG.client_controller.new_options.GetInteger( 'domain_network_infrastructure_error_time_delta' )
                     
-                elif len( network_infrastructure_errors ) == 0:
+                    network_infrastructure_errors = self._domains_to_network_infrastructure_errors[ domain ]
                     
-                    del self._second_level_domains_to_network_infrastructure_errors[ domain ]
+                    network_infrastructure_errors = [ timestamp for timestamp in network_infrastructure_errors if not HydrusTime.TimeHasPassed( timestamp + error_time_delta ) ]
+                    
+                    self._domains_to_network_infrastructure_errors[ domain ] = network_infrastructure_errors
+                    
+                    if len( network_infrastructure_errors ) >= number_of_errors:
+                        
+                        return False
+                        
+                    elif len( network_infrastructure_errors ) == 0:
+                        
+                        del self._domains_to_network_infrastructure_errors[ domain ]
+                        
                     
                 
             
@@ -1151,14 +1217,21 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetDefaultGUGKeyAndName( self ):
+    def GetDefaultGUGKeyAndName( self ) -> tuple[ bytes, str ] | None:
         
         with self._lock:
             
             gug_key = CG.client_controller.new_options.GetKey( 'default_gug_key' )
             gug_name = CG.client_controller.new_options.GetString( 'default_gug_name' )
             
-            return ( gug_key, gug_name )
+            if gug_name == '':
+                
+                return None
+                
+            else:
+                
+                return ( gug_key, gug_name )
+                
             
         
     
@@ -1207,7 +1280,7 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetGUG( self, gug_key_and_name ):
+    def GetGUG( self, gug_key_and_name: tuple[ bytes, str ] | None ) -> ClientNetworkingGUG.GalleryURLGenerator | ClientNetworkingGUG.NestedGalleryURLGenerator | None:
         
         with self._lock:
             
@@ -1354,12 +1427,28 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetURLClass( self, url ) -> typing.Optional[ ClientNetworkingURLClass.URLClass ]:
+    def GetURLClass( self, url ) -> ClientNetworkingURLClass.URLClass | None:
         
         with self._lock:
             
             return self._GetURLClass( url )
             
+        
+    
+    def GetURLClassFromKey( self, url_class_key: bytes ) -> ClientNetworkingURLClass.URLClass:
+        
+        with self._lock:
+            
+            for url_class in self._url_classes:
+                
+                if url_class.GetClassKey() == url_class_key:
+                    
+                    return url_class
+                    
+                
+            
+        
+        raise HydrusExceptions.DataMissing( f'Did not find URL Class with key "{url_class_key.hex()}"!' )
         
     
     def GetURLClassFromName( self, name: str ):
@@ -1569,6 +1658,15 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         
         with self._lock:
             
+            try:
+                
+                ClientNetworkingFunctions.CheckLooksLikeAFullURL( url )
+                
+            except HydrusExceptions.URLClassException:
+                
+                return url
+                
+            
             url_class = self._GetURLClass( url )
             
             if url_class is None:
@@ -1603,158 +1701,9 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             normalised_urls.append( normalised_url )
             
         
-        normalised_urls = HydrusData.DedupeList( normalised_urls )
+        normalised_urls = HydrusLists.DedupeList( normalised_urls )
         
         return normalised_urls
-        
-    
-    def OverwriteDefaultGUGs( self, gug_names ):
-        
-        with self._lock:
-            
-            from hydrus.client import ClientDefaults
-            
-            default_gugs = ClientDefaults.GetDefaultGUGs()
-            
-            existing_gug_names_to_keys = { gug.GetName() : gug.GetGUGKey() for gug in self._gugs }
-            
-            for gug in default_gugs:
-                
-                gug_name = gug.GetName()
-                
-                if gug_name in existing_gug_names_to_keys:
-                    
-                    gug.SetGUGKey( existing_gug_names_to_keys[ gug_name ] )
-                    
-                else:
-                    
-                    gug.RegenerateGUGKey()
-                    
-                
-            
-            existing_gugs = list( self._gugs )
-            
-            new_gugs = [ gug for gug in existing_gugs if gug.GetName() not in gug_names ]
-            new_gugs.extend( [ gug for gug in default_gugs if gug.GetName() in gug_names ] )
-            
-        
-        self.SetGUGs( new_gugs )
-        
-    
-    def OverwriteDefaultParsers( self, parser_names ):
-        
-        with self._lock:
-            
-            from hydrus.client import ClientDefaults
-            
-            default_parsers = ClientDefaults.GetDefaultParsers()
-            
-            existing_parser_names_to_keys = { parser.GetName() : parser.GetParserKey() for parser in self._parsers }
-            
-            for parser in default_parsers:
-                
-                name = parser.GetName()
-                
-                if name in existing_parser_names_to_keys:
-                    
-                    parser.SetParserKey( existing_parser_names_to_keys[ name ] )
-                    
-                else:
-                    
-                    parser.RegenerateParserKey()
-                    
-                
-            
-            existing_parsers = list( self._parsers )
-            
-            new_parsers = [ parser for parser in existing_parsers if parser.GetName() not in parser_names ]
-            new_parsers.extend( [ parser for parser in default_parsers if parser.GetName() in parser_names ] )
-            
-        
-        self.SetParsers( new_parsers )
-        
-    
-    def OverwriteDefaultURLClasses( self, url_class_names ):
-        
-        with self._lock:
-            
-            from hydrus.client import ClientDefaults
-            
-            default_url_classes = ClientDefaults.GetDefaultURLClasses()
-            
-            existing_class_names_to_keys = { url_class.GetName() : url_class.GetClassKey() for url_class in self._url_classes }
-            
-            for url_class in default_url_classes:
-                
-                name = url_class.GetName()
-                
-                if name in existing_class_names_to_keys:
-                    
-                    url_class.SetClassKey( existing_class_names_to_keys[ name ] )
-                    
-                else:
-                    
-                    url_class.RegenerateClassKey()
-                    
-                
-            
-            for url_class in default_url_classes:
-                
-                url_class.RegenerateClassKey()
-                
-            
-            existing_url_classes = list( self._url_classes )
-            
-            new_url_classes = [ url_class for url_class in existing_url_classes if url_class.GetName() not in url_class_names ]
-            new_url_classes.extend( [ url_class for url_class in default_url_classes if url_class.GetName() in url_class_names ] )
-            
-        
-        self.SetURLClasses( new_url_classes )
-        
-    
-    def OverwriteParserLink( self, url_class_name, parser_name ):
-        
-        with self._lock:
-            
-            url_class_to_link = None
-            
-            for url_class in self._url_classes:
-                
-                if url_class.GetName() == url_class_name:
-                    
-                    url_class_to_link = url_class
-                    
-                    break
-                    
-                
-            
-            if url_class_to_link is None:
-                
-                return False
-                
-            
-            parser_to_link = None
-            
-            for parser in self._parsers:
-                
-                if parser.GetName() == parser_name:
-                    
-                    parser_to_link = parser
-                    
-                    break
-                    
-                
-            
-            if parser_to_link is None:
-                
-                return False
-                
-            
-            url_class_key = url_class_to_link.GetClassKey()
-            parser_key = parser_to_link.GetParserKey()
-            
-            self._url_class_keys_to_parser_keys[ url_class_key ] = parser_key
-            
         
     
     def RenameGUG( self, original_name, new_name ):
@@ -1782,20 +1731,27 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def ReportNetworkInfrastructureError( self, url ):
+    def ReportDomainEvent( self, url: str, domain_event_type: int ):
         
         with self._lock:
+            
+            # TODO: This guy will tell domain status objects about this and we'll handle the event_type
             
             try:
                 
                 domain = ClientNetworkingFunctions.ConvertURLIntoDomain( url )
                 
-            except:
+                domains = ClientNetworkingFunctions.ConvertDomainIntoAllApplicableDomains( domain )
+                
+            except Exception as e:
                 
                 return
                 
             
-            self._second_level_domains_to_network_infrastructure_errors[ domain ].append( HydrusTime.GetNow() )
+            for domain in domains:
+                
+                self._domains_to_network_infrastructure_errors[ domain ].append( HydrusTime.GetNow() )
+                
             
         
     
@@ -1807,14 +1763,19 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
                 
                 domain = ClientNetworkingFunctions.ConvertURLIntoSecondLevelDomain( url )
                 
-            except:
+                domains = ClientNetworkingFunctions.ConvertDomainIntoAllApplicableDomains( domain )
+                
+            except Exception as e:
                 
                 return
                 
             
-            if domain in self._second_level_domains_to_network_infrastructure_errors:
+            for domain in domains:
                 
-                del self._second_level_domains_to_network_infrastructure_errors[ domain ]
+                if domain in self._domains_to_network_infrastructure_errors:
+                    
+                    del self._domains_to_network_infrastructure_errors[ domain ]
+                    
                 
             
         
@@ -1899,7 +1860,14 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         
         with self._lock:
             
-            ( gug_key, gug_name ) = gug_key_and_name
+            if gug_key_and_name is None:
+                
+                ( gug_key, gug_name ) = ( HydrusData.GenerateKey(), '' )
+                
+            else:
+                
+                ( gug_key, gug_name ) = gug_key_and_name
+                
             
             CG.client_controller.new_options.SetKey( 'default_gug_key', gug_key )
             CG.client_controller.new_options.SetString( 'default_gug_name', gug_name )
@@ -2201,8 +2169,8 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         # I have to do this backwards, going through parsers and then url_classes, so I can do a proper url match lookup like the real domain manager does it
         # otherwise, if we iterate through url matches looking for parsers to match them, we have gallery url matches thinking they match parser post urls
         # e.g.
-        # The page parser might say it supports https://danbooru.donmai.us/posts/3198277
-        # But the gallery url class might think it recognises that as https://danbooru.donmai.us/posts
+        # The page parser might say it supports https://somebooru.com/posts/123456
+        # But the gallery url class might think it recognises that as https://somebooru.com/posts
         # 
         # So we have to do the normal lookup in the proper descending complexity order, not searching any further than the first, correct match
         
@@ -2271,6 +2239,7 @@ class NetworkDomainManager( HydrusSerialisable.SerialisableBase ):
         return new_url_class_keys_to_parser_keys
         
     
+
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER ] = NetworkDomainManager
 
 class DomainMetadataPackage( HydrusSerialisable.SerialisableBase ):

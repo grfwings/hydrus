@@ -12,104 +12,135 @@ from hydrus.client.gui import QtPorting as QP
 # this does one thing neatly
 class AsyncQtJob( object ):
     
-    def __init__( self, win, work_callable, publish_callable, errback_callable = None, errback_ui_cleanup_callable = None ):
+    def __init__( self, win, work_callable, publish_callable, ui_restoration_callable = None, errback_callable = None ):
         
         # ultimate improvement here is to move to QObject/QThread and do the notifications through signals and slots (which will disconnect on object deletion)
         
         self._win = win
         self._work_callable = work_callable
         self._publish_callable = publish_callable
+        self._ui_restoration_callable = ui_restoration_callable
         self._errback_callable = errback_callable
-        self._errback_ui_cleanup_callable = errback_ui_cleanup_callable
         
     
     def _DefaultErrback( self, etype, value, tb ):
         
         HydrusData.ShowExceptionTuple( etype, value, tb )
         
-        message = 'An error occured in a background task. If you had UI waiting on a fetch job, the dialog/panel may need to be closed and re-opened.'
+        message = 'An error occured in a background task. If you have UI waiting on an update, the dialog/panel may need to be closed and re-opened.'
         message += '\n' * 2
         message += 'The error info will show as a popup and also be printed to log. Hydev may want to know about this error, at least to improve error handling.'
         message += '\n' * 2
         message += 'Error summary: {}'.format( value )
         
-        ClientGUIDialogsMessage.ShowCritical( self._win, 'Error', message )
+        if QP.isValid( self._win ):
+            
+            win_to_use = self._win
+            
+        else:
+            
+            win_to_use = CG.client_controller.GetMainTLW()
+            
         
-        if self._errback_ui_cleanup_callable is not None:
-            
-            self._errback_ui_cleanup_callable()
-            
+        ClientGUIDialogsMessage.ShowCritical( win_to_use, 'Error', message )
         
     
     def _doWork( self ):
         
-        def qt_deliver_result( result ):
-            
-            if not QP.isValid( self._win ):
-                
-                return
-                
-            
-            self._publish_callable( result )
-            
-        
         try:
             
-            result = self._work_callable()
-            
-        except Exception as e:
-            
-            ( etype, value, tb ) = sys.exc_info()
-            
-            if self._errback_callable is None:
+            try:
                 
-                c = self._DefaultErrback
+                result = self._work_callable()
                 
-            else:
+            except Exception as e:
                 
-                c = self._errback_callable
+                self._HandleErrback( e )
+                
+                return
                 
             
             try:
                 
-                CG.client_controller.CallBlockingToQt( self._win, c, etype, value, tb )
+                CG.client_controller.CallBlockingToQt( self._win, self._publish_callable, result )
                 
             except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                
+                pass
+                
+            except Exception as e:
+                
+                self._HandleErrback( e )
                 
                 return
                 
             
-            return
+        finally:
+            
+            if self._ui_restoration_callable is not None:
+                
+                try:
+                    
+                    CG.client_controller.CallBlockingToQt( self._win, self._ui_restoration_callable )
+                    
+                except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                    
+                    pass
+                    
+                except Exception as e:
+                    
+                    self._HandleErrback( e )
+                    
+                
             
         
-        try:
-            
-            CG.client_controller.CallBlockingToQt( self._win, qt_deliver_result, result )
-            
-        except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
-            
-            return
-            
-        except Exception as e:
-            
-            ( etype, value, tb ) = sys.exc_info()
-            
-            if self._errback_callable is None:
-                
-                c = self._DefaultErrback
-                
-            else:
-                
-                c = self._errback_callable
-                
+    
+    def _HandleErrback( self, e: Exception ):
+        
+        ( etype, value, tb ) = sys.exc_info()
+        
+        we_have_reported_ok = False
+        
+        if self._errback_callable is not None:
             
             try:
                 
-                CG.client_controller.CallBlockingToQt( self._win, c, etype, value, tb )
+                CG.client_controller.CallBlockingToQt( self._win, self._errback_callable, etype, value, tb )
+                
+                we_have_reported_ok = True
                 
             except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
                 
-                return
+                pass
+                
+            except Exception as e_reporting:
+                
+                HydrusData.ShowText( 'Trying to show an async error using a custom errback caused a problem:' )
+                HydrusData.ShowException( e_reporting )
+                
+            
+        
+        if not we_have_reported_ok:
+            
+            try:
+                
+                CG.client_controller.CallBlockingToQtTLW( self._DefaultErrback, etype, value, tb )
+                
+                we_have_reported_ok = True
+                
+            except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                
+                pass
+                
+            except Exception as e_last_chance:
+                
+                HydrusData.ShowText( 'Trying to show an async error using the default errback caused a problem:' )
+                HydrusData.ShowException( e_last_chance )
+                
+                HydrusData.ShowText( 'Here is the actual error we wanted to show:' )
+                HydrusData.ShowException( e )
+                
+                we_have_reported_ok = True
                 
             
         
@@ -119,13 +150,15 @@ class AsyncQtJob( object ):
         CG.client_controller.CallToThread( self._doWork )
         
     
+
 # this can refresh dirty stuff n times and won't spam work
 class AsyncQtUpdater( object ):
     
-    def __init__( self, win, loading_callable, work_callable, publish_callable, pre_work_callable = None ):
+    def __init__( self, name, win, loading_callable, work_callable, publish_callable, pre_work_callable = None ):
         
         # ultimate improvement here is to move to QObject/QThread and do the notifications through signals and slots (which will disconnect on object deletion)
         
+        self._name = name
         self._win = win
         
         self._loading_callable = loading_callable
@@ -140,10 +173,17 @@ class AsyncQtUpdater( object ):
         self._lock = threading.Lock()
         
     
+    def __repr__( self ):
+        
+        return f'AsyncQtUpdater: {self._name}'
+        
+    
     def _doWork( self ):
         
         def qt_deliver_result( result ):
             
+            # feels like there is a more elegant way to handle this, that the blocking call should raise deadwindow or something
+            # if we were to do that, then all blockingtoqt calls would have to handle that
             if self._win is None or not QP.isValid( self._win ):
                 
                 self._win = None
@@ -213,7 +253,10 @@ class AsyncQtUpdater( object ):
                 
                 if self._work_needs_to_restart and not self._calllater_waiting:
                     
-                    QP.CallAfter( self.update )
+                    if self._win is not None:
+                        
+                        CG.client_controller.CallAfterQtSafe( self._win, self.update )
+                        
                     
                 
             
@@ -304,9 +347,17 @@ class FastThreadToGUIUpdater( object ):
                     
                     self._callafter_waiting = True
                     
-                    QP.CallAfter( self.QtDoIt )
+                    CG.client_controller.CallAfterQtSafe( self._win, self.QtDoIt )
                     
                 
+            
+        
+    
+    def IsWorking( self ) -> bool:
+        
+        with self._lock:
+            
+            return self._is_working
             
         
     
@@ -331,7 +382,7 @@ class FastThreadToGUIUpdater( object ):
                 
             elif not ( self._callafter_waiting or HG.view_shutdown ):
                 
-                QP.CallAfter( self.QtDoIt )
+                CG.client_controller.CallAfterQtSafe( self._win, self.QtDoIt )
                 
             
         

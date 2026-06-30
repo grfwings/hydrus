@@ -1,10 +1,5 @@
 import collections
 import collections.abc
-import os
-import queue
-import threading
-import time
-import typing
 
 from PIL import ExifTags
 
@@ -16,14 +11,12 @@ from hydrus.core import HydrusCompression
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
-from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusText
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
-from hydrus.core.files import HydrusFileHandling
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
@@ -32,29 +25,21 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientRendering
 from hydrus.client import ClientSerialisable
 from hydrus.client import ClientThreading
-from hydrus.client.files import ClientFiles
 from hydrus.client.files import ClientFilesMaintenance
-from hydrus.client.files import ClientFilesPhysical
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICharts
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUIFunctions
-from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.importing import ClientGUIImport
-from hydrus.client.gui.importing import ClientGUIImportOptions
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
-from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
-from hydrus.client.gui.widgets import ClientGUIBytes
 from hydrus.client.gui.widgets import ClientGUIMenuButton
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.metadata import ClientTags
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingGUG
@@ -70,7 +55,7 @@ class AboutPanel( ClientGUIScrolledPanels.ReviewPanel ):
         super().__init__( parent )
         
         icon_label = ClientGUICommon.BetterStaticText( self )
-        icon_label.setPixmap( CG.client_controller.frame_icon_pixmap )
+        icon_label.setPixmap( CC.global_icons().hydrus_frame.pixmap( 32, 32 ) )
         
         name_label = ClientGUICommon.BetterStaticText( self, name )
         name_label_font = name_label.font()
@@ -87,11 +72,13 @@ class AboutPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         desc_label = ClientGUICommon.BetterStaticText( self, description_versions )
         desc_label.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
+        desc_label.setWordWrap( True )
         
         #
         
         availability_label = ClientGUICommon.BetterStaticText( self, description_availability )
         availability_label.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
+        availability_label.setWordWrap( True )
         
         #
         
@@ -126,935 +113,6 @@ class AboutPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
     
 
-class MoveMediaFilesPanel( ClientGUIScrolledPanels.ReviewPanel ):
-    
-    def __init__( self, parent: QW.QWidget, controller: "CG.ClientController.Controller" ):
-        
-        self._controller = controller
-        
-        self._new_options = self._controller.new_options
-        
-        super().__init__( parent )
-        
-        self._client_files_subfolders = CG.client_controller.Read( 'client_files_subfolders' )
-        
-        ( self._media_base_locations, self._ideal_thumbnails_base_location_override ) = self._controller.Read( 'ideal_client_files_locations' )
-        
-        service_info = CG.client_controller.Read( 'service_info', CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
-        
-        self._all_local_files_total_size = service_info[ HC.SERVICE_INFO_TOTAL_SIZE ]
-        self._all_local_files_total_num = service_info[ HC.SERVICE_INFO_NUM_FILES ]
-        
-        menu_items = []
-        
-        page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DATABASE_MIGRATION )
-        
-        menu_items.append( ( 'normal', 'open the html migration help', 'Open the help page for database migration in your web browser.', page_func ) )
-        
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
-        
-        help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
-        
-        #
-        
-        info_panel = ClientGUICommon.StaticBox( self, 'database components' )
-        
-        self._current_install_path_st = ClientGUICommon.BetterStaticText( info_panel )
-        self._current_db_path_st = ClientGUICommon.BetterStaticText( info_panel )
-        self._current_media_paths_st = ClientGUICommon.BetterStaticText( info_panel )
-        
-        file_locations_panel = ClientGUICommon.StaticBox( self, 'media file locations' )
-        
-        current_media_base_locations_listctrl_panel = ClientGUIListCtrl.BetterListCtrlPanel( file_locations_panel )
-        
-        model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DB_MIGRATION_LOCATIONS.ID, self._ConvertLocationToDisplayTuple, self._ConvertLocationToSortTuple )
-        
-        self._current_media_base_locations_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( current_media_base_locations_listctrl_panel, 8, model, activation_callback = self._SetMaxNumBytes )
-        self._current_media_base_locations_listctrl.setSelectionMode( QW.QAbstractItemView.SelectionMode.SingleSelection )
-        
-        self._current_media_base_locations_listctrl.Sort()
-        
-        current_media_base_locations_listctrl_panel.SetListCtrl( self._current_media_base_locations_listctrl )
-        
-        current_media_base_locations_listctrl_panel.AddButton( 'add new location for files', self._SelectPathToAdd )
-        current_media_base_locations_listctrl_panel.AddButton( 'increase location weight', self._IncreaseWeight, enabled_check_func = self._CanIncreaseWeight )
-        current_media_base_locations_listctrl_panel.AddButton( 'decrease location weight', self._DecreaseWeight, enabled_check_func = self._CanDecreaseWeight )
-        current_media_base_locations_listctrl_panel.AddButton( 'set max size', self._SetMaxNumBytes, enabled_check_func = self._CanSetMaxNumBytes )
-        current_media_base_locations_listctrl_panel.AddButton( 'remove location', self._RemoveSelectedBaseLocation, enabled_check_func = self._CanRemoveLocation )
-        
-        self._thumbnails_location = QW.QLineEdit( file_locations_panel )
-        self._thumbnails_location.setEnabled( False )
-        
-        self._thumbnails_location_set = ClientGUICommon.BetterButton( file_locations_panel, 'set', self._SetThumbnailLocation )
-        
-        self._thumbnails_location_clear = ClientGUICommon.BetterButton( file_locations_panel, 'clear', self._ClearThumbnailLocation )
-        
-        self._rebalance_status_st = ClientGUICommon.BetterStaticText( file_locations_panel )
-        self._rebalance_status_st.setAlignment( QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter )
-        
-        self._rebalance_button = ClientGUICommon.BetterButton( file_locations_panel, 'move files now', self._Rebalance )
-        
-        #
-        
-        info_panel.Add( self._current_install_path_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        info_panel.Add( self._current_db_path_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        info_panel.Add( self._current_media_paths_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        
-        t_hbox = QP.HBoxLayout()
-        
-        QP.AddToLayout( t_hbox, ClientGUICommon.BetterStaticText( file_locations_panel, 'thumbnail location override' ), CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( t_hbox, self._thumbnails_location, CC.FLAGS_CENTER_PERPENDICULAR_EXPAND_DEPTH )
-        QP.AddToLayout( t_hbox, self._thumbnails_location_set, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( t_hbox, self._thumbnails_location_clear, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        rebalance_hbox = QP.HBoxLayout()
-        
-        QP.AddToLayout( rebalance_hbox, self._rebalance_status_st, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( rebalance_hbox, self._rebalance_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        file_locations_panel.Add( current_media_base_locations_listctrl_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        file_locations_panel.Add( t_hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
-        file_locations_panel.Add( rebalance_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        
-        #
-        
-        vbox = QP.VBoxLayout()
-        
-        message = 'THIS IS ADVANCED. DO NOT CHANGE ANYTHING HERE UNLESS YOU KNOW WHAT IT DOES!'
-        
-        warning_st = ClientGUICommon.BetterStaticText( self, label = message )
-        
-        warning_st.setObjectName( 'HydrusWarning' )
-        
-        QP.AddToLayout( vbox, warning_st, CC.FLAGS_CENTER )
-        QP.AddToLayout( vbox, help_hbox, CC.FLAGS_ON_RIGHT )
-        QP.AddToLayout( vbox, info_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, file_locations_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        
-        self.widget().setLayout( vbox )
-        
-        min_width = ClientGUIFunctions.ConvertTextToPixelWidth( self, 100 )
-        
-        self.setMinimumWidth( min_width )
-        
-        self._Update()
-        
-    
-    def _AddBaseLocation( self, base_location ):
-        
-        if base_location in self._media_base_locations:
-            
-            ClientGUIDialogsMessage.ShowWarning( self, 'You already have that location entered!' )
-            
-            return
-            
-        
-        if self._ideal_thumbnails_base_location_override is not None and base_location.path == self._ideal_thumbnails_base_location_override.path:
-            
-            ClientGUIDialogsMessage.ShowWarning( self, 'That path is already used as the special thumbnail location--please choose another.' )
-            
-            return
-            
-        
-        self._media_base_locations.add( base_location )
-        
-        self._SaveToDB()
-        
-    
-    def _AdjustWeight( self, amount ):
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                new_amount = base_location.ideal_weight + amount
-                
-                if new_amount > 0:
-                    
-                    base_location.ideal_weight = new_amount
-                    
-                    self._SaveToDB()
-                    
-                elif new_amount <= 0:
-                    
-                    self._RemoveBaseLocation( base_location )
-                    
-                
-            else:
-                
-                if amount > 0:
-                    
-                    new_base_location = ClientFilesPhysical.FilesStorageBaseLocation( base_location.path, amount )
-                    
-                    if base_location != self._ideal_thumbnails_base_location_override:
-                        
-                        self._AddBaseLocation( new_base_location )
-                        
-                    
-                
-            
-        
-    
-    def _CanDecreaseWeight( self ):
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                is_big = base_location.ideal_weight > 1
-                others_can_take_slack = len( self._media_base_locations ) > 1
-                
-                if is_big or others_can_take_slack:
-                    
-                    return True
-                    
-                
-            
-        
-        return False
-        
-    
-    def _CanIncreaseWeight( self ):
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                if len( self._media_base_locations ) > 1:
-                    
-                    return True
-                    
-                
-            elif base_location in locations_to_file_weights:
-                
-                return True
-                
-            
-        
-        return False
-        
-    
-    def _CanRemoveLocation( self ):
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                others_can_take_slack = len( self._media_base_locations ) > 1
-                
-                if others_can_take_slack:
-                    
-                    return True
-                    
-                
-            
-        
-        return False
-        
-    
-    def _CanSetMaxNumBytes( self ):
-        
-        only_one_location_is_limitless = len( [ 1 for base_location in self._media_base_locations if base_location.max_num_bytes is None ] ) == 1
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                if base_location.max_num_bytes is None and only_one_location_is_limitless:
-                    
-                    return False
-                    
-                
-                return True
-                
-            
-        
-        return False
-        
-    
-    def _ClearThumbnailLocation( self ):
-        
-        message = 'Clear the custom thumbnail location? This will schedule all the thumbnail files to migrate back into the regular file locations.'
-        
-        result = ClientGUIDialogsQuick.GetYesNo( self, message )
-        
-        if result != QW.QDialog.DialogCode.Accepted:
-            
-            return
-            
-        
-        self._ideal_thumbnails_base_location_override = None
-        
-        self._SaveToDB()
-        
-    
-    def _ConvertLocationToDisplayTuple( self, base_location: ClientFilesPhysical.FilesStorageBaseLocation ):
-        
-        f_space = self._all_local_files_total_size
-        ( t_space_min, t_space_max ) = self._GetThumbnailSizeEstimates()
-        
-        #
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        #
-        
-        path = base_location.path
-        
-        if os.path.exists( path ):
-            
-            pretty_location = path
-            
-            try:
-                
-                free_space = HydrusPaths.GetFreeSpace( path )
-                pretty_free_space = HydrusData.ToHumanBytes( free_space )
-                
-            except Exception as e:
-                
-                message = 'There was a problem finding the free space for "{path}"! Perhaps this location does not exist?'
-                
-                HydrusData.Print( message )
-                
-                HydrusData.PrintException( e )
-                
-                free_space = 0
-                pretty_free_space = 'problem finding free space'
-                
-            
-            if free_space is None:
-                
-                pretty_free_space = 'unknown'
-                
-            
-        else:
-            
-            pretty_location = 'DOES NOT EXIST: {}'.format( path )
-            
-            pretty_free_space = 'DOES NOT EXIST'
-            
-        
-        portable_location = HydrusPaths.ConvertAbsPathToPortablePath( base_location.path )
-        portable = not os.path.isabs( portable_location )
-        
-        if portable:
-            
-            pretty_portable = 'yes'
-            
-        else:
-            
-            pretty_portable = 'no'
-            
-        
-        fp = locations_to_file_weights[ base_location ]
-        tp = locations_to_thumb_weights[ base_location ]
-        
-        p = HydrusNumbers.FloatToPercentage
-        
-        current_bytes = fp * f_space + tp * t_space_max
-        
-        usages = []
-        
-        if fp > 0:
-            
-            usages.append( p( fp ) + ' files' )
-            
-        
-        if tp > 0:
-            
-            usages.append( p( tp ) + ' thumbnails' )
-            
-        
-        if len( usages ) > 0:
-            
-            if fp == tp:
-                
-                usages = [ p( fp ) + ' everything' ]
-                
-            
-            pretty_current_usage = HydrusData.ToHumanBytes( current_bytes ) + ' - ' + ','.join( usages )
-            
-        else:
-            
-            pretty_current_usage = 'nothing'
-            
-        
-        #
-        
-        if base_location in self._media_base_locations:
-            
-            ideal_weight = base_location.ideal_weight
-            
-            pretty_ideal_weight = str( int( ideal_weight ) )
-            
-        else:
-            
-            if base_location in locations_to_file_weights:
-                
-                pretty_ideal_weight = '0'
-                
-            else:
-                
-                pretty_ideal_weight = 'n/a'
-                
-            
-        
-        if base_location.max_num_bytes is None:
-            
-            pretty_max_num_bytes = 'n/a'
-            
-        else:
-            
-            pretty_max_num_bytes = HydrusData.ToHumanBytes( base_location.max_num_bytes )
-            
-        
-        ideal_fp = self._media_base_locations_to_ideal_usage.get( base_location, 0.0 )
-        
-        if self._ideal_thumbnails_base_location_override is None:
-            
-            ideal_tp = ideal_fp
-            
-        else:
-            
-            if base_location == self._ideal_thumbnails_base_location_override:
-                
-                ideal_tp = 1.0
-                
-            else:
-                
-                ideal_tp = 0.0
-                
-            
-        
-        ideal_bytes = ideal_fp * f_space + ideal_tp * t_space_max
-        
-        ideal_usage = ( ideal_fp, ideal_tp )
-        
-        usages = []
-        
-        if ideal_fp > 0:
-            
-            usages.append( p( ideal_fp ) + ' files' )
-            
-        
-        if ideal_tp > 0:
-            
-            usages.append( p( ideal_tp ) + ' thumbnails' )
-            
-        
-        if len( usages ) > 0:
-            
-            if ideal_fp == ideal_tp:
-                
-                usages = [ p( ideal_fp ) + ' everything' ]
-                
-            
-            pretty_ideal_usage = HydrusData.ToHumanBytes( ideal_bytes ) + ' - ' + ','.join( usages )
-            
-        else:
-            
-            pretty_ideal_usage = 'nothing'
-            
-        
-        display_tuple = ( pretty_location, pretty_portable, pretty_free_space, pretty_current_usage, pretty_ideal_weight, pretty_max_num_bytes, pretty_ideal_usage )
-        
-        return display_tuple
-        
-    
-    def _ConvertLocationToSortTuple( self, base_location: ClientFilesPhysical.FilesStorageBaseLocation ):
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        #
-        
-        path = base_location.path
-        
-        if os.path.exists( path ):
-            
-            pretty_location = path
-            
-            try:
-                
-                free_space = HydrusPaths.GetFreeSpace( path )
-                
-            except Exception as e:
-                
-                message = 'There was a problem finding the free space for "{path}"! Perhaps this location does not exist?'
-                
-                HydrusData.Print( message )
-                
-                HydrusData.PrintException( e )
-                
-                free_space = 0
-                
-            
-            if free_space is None:
-                
-                free_space = 0
-                
-            
-        else:
-            
-            pretty_location = 'DOES NOT EXIST: {}'.format( path )
-            
-            free_space = 0
-            
-        
-        portable_location = HydrusPaths.ConvertAbsPathToPortablePath( base_location.path )
-        portable = not os.path.isabs( portable_location )
-        
-        fp = locations_to_file_weights[ base_location ]
-        tp = locations_to_thumb_weights[ base_location ]
-        
-        current_usage = ( fp, tp )
-        
-        #
-        
-        if base_location in self._media_base_locations:
-            
-            ideal_weight = base_location.ideal_weight
-            
-        else:
-            
-            ideal_weight = 0
-            
-        
-        if base_location.max_num_bytes is None:
-            
-            sort_max_num_bytes = -1
-            
-        else:
-            
-            sort_max_num_bytes = base_location.max_num_bytes
-            
-        
-        ideal_fp = self._media_base_locations_to_ideal_usage.get( base_location, 0.0 )
-        
-        if self._ideal_thumbnails_base_location_override is None:
-            
-            ideal_tp = ideal_fp
-            
-        else:
-            
-            if base_location == self._ideal_thumbnails_base_location_override:
-                
-                ideal_tp = 1.0
-                
-            else:
-                
-                ideal_tp = 0.0
-                
-            
-        
-        ideal_usage = ( ideal_fp, ideal_tp )
-        
-        sort_tuple = ( pretty_location, portable, free_space, ideal_weight, ideal_usage, sort_max_num_bytes, current_usage )
-        
-        return sort_tuple
-        
-    
-    def _DecreaseWeight( self ):
-        
-        self._AdjustWeight( -1 )
-        
-    
-    def _GetLocationsToCurrentWeights( self ):
-        
-        locations_to_file_weights = collections.Counter()
-        locations_to_thumb_weights = collections.Counter()
-        
-        for client_files_subfolder in self._client_files_subfolders:
-            
-            prefix = client_files_subfolder.prefix
-            base_location = client_files_subfolder.base_location
-            
-            subfolder_weight = client_files_subfolder.GetNormalisedWeight()
-            
-            if prefix.startswith( 'f' ):
-                
-                locations_to_file_weights[ base_location ] += subfolder_weight
-                
-            
-            if prefix.startswith( 't' ):
-                
-                locations_to_thumb_weights[ base_location ] += subfolder_weight
-                
-            
-        
-        return ( locations_to_file_weights, locations_to_thumb_weights )
-        
-    
-    def _GetListCtrlLocations( self ):
-        
-        # current
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        #
-        
-        all_locations = set()
-        
-        all_locations.update( self._media_base_locations )
-        
-        if self._ideal_thumbnails_base_location_override is not None:
-            
-            all_locations.add( self._ideal_thumbnails_base_location_override )
-            
-        
-        all_locations.update( locations_to_file_weights.keys() )
-        all_locations.update( locations_to_thumb_weights.keys() )
-        
-        all_locations = list( all_locations )
-        
-        return all_locations
-        
-    
-    def _GetThumbnailSizeEstimates( self ):
-        
-        ( t_width, t_height ) = CG.client_controller.options[ 'thumbnail_dimensions' ]
-        
-        typical_thumb_num_pixels = 320 * 240
-        typical_thumb_size = 36 * 1024
-        
-        our_thumb_num_pixels = t_width * t_height
-        our_thumb_size_estimate = typical_thumb_size * ( our_thumb_num_pixels / typical_thumb_num_pixels )
-        
-        our_total_thumb_size_estimate = self._all_local_files_total_num * our_thumb_size_estimate
-        
-        return ( int( our_total_thumb_size_estimate * 0.8 ), int( our_total_thumb_size_estimate * 1.4 ) )
-        
-    
-    def _IncreaseWeight( self ):
-        
-        self._AdjustWeight( 1 )
-        
-    
-    def _Rebalance( self ):
-        
-        for base_location in self._GetListCtrlLocations():
-            
-            if not os.path.exists( base_location.path ):
-                
-                message = 'The path "{}" does not exist! Please ensure all the locations on this dialog are valid before trying to rebalance your files.'.format( base_location )
-                
-                ClientGUIDialogsMessage.ShowWarning( self, message )
-                
-                return
-                
-            
-        
-        
-        message = 'Moving files can be a slow and slightly laggy process, with the UI intermittently hanging, which sometimes makes manually stopping a large ongoing job difficult. Would you like to set a max runtime on this job?'
-        
-        yes_tuples = []
-        
-        yes_tuples.append( ( 'run for 10 minutes', 600 ) )
-        yes_tuples.append( ( 'run for 30 minutes', 1800 ) )
-        yes_tuples.append( ( 'run for 1 hour', 3600 ) )
-        yes_tuples.append( ( 'run for custom time', -1 ) )
-        yes_tuples.append( ( 'run indefinitely', None ) )
-        
-        try:
-            
-            result = ClientGUIDialogsQuick.GetYesYesNo( self, message, yes_tuples = yes_tuples, no_label = 'forget it' )
-            
-        except HydrusExceptions.CancelledException:
-            
-            return
-            
-        
-        if result is None:
-            
-            stop_time = None
-            
-        else:
-            
-            if result == -1:
-                
-                with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'set time to run' ) as dlg:
-                    
-                    panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
-                    
-                    control = ClientGUITime.TimeDeltaWidget( self, min = 60, days = False, hours = True, minutes = True )
-                    
-                    control.SetValue( 7200 )
-                    
-                    panel.SetControl( control, perpendicular = True )
-                    
-                    dlg.SetPanel( panel )
-                    
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        result = int( control.GetValue() )
-                        
-                    else:
-                        
-                        return
-                        
-                    
-                
-            
-            stop_time = HydrusTime.GetNow() + result
-            
-        
-        job_status = ClientThreading.JobStatus( cancellable = True, stop_time = stop_time )
-        
-        CG.client_controller.pub( 'do_file_storage_rebalance', job_status )
-        
-        self._OKParent()
-        
-    
-    def _RemoveBaseLocation( self, base_location ):
-        
-        ( locations_to_file_weights, locations_to_thumb_weights ) = self._GetLocationsToCurrentWeights()
-        
-        removees = set()
-        
-        if base_location not in self._media_base_locations:
-            
-            ClientGUIDialogsMessage.ShowWarning( self, 'Please select a location with weight.' )
-            
-            return
-            
-        
-        if len( self._media_base_locations ) == 1:
-            
-            ClientGUIDialogsMessage.ShowWarning( self, 'You cannot empty every single current file location--please add a new place for the files to be moved to and then try again.' )
-            
-        
-        if os.path.exists( base_location.path ):
-            
-            if base_location in locations_to_file_weights:
-                
-                message = 'Are you sure you want to remove this location? This will schedule all of the files it is currently responsible for to be moved elsewhere.'
-                
-            else:
-                
-                message = 'Are you sure you want to remove this location?'
-                
-            
-        else:
-            
-            if base_location in locations_to_file_weights:
-                
-                message = 'This path does not exist, but it seems to have files. This could be a critical error that has occurred while the client is open (maybe a drive unmounting?). I recommend you do not remove it here and instead shut the client down immediately and fix the problem, then restart it, which will run the \'recover missing file locations\' routine if needed.'
-                
-            else:
-                
-                message = 'This path does not exist. Just checking, but I recommend you remove it.'
-                
-            
-        
-        result = ClientGUIDialogsQuick.GetYesNo( self, message )
-        
-        if result == QW.QDialog.DialogCode.Accepted:
-            
-            self._media_base_locations.remove( base_location )
-            
-            self._SaveToDB()
-            
-        
-    
-    def _RemoveSelectedBaseLocation( self ):
-        
-        locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( locations ) > 0:
-            
-            location = locations[0]
-            
-            self._RemoveBaseLocation( location )
-            
-        
-    
-    def _SaveToDB( self ):
-        
-        self._controller.Write( 'ideal_client_files_locations', self._media_base_locations, self._ideal_thumbnails_base_location_override )
-        
-        self._controller.client_files_manager.Reinit()
-        
-        self._Update()
-        
-    
-    def _SelectPathToAdd( self ):
-        
-        with QP.DirDialog( self, 'Select location' ) as dlg:
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                base_location = ClientFilesPhysical.FilesStorageBaseLocation( path, 1 )
-                
-                self._AddBaseLocation( base_location )
-                
-            
-        
-    
-    def _SetMaxNumBytes( self ):
-        
-        if not self._CanSetMaxNumBytes():
-            
-            return
-            
-        
-        base_locations = self._current_media_base_locations_listctrl.GetData( only_selected = True )
-        
-        if len( base_locations ) > 0:
-            
-            base_location = base_locations[0]
-            
-            if base_location in self._media_base_locations:
-                
-                max_num_bytes = base_location.max_num_bytes
-                
-                with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit max size' ) as dlg:
-                    
-                    message = 'If a location goes over its set size, it will schedule to migrate some files to other locations. At least one media location must have no limit.'
-                    message += '\n' * 2
-                    message += 'This is not precise (it works on average size, and thumbnails can add a bit), so give it some padding. Also, in general, remember it is not healthy to fill any hard drive more than 90% full.'
-                    message += '\n' * 2
-                    message += 'Also, this feature is under active development. The client will go over this limit if your collection grows significantly--the only way things rebalance atm are if you click "move files now"--but in future I will have things automatically migrate in the background to ensure limits are obeyed. This is just for advanced users to play with for now!'
-                    
-                    panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg, message = message )
-                    
-                    control = ClientGUIBytes.NoneableBytesControl( panel, 100 * ( 1024 ** 3 ) )
-                    
-                    control.SetValue( max_num_bytes )
-                    
-                    panel.SetControl( control, perpendicular = True )
-                    
-                    dlg.SetPanel( panel )
-                    
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        max_num_bytes = control.GetValue()
-                        
-                        base_location.max_num_bytes = max_num_bytes
-                        
-                        self._SaveToDB()
-                        
-                    
-                
-            
-        
-    
-    def _SetThumbnailLocation( self ):
-        
-        with QP.DirDialog( self, 'Select thumbnail location' ) as dlg:
-            
-            if self._ideal_thumbnails_base_location_override is not None:
-                
-                dlg.setDirectory( self._ideal_thumbnails_base_location_override.path )
-                
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                all_paths = { base_location.path for base_location in self._media_base_locations }
-                
-                if path in all_paths:
-                    
-                    ClientGUIDialogsMessage.ShowWarning( self, 'That path already exists as a regular file location! Please choose another.' )
-                    
-                else:
-                    
-                    self._ideal_thumbnails_base_location_override = ClientFilesPhysical.FilesStorageBaseLocation( path, 1 )
-                    
-                    self._SaveToDB()
-                    
-                
-            
-        
-    
-    def _Update( self ):
-        
-        self._client_files_subfolders = CG.client_controller.Read( 'client_files_subfolders' )
-        
-        ( self._media_base_locations, self._ideal_thumbnails_base_location_override ) = self._controller.Read( 'ideal_client_files_locations' )
-        
-        self._media_base_locations_to_ideal_usage = ClientFilesPhysical.FilesStorageBaseLocation.STATICGetIdealWeights( self._all_local_files_total_size, self._media_base_locations )
-        
-        approx_total_db_size = self._controller.db.GetApproxTotalFileSize()
-        
-        self._current_db_path_st.setText( 'database (about '+HydrusData.ToHumanBytes(approx_total_db_size)+'): '+self._controller.GetDBDir() )
-        self._current_install_path_st.setText( 'install: ' + HC.BASE_DIR )
-        
-        approx_total_client_files = self._all_local_files_total_size
-        ( approx_total_thumbnails_min, approx_total_thumbnails_max ) = self._GetThumbnailSizeEstimates()
-        
-        label = 'media is {}, thumbnails are estimated at {}-{}'.format( HydrusData.ToHumanBytes( approx_total_client_files ), HydrusData.ToHumanBytes( approx_total_thumbnails_min ), HydrusData.ToHumanBytes( approx_total_thumbnails_max ) )
-        
-        self._current_media_paths_st.setText( label )
-        self._current_media_paths_st.setToolTip( ClientGUIFunctions.WrapToolTip( 'Precise thumbnail sizes are not tracked, so this is an estimate based on your current thumbnail dimensions.' ) )
-        
-        base_locations = self._GetListCtrlLocations()
-        
-        self._current_media_base_locations_listctrl.SetData( base_locations )
-        
-        #
-        
-        if self._ideal_thumbnails_base_location_override is None:
-            
-            self._thumbnails_location.setText( 'none set' )
-            
-            self._thumbnails_location_set.setEnabled( True )
-            self._thumbnails_location_clear.setEnabled( False )
-            
-        else:
-            
-            self._thumbnails_location.setText( self._ideal_thumbnails_base_location_override.path )
-            
-            self._thumbnails_location_set.setEnabled( False )
-            self._thumbnails_location_clear.setEnabled( True )
-            
-        
-        #
-        
-        if self._controller.client_files_manager.RebalanceWorkToDo():
-            
-            self._rebalance_button.setEnabled( True )
-            
-            self._rebalance_status_st.setText( 'files need to be moved' )
-            self._rebalance_status_st.setObjectName( 'HydrusInvalid' )
-            
-        else:
-            
-            self._rebalance_button.setEnabled( False )
-            
-            self._rebalance_status_st.setText( 'all files are in their ideal locations' )
-            self._rebalance_status_st.setObjectName( 'HydrusValid' )
-            
-        
-        self._rebalance_status_st.style().polish( self._rebalance_status_st )
-        
-    
-
 class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
     
     def __init__( self, parent, network_engine ):
@@ -1065,31 +123,40 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
         
         vbox = QP.VBoxLayout()
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_ADDING_NEW_DOWNLOADERS )
         
-        menu_items.append( ( 'normal', 'open the easy downloader import help', 'Open the help page for easily importing downloaders in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the easy downloader import help', 'Open the help page for easily importing downloaders in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help -->', object_name = 'HydrusIndeterminate' )
         
-        self._repo_link = ClientGUICommon.BetterHyperLink( self, 'get user-made downloaders here', 'https://github.com/CuddleBear92/Hydrus-Presets-and-Scripts/tree/master/Downloaders' )
+        self._repo_link = ClientGUICommon.BetterHyperLink( self, 'the user-made downloader repository is here', 'https://github.com/CuddleBear92/Hydrus-Presets-and-Scripts/tree/master/Downloaders' )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._repo_link.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
+        
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste paths/bitmaps/JSON from clipboard!' ) )
         
-        st = ClientGUICommon.BetterStaticText( self, label = 'To import, drag-and-drop hydrus\'s special downloader-encoded pngs onto Lain. Or click her to open a file selection dialog, or copy the png bitmap, file path, or raw downloader JSON to your clipboard and hit the paste button.' )
+        label = 'To import:'
+        label += '\n'
+        label += '- drag-and-drop hydrus\'s special downloader-encoded pngs onto Lain'
+        label += '\n'
+        label += '- or click her to open a file selection dialog and select from there'
+        label += '\n'
+        label += '- or copy the png bitmap, file path, or raw downloader JSON to your clipboard and hit the paste button'
+        
+        st = ClientGUICommon.BetterStaticText( self, label = label )
         
         st.setWordWrap( True )
-        st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
-        lain_path = os.path.join( HC.STATIC_DIR, 'lain.jpg' )
+        lain_path = HydrusStaticDir.GetStaticPath( 'lain.jpg' )
         
         lain_qt_pixmap = ClientRendering.GenerateHydrusBitmap( lain_path, HC.IMAGE_JPEG ).GetQtPixmap()
         
-        win = ClientGUICommon.BufferedWindowIcon( self, lain_qt_pixmap )
+        win = QW.QLabel( self, pixmap = lain_qt_pixmap )
         
         win.setCursor( QG.QCursor( QC.Qt.CursorShape.PointingHandCursor ) )
         
@@ -1102,10 +169,10 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
             
         
         QP.AddToLayout( vbox, help_hbox, CC.FLAGS_ON_RIGHT )
-        QP.AddToLayout( vbox, self._repo_link, CC.FLAGS_CENTER )
+        QP.AddToLayout( vbox, self._repo_link, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( vbox, self._paste_button, CC.FLAGS_ON_RIGHT )
         QP.AddToLayout( vbox, win, CC.FLAGS_CENTER )
+        QP.AddToLayout( vbox, self._paste_button, CC.FLAGS_ON_RIGHT )
         QP.AddToLayout( vbox, ClientGUICommon.WrapInText( self._select_from_list, self, 'select objects from list' ), CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
@@ -1528,6 +595,27 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
         
         ClientGUIDialogsMessage.ShowInformation( self, final_message )
         
+        try:
+            
+            if CG.client_controller.network_engine.domain_manager.GetDefaultGUGKeyAndName() is None:
+                
+                all_gugs_now = sorted( CG.client_controller.network_engine.domain_manager.GetGUGs(), key = lambda gug: gug.GetName() )
+                
+                if len( all_gugs_now ) > 0:
+                    
+                    gug_key_and_name = all_gugs_now[0].GetGUGKeyAndName()
+                    
+                    CG.client_controller.network_engine.domain_manager.SetDefaultGUGKeyAndName( gug_key_and_name )
+                    
+                
+            
+        except Exception as e:
+            
+            HydrusData.Print( 'Hey, I was trying to set up a GUG (downloader) but the GUG store was messed up. Here is the error:' )
+            
+            HydrusData.PrintException( e, do_wait = False )
+            
+        
     
     def _Paste( self ):
         
@@ -1588,7 +676,7 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
     
     def EventLainClick( self, event ):
         
-        with QP.FileDialog( self, 'Select the pngs to add.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'Select the pngs to add.', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1607,7 +695,7 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
 
 class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
     
-    def __init__( self, parent, mime: int, top_line_text: str, exif_dict: typing.Optional[ dict ], file_text: typing.Optional[ str ], extra_rows: list[ tuple[ str, str ] ] ):
+    def __init__( self, parent, mime: int, top_line_text: str, exif_dict: dict | None, file_text: str | None, extra_rows: list[ tuple[ str, str ] ] ):
         
         super().__init__( parent )
         
@@ -1825,6 +913,8 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         
         #
         
+        self._have_initialised_x_axis = False
+        
         self._search_panel = QW.QWidget( self )
         
         # TODO: ok add 'num_steps' as a control, and a date range
@@ -1832,7 +922,7 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         panel_vbox = QP.VBoxLayout()
         
         file_search_context = ClientSearchFileSearchContext.FileSearchContext(
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         )
         
         page_key = b'mr bones placeholder'
@@ -1849,8 +939,8 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         self._loading_text = ClientGUICommon.BetterStaticText( self._search_panel )
         self._loading_text.setAlignment( QC.Qt.AlignmentFlag.AlignVCenter | QC.Qt.AlignmentFlag.AlignRight )
         
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( self._search_panel, CC.global_pixmaps().stop, self._CancelCurrentSearch )
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self._search_panel, CC.global_pixmaps().refresh, self._RefreshSearch )
+        self._cancel_button = ClientGUICommon.IconButton( self._search_panel, CC.global_icons().stop, self._CancelCurrentSearch )
+        self._refresh_button = ClientGUICommon.IconButton( self._search_panel, CC.global_icons().refresh, self._RefreshSearch )
         
         hbox = QP.HBoxLayout()
         
@@ -1865,16 +955,32 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         
         #
         
-        self._file_history_chart_panel = QW.QWidget( self )
+        self._rightmost_panel = QW.QWidget( self )
         
-        self._file_history_vbox = QP.VBoxLayout()
+        self._status_st = ClientGUICommon.BetterStaticText( self._rightmost_panel, label = f'loading{HC.UNICODE_ELLIPSIS}' )
         
-        self._status_st = ClientGUICommon.BetterStaticText( self._file_history_chart_panel, label = f'loading{HC.UNICODE_ELLIPSIS}' )
+        self._file_history_chart_panel = QW.QWidget( self._rightmost_panel )
         
         self._show_current = QW.QCheckBox( 'show all', self._file_history_chart_panel )
         self._show_inbox = QW.QCheckBox( 'show inbox', self._file_history_chart_panel )
         self._show_archive = QW.QCheckBox( 'show archive', self._file_history_chart_panel )
         self._show_deleted = QW.QCheckBox( 'show deleted', self._file_history_chart_panel )
+        
+        empty_file_history = {
+            'current' : [],
+            'deleted' : [],
+            'inbox' : [],
+            'archive' : [],
+        }
+        
+        self._file_history_chart = ClientGUICharts.FileHistory( self._file_history_chart_panel, empty_file_history, True, True, True, True )
+        
+        self._file_history_chart.setMinimumSize( 720, 480 )
+        
+        self._start_date = QW.QDateEdit( self )
+        self._end_date = QW.QDateEdit( self )
+        self._auto_x_range = ClientGUICommon.BetterButton( self, 'refit x axis', self._AutoXRange )
+        self._auto_x_range.setToolTip( ClientGUIFunctions.WrapToolTip( 'Recalculate an x axis range based on the current data that is in view.' ) )
         
         self._show_current.setChecked( True )
         self._show_inbox.setChecked( True )
@@ -1888,26 +994,63 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         QP.AddToLayout( button_hbox, self._show_archive, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( button_hbox, self._show_deleted, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        self._file_history_chart = QW.QWidget( self._file_history_chart_panel )
+        start_end_hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( self._file_history_vbox, self._status_st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( self._file_history_vbox, button_hbox, CC.FLAGS_CENTER )
-        QP.AddToLayout( self._file_history_vbox, self._file_history_chart, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( start_end_hbox, self._start_date, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( start_end_hbox, self._end_date, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( start_end_hbox, self._auto_x_range, CC.FLAGS_CENTER )
         
-        self._file_history_chart_panel.setLayout( self._file_history_vbox )
+        file_history_vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( file_history_vbox, button_hbox, CC.FLAGS_CENTER )
+        QP.AddToLayout( file_history_vbox, self._file_history_chart, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( file_history_vbox, start_end_hbox, CC.FLAGS_EXPAND_PERPENDICULAR )
+        
+        self._file_history_chart_panel.setLayout( file_history_vbox )
+        
+        rightmost_vbox = QP.VBoxLayout()
+        
+        QP.AddToLayout( rightmost_vbox, self._status_st, CC.FLAGS_EXPAND_PERPENDICULAR )
+        QP.AddToLayout( rightmost_vbox, self._file_history_chart_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        rightmost_vbox.addStretch( 0 )
+        
+        self._rightmost_panel.setLayout( rightmost_vbox )
         
         #
         
         self._hbox = QP.HBoxLayout()
         
         QP.AddToLayout( self._hbox, self._search_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( self._hbox, self._file_history_chart_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( self._hbox, self._rightmost_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( self._hbox )
         
         self._tag_autocomplete.searchChanged.connect( self._RefreshSearch )
         
         self._RefreshSearch()
+        
+        self._show_current.clicked.connect( self._file_history_chart.FlipAllVisible )
+        self._show_inbox.clicked.connect( self._file_history_chart.FlipInboxVisible )
+        self._show_archive.clicked.connect( self._file_history_chart.FlipArchiveVisible )
+        self._show_deleted.clicked.connect( self._file_history_chart.FlipDeletedVisible )
+        
+        self._start_date.dateChanged.connect( self._UpdateXRange )
+        self._end_date.dateChanged.connect( self._UpdateXRange )
+        
+    
+    def _AutoXRange( self ):
+        
+        self._file_history_chart.AutoSetXRange()
+        
+        self._start_date.blockSignals( True )
+        self._end_date.blockSignals( True )
+        
+        self._start_date.setDate( self._file_history_chart.GetStartDate() )
+        self._end_date.setDate( self._file_history_chart.GetEndDate() )
+        
+        self._start_date.blockSignals( False )
+        self._end_date.blockSignals( False )
         
     
     def _CancelCurrentSearch( self ):
@@ -1955,32 +1098,22 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
                     return
                     
                 
-                self._file_history_vbox.removeWidget( self._file_history_chart )
+                self._file_history_chart.SetFileHistory( file_history )
                 
-                self._file_history_chart.deleteLater()
-                
-                show_current = self._show_current.isChecked()
-                show_inbox = self._show_inbox.isChecked()
-                show_archive = self._show_archive.isChecked()
-                show_deleted = self._show_deleted.isChecked()
-                
-                # TODO: presumably the thing here is to have SetValue on this widget so we can simply clear/set it rather than the mickey-mouse replace
-                self._file_history_chart = ClientGUICharts.FileHistory( self._file_history_chart_panel, file_history, show_current, show_inbox, show_archive, show_deleted )
-                
-                self._file_history_chart.setMinimumSize( 720, 480 )
-                
-                self._show_current.clicked.connect( self._file_history_chart.FlipAllVisible )
-                self._show_inbox.clicked.connect( self._file_history_chart.FlipInboxVisible )
-                self._show_archive.clicked.connect( self._file_history_chart.FlipArchiveVisible )
-                self._show_deleted.clicked.connect( self._file_history_chart.FlipDeletedVisible )
-                
-                QP.AddToLayout( self._file_history_vbox, self._file_history_chart, CC.FLAGS_EXPAND_BOTH_WAYS )
+                if not self._have_initialised_x_axis:
+                    
+                    self._have_initialised_x_axis = True
+                    
+                    self._AutoXRange()
+                    
+                else:
+                    
+                    self._UpdateXRange()
+                    
                 
                 self._status_st.setVisible( False )
-                self._show_current.setVisible( True )
-                self._show_inbox.setVisible( True )
-                self._show_archive.setVisible( True )
-                self._show_deleted.setVisible( True )
+                
+                self._file_history_chart_panel.setVisible( True )
                 
             finally:
                 
@@ -2006,11 +1139,7 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         self._status_st.setText( 'loading' + HC.UNICODE_ELLIPSIS )
         self._status_st.setVisible( True )
         
-        self._show_current.setVisible( False )
-        self._show_inbox.setVisible( False )
-        self._show_archive.setVisible( False )
-        self._show_deleted.setVisible( False )
-        self._file_history_chart.setVisible( False )
+        self._file_history_chart_panel.setVisible( False )
         
         self._job_status.Cancel()
         
@@ -2023,6 +1152,12 @@ class ReviewFileHistory( ClientGUIScrolledPanels.ReviewPanel ):
         self._update_job.start()
         
     
+    def _UpdateXRange( self ):
+        
+        self._file_history_chart.SetXRange( self._start_date.dateTime(), self._end_date.dateTime() )
+        
+    
+
 class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
     
     def __init__( self, parent, stats ):
@@ -2043,7 +1178,7 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_MAINTENANCE_JOBS.ID, self._ConvertJobTypeToDisplayTuple, self._ConvertJobTypeToSortTuple )
         
-        self._jobs_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( jobs_listctrl_panel, 8, model )
+        self._jobs_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( jobs_listctrl_panel, 4, model, max_height_num_chars = 12 )
         
         jobs_listctrl_panel.SetListCtrl( self._jobs_listctrl )
         
@@ -2380,7 +1515,7 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._select_all_media_files.setEnabled( False )
         
-        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context )
         
@@ -2485,11 +1620,11 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._mr_bones_text = ClientGUICommon.BetterStaticText( self )
         
-        boned_path = os.path.join( HC.STATIC_DIR, 'boned.jpg' )
+        boned_path = HydrusStaticDir.GetStaticPath( 'boned.jpg' )
         
         boned_qt_pixmap = ClientRendering.GenerateHydrusBitmap( boned_path, HC.IMAGE_JPEG ).GetQtPixmap()
         
-        self._mr_bones_image = ClientGUICommon.BufferedWindowIcon( self, boned_qt_pixmap )
+        self._mr_bones_image = QW.QLabel( self, pixmap = boned_qt_pixmap )
         
         QP.AddToLayout( vbox, self._mr_bones_image, CC.FLAGS_CENTER )
         QP.AddToLayout( vbox, self._mr_bones_text, CC.FLAGS_CENTER )
@@ -2564,7 +1699,7 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         panel_vbox = QP.VBoxLayout()
         
         file_search_context = ClientSearchFileSearchContext.FileSearchContext(
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         )
         
         page_key = b'mr bones placeholder'
@@ -2581,8 +1716,8 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         self._loading_text = ClientGUICommon.BetterStaticText( self._search_panel )
         self._loading_text.setAlignment( QC.Qt.AlignmentFlag.AlignVCenter | QC.Qt.AlignmentFlag.AlignRight )
         
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( self._search_panel, CC.global_pixmaps().stop, self._CancelCurrentSearch )
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self._search_panel, CC.global_pixmaps().refresh, self._RefreshSearch )
+        self._cancel_button = ClientGUICommon.IconButton( self._search_panel, CC.global_icons().stop, self._CancelCurrentSearch )
+        self._refresh_button = ClientGUICommon.IconButton( self._search_panel, CC.global_icons().refresh, self._RefreshSearch )
         
         hbox = QP.HBoxLayout()
         
@@ -2947,7 +2082,7 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
         current_fsc = self._tag_autocomplete.GetFileSearchContext()
         
-        special_message_is_appropriate = len( current_fsc.GetPredicates() ) == 0 and current_fsc.GetLocationContext() == ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        special_message_is_appropriate = len( current_fsc.GetPredicates() ) == 0 and current_fsc.GetLocationContext() == ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         if special_message_is_appropriate:
             
@@ -3018,635 +2153,6 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
     
 
-class ReviewLocalFileImports( ClientGUIScrolledPanels.ReviewPanel ):
-    
-    def __init__( self, parent, paths = None ):
-        
-        if paths is None:
-            
-            paths = []
-            
-        
-        super().__init__( parent )
-        
-        self.widget().installEventFilter( ClientGUIDragDrop.FileDropTarget( self.widget(), filenames_callable = self._AddPathsToList ) )
-        
-        listctrl_panel = ClientGUIListCtrl.BetterListCtrlPanel( self )
-        
-        model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_INPUT_LOCAL_FILES.ID, self._ConvertPathToDisplayTuple, self._ConvertPathToSortTuple )
-        
-        self._paths_list = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 12, model, delete_key_callback = self.RemovePaths )
-        
-        listctrl_panel.SetListCtrl( self._paths_list )
-        
-        listctrl_panel.AddButton( 'add files', self.AddPaths )
-        listctrl_panel.AddButton( 'add folder', self.AddFolder )
-        listctrl_panel.AddButton( 'remove files', self.RemovePaths, enabled_only_on_selection = True )
-        
-        self._progress = ClientGUICommon.TextAndGauge( self )
-        
-        self._progress_pause = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pause, self.PauseProgress )
-        self._progress_pause.setEnabled( False )
-        
-        self._progress_cancel = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, self.StopProgress )
-        self._progress_cancel.setEnabled( False )
-        
-        file_import_options = FileImportOptions.FileImportOptions()
-        file_import_options.SetIsDefault( True )
-        
-        show_downloader_options = False
-        allow_default_selection = True
-        
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
-        
-        self._import_options_button.SetFileImportOptions( file_import_options )
-        
-        menu_items = []
-        
-        check_manager = ClientGUICommon.CheckboxManagerOptions( 'do_human_sort_on_hdd_file_import_paths' )
-        
-        menu_items.append( ( 'check', 'sort paths as they are added', 'If checked, paths will be sorted in a numerically human-friendly (e.g. "page 9.jpg" comes before "page 10.jpg") way.', check_manager ) )
-        
-        self._cog_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().cog, menu_items )
-        
-        self._delete_after_success_st = ClientGUICommon.BetterStaticText( self )
-        self._delete_after_success_st.setAlignment( QC.Qt.AlignmentFlag.AlignRight | QC.Qt.AlignmentFlag.AlignVCenter )
-        self._delete_after_success_st.setObjectName( 'HydrusWarning' )
-        
-        self._delete_after_success = QW.QCheckBox( 'delete original files after successful import', self )
-        self._delete_after_success.clicked.connect( self.EventDeleteAfterSuccessCheck )
-        
-        self._add_button = ClientGUICommon.BetterButton( self, 'import now', self._DoImport )
-        self._add_button.setObjectName( 'HydrusAccept' )
-        
-        self._tag_button = ClientGUICommon.BetterButton( self, 'add tags/urls with the import >>', self._AddTags )
-        self._tag_button.setObjectName( 'HydrusAccept' )
-        
-        self._tag_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'You can add specific tags to these files, import from sidecar files, or generate them based on filename. Don\'t be afraid to experiment!' ) )
-        
-        gauge_sizer = QP.HBoxLayout()
-        
-        QP.AddToLayout( gauge_sizer, self._progress, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        QP.AddToLayout( gauge_sizer, self._progress_pause, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( gauge_sizer, self._progress_cancel, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        delete_hbox = QP.HBoxLayout()
-        
-        QP.AddToLayout( delete_hbox, self._delete_after_success_st, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( delete_hbox, self._delete_after_success, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        import_options_buttons = QP.HBoxLayout()
-        
-        QP.AddToLayout( import_options_buttons, self._import_options_button, CC.FLAGS_CENTER )
-        QP.AddToLayout( import_options_buttons, self._cog_button, CC.FLAGS_CENTER )
-        
-        buttons = QP.HBoxLayout()
-        
-        QP.AddToLayout( buttons, self._add_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( buttons, self._tag_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        
-        vbox = QP.VBoxLayout()
-        
-        QP.AddToLayout( vbox, listctrl_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( vbox, gauge_sizer, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        QP.AddToLayout( vbox, delete_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        QP.AddToLayout( vbox, import_options_buttons, CC.FLAGS_ON_RIGHT )
-        QP.AddToLayout( vbox, buttons, CC.FLAGS_ON_RIGHT )
-        
-        self.widget().setLayout( vbox )
-        
-        self._lock = threading.Lock()
-        
-        self._current_path_data = {}
-        
-        self._job_status = ClientThreading.JobStatus()
-        
-        self._unparsed_paths_queue = queue.Queue()
-        self._currently_parsing = threading.Event()
-        self._work_to_do = threading.Event()
-        self._parsed_path_queue = queue.Queue()
-        self._pause_event = threading.Event()
-        self._cancel_event = threading.Event()
-        
-        self._progress_updater = ClientGUIAsync.FastThreadToGUIUpdater( self._progress, self._progress.SetValue )
-        
-        if len( paths ) > 0:
-            
-            self._AddPathsToList( paths )
-            
-        
-        CG.client_controller.gui.RegisterUIUpdateWindow( self )
-        
-        CG.client_controller.CallToThreadLongRunning( self.THREADParseImportablePaths, self._unparsed_paths_queue, self._currently_parsing, self._work_to_do, self._parsed_path_queue, self._progress_updater, self._pause_event, self._cancel_event )
-        
-    
-    def _AddPathsToList( self, paths ):
-        
-        if self._cancel_event.is_set():
-            
-            message = 'Please wait for the cancel to clear.'
-            
-            ClientGUIDialogsMessage.ShowWarning( self, message )
-            
-            return
-            
-        
-        self._unparsed_paths_queue.put( paths )
-        
-    
-    def _AddTags( self ):
-        
-        # TODO: convert this class to have a filenametaggingoptions and the structure for 'tags for these files', which is separate
-        # then make this button not start the import. just edit the options and routers and return
-        # if needed, we convert to paths_to_additional_tags on ultimate ok, or we convert the hdd import to just hold service_keys_to_filenametaggingoptions, like an import folder does
-        
-        paths = self._paths_list.GetData()
-        
-        if len( paths ) > 0:
-            
-            file_import_options = self._import_options_button.GetFileImportOptions()
-            
-            with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'filename tagging', frame_key = 'local_import_filename_tagging' ) as dlg:
-                
-                panel = ClientGUIImport.EditLocalImportFilenameTaggingPanel( dlg, paths )
-                
-                dlg.SetPanel( panel )
-                
-                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    ( metadata_routers, paths_to_additional_service_keys_to_tags ) = panel.GetValue()
-                    
-                    delete_after_success = self._delete_after_success.isChecked()
-                    
-                    CG.client_controller.pub( 'new_hdd_import', paths, file_import_options, metadata_routers, paths_to_additional_service_keys_to_tags, delete_after_success )
-                    
-                    self._OKParent()
-                    
-                
-            
-        
-    
-    def _ConvertPathToDisplayTuple( self, path ):
-        
-        ( index, mime, size ) = self._current_path_data[ path ]
-        
-        pretty_index = HydrusNumbers.ToHumanInt( index )
-        pretty_mime = HC.mime_string_lookup[ mime ]
-        pretty_size = HydrusData.ToHumanBytes( size )
-        
-        display_tuple = ( pretty_index, path, pretty_mime, pretty_size )
-        
-        return display_tuple
-        
-    
-    def _ConvertPathToSortTuple( self, path ):
-        
-        ( index, mime, size ) = self._current_path_data[ path ]
-        
-        pretty_mime = HC.mime_string_lookup[ mime ]
-        
-        sort_tuple = ( index, path, pretty_mime, size )
-        
-        return sort_tuple
-        
-    
-    def _DoImport( self ):
-        
-        paths = self._paths_list.GetData()
-        
-        if len( paths ) > 0:
-            
-            file_import_options = self._import_options_button.GetFileImportOptions()
-            
-            metadata_routers = []
-            paths_to_additional_service_keys_to_tags = collections.defaultdict( ClientTags.ServiceKeysToTags )
-            
-            delete_after_success = self._delete_after_success.isChecked()
-            
-            CG.client_controller.pub( 'new_hdd_import', paths, file_import_options, metadata_routers, paths_to_additional_service_keys_to_tags, delete_after_success )
-            
-        
-        self._OKParent()
-        
-    
-    def _TidyUp( self ):
-        
-        self._pause_event.set()
-        
-    
-    def AddFolder( self ):
-        
-        with QP.DirDialog( self, 'Select a folder to add.' ) as dlg:
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                self._AddPathsToList( ( path, ) )
-                
-            
-        
-    
-    def AddPaths( self ):
-        
-        with QP.FileDialog( self, 'Select the files to add.', fileMode = QW.QFileDialog.FileMode.ExistingFiles ) as dlg:
-            
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                paths = dlg.GetPaths()
-                
-                self._AddPathsToList( paths )
-                
-            
-        
-    
-    def CleanBeforeDestroy( self ):
-        
-        ClientGUIScrolledPanels.ReviewPanel.CleanBeforeDestroy( self )
-        
-        self._TidyUp()
-        
-    
-    def EventDeleteAfterSuccessCheck( self ):
-        
-        if self._delete_after_success.isChecked():
-            
-            self._delete_after_success_st.setText( 'YOUR ORIGINAL FILES WILL BE DELETED' )
-            
-        else:
-            
-            self._delete_after_success_st.clear()
-            
-        
-    
-    def PauseProgress( self ):
-        
-        if self._pause_event.is_set():
-            
-            self._pause_event.clear()
-            
-        else:
-            
-            self._pause_event.set()
-            
-        
-    
-    def StopProgress( self ):
-        
-        self._cancel_event.set()
-        
-    
-    def RemovePaths( self ):
-        
-        text = 'Remove all selected?'
-        
-        result = ClientGUIDialogsQuick.GetYesNo( self, text )
-        
-        if result == QW.QDialog.DialogCode.Accepted:
-            
-            paths_to_delete = self._paths_list.GetData( only_selected = True )
-            
-            self._paths_list.DeleteSelected()
-            
-            for path in paths_to_delete:
-                
-                del self._current_path_data[ path ]
-                
-            
-            flat_path_data = sorted( ( ( index, path, mime, size ) for ( path, ( index, mime, size ) ) in self._current_path_data.items() ) )
-            
-            new_index = 1
-            
-            for ( old_index, path, mime, size ) in flat_path_data:
-                
-                self._current_path_data[ path ] = ( new_index, mime, size )
-                
-                new_index += 1
-                
-            
-            self._paths_list.UpdateDatas()
-            
-        
-    
-    def THREADParseImportablePaths( self, unparsed_paths_queue, currently_parsing, work_to_do, parsed_path_queue, progress_updater, pause_event, cancel_event ):
-        
-        unparsed_paths = collections.deque()
-        
-        num_files_done = 0
-        num_good_files = 0
-        
-        num_empty_files = 0
-        num_missing_files = 0
-        num_unimportable_mime_files = 0
-        num_occupied_files = 0
-        
-        num_sidecars = 0
-        
-        while not HG.started_shutdown:
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
-            if len( unparsed_paths ) > 0:
-                
-                work_to_do.set()
-                
-            else:
-                
-                work_to_do.clear()
-                
-            
-            currently_parsing.clear()
-            
-            # ready to start, let's update ui on status
-            
-            num_still_to_do = len( unparsed_paths )
-            num_bad_files = num_files_done - num_good_files
-            
-            num_total_paths = num_files_done + num_still_to_do
-            
-            if num_total_paths == 0:
-                
-                message = 'waiting for paths to parse'
-                
-            elif num_files_done < num_total_paths:
-                
-                message = f'{HydrusNumbers.ValueRangeToPrettyString( num_files_done, num_total_paths )} files parsed'
-                
-            else:
-                
-                message = f'{HydrusNumbers.ToHumanInt( num_total_paths )} files parsed'
-                
-            
-            if num_bad_files > 0:
-                
-                message += ' - '
-                
-                if num_good_files > 0:
-                    
-                    message += f'{HydrusNumbers.ToHumanInt( num_good_files )} good | {HydrusNumbers.ToHumanInt( num_bad_files )} bad'
-                    
-                elif num_bad_files == num_files_done:
-                    
-                    message += 'all bad'
-                    
-                
-            
-            if num_empty_files + num_missing_files + num_unimportable_mime_files + num_occupied_files > 0:
-                
-                message += ': '
-                
-                bad_comments = []
-                
-                if num_empty_files > 0:
-                    
-                    bad_comments.append( HydrusNumbers.ToHumanInt( num_empty_files ) + ' were empty' )
-                    
-                
-                if num_missing_files > 0:
-                    
-                    bad_comments.append( HydrusNumbers.ToHumanInt( num_missing_files ) + ' were missing' )
-                    
-                
-                if num_unimportable_mime_files > 0:
-                    
-                    bad_comments.append( HydrusNumbers.ToHumanInt( num_unimportable_mime_files ) + ' had unsupported file types' )
-                    
-                
-                if num_occupied_files > 0:
-                    
-                    bad_comments.append( HydrusNumbers.ToHumanInt( num_occupied_files ) + ' were inaccessible (maybe in use by another process)' )
-                    
-                
-                message += ', '.join( bad_comments )
-                
-            
-            if num_sidecars > 0:
-                
-                message += f' - and looks like {HydrusNumbers.ToHumanInt( num_sidecars )} txt/json/xml sidecars'
-                
-            
-            message += '.'
-            
-            progress_updater.Update( message, num_files_done, num_total_paths )
-            
-            # status updated, lets see what work there is to do
-            
-            if cancel_event.is_set():
-                
-                while not unparsed_paths_queue.empty():
-                    
-                    try:
-                        
-                        unparsed_paths_queue.get( block = False )
-                        
-                    except queue.Empty:
-                        
-                        pass
-                        
-                    
-                
-                unparsed_paths = collections.deque()
-                
-                cancel_event.clear()
-                pause_event.clear()
-                
-                continue
-                
-            
-            if pause_event.is_set():
-                
-                time.sleep( 1 )
-                
-                continue
-                
-            
-            # let's see if there is anything to parse
-            
-            # first we'll flesh out unparsed_paths with anything new to look at
-            
-            do_human_sort = CG.client_controller.new_options.GetBoolean( 'do_human_sort_on_hdd_file_import_paths' )
-            
-            while not unparsed_paths_queue.empty():
-                
-                try:
-                    
-                    raw_paths = unparsed_paths_queue.get( block = False )
-                    
-                    ( paths, num_sidecars_this_loop ) = ClientFiles.GetAllFilePaths( raw_paths, do_human_sort = do_human_sort ) # convert any dirs to subpaths
-                    
-                    num_sidecars += num_sidecars_this_loop
-                    unparsed_paths.extend( paths )
-                    
-                except queue.Empty:
-                    
-                    pass
-                    
-                
-            
-            # if unparsed_paths still has nothing, we'll nonetheless sleep on new paths
-            
-            if len( unparsed_paths ) == 0:
-                
-                try:
-                    
-                    raw_paths = unparsed_paths_queue.get( timeout = 5 )
-
-                    ( paths, num_sidecars_this_loop ) = ClientFiles.GetAllFilePaths( raw_paths, do_human_sort = do_human_sort ) # convert any dirs to subpaths
-                    
-                    num_sidecars += num_sidecars_this_loop
-                    unparsed_paths.extend( paths )
-                    
-                except queue.Empty:
-                    
-                    pass
-                    
-                
-                continue # either we added some or didn't--in any case, restart the cycle
-                
-            
-            path = unparsed_paths.popleft()
-            
-            currently_parsing.set()
-            
-            # we are now dealing with a file. let's clear out quick no-gos
-            
-            num_files_done += 1
-            
-            if path.endswith( os.path.sep + 'Thumbs.db' ) or path.endswith( os.path.sep + 'thumbs.db' ):
-                
-                HydrusData.Print( 'In import parse, skipping thumbs.db: ' + path )
-                
-                num_unimportable_mime_files += 1
-                
-                continue
-                
-            
-            if not os.path.exists( path ):
-                
-                HydrusData.Print( 'Missing file: ' + path )
-                
-                num_missing_files += 1
-                
-                continue
-                
-            
-            if not HydrusPaths.PathIsFree( path ):
-                
-                HydrusData.Print( 'File currently in use: ' + path )
-                
-                num_occupied_files += 1
-                
-                continue
-                
-            
-            size = os.path.getsize( path )
-            
-            if size == 0:
-                
-                HydrusData.Print( 'Empty file: ' + path )
-                
-                num_empty_files += 1
-                
-                continue
-                
-            
-            # looks good, let's burn some CPU
-            
-            try:
-                
-                mime = HydrusFileHandling.GetMime( path )
-                
-            except Exception as e:
-                
-                HydrusData.Print( 'Problem parsing mime for: ' + path )
-                HydrusData.PrintException( e )
-                
-                mime = HC.APPLICATION_UNKNOWN
-                
-            
-            if mime in HC.ALLOWED_MIMES:
-                
-                num_good_files += 1
-                
-                parsed_path_queue.put( ( path, mime, size ) )
-                
-            else:
-                
-                HydrusData.Print( 'During file import scan, unparsable file: ' + path )
-                
-                num_unimportable_mime_files += 1
-                
-            
-        
-    
-    def TIMERUIUpdate( self ):
-        
-        good_paths = list()
-        
-        while not self._parsed_path_queue.empty():
-            
-            ( path, mime, size ) = self._parsed_path_queue.get()
-            
-            if not self._paths_list.HasData( path ):
-                
-                good_paths.append( path )
-                
-                index = len( self._current_path_data ) + 1
-                
-                self._current_path_data[ path ] = ( index, mime, size )
-                
-            
-        
-        if len( good_paths ) > 0:
-            
-            self._paths_list.AddDatas( good_paths )
-            
-        
-        #
-        
-        files_in_list = len( self._current_path_data ) > 0
-        
-        paused = self._pause_event.is_set()
-        no_work_in_queue = not self._work_to_do.is_set()
-        working_on_a_file_now = self._currently_parsing.is_set()
-        
-        can_import = files_in_list and ( no_work_in_queue or paused ) and not working_on_a_file_now
-        
-        if no_work_in_queue:
-            
-            self._progress_pause.setEnabled( False )
-            self._progress_cancel.setEnabled( False )
-            
-        else:
-            
-            self._progress_pause.setEnabled( True )
-            self._progress_cancel.setEnabled( True )
-            
-        
-        if can_import:
-            
-            self._add_button.setEnabled( True )
-            self._tag_button.setEnabled( True )
-            
-        else:
-            
-            self._add_button.setEnabled( False )
-            self._tag_button.setEnabled( False )
-            
-        
-        if paused:
-            
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._progress_pause, CC.global_pixmaps().play )
-            
-        else:
-            
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._progress_pause, CC.global_pixmaps().pause )
-            
-        
-    
 class JobSchedulerPanel( QW.QWidget ):
     
     def __init__( self, parent: QW.QWidget, controller: "CG.ClientController.Controller", scheduler_name ):
@@ -3660,7 +2166,7 @@ class JobSchedulerPanel( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_JOB_SCHEDULER_REVIEW.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 20, model )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 12, model )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -3727,7 +2233,7 @@ class ThreadsPanel( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_THREADS_REVIEW.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 20, model )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self._list_ctrl_panel, 12, model )
         
         self._list_ctrl_panel.SetListCtrl( self._list_ctrl )
         
@@ -3806,11 +2312,11 @@ class ReviewDeferredDeleteTableData( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DEFERRED_DELETE_TABLE_DATA.ID, self._ConvertRowToDisplayTuple, self._ConvertRowToSortTuple )
         
-        self._deferred_delete_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( deferred_delete_listctrl_panel, 24, model )
+        self._deferred_delete_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( deferred_delete_listctrl_panel, 12, model )
         
         deferred_delete_listctrl_panel.SetListCtrl( self._deferred_delete_listctrl )
         
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().refresh, self._RefreshData )
+        self._refresh_button = ClientGUICommon.IconButton( self, CC.global_icons().refresh, self._RefreshData )
         self._work_hard_button = ClientGUICommon.BetterButton( self,'work hard now', self._FlipWorkingHard )
         
         #
@@ -3916,7 +2422,7 @@ class ReviewDeferredDeleteTableData( ClientGUIScrolledPanels.ReviewPanel ):
             self._UpdateButtonLabel()
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'review deferred delete table data fetch', self, loading_callable, work_callable, publish_callable )
         
     
     def _RefreshData( self ):
@@ -4002,7 +2508,7 @@ class ReviewVacuumData( ClientGUIScrolledPanels.ReviewPanel ):
         
         #
         
-        info_message = '''Vacuuming is essentially an aggressive defrag of a database file. The entire database is copied contiguously to a new file, which then has tightly packed pages and no empty 'free' pages. Note that even a database currently has no free pages can still _sometimes_ be packed more efficiently, saving up to 40% of space, but there is no easy way to determine this ahead of time (in general, if it has been five years, you might save some space), and the database will bloat back up in time as more work happens.
+        info_message = '''Vacuuming is essentially an aggressive defrag of a database file. The entire database is copied contiguously to a new file, which then has tightly packed pages and no empty 'free' pages. Note that even a database that currently has no free pages can still _sometimes_ be packed more efficiently, saving up to 40% of space, but there is no easy way to determine this ahead of time (in general, if it has been five years, you might save some space), and the database will bloat back up in time as more work happens.
 
 Because the new database is tightly packed, it will generally be smaller than the original file. This is currently the only way to truncate a hydrus database file.
 

@@ -2,15 +2,11 @@ import collections
 import collections.abc
 import decimal
 import fractions
-import itertools
 import os
-import numpy
-import random
 import struct
 import sys
 import time
 import traceback
-import typing
 import yaml
 
 from hydrus.core import HydrusConstants as HC
@@ -40,7 +36,7 @@ def BuildKeyToSetDict( pairs ):
     return d
     
 
-def BytesToNoneOrHex( b: typing.Optional[ bytes ] ):
+def BytesToNoneOrHex( b: bytes | None ):
     
     if b is None:
         
@@ -52,7 +48,7 @@ def BytesToNoneOrHex( b: typing.Optional[ bytes ] ):
         
     
 
-def HexToNoneOrBytes( h: typing.Optional[ str ] ):
+def HexToNoneOrBytes( h: str | None ):
     
     if h is None:
         
@@ -97,7 +93,7 @@ def CleanRunningFile( db_path, instance ):
         
         os.remove( path )
         
-    except:
+    except Exception as e:
         
         pass
         
@@ -121,32 +117,6 @@ def DebugPrint( debug_info ):
     
     sys.stdout.flush()
     sys.stderr.flush()
-    
-
-def DedupeList( xs: collections.abc.Iterable ):
-    
-    if isinstance( xs, set ):
-        
-        return list( xs )
-        
-    
-    xs_seen = set()
-    
-    xs_return = []
-    
-    for x in xs:
-        
-        if x in xs_seen:
-            
-            continue
-            
-        
-        xs_return.append( x )
-        
-        xs_seen.add( x )
-        
-    
-    return xs_return
     
 
 def GenerateKey():
@@ -235,19 +205,38 @@ def GetNicelyDivisibleNumberForZoom( zoom, no_bigger_than ):
     
     return frac.numerator
     
+
 def GetEmptyDataDict():
     
     data = collections.defaultdict( default_dict_list )
     
     return data
     
-def GetNonDupeName( original_name, disallowed_names ):
+
+def GetNonDupeName( original_name: str, disallowed_names: set[ str ], do_casefold: bool = False ):
+    
+    if do_casefold:
+        
+        disallowed_names = { name.casefold() for name in disallowed_names }
+        
+    
+    def name_exists( name: str ):
+        
+        if do_casefold:
+            
+            return name.casefold() in disallowed_names
+            
+        else:
+            
+            return name in disallowed_names
+            
+        
     
     i = 1
     
     non_dupe_name = original_name
     
-    while non_dupe_name in disallowed_names:
+    while name_exists( non_dupe_name ):
         
         non_dupe_name = original_name + ' (' + str( i ) + ')'
         
@@ -266,28 +255,6 @@ def GetTypeName( obj_type ):
     else:
         
         return repr( obj_type )
-        
-    
-
-def IterateHexPrefixes():
-    
-    hex_chars = '0123456789abcdef'
-    
-    for ( one, two ) in itertools.product( hex_chars, hex_chars ):
-        
-        prefix = one + two
-        
-        yield prefix
-        
-    
-
-def IterateListRandomlyAndFast( xs: list ):
-    
-    # do this instead of a pre-for-loop shuffle on big lists
-    
-    for i in numpy.random.permutation( len( xs ) ):
-        
-        yield xs[ i ]
         
     
 
@@ -315,19 +282,6 @@ def MergeKeyToListDicts( key_to_list_dicts ):
     
     return result
     
-def PartitionIterator( pred: collections.abc.Callable[ [ object ], bool ], stream: collections.abc.Iterable[ object ] ):
-    
-    ( t1, t2 ) = itertools.tee( stream )
-    
-    return ( itertools.filterfalse( pred, t1 ), filter( pred, t2 ) )
-    
-
-def PartitionIteratorIntoLists( pred: collections.abc.Callable[ [ object ], bool ], stream: collections.abc.Iterable[ object ] ):
-    
-    ( a, b ) = PartitionIterator( pred, stream )
-    
-    return ( list( a ), list( b ) )
-    
 
 def Print( text ):
     
@@ -335,7 +289,7 @@ def Print( text ):
         
         print( str( text ) )
         
-    except:
+    except Exception as e:
         
         print( repr( text ) )
         
@@ -343,14 +297,7 @@ def Print( text ):
 
 ShowText = Print
 
-def PrintException( e, do_wait = True ):
-    
-    ( etype, value, tb ) = sys.exc_info()
-    
-    PrintExceptionTuple( etype, value, tb, do_wait = do_wait )
-    
-
-def PrintExceptionTuple( etype, value, tb, do_wait = True ):
+def ConvertExceptionTupleToNiceTrace( etype, value, tb ):
     
     if etype is None:
         
@@ -392,6 +339,35 @@ def PrintExceptionTuple( etype, value, tb, do_wait = True ):
 {stack}
 =================== End ==================='''
     
+    return message
+    
+
+def ConvertExceptionTupleToSummary( etype, value, tb ):
+    
+    if value is None:
+        
+        value = 'Unknown error'
+        
+    
+    return f'{etype.__name__}: {value}'
+    
+
+def PrintException( e, do_wait = True ):
+    
+    ( etype, value, tb ) = sys.exc_info()
+    
+    PrintExceptionTuple( etype, value, tb, do_wait = do_wait )
+    
+
+def PrintExceptionTuple( etype, value, tb, do_wait = True ):
+    
+    if etype == HydrusExceptions.ShutdownException:
+        
+        return 'shutting down'
+        
+    
+    message = ConvertExceptionTupleToNiceTrace( etype, value, tb )
+    
     DebugPrint( '\n' + message )
     
     if do_wait:
@@ -404,84 +380,6 @@ def PrintExceptionTuple( etype, value, tb, do_wait = True ):
 
 ShowException = PrintException
 ShowExceptionTuple = PrintExceptionTuple
-
-def RandomPop( population ):
-    
-    random_index = random.randint( 0, len( population ) - 1 )
-    
-    row = population.pop( random_index )
-    
-    return row
-    
-
-def SampleSetByGettingFirst( s: set, n ):
-    
-    # sampling from a big set can be slow, so if we don't care about super random, let's just rip off the front and let __hash__ be our random
-    
-    n = min( len( s ), n )
-    
-    sample = set()
-    
-    if n == 0:
-        
-        return sample
-        
-    
-    for ( i, obj ) in enumerate( s ):
-        
-        sample.add( obj )
-        
-        if i >= n - 1:
-            
-            break
-            
-        
-    
-    return sample
-    
-
-def SmoothOutMappingIterator( xs, n ):
-    
-    # de-spikifies mappings, so if there is ( tag, 20k files ), it breaks that up into manageable chunks
-    
-    chunk_weight = 0
-    chunk = []
-    
-    for ( tag_item, hash_items ) in xs:
-        
-        for chunk_of_hash_items in SplitIteratorIntoChunks( hash_items, n ):
-            
-            yield ( tag_item, chunk_of_hash_items )
-            
-        
-    
-
-def SplayListForDB( xs ):
-    
-    return '(' + ','.join( ( str( x ) for x in xs ) ) + ')'
-    
-
-def SplitIteratorIntoChunks( iterator, n ):
-    
-    chunk = []
-    
-    for item in iterator:
-        
-        chunk.append( item )
-        
-        if len( chunk ) == n:
-            
-            yield chunk
-            
-            chunk = []
-            
-        
-    
-    if len( chunk ) > 0:
-        
-        yield chunk
-        
-    
 
 def BaseToHumanBytes( size, sig_figs = 3 ):
     
@@ -589,7 +487,7 @@ def BaseToHumanBytes( size, sig_figs = 3 ):
             d = d.quantize( 0 )
             
         
-    except:
+    except Exception as e:
         
         # blarg
         pass
@@ -619,7 +517,7 @@ class Call( object ):
     
     def __call__( self ):
         
-        self._func( *self._args, **self._kwargs )
+        return self._func( *self._args, **self._kwargs )
         
     
     def __repr__( self ):

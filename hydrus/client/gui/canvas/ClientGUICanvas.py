@@ -20,29 +20,25 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
-from hydrus.client.duplicates import ClientDuplicates
-from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.gui import ClientGUICore as CGC
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsManage
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import ClientGUIShortcuts
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvasHoverFrames
 from hydrus.client.gui.canvas import ClientGUICanvasMedia
+from hydrus.client.gui.canvas import ClientGUICanvasMenus
 from hydrus.client.gui.duplicates import ClientGUIDuplicateActions
-from hydrus.client.gui.duplicates import ClientGUIDuplicatesContentMergeOptions
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.media import ClientGUIMediaModalActions
 from hydrus.client.gui.media import ClientGUIMediaControls
 from hydrus.client.gui.media import ClientGUIMediaMenus
-from hydrus.client.gui.panels import ClientGUIScrolledPanels
+from hydrus.client.gui.metadata import ClientGUIManageTags
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsCommitFiltering
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.gui.widgets import ClientGUIPainterShapes
@@ -59,7 +55,7 @@ def AddAudioVolumeMenu( menu, canvas_type ):
     mute_volume_type = None
     volume_volume_type = ClientGUIMediaControls.AUDIO_GLOBAL
     
-    if canvas_type == CC.CANVAS_MEDIA_VIEWER:
+    if canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
         
         mute_volume_type = ClientGUIMediaControls.AUDIO_MEDIA_VIEWER
         
@@ -325,6 +321,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     mediaCleared = QC.Signal()
     mediaChanged = QC.Signal( ClientMedia.MediaSingleton )
+    haveDestroyedAllMediaWindows = QC.Signal()
     
     def __init__( self, parent, location_context: ClientLocation.LocationContext ):
         
@@ -347,13 +344,14 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._new_options = CG.client_controller.new_options
         
+        self._canvas_type = CC.CANVAS_MEDIA_VIEWER
         self._canvas_key = HydrusData.GenerateKey()
         
         self._force_maintain_pan_and_zoom = False
         
         self._service_keys_to_services = {}
         
-        self._current_media: typing.Optional[ ClientMedia.MediaSingleton ] = None
+        self._current_media: ClientMedia.MediaSingleton | None = None
         
         catch_mouse = True
         
@@ -369,13 +367,16 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self.installEventFilter( self._click_drag_reporting_filter )
         
-        self._media_container = ClientGUICanvasMedia.MediaContainer( self, self.CANVAS_TYPE, self._background_colour_generator, self._click_drag_reporting_filter )
+        self._media_container = ClientGUICanvasMedia.MediaContainer( self, self, self.CANVAS_TYPE, self._background_colour_generator, self._click_drag_reporting_filter )
+        
+        self._media_container.haveDestroyedAllMediaWindows.connect( self.haveDestroyedAllMediaWindows )
         
         self._last_drag_pos = None
         self._current_drag_is_touch = False
         self._last_motion_pos = QC.QPoint( 0, 0 )
+        self._last_geometry = QC.QRect( 0, 0, 0, 0 )
         
-        self._media_container.readyForNeighbourPrefetch.connect( self._PrefetchNeighbours )
+        self._media_container.readyForNeighbourPrefetch.connect( self._MaintainNeighbourPrefetch )
         
         self._media_container.zoomChanged.connect( self.ZoomChanged )
         
@@ -385,17 +386,18 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         CG.client_controller.sub( self, 'ManageTags', 'canvas_manage_tags' )
         CG.client_controller.sub( self, 'update', 'notify_new_colourset' )
         CG.client_controller.sub( self, 'NotifyFilesNeedRedraw', 'notify_files_need_redraw' )
+        CG.client_controller.sub( self, '_MaintainNeighbourPrefetch', 'notify_image_finished_rendering' )
         
     
     def _Archive( self ):
         
         if self._current_media is not None:
             
-            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, ( self._current_media.GetHash(), ) ) ) )
+            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, ( self._current_media.GetHash(), ) ) ) )
             
         
     
-    def _Delete( self, media = None, default_reason = None, file_service_key = None, just_get_content_update_packages = False ) -> typing.Union[ bool, collections.abc.Collection[ ClientContentUpdates.ContentUpdatePackage ] ]:
+    def _Delete( self, media = None, default_reason = None, file_service_key = None, just_get_content_update_packages = False ) -> bool | collections.abc.Collection[ ClientContentUpdates.ContentUpdatePackage ]:
         
         if media is None:
             
@@ -434,21 +436,13 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             return False
             
         
-        def do_it( content_update_packages ):
-            
-            for content_update_package in content_update_packages:
-                
-                CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
-                
-            
-        
         if just_get_content_update_packages:
             
             return content_update_packages
             
         else:
             
-            CG.client_controller.CallToThread( do_it, content_update_packages )
+            ClientGUIMediaSimpleActions.CommitContentUpdatePackagesAsync( 'deleting files', content_update_packages )
             
             return True
             
@@ -475,6 +469,11 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         return ''
         
     
+    def _GetPrefetchNeighboursInPreferenceOrder( self ) -> list[ ClientMediaResult.MediaResult ]:
+        
+        return []
+        
+    
     def _Inbox( self ):
         
         if self._current_media is None:
@@ -482,7 +481,23 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             return
             
         
-        CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, ( self._current_media.GetHash(), ) ) ) )
+        CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, ( self._current_media.GetHash(), ) ) ) )
+        
+    
+    def _MaintainNeighbourPrefetch( self ):
+        
+        if self._current_media is None:
+            
+            return
+            
+        
+        to_prefetch = self._GetPrefetchNeighboursInPreferenceOrder()
+        
+        to_prefetch.insert( 0, self._current_media.GetMediaResult() ) # we stick this at the front to ensure we don't start hitting neightbours before the current image, if there is one, is rendered
+        
+        to_prefetch = [ media_result for media_result in to_prefetch if media_result.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media_result, self.CANVAS_TYPE ) ]
+        
+        CG.client_controller.images_cache.PrefetchImageRenderers( to_prefetch )
         
     
     def _ManageNotes( self, name_to_start_on = None ):
@@ -524,7 +539,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 panel = child.GetPanel()
                 
-                if isinstance( panel, ClientGUITags.ManageTagsPanel ):
+                if isinstance( panel, ClientGUIManageTags.ManageTagsPanel ):
                     
                     child.activateWindow()
                     
@@ -545,7 +560,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         manage_tags = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, title, frame_key )
         
-        panel = ClientGUITags.ManageTagsPanel( manage_tags, self._location_context, CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS, [ self._current_media ], immediate_commit = True, canvas_key = self._canvas_key )
+        panel = ClientGUIManageTags.ManageTagsPanel( manage_tags, self._location_context, CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS, [ self._current_media ], immediate_commit = True, canvas_key = self._canvas_key )
         
         manage_tags.SetPanel( panel )
         
@@ -581,7 +596,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 if len( pending_content_updates ) > 0:
                     
-                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, pending_content_updates )
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, pending_content_updates )
                     
                     CG.client_controller.Write( 'content_updates', content_update_package )
                     
@@ -608,11 +623,6 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             ClientGUIMediaModalActions.DoOpenKnownURLFromShortcut( self, self._current_media )
             
-        
-    
-    def _PrefetchNeighbours( self ):
-        
-        pass
         
     
     def _SaveCurrentMediaViewTime( self ):
@@ -696,29 +706,47 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if self._current_media is not None:
             
-            media_container_size = self._media_container.size()
+            if self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES and not self._new_options.GetBoolean( 'media_viewer_recenter_media_on_window_resize' ):
+                
+                self._media_container.ZoomMaintainingZoom( self._current_media )
+                
+                #we now do extra work to maintain the center point of the media fixed in the same place relative to the screen
+                
+                window_geom = self.window().geometry()
+                
+                if self._last_geometry.topLeft() != window_geom.topLeft():
+                    
+                    delta = self._last_geometry.topLeft() - window_geom.topLeft()
+                    
+                    self._media_container.MoveDelta( delta )
+                    
+                    self._last_geometry = window_geom
+                    
+                
             
-            if my_size != media_container_size:
+            else:
                 
-                if self._new_options.GetBoolean( 'media_viewer_lock_current_zoom_type' ):
-                    
-                    self._media_container.ZoomToZoomType()
-                    
-                elif self._new_options.GetBoolean( 'media_viewer_lock_current_zoom' ):
-                    
-                    self._media_container.ZoomMaintainingZoom( self._current_media )
-                    
-                else:
-                    
-                    self._media_container.ZoomReinit()
-                    
+                media_container_size = self._media_container.size()
                 
-                #always reset center on window resize
-                #if not self._new_options.GetBoolean( 'media_viewer_lock_current_pan' ):
-                
-                self._media_container.ResetCenterPosition()
-                
-                self.EndDrag()
+                if my_size != media_container_size:
+                    
+                    if self._new_options.GetBoolean( 'media_viewer_lock_current_zoom_type' ):
+                        
+                        self._media_container.ZoomToZoomType()
+                        
+                    elif self._new_options.GetBoolean( 'media_viewer_lock_current_zoom' ):
+                        
+                        self._media_container.ZoomMaintainingZoom( self._current_media )
+                        
+                    else:
+                        
+                        self._media_container.ZoomReinit()
+                        
+                    
+                    self._media_container.ResetCenterPosition()
+                    
+                    self.EndDrag()
+                    
                 
             
         
@@ -740,6 +768,11 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         return self._my_shortcuts_handler.GetCustomShortcutNames()
         
     
+    def GetCanvasKey( self ):
+        
+        return self._canvas_key
+        
+    
     def GetColour( self, colour_type ):
         
         if self._new_options.GetBoolean( 'override_stylesheet_colours' ):
@@ -755,6 +788,11 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     def GetMedia( self ):
         
         return self._current_media
+        
+    
+    def HandleMouseMoveWithoutEvent( self, is_dragging: bool ):
+        
+        pass
         
     
     def ManageNotes( self, canvas_key, name_to_start_on = None ):
@@ -819,9 +857,16 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
-        self._DrawBackgroundBitmap( painter )
+        try:
+            
+            painter = QG.QPainter( self )
+            
+            self._DrawBackgroundBitmap( painter )
+            
+        except Exception as e:
+            
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
+            
         
     
     def PauseMedia( self ):
@@ -1001,7 +1046,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     if CG.client_controller.new_options.GetBoolean( 'open_files_to_duplicate_filter_uses_all_my_files' ):
                         
-                        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                         
                     else:
                         
@@ -1361,7 +1406,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 self._media_container.ZoomToZoomPercent( new_zoom )
                 
             elif action == CAC.SIMPLE_ZOOM_TO_PERCENTAGE_CENTER:
-                                                        
+                
                 new_zoom = command.GetSimpleData()
                 
                 self._media_container.ZoomToZoomPercent( new_zoom, zoom_center_type_override = ClientGUICanvasMedia.ZOOM_CENTERPOINT_VIEWER_CENTER )
@@ -1373,6 +1418,28 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 from hydrus.core.files.images import HydrusImageNormalisation
                 
                 HydrusImageNormalisation.SetDoICCProfileNormalisation( result )
+                
+            elif action in ( CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER, CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER, CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN ):
+                
+                if action == CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER:
+                    
+                    CG.client_controller.new_options.FlipBoolean( 'draw_transparency_checkerboard_media_canvas' )
+                    
+                elif action == CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER:
+                    
+                    CG.client_controller.new_options.FlipBoolean( 'draw_transparency_checkerboard_media_canvas_duplicates' )
+                    
+                elif action == CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN:
+                    
+                    CG.client_controller.new_options.FlipBoolean( 'draw_transparency_checkerboard_as_greenscreen' )
+                    
+                else:
+                    
+                    raise Exception( 'Unknown action!' )
+                    
+                
+                CG.client_controller.pub( 'clear_image_cache' )
+                CG.client_controller.pub( 'clear_image_tile_cache' )
                 
             else:
                 
@@ -1396,6 +1463,11 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         return command_processed
         
     
+    def ReadyToDestroy( self ):
+        
+        return self._media_container.ReadyToDestroy()
+        
+    
     def ResetMediaWindowCenterPosition( self ):
         
         self._media_container.ResetCenterPosition()
@@ -1408,7 +1480,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._location_context = location_context
         
     
-    def SetMedia( self, media: typing.Optional[ ClientMedia.MediaSingleton ], start_paused = None ):
+    def SetMedia( self, media: ClientMedia.MediaSingleton | None, start_paused = None ):
         
         if media is not None and not self.isVisible():
             
@@ -1467,6 +1539,8 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                         
                     elif self.CANVAS_TYPE in CC.CANVAS_MEDIA_VIEWER_TYPES:
                         
+                        self._last_geometry = self.window().geometry()
+                        
                         maintain_zoom = self._new_options.GetBoolean( 'media_viewer_lock_current_zoom' )
                         maintain_zoom_type = not maintain_zoom and self._new_options.GetBoolean( 'media_viewer_lock_current_zoom_type' )
                         maintain_pan = self._new_options.GetBoolean( 'media_viewer_lock_current_pan' )
@@ -1497,9 +1571,14 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def minimumSizeHint( self ):
+    def SlideshowIsRunning( self ) -> bool:
         
-        return QC.QSize( 120, 120 )
+        return False
+        
+    
+    def SupportsSlideshow( self ) -> bool:
+        
+        return False
         
     
     def ZoomChanged( self ):
@@ -1607,6 +1686,7 @@ class CanvasPanel( Canvas ):
         
         super().__init__( parent, location_context )
         
+        self._canvas_type = CC.CANVAS_PREVIEW
         self._page_key = page_key
         
         self._hidden_page_current_media = None
@@ -1728,14 +1808,30 @@ class CanvasPanel( Canvas ):
             
             local_file_service_keys_we_are_in = sorted( locations_manager.GetCurrent().intersection( local_file_service_keys ), key = CG.client_controller.services_manager.GetName )
             
-            for file_service_key in local_file_service_keys_we_are_in:
+            if len( local_file_service_keys_we_are_in ) > 0:
                 
-                ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                if len( local_file_service_keys_we_are_in ) == 1:
+                    
+                    file_service_key = local_file_service_keys_we_are_in[0]
+                    
+                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    
+                else:
+                    
+                    delete_menu = ClientGUIMenus.GenerateMenu( menu )
+                    
+                    for file_service_key in local_file_service_keys_we_are_in:
+                        
+                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                        
+                    
+                    ClientGUIMenus.AppendMenu( menu, delete_menu, 'delete' )
+                    
                 
             
             if locations_manager.IsTrashed():
                 
-                ClientGUIMenus.AppendMenuItem( menu, 'delete completely', 'Physically delete this file from disk.', self._Delete, file_service_key = CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+                ClientGUIMenus.AppendMenuItem( menu, 'delete physically now', 'Physically delete this file from disk.', self._Delete, file_service_key = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
                 ClientGUIMenus.AppendMenuItem( menu, 'undelete', 'Take this file out of the trash.', self._Undelete )
                 
             
@@ -1773,6 +1869,10 @@ class CanvasPanel( Canvas ):
             ClientGUIMediaMenus.AddOpenMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
             ClientGUIMediaMenus.AddShareMenu( self, self, menu, self._current_media, [ self._current_media ] )
+            
+            ClientGUIMenus.AppendSeparator( menu )
+            
+            self._media_container.AddPlayerMenus( menu )
             
         
         CGC.core().PopupMenu( self, menu )
@@ -1843,6 +1943,292 @@ class CanvasPanel( Canvas ):
         
     
 
+class CanvasPanelWithHovers( CanvasPanel ):
+    
+    def __init__( self, parent, page_key, location_context: ClientLocation.LocationContext ):
+        
+        self._canvas_type = CC.CANVAS_PREVIEW
+        
+        super().__init__( parent, page_key, location_context )
+        
+        #
+        
+        self._hovers = []
+        
+        self._top_right_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameTopRight( self, self, None, self._canvas_key )
+        
+        self.mediaChanged.connect( self._top_right_hover.SetMedia )
+        self.mediaCleared.connect( self._top_right_hover.ClearMedia )
+        
+        self._top_right_hover.sendApplicationCommand.connect( self.ProcessApplicationCommand )
+        
+        self._hovers.append( self._top_right_hover )
+        
+        #
+        
+        self._my_shortcuts_handler.AddWindowToFilter( self._top_right_hover )
+        
+        CG.client_controller.gui.RegisterUIUpdateWindow( self )
+        
+    
+    def _DrawBackgroundDetails( self, painter: QG.QPainter ):
+        
+        if self._current_media is None:
+            
+            # maybe we'll want something here, but I think I prefer it blank for default for now
+            pass
+            
+            '''
+            my_size = self.size()
+            
+            my_width = my_size.width()
+            my_height = my_size.height()
+            
+            text = 'No media selected'
+            
+            ( text_size, text ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, text )
+            
+            x = ( my_width - text_size.width() ) // 2
+            y = ( my_height - text_size.height() ) // 2
+            
+            ClientGUIFunctions.DrawText( painter, x, y, text )
+            '''
+        else: #TODO maybe implement some of the commented out options with custom draw for sizes / overlapping shiz / +"bottom info" bar to preview window with extended details?
+            
+            new_options = CG.client_controller.new_options
+            
+            # if new_options.GetBoolean( 'draw_tags_hover_in_preview_window_background' ):
+                
+            #     self._DrawTags( painter )
+                
+            
+            # if new_options.GetBoolean( 'draw_top_hover_in_preview_window_background' ):
+                
+            #     self._DrawTopMiddle( painter )
+                
+            
+            if new_options.GetBoolean( 'draw_top_right_hover_in_preview_window_background' ):
+                
+                current_y = self._DrawTopRight( painter )
+                
+            # else:
+                
+            #     current_y = 0
+                
+            
+            # if new_options.GetBoolean( 'draw_notes_hover_in_preview_window_background' ):
+                
+            #     self._DrawNotes( painter, current_y )
+                
+            
+            # if new_options.GetBoolean( 'draw_bottom_right_index_in_preview_window_background' ):
+                
+            #     self._DrawIndexAndZoom( painter )
+                
+            
+        
+    
+    def _DrawTopRight( self, painter: QG.QPainter ) -> int:
+        
+        my_size = self.size()
+        
+        my_width = my_size.width()
+        my_height = my_size.height()
+        
+        try:
+            
+            QFRAME_PADDING = self._top_right_hover.frameWidth()
+            
+            ( VBOX_SPACING, VBOX_MARGIN ) = self._top_right_hover.GetVboxSpacingAndMargin()
+            
+        except Exception as e:
+            
+            QFRAME_PADDING = 2
+            ( VBOX_SPACING, VBOX_MARGIN ) = ( 2, 2 )
+            
+        
+        current_y = QFRAME_PADDING + VBOX_MARGIN + round( ClientGUIPainterShapes.PAD_PX / 2 )
+        
+        # ratings
+        
+        RATING_ICON_SET_SIZE = round( self._new_options.GetFloat( 'preview_window_rating_icon_size_px' ) )
+        RATING_INCDEC_SET_HEIGHT = round( self._new_options.GetFloat( 'preview_window_rating_incdec_height_px' ) )
+        STAR_DX = RATING_ICON_SET_SIZE
+        STAR_DY = RATING_ICON_SET_SIZE
+        STAR_PAD = ClientGUIPainterShapes.PAD
+        
+        services_manager = CG.client_controller.services_manager
+        
+        
+        like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
+        
+        like_services.reverse()
+        
+        like_rating_current_x = my_width - ( STAR_DX + round( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
+        
+        for like_service in like_services:
+            
+            service_key = like_service.GetServiceKey()
+            
+            rating_state = ClientRatings.GetLikeStateFromMedia( ( self._current_media, ), service_key )
+            
+            ClientGUIRatings.DrawLike( painter, like_rating_current_x, current_y, service_key, rating_state, QC.QSize( STAR_DX, STAR_DY ) )
+            
+            like_rating_current_x -= STAR_DX + STAR_PAD.width()
+            
+        
+        if len( like_services ) > 0:
+            
+            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
+            
+        
+        
+        numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
+        
+        for numerical_service in numerical_services:
+            
+            service_key = numerical_service.GetServiceKey()
+            
+            numerical_service = typing.cast( ClientServices.ServiceLocalRatingNumerical, numerical_service )
+            
+            custom_pad = numerical_service.GetCustomPad()
+            
+            ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( self._current_media, ), service_key )
+            
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, custom_pad, False, rating_state, rating )
+            
+            current_x = my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ) + round( STAR_PAD.width() / 2 )
+            
+            ClientGUIRatings.DrawNumerical( painter, current_x, current_y, service_key, rating_state, rating, size = QC.QSize( STAR_DX, STAR_DY ), pad_px = custom_pad )
+            
+            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
+            
+        
+        
+        incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
+        
+        incdec_services.reverse()
+        
+        incdec_rating_current_x = my_width - ( QFRAME_PADDING + VBOX_MARGIN )
+        
+        control_width = RATING_INCDEC_SET_HEIGHT * 2
+        
+        for incdec_service in incdec_services:
+            
+            service_key = incdec_service.GetServiceKey()
+            
+            ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( self._current_media, ), service_key )
+            
+            incdec_size = ClientGUIRatings.GetIncDecSize( RATING_INCDEC_SET_HEIGHT, rating )
+            
+            control_width = incdec_size.width() + 1
+            
+            incdec_rating_current_x -= control_width
+            
+            ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating, incdec_size )
+            
+        
+        incdec_rating_current_x -= control_width
+        
+        if len( incdec_services ) > 0:
+            
+            current_y += RATING_INCDEC_SET_HEIGHT + round( STAR_PAD.height() / 2 ) + VBOX_SPACING
+            
+        
+        # icons
+        
+        icons_to_show = []
+        
+        if self._current_media.GetLocationsManager().IsTrashed():
+            
+            icons_to_show.append( CC.global_pixmaps().trash )
+            
+        
+        if self._current_media.HasInbox():
+            
+            icons_to_show.append( CC.global_pixmaps().inbox )
+            
+        
+        if len( icons_to_show ) > 0:
+            
+            current_y += VBOX_MARGIN
+            
+            icon_x = - ( QFRAME_PADDING + VBOX_MARGIN )
+            
+            for icon in icons_to_show:
+                
+                painter.drawPixmap( my_width + icon_x - ( 16 + VBOX_SPACING ), current_y, icon )
+                
+                icon_x -= 16 + VBOX_SPACING
+                
+            
+            # this appears to be correct for the wrong reasons
+            
+            current_y += 16 + VBOX_SPACING
+            
+            current_y += VBOX_MARGIN
+            
+        
+        pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
+        
+        painter.setPen( QG.QPen( pen_colour ) )
+        
+        # location strings
+        
+        location_strings = self._current_media.GetLocationsManager().GetLocationStrings()
+        
+        for location_string in location_strings:
+            
+            ( text_size, location_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, location_string )
+            
+            ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, location_string )
+            
+            current_y += text_size.height()
+            
+        
+        # urls
+        
+        urls = self._current_media.GetLocationsManager().GetURLs()
+        
+        url_tuples = CG.client_controller.network_engine.domain_manager.ConvertURLsToMediaViewerTuples( urls )
+        
+        if len( url_tuples ) > 0:
+            
+            current_y += VBOX_MARGIN
+            
+            for ( display_string, url ) in url_tuples:
+                
+                ( text_size, display_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, display_string )
+                
+                ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, display_string )
+                
+                current_y += text_size.height() + VBOX_SPACING
+                
+            
+            # again this appears to be correct but for the wrong reasons
+            # flying completely by my pants here
+            
+            current_y -= VBOX_MARGIN
+            
+        
+        current_y += VBOX_MARGIN + QFRAME_PADDING
+        
+        return current_y
+        
+    
+    def GetCanvasType( self ):
+        
+        return self._canvas_type
+        
+    def TIMERUIUpdate( self ):
+        
+        for hover in self._hovers:
+            
+            hover.DoRegularHideShow()
+            
+        
+    
+
 class CanvasWithHovers( Canvas ):
     
     canvasWithHoversExiting = QC.Signal()
@@ -1853,20 +2239,20 @@ class CanvasWithHovers( Canvas ):
         
         self._hovers = []
         
-        top_hover = self._GenerateHoverTopFrame()
+        self._top_hover = self._GenerateHoverTopFrame()
         
-        self.mediaChanged.connect( top_hover.SetMedia )
-        self.mediaCleared.connect( top_hover.ClearMedia )
+        self.mediaChanged.connect( self._top_hover.SetMedia )
+        self.mediaCleared.connect( self._top_hover.ClearMedia )
         
-        top_hover.sendApplicationCommand.connect( self.ProcessApplicationCommand )
+        self._top_hover.sendApplicationCommand.connect( self.ProcessApplicationCommand )
         
-        self._media_container.zoomChanged.connect( top_hover.SetCurrentZoom )
+        self._media_container.zoomChanged.connect( self._top_hover.SetCurrentZoom )
         
-        self._hovers.append( top_hover )
+        self._hovers.append( self._top_hover )
         
-        self._my_shortcuts_handler.AddWindowToFilter( top_hover )
+        self._my_shortcuts_handler.AddWindowToFilter( self._top_hover )
         
-        self._tags_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameTags( self, self, top_hover, self._canvas_key, self._location_context )
+        self._tags_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameTags( self, self, self._top_hover, self._canvas_key, self._location_context )
         
         self.mediaChanged.connect( self._tags_hover.SetMedia )
         self.mediaCleared.connect( self._tags_hover.ClearMedia )
@@ -1877,7 +2263,7 @@ class CanvasWithHovers( Canvas ):
         
         self._my_shortcuts_handler.AddWindowToFilter( self._tags_hover )
         
-        self._top_right_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameTopRight( self, self, top_hover, self._canvas_key )
+        self._top_right_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameTopRight( self, self, self._top_hover, self._canvas_key )
         
         self.mediaChanged.connect( self._top_right_hover.SetMedia )
         self.mediaCleared.connect( self._top_right_hover.ClearMedia )
@@ -1906,19 +2292,23 @@ class CanvasWithHovers( Canvas ):
         
         #
         
-        self._timer_cursor_hide_job = None
+        self._cursor_autohide_timer = QC.QTimer( self )
         self._last_cursor_autohide_touch_time = HydrusTime.GetNowFloat()
         
         # need this as we need un-button-pressed move events for cursor hide
         self.setMouseTracking( True )
-        
-        self._RestartCursorHideWait()
         
         CG.client_controller.sub( self, 'RedrawDetails', 'refresh_all_tag_presentation_gui' )
         CG.client_controller.sub( self, 'CloseFromHover', 'canvas_close' )
         CG.client_controller.sub( self, 'FullscreenSwitch', 'canvas_fullscreen_switch' )
         
         CG.client_controller.gui.RegisterUIUpdateWindow( self )
+        
+        self._cursor_autohide_timer.timeout.connect( self._HideCursorCheck )
+        
+        self._cursor_autohide_timer.start( 100 )
+        
+        self._RestartCursorHideWait()
         
     
     def _DrawAdditionalTopMiddleInfo( self, painter: QG.QPainter, current_y ):
@@ -1982,25 +2372,38 @@ class CanvasWithHovers( Canvas ):
     
     def _DrawIndexAndZoom( self, painter: QG.QPainter ):
         
-        my_size = self.size()
+        painter.save()
         
-        my_width = my_size.width()
-        my_height = my_size.height()
-        
-        # bottom-right index
-        
-        bottom_right_string = ClientData.ConvertZoomToPercentage( self._media_container.GetCurrentZoom() )
-        
-        index_string = self._GetIndexString()
-        
-        if len( index_string ) > 0:
+        try:
             
-            bottom_right_string = '{} - {}'.format( bottom_right_string, index_string )
+            pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
             
-        
-        ( text_size, bottom_right_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, bottom_right_string )
-        
-        ClientGUIFunctions.DrawText( painter, my_width - text_size.width() - 3, my_height - text_size.height() - 3, bottom_right_string )
+            painter.setPen( QG.QPen( pen_colour ) )
+            
+            my_size = self.size()
+            
+            my_width = my_size.width()
+            my_height = my_size.height()
+            
+            # bottom-right index
+            
+            bottom_right_string = ClientData.ConvertZoomToPercentage( self._media_container.GetCurrentZoom() )
+            
+            index_string = self._GetIndexString()
+            
+            if len( index_string ) > 0:
+                
+                bottom_right_string = '{} - {}'.format( bottom_right_string, index_string )
+                
+            
+            ( text_size, bottom_right_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, bottom_right_string )
+            
+            ClientGUIFunctions.DrawText( painter, my_width - text_size.width() - 3, my_height - text_size.height() - 3, bottom_right_string )
+            
+        finally:
+            
+            painter.restore()
+            
         
     
     def _DrawNotes( self, painter: QG.QPainter, current_y: int ):
@@ -2014,28 +2417,32 @@ class CanvasWithHovers( Canvas ):
             return
             
         
-        my_size = self.size()
-        
-        my_width = my_size.width()
-        my_height = my_size.height()
-        
-        try:
-            
-            QFRAME_PADDING = self._right_notes_hover.frameWidth()
-            
-            ( NOTE_SPACING, NOTE_MARGIN ) = self._right_notes_hover.GetNoteSpacingAndMargin()
-            
-        except:
-            
-            QFRAME_PADDING = 2
-            ( NOTE_SPACING, NOTE_MARGIN ) = ( 2, 2 )
-            
-        
-        notes_width = int( my_width * ClientGUICanvasHoverFrames.SIDE_HOVER_PROPORTIONS ) - ( ( QFRAME_PADDING + NOTE_MARGIN ) * 2 )
-        
         painter.save()
         
         try:
+            
+            my_size = self.size()
+            
+            my_width = my_size.width()
+            my_height = my_size.height()
+            
+            try:
+                
+                QFRAME_PADDING = self._right_notes_hover.frameWidth()
+                
+                ( NOTE_SPACING, NOTE_MARGIN ) = self._right_notes_hover.GetNoteSpacingAndMargin()
+                
+            except Exception as e:
+                
+                QFRAME_PADDING = 2
+                ( NOTE_SPACING, NOTE_MARGIN ) = ( 2, 2 )
+                
+            
+            notes_width = int( my_width * ClientGUICanvasHoverFrames.SIDE_HOVER_PROPORTIONS ) - ( ( QFRAME_PADDING + NOTE_MARGIN ) * 2 )
+            
+            pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
+            
+            painter.setPen( QG.QPen( pen_colour ) )
             
             original_font = painter.font()
             
@@ -2129,295 +2536,333 @@ class CanvasWithHovers( Canvas ):
         
         # tags on the top left
         
-        original_pen = painter.pen()
-        
-        tags_manager = self._current_media.GetTagsManager()
-        
-        current = tags_manager.GetCurrent( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
-        pending = tags_manager.GetPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
-        petitioned = tags_manager.GetPetitioned( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
-        
-        tags_i_want_to_display = set()
-        
-        tags_i_want_to_display.update( current )
-        tags_i_want_to_display.update( pending )
-        tags_i_want_to_display.update( petitioned )
-        
-        tags_i_want_to_display = list( tags_i_want_to_display )
-        
-        tag_sort = CG.client_controller.new_options.GetDefaultTagSort( CC.TAG_PRESENTATION_MEDIA_VIEWER )
-        
-        ClientTagSorting.SortTags( tag_sort, tags_i_want_to_display )
-        
-        namespace_colours = HC.options[ 'namespace_colours' ]
+        painter.save()
         
         try:
             
-            QFRAME_PADDING = self._right_notes_hover.frameWidth()
+            font = self._tags_hover.GetListBoxFont()
             
-        except:
+            painter.setFont( font )
             
-            QFRAME_PADDING = 2
+            tags_manager = self._current_media.GetTagsManager()
             
-        
-        current_y = QFRAME_PADDING + 3
-        
-        x = QFRAME_PADDING + 5
-        
-        for tag in tags_i_want_to_display:
+            current = tags_manager.GetCurrent( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
+            pending = tags_manager.GetPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
+            petitioned = tags_manager.GetPetitioned( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_SINGLE_MEDIA )
             
-            display_string = ClientTags.RenderTag( tag, True )
+            tags_i_want_to_display = set()
             
-            if tag in pending:
+            tags_i_want_to_display.update( current )
+            tags_i_want_to_display.update( pending )
+            tags_i_want_to_display.update( petitioned )
+            
+            tags_i_want_to_display = list( tags_i_want_to_display )
+            
+            tag_sort = CG.client_controller.new_options.GetDefaultTagSort( CC.TAG_PRESENTATION_MEDIA_VIEWER )
+            
+            ClientTagSorting.SortTags( tag_sort, tags_i_want_to_display )
+            
+            namespace_colours = HC.options[ 'namespace_colours' ]
+            
+            try:
                 
-                display_string += ' (+)'
+                QFRAME_PADDING = self._right_notes_hover.frameWidth()
                 
-            
-            if tag in petitioned:
+            except Exception as e:
                 
-                display_string += ' (-)'
-                
-            
-            ( namespace, subtag ) = HydrusTags.SplitTag( tag )
-            
-            if namespace in namespace_colours:
-                
-                ( r, g, b ) = namespace_colours[ namespace ]
-                
-            else:
-                
-                ( r, g, b ) = namespace_colours[ None ]
+                QFRAME_PADDING = 2
                 
             
-            painter.setPen( QG.QPen( QG.QColor( r, g, b ) ) )
+            current_y = QFRAME_PADDING + 3
             
-            ( text_size, display_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, display_string )
+            x = QFRAME_PADDING + 5
             
-            ClientGUIFunctions.DrawText( painter, x, current_y, display_string )
+            text_height = painter.fontMetrics().height()
             
-            current_y += text_size.height()
+            for tag in tags_i_want_to_display:
+                
+                display_string = ClientTags.RenderTag( tag, True )
+                
+                if tag in pending:
+                    
+                    display_string += ' (+)'
+                    
+                
+                if tag in petitioned:
+                    
+                    display_string += ' (-)'
+                    
+                
+                ( namespace, subtag ) = HydrusTags.SplitTag( tag )
+                
+                if namespace in namespace_colours:
+                    
+                    ( r, g, b ) = namespace_colours[ namespace ]
+                    
+                else:
+                    
+                    ( r, g, b ) = namespace_colours[ None ]
+                    
+                
+                painter.setPen( QG.QPen( QG.QColor( r, g, b ) ) )
+                
+                ( text_size, display_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, display_string )
+                
+                ClientGUIFunctions.DrawText( painter, x, current_y, display_string )
+                
+                current_y += text_height # use this instead of 'text_size' because that's how the listboxtags we are mirroring does it
+                
             
-        
-        painter.setPen( original_pen )
+        finally:
+            
+            painter.restore()
+            
         
     
     def _DrawTopMiddle( self, painter: QG.QPainter ):
         
-        my_size = self.size()
+        painter.save()
         
-        my_width = my_size.width()
-        my_height = my_size.height()
-        
-        # top-middle
-        
-        pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
-        
-        painter.setPen( QG.QPen( pen_colour ) )
-        
-        current_y = 3
-        
-        title_string = self._current_media.GetTitleString()
-        
-        if len( title_string ) > 0:
+        try:
             
-            ( text_size, title_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, title_string )
+            my_size = self.size()
             
-            ClientGUIFunctions.DrawText( painter, ( my_width - text_size.width() ) // 2, current_y, title_string )
+            my_width = my_size.width()
+            my_height = my_size.height()
+            
+            # top-middle
+            
+            pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
+            
+            painter.setPen( QG.QPen( pen_colour ) )
+            
+            current_y = 3
+            
+            title_string = self._current_media.GetTitleString()
+            
+            if len( title_string ) > 0:
+                
+                ( text_size, title_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, title_string )
+                
+                ClientGUIFunctions.DrawText( painter, ( my_width - text_size.width() ) // 2, current_y, title_string )
+                
+                current_y += text_size.height() + 3
+                
+            
+            info_string = self._GetInfoString()
+            
+            ( text_size, info_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, info_string )
+            
+            ClientGUIFunctions.DrawText( painter, ( my_width - text_size.width() ) // 2, current_y, info_string )
             
             current_y += text_size.height() + 3
             
-        
-        info_string = self._GetInfoString()
-        
-        ( text_size, info_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, info_string )
-        
-        ClientGUIFunctions.DrawText( painter, ( my_width - text_size.width() ) // 2, current_y, info_string )
-        
-        current_y += text_size.height() + 3
-        
-        self._DrawAdditionalTopMiddleInfo( painter, current_y )
+            self._DrawAdditionalTopMiddleInfo( painter, current_y )
+            
+        finally:
+            
+            painter.restore()
+            
         
     
     def _DrawTopRight( self, painter: QG.QPainter ) -> int:
         
-        my_size = self.size()
-        
-        my_width = my_size.width()
-        my_height = my_size.height()
+        painter.save()
         
         try:
             
-            QFRAME_PADDING = self._top_right_hover.frameWidth()
+            my_size = self.size()
             
-            ( VBOX_SPACING, VBOX_MARGIN ) = self._top_right_hover.GetVboxSpacingAndMargin()
+            my_width = my_size.width()
+            my_height = my_size.height()
             
-        except:
-            
-            QFRAME_PADDING = 2
-            ( VBOX_SPACING, VBOX_MARGIN ) = ( 2, 2 )
-            
-        
-        current_y = QFRAME_PADDING + VBOX_MARGIN + int( ClientGUIPainterShapes.PAD_PX / 2 )
-        
-        # ratings
-        
-        RATING_ICON_SET_SIZE = round( self._new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
-        STAR_DX = RATING_ICON_SET_SIZE
-        STAR_DY = RATING_ICON_SET_SIZE
-        STAR_PAD = ClientGUIPainterShapes.PAD
-        
-        services_manager = CG.client_controller.services_manager
-        
-        
-        like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
-        
-        like_services.reverse()
-        
-        like_rating_current_x = my_width - ( STAR_DX + int( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
-        
-        for like_service in like_services:
-            
-            service_key = like_service.GetServiceKey()
-            
-            rating_state = ClientRatings.GetLikeStateFromMedia( ( self._current_media, ), service_key )
-            
-            ClientGUIRatings.DrawLike( painter, like_rating_current_x, current_y, service_key, rating_state, QC.QSize( STAR_DX, STAR_DY ))
-            
-            like_rating_current_x -= STAR_DX + STAR_PAD.width()
-            
-        
-        if len( like_services ) > 0:
-            
-            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
-            
-        
-        
-        numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
-        
-        for numerical_service in numerical_services:
-            
-            service_key = numerical_service.GetServiceKey()
-            
-            custom_pad = numerical_service.GetCustomPad()
-            
-            ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( self._current_media, ), service_key )
-            
-            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, custom_pad )
-            
-            current_x = my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ) + STAR_PAD.width() / 2
-            
-            ClientGUIRatings.DrawNumerical( painter, current_x, current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ), custom_pad )
-            
-            current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
-            
-        
-        
-        incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
-        
-        incdec_services.reverse()
-        
-        control_width = RATING_ICON_SET_SIZE * 2
-        
-        incdec_rating_current_x = my_width - ( control_width + int( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
-        
-        for incdec_service in incdec_services:
-            
-            service_key = incdec_service.GetServiceKey()
-            
-            ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( self._current_media, ), service_key )
-            
-            ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating, QC.QSize( RATING_ICON_SET_SIZE * 2, RATING_ICON_SET_SIZE ) )
-            
-            incdec_rating_current_x -= control_width + STAR_PAD.width()
-            
-        
-        if len( incdec_services ) > 0:
-            
-            current_y += STAR_DY + int( STAR_PAD.height() / 2 ) + VBOX_SPACING
-            
-        
-        # icons
-        
-        icons_to_show = []
-        
-        if self._current_media.GetLocationsManager().IsTrashed():
-            
-            icons_to_show.append( CC.global_pixmaps().trash )
-            
-        
-        if self._current_media.HasInbox():
-            
-            icons_to_show.append( CC.global_pixmaps().inbox )
-            
-        
-        if len( icons_to_show ) > 0:
-            
-            current_y += VBOX_MARGIN
-            
-            icon_x = - ( QFRAME_PADDING + VBOX_MARGIN )
-            
-            for icon in icons_to_show:
+            try:
                 
-                painter.drawPixmap( my_width + icon_x - ( 16 + VBOX_SPACING ), current_y, icon )
+                QFRAME_PADDING = self._top_right_hover.frameWidth()
                 
-                icon_x -= 16 + VBOX_SPACING
+                ( VBOX_SPACING, VBOX_MARGIN ) = self._top_right_hover.GetVboxSpacingAndMargin()
+                
+            except Exception as e:
+                
+                QFRAME_PADDING = 2
+                ( VBOX_SPACING, VBOX_MARGIN ) = ( 2, 2 )
                 
             
-            # this appears to be correct for the wrong reasons
+            current_y = QFRAME_PADDING + VBOX_MARGIN + round( ClientGUIPainterShapes.PAD_PX / 2 )
             
-            current_y += 16 + VBOX_SPACING
+            # ratings
             
-            current_y += VBOX_MARGIN
+            RATING_ICON_SET_SIZE = round( self._new_options.GetFloat( 'media_viewer_rating_icon_size_px' ) )
+            RATING_INCDEC_SET_HEIGHT = round( self._new_options.GetFloat( 'media_viewer_rating_incdec_height_px' ) )
+            STAR_DX = RATING_ICON_SET_SIZE
+            STAR_DY = RATING_ICON_SET_SIZE
+            STAR_PAD = ClientGUIPainterShapes.PAD
             
-        
-        pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
-        
-        painter.setPen( QG.QPen( pen_colour ) )
-        
-        # location strings
-        
-        location_strings = self._current_media.GetLocationsManager().GetLocationStrings()
-        
-        for location_string in location_strings:
+            services_manager = CG.client_controller.services_manager
             
-            ( text_size, location_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, location_string )
             
-            ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, location_string )
+            like_services = services_manager.GetServices( ( HC.LOCAL_RATING_LIKE, ) )
             
-            current_y += text_size.height()
+            like_services.reverse()
             
-        
-        # urls
-        
-        urls = self._current_media.GetLocationsManager().GetURLs()
-        
-        url_tuples = CG.client_controller.network_engine.domain_manager.ConvertURLsToMediaViewerTuples( urls )
-        
-        if len( url_tuples ) > 0:
+            like_rating_current_x = my_width - ( STAR_DX + round( STAR_PAD.width() / 2 ) ) - ( QFRAME_PADDING + VBOX_MARGIN )
             
-            current_y += VBOX_MARGIN
-            
-            for ( display_string, url ) in url_tuples:
+            for like_service in like_services:
                 
-                ( text_size, display_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, display_string )
+                service_key = like_service.GetServiceKey()
                 
-                ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, display_string )
+                rating_state = ClientRatings.GetLikeStateFromMedia( ( self._current_media, ), service_key )
                 
-                current_y += text_size.height() + VBOX_SPACING
+                ClientGUIRatings.DrawLike( painter, like_rating_current_x, current_y, service_key, rating_state, QC.QSize( STAR_DX, STAR_DY ))
+                
+                like_rating_current_x -= STAR_DX + STAR_PAD.width()
                 
             
-            # again this appears to be correct but for the wrong reasons
-            # flying completely by my pants here
+            if len( like_services ) > 0:
+                
+                current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
+                
             
-            current_y -= VBOX_MARGIN
             
-        
-        current_y += VBOX_MARGIN + QFRAME_PADDING
-        
-        return current_y
+            numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
+            
+            for numerical_service in numerical_services:
+                
+                service_key = numerical_service.GetServiceKey()
+                
+                numerical_service = typing.cast( ClientServices.ServiceLocalRatingNumerical, numerical_service )
+                
+                custom_pad = numerical_service.GetCustomPad()
+                
+                ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( self._current_media, ), service_key )
+                
+                numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, RATING_ICON_SET_SIZE, custom_pad, False, rating_state, rating )
+                
+                current_x = my_width - numerical_width - ( QFRAME_PADDING + VBOX_MARGIN ) + round( STAR_PAD.width() / 2 )
+                
+                ClientGUIRatings.DrawNumerical( painter, current_x, current_y, service_key, rating_state, rating, size = QC.QSize( STAR_DX, STAR_DY ), pad_px = custom_pad )
+                
+                current_y += STAR_DY + STAR_PAD.height() + VBOX_SPACING
+                
+            
+            
+            incdec_services = services_manager.GetServices( ( HC.LOCAL_RATING_INCDEC, ) )
+            
+            incdec_services.reverse()
+            
+            incdec_rating_current_x = my_width - ( QFRAME_PADDING + VBOX_MARGIN )
+            
+            control_width = RATING_INCDEC_SET_HEIGHT * 2
+            
+            for incdec_service in incdec_services:
+                
+                service_key = incdec_service.GetServiceKey()
+                
+                ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( self._current_media, ), service_key )
+                
+                incdec_size = ClientGUIRatings.GetIncDecSize( RATING_INCDEC_SET_HEIGHT, rating )
+                
+                control_width = incdec_size.width() + 1
+                
+                incdec_rating_current_x -= control_width
+                
+                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, current_y, service_key, rating_state, rating, incdec_size )
+                
+            
+            incdec_rating_current_x -= control_width
+            
+            if len( incdec_services ) > 0:
+                
+                current_y += RATING_INCDEC_SET_HEIGHT + round( STAR_PAD.height() / 2 ) + VBOX_SPACING
+                
+            
+            # icons
+            
+            icons_to_show = []
+            
+            if self._current_media.GetLocationsManager().IsTrashed():
+                
+                icons_to_show.append( CC.global_pixmaps().trash )
+                
+            
+            if self._current_media.HasInbox():
+                
+                icons_to_show.append( CC.global_pixmaps().inbox )
+                
+            
+            if len( icons_to_show ) > 0:
+                
+                current_y += VBOX_MARGIN
+                
+                icon_x = - ( QFRAME_PADDING + VBOX_MARGIN )
+                
+                for icon in icons_to_show:
+                    
+                    painter.drawPixmap( my_width + icon_x - ( 16 + VBOX_SPACING ), current_y, icon )
+                    
+                    icon_x -= 16 + VBOX_SPACING
+                    
+                
+                # this appears to be correct for the wrong reasons
+                
+                current_y += 16 + VBOX_SPACING
+                
+                current_y += VBOX_MARGIN
+                
+            
+            pen_colour = self.GetColour( CC.COLOUR_MEDIA_TEXT )
+            
+            painter.setPen( QG.QPen( pen_colour ) )
+            
+            # location strings
+            
+            location_strings = self._current_media.GetLocationsManager().GetLocationStrings()
+            
+            for location_string in location_strings:
+                
+                ( text_size, location_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, location_string )
+                
+                ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, location_string )
+                
+                current_y += text_size.height()
+                
+            
+            # urls
+            
+            urls = self._current_media.GetLocationsManager().GetURLs()
+            
+            url_tuples = CG.client_controller.network_engine.domain_manager.ConvertURLsToMediaViewerTuples( urls )
+            
+            if len( url_tuples ) > 0:
+                
+                current_y += VBOX_MARGIN
+                
+                for ( display_string, url ) in url_tuples:
+                    
+                    ( text_size, display_string ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, display_string )
+                    
+                    ClientGUIFunctions.DrawText( painter, my_width - ( text_size.width() + QFRAME_PADDING + VBOX_MARGIN ), current_y, display_string )
+                    
+                    current_y += text_size.height() + VBOX_SPACING
+                    
+                
+                # again this appears to be correct but for the wrong reasons
+                # flying completely by my pants here
+                
+                current_y -= VBOX_MARGIN
+                
+            
+            current_y += VBOX_MARGIN + QFRAME_PADDING
+            
+            return current_y
+            
+        finally:
+            
+            painter.restore()
+            
         
     
-    def _GenerateHoverTopFrame( self ):
+    def _GenerateHoverTopFrame( self ) -> ClientGUICanvasHoverFrames.CanvasHoverFrameTop:
         
         raise NotImplementedError()
         
@@ -2448,62 +2893,51 @@ class CanvasWithHovers( Canvas ):
         
         if hide_time_ms is None:
             
-            return
+            should_be_hidden = False
+            
+            next_check_period_ms = 1000
+            
+        else:
+            
+            current_focus_tlw = QW.QApplication.activeWindow()
+            
+            focus_is_good = current_focus_tlw == self.window()
+            
+            if not CC.CAN_HIDE_MOUSE or CGC.core().MenuIsOpen() or not focus_is_good:
+                
+                should_be_hidden = False
+                
+                self._last_cursor_autohide_touch_time = HydrusTime.GetNowFloat()
+                
+            else:
+                
+                hide_time = HydrusTime.SecondiseMSFloat( hide_time_ms )
+                
+                should_be_hidden = HydrusTime.TimeHasPassedFloat( self._last_cursor_autohide_touch_time + hide_time )
+                
+            
+            next_check_period_ms = max( 100, min( int( hide_time_ms / 5 ), 250 ) )
             
         
-        hide_time = HydrusTime.SecondiseMSFloat( hide_time_ms )
+        mouse_currently_shown = self.cursor().shape() == QC.Qt.CursorShape.ArrowCursor
         
-        can_hide = HydrusTime.TimeHasPassedFloat( self._last_cursor_autohide_touch_time + hide_time )
-        
-        can_check_again = ClientGUIFunctions.MouseIsOverWidget( self )
-        
-        if not CC.CAN_HIDE_MOUSE:
-            
-            can_hide = False
-            
-        
-        if CGC.core().MenuIsOpen():
-            
-            can_hide = False
-            
-        
-        if ClientGUIFunctions.DialogIsOpenAndIAmNotItsChild( self ):
-            
-            can_hide = False
-            
-            can_check_again = False
-            
-        
-        if can_hide:
+        if should_be_hidden and mouse_currently_shown:
             
             self.setCursor( QG.QCursor( QC.Qt.CursorShape.BlankCursor ) )
             
-        elif can_check_again:
+        elif not should_be_hidden and not mouse_currently_shown:
             
-            self._RestartCursorHideCheckJob()
+            self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
             
+        
+        self._cursor_autohide_timer.start( next_check_period_ms )
         
     
     def _RestartCursorHideWait( self ):
         
         self._last_cursor_autohide_touch_time = HydrusTime.GetNowFloat()
         
-        self._RestartCursorHideCheckJob()
-        
-    
-    def _RestartCursorHideCheckJob( self ):
-        
-        if self._timer_cursor_hide_job is not None:
-            
-            timer_is_running_or_finished = self._timer_cursor_hide_job.CurrentlyWorking() or self._timer_cursor_hide_job.IsWorkComplete()
-            
-            if not timer_is_running_or_finished:
-                
-                return
-                
-            
-        
-        self._timer_cursor_hide_job = CG.client_controller.CallLaterQtSafe( self, 0.1, 'hide cursor check', self._HideCursorCheck )
+        self._cursor_autohide_timer.start( 100 )
         
     
     def _TryToCloseWindow( self ):
@@ -2511,9 +2945,19 @@ class CanvasWithHovers( Canvas ):
         self.window().close()
         
     
+    def _TryToShowMediaThatLaunchedUs( self ):
+        
+        pass
+        
+    
     def _TryToShowPageThatLaunchedUs( self ):
         
         pass
+        
+    
+    def CanConsiderAClose( self ):
+        
+        return self._media_container.CanConsiderAClose()
         
     
     def CleanBeforeDestroy( self ):
@@ -2541,7 +2985,9 @@ class CanvasWithHovers( Canvas ):
             
         
     
-    def mouseMoveEvent( self, event ):
+    def HandleMouseMoveWithoutEvent( self, left_down: bool ):
+        
+        is_dragging = left_down and self._last_drag_pos is not None
         
         current_focus_tlw = QW.QApplication.activeWindow()
         
@@ -2560,10 +3006,10 @@ class CanvasWithHovers( Canvas ):
         event_pos = self.mapFromGlobal( QG.QCursor.pos() )
         
         mouse_currently_shown = self.cursor().shape() == QC.Qt.CursorShape.ArrowCursor
-        show_mouse = mouse_currently_shown
         
-        is_dragging = event.buttons() & QC.Qt.MouseButton.LeftButton and self._last_drag_pos is not None
         has_moved = event_pos != self._last_motion_pos
+        
+        we_are_hiding_a_drag = is_dragging and CG.client_controller.new_options.GetBoolean( 'hide_canvas_drags' )
         
         if is_dragging:
             
@@ -2585,11 +3031,9 @@ class CanvasWithHovers( Canvas ):
                 # touch events obviously don't mix with warping well. the touch just warps it back and again and we get a massive delta!
                 
                 touch_anchor_override = touchscreen_canvas_drags_unanchor and self._current_drag_is_touch
-                anchor_and_hide_canvas_drags = CG.client_controller.new_options.GetBoolean( 'anchor_and_hide_canvas_drags' )
+                anchor_canvas_drags = CG.client_controller.new_options.GetBoolean( 'anchor_canvas_drags' )
                 
-                if anchor_and_hide_canvas_drags and not touch_anchor_override:
-                    
-                    show_mouse = False
+                if anchor_canvas_drags and not touch_anchor_override:
                     
                     global_mouse_pos = self.mapToGlobal( self._last_drag_pos )
                     
@@ -2598,8 +3042,6 @@ class CanvasWithHovers( Canvas ):
                     ClientGUIShortcuts.CUMULATIVE_MOUSEWARP_MANHATTAN_LENGTH += approx_distance
                     
                 else:
-                    
-                    show_mouse = True
                     
                     self._last_drag_pos = QC.QPoint( event_pos )
                     
@@ -2613,28 +3055,48 @@ class CanvasWithHovers( Canvas ):
                 
                 self._last_motion_pos = QC.QPoint( event_pos )
                 
-                show_mouse = True
+            
+        
+        if has_moved:
+            
+            if we_are_hiding_a_drag:
+                
+                if mouse_currently_shown:
+                    
+                    self.setCursor( QG.QCursor( QC.Qt.CursorShape.BlankCursor ) )
+                    
+                
+                self._cursor_autohide_timer.stop()
+                
+            else: 
+                
+                if not mouse_currently_shown:
+                    
+                    self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
+                    
+                
+                self._RestartCursorHideWait()
                 
             
         
-        if show_mouse:
-            
-            if not mouse_currently_shown:
-                
-                self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
-                
-            
-            self._RestartCursorHideWait()
-            
-        else:
-            
-            if mouse_currently_shown:
-                
-                self.setCursor( QG.QCursor( QC.Qt.CursorShape.BlankCursor ) )
-                
-            
+    
+    def mouseMoveEvent( self, event ):
+        
+        left_down = bool( event.buttons() & QC.Qt.MouseButton.LeftButton )
+        
+        self.HandleMouseMoveWithoutEvent( left_down )
         
         super().mouseMoveEvent( event )
+        
+    
+    def GetCanvasType( self ):
+        
+        return self._canvas_type
+        
+    
+    def NotifyWeAreClosing( self ):
+        
+        pass
         
     
     def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
@@ -2654,6 +3116,20 @@ class CanvasWithHovers( Canvas ):
                 self._TryToShowPageThatLaunchedUs()
                 
                 self._TryToCloseWindow()
+                
+            elif action == CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA:
+                
+                self._TryToShowPageThatLaunchedUs()
+                
+                self._TryToShowMediaThatLaunchedUs()
+                
+                self._TryToCloseWindow()
+                
+            elif action == CAC.SIMPLE_FOCUS_TAB_AND_MEDIA:
+                
+                self._TryToShowPageThatLaunchedUs()
+                
+                self._TryToShowMediaThatLaunchedUs()
                 
             elif action == CAC.SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW:
                 
@@ -2682,11 +3158,9 @@ class CanvasWithHovers( Canvas ):
         self.update()
         
     
-    def TryToDoPreClose( self ):
+    def UserOKToClose( self ):
         
-        can_close = True
-        
-        return can_close
+        return True
         
     
     def TIMERUIUpdate( self ):
@@ -2698,1108 +3172,10 @@ class CanvasWithHovers( Canvas ):
         
     
 
-class CanvasFilterDuplicates( CanvasWithHovers ):
-    
-    CANVAS_TYPE = CC.CANVAS_MEDIA_VIEWER_DUPLICATES
-    
-    showPairInPage = QC.Signal( list )
-    
-    def __init__( self, parent, potential_duplicates_search_context: ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext ):
-        
-        self._potential_duplicates_search_context = potential_duplicates_search_context
-        
-        location_context = self._potential_duplicates_search_context.GetFileSearchContext1().GetLocationContext()
-        
-        super().__init__( parent, location_context )
-        
-        self._duplicates_right_hover = ClientGUICanvasHoverFrames.CanvasHoverFrameRightDuplicates( self, self, self._canvas_key )
-        
-        self.mediaChanged.connect( self._duplicates_right_hover.SetMedia )
-        self.mediaCleared.connect( self._duplicates_right_hover.ClearMedia )
-        
-        self._right_notes_hover.AddHoverThatCanBeOnTop( self._duplicates_right_hover )
-        
-        self._duplicates_right_hover.showPairInPage.connect( self._ShowPairInPage )
-        self._duplicates_right_hover.sendApplicationCommand.connect( self.ProcessApplicationCommand )
-        
-        self._hovers.append( self._duplicates_right_hover )
-        
-        self._background_colour_generator = CanvasBackgroundColourGeneratorDuplicates( self )
-        
-        self._media_container.SetBackgroundColourGenerator( self._background_colour_generator )
-        
-        self._my_shortcuts_handler.AddWindowToFilter( self._duplicates_right_hover )
-        
-        self._force_maintain_pan_and_zoom = True
-        
-        self._currently_fetching_pairs = False
-        
-        self._current_pair_score = 0
-        
-        self._batch_of_pairs_to_process = []
-        self._current_pair_index = 0
-        self._processed_pairs = []
-        self._hashes_due_to_be_deleted_in_this_batch = set()
-        
-        # ok we started excluding pairs if they had been deleted, now I am extending it to any files that have been processed.
-        # main thing is if you have AB, AC, that's neat and a bunch of people want it, but current processing system doesn't do B->A->C merge if it happens in a single batch
-        # I need to store dupe merge options rather than content updates apply them in db transaction or do the retroactive sync or similar to get this done properly
-        # so regrettably I turn it off for now
-        
-        self._hashes_processed_in_this_batch = set()
-        
-        self._media_list = ClientMedia.MediaList( location_context, [] )
-        
-        self._my_shortcuts_handler.AddShortcuts( 'media_viewer_browser' )
-        self._my_shortcuts_handler.AddShortcuts( 'duplicate_filter' )
-        
-        CG.client_controller.sub( self, 'Delete', 'canvas_delete' )
-        CG.client_controller.sub( self, 'Undelete', 'canvas_undelete' )
-        CG.client_controller.sub( self, 'SwitchMedia', 'canvas_show_next' )
-        CG.client_controller.sub( self, 'SwitchMedia', 'canvas_show_previous' )
-        
-        QP.CallAfter( self._LoadNextBatchOfPairs )
-        
-        CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
-        CG.client_controller.sub( self, 'ProcessServiceUpdates', 'service_updates_gui' )
-        
-    
-    def _CommitProcessed( self, blocking = True ):
-        
-        pair_info = []
-        
-        for ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped ) in self._processed_pairs:
-            
-            if duplicate_type is None:
-                
-                if len( content_update_packages ) > 0:
-                    
-                    for content_update_package in content_update_packages:
-                        
-                        if blocking:
-                            
-                            CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
-                            
-                        else:
-                            
-                            CG.client_controller.Write( 'content_updates', content_update_package )
-                            
-                        
-                    
-                
-                continue
-                
-            
-            if was_auto_skipped:
-                
-                continue # it was a 'skip' decision
-                
-            
-            hash_a = media_a.GetHash()
-            hash_b = media_b.GetHash()
-            
-            pair_info.append( ( duplicate_type, hash_a, hash_b, content_update_packages ) )
-            
-        
-        if len( pair_info ) > 0:
-            
-            if blocking:
-                
-                CG.client_controller.WriteSynchronous( 'duplicate_pair_status', pair_info )
-                
-            else:
-                
-                CG.client_controller.Write( 'duplicate_pair_status', pair_info )
-                
-            
-        
-        self._processed_pairs = []
-        self._hashes_due_to_be_deleted_in_this_batch = set()
-        self._hashes_processed_in_this_batch = set()
-        
-    
-    def _CurrentMediaIsBetter( self, delete_b = True ):
-        
-        self._ProcessPair( HC.DUPLICATE_BETTER, delete_b = delete_b )
-        
-    
-    def _Delete( self, media = None, reason = None, file_service_key = None ):
-        
-        if self._current_media is None:
-            
-            return False
-            
-        
-        media_a = self._current_media
-        media_b = self._media_list.GetNext( self._current_media )
-        
-        message = 'Delete just this file, or both?'
-        
-        yes_tuples = []
-        
-        yes_tuples.append( ( 'delete just this one', 'current' ) )
-        yes_tuples.append( ( 'delete both', 'both' ) )
-        
-        try:
-            
-            result = ClientGUIDialogsQuick.GetYesYesNo( self, message, yes_tuples = yes_tuples, no_label = 'forget it' )
-            
-        except HydrusExceptions.CancelledException:
-            
-            return False
-            
-        
-        if result == 'current':
-            
-            media = [ media_a ]
-            
-            default_reason = 'Deleted manually in Duplicate Filter.'
-            
-        elif result == 'both':
-            
-            media = [ media_a, media_b ]
-            
-            default_reason = 'Deleted manually in Duplicate Filter, along with its potential duplicate.'
-            
-        
-        content_update_packages = super()._Delete( media = media, default_reason = default_reason, file_service_key = file_service_key, just_get_content_update_packages = True )
-        
-        deleted = isinstance( content_update_packages, list ) and len( content_update_packages ) > 0
-        
-        if deleted:
-            
-            for m in media:
-                
-                self._hashes_due_to_be_deleted_in_this_batch.update( m.GetHashes() )
-                
-            
-            was_auto_skipped = False
-            
-            ( media_result_a, media_result_b ) = self._batch_of_pairs_to_process[ self._current_pair_index ]
-            
-            media_a = ClientMedia.MediaSingleton( media_result_a )
-            media_b = ClientMedia.MediaSingleton( media_result_b )
-            
-            process_tuple = ( None, media_a, media_b, content_update_packages, was_auto_skipped )
-            
-            self._ShowNextPair( process_tuple )
-            
-        
-        return deleted
-        
-    
-    def _DoCustomAction( self ):
-        
-        if self._current_media is None:
-            
-            return
-            
-        
-        duplicate_types = [ HC.DUPLICATE_BETTER, HC.DUPLICATE_SAME_QUALITY, HC.DUPLICATE_ALTERNATE, HC.DUPLICATE_FALSE_POSITIVE ]
-        
-        choice_tuples = [ ( HC.duplicate_type_string_lookup[ duplicate_type ], duplicate_type ) for duplicate_type in duplicate_types ]
-        
-        try:
-            
-            duplicate_type = ClientGUIDialogsQuick.SelectFromList( self, 'select duplicate type', choice_tuples )
-            
-        except HydrusExceptions.CancelledException:
-            
-            return
-            
-        
-        new_options = CG.client_controller.new_options
-        
-        if duplicate_type in [ HC.DUPLICATE_BETTER, HC.DUPLICATE_SAME_QUALITY ] or ( new_options.GetBoolean( 'advanced_mode' ) and duplicate_type == HC.DUPLICATE_ALTERNATE ):
-            
-            duplicate_content_merge_options = new_options.GetDuplicateContentMergeOptions( duplicate_type )
-            
-            with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit duplicate merge options' ) as dlg_2:
-                
-                panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg_2 )
-                
-                ctrl = ClientGUIDuplicatesContentMergeOptions.EditDuplicateContentMergeOptionsWidget( panel, duplicate_type, duplicate_content_merge_options, for_custom_action = True )
-                
-                panel.SetControl( ctrl )
-                
-                dlg_2.SetPanel( panel )
-                
-                if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    duplicate_content_merge_options = ctrl.GetValue()
-                    
-                else:
-                    
-                    return
-                    
-                
-            
-        else:
-            
-            duplicate_content_merge_options = None
-            
-        
-        message = 'Delete any of the files?'
-        
-        yes_tuples = []
-        
-        yes_tuples.append( ( 'delete neither', 'delete_neither' ) )
-        yes_tuples.append( ( 'delete this one', 'delete_a' ) )
-        yes_tuples.append( ( 'delete the other', 'delete_b' ) )
-        yes_tuples.append( ( 'delete both', 'delete_both' ) )
-        
-        try:
-            
-            result = ClientGUIDialogsQuick.GetYesYesNo( self, message, yes_tuples = yes_tuples, no_label = 'forget it' )
-            
-        except HydrusExceptions.CancelledException:
-            
-            return
-            
-        
-        delete_a = False
-        delete_b = False
-        
-        if result == 'delete_a':
-            
-            delete_a = True
-            
-        elif result == 'delete_b':
-            
-            delete_b = True
-            
-        elif result == 'delete_both':
-            
-            delete_a = True
-            delete_b = True
-            
-        
-        self._ProcessPair( duplicate_type, delete_a = delete_a, delete_b = delete_b, duplicate_content_merge_options = duplicate_content_merge_options )
-        
-    
-    def _DrawBackgroundDetails( self, painter ):
-        
-        if self._currently_fetching_pairs:
-            
-            text = 'Loading pairs' + HC.UNICODE_ELLIPSIS
-            
-            ( text_size, text ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, text )
-            
-            my_size = self.size()
-            
-            x = ( my_size.width() - text_size.width() ) // 2
-            y = ( my_size.height() - text_size.height() ) // 2
-            
-            ClientGUIFunctions.DrawText( painter, x, y, text )
-            
-        else:
-            
-            super()._DrawBackgroundDetails( painter )
-            
-        
-    
-    def _GenerateHoverTopFrame( self ):
-        
-        return ClientGUICanvasHoverFrames.CanvasHoverFrameTopDuplicatesFilter( self, self, self._canvas_key )
-        
-    
-    def _GetIndexString( self ):
-        
-        if self._current_media is None or len( self._media_list ) == 0:
-            
-            return '-'
-            
-        else:
-            
-            current_media_label = f'File One' if self._current_media == self._media_list.GetFirst() else f'File Two'
-            
-            progress = self._current_pair_index + 1
-            total = len( self._batch_of_pairs_to_process )
-            
-            index_string = HydrusNumbers.ValueRangeToPrettyString( progress, total )
-            
-            num_committable = self._GetNumCommittableDecisions()
-            num_deletable = self._GetNumCommittableDeletes()
-            
-            components = []
-            
-            if num_committable > 0:
-                
-                components.append( '{} decisions'.format( HydrusNumbers.ToHumanInt( num_committable ) ) )
-                
-            
-            if num_deletable > 0:
-                
-                components.append( '{} deletes'.format( HydrusNumbers.ToHumanInt( num_deletable ) ) )
-                
-            
-            if len( components ) == 0:
-                
-                num_decisions_string = 'no decisions yet'
-                
-            else:
-                
-                num_decisions_string = ', '.join( components )
-                
-            
-            return '{} - {} - {}'.format( current_media_label, index_string, num_decisions_string )
-            
-        
-    
-    def _GetNoMediaText( self ):
-        
-        return 'Looking for pairs to compare--please wait.'
-        
-    
-    def _GetNumCommittableDecisions( self ):
-        
-        return len( [ 1 for ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped ) in self._processed_pairs if duplicate_type is not None ] )
-        
-    
-    def _GetNumCommittableDeletes( self ):
-        
-        return len( [ 1 for ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped ) in self._processed_pairs if duplicate_type is None and len( content_update_packages ) > 0 ] )
-        
-    
-    def _GetNumRemainingDecisions( self ):
-        
-        # this looks a little weird, but I want to be clear that we make a decision on the final index
-        
-        last_decision_index = len( self._batch_of_pairs_to_process ) - 1
-        
-        number_of_decisions_after_the_current = last_decision_index - self._current_pair_index
-        
-        return max( 0, 1 + number_of_decisions_after_the_current )
-        
-    
-    def _GoBack( self ):
-        
-        if self._current_pair_index > 0:
-            
-            it_went_ok = self._RewindProcessing()
-            
-            if it_went_ok:
-                
-                self._ShowCurrentPair()
-                
-            
-        
-    
-    def _LoadNextBatchOfPairs( self ):
-        
-        self._hashes_due_to_be_deleted_in_this_batch = set()
-        self._hashes_processed_in_this_batch = set()
-        self._processed_pairs = [] # just in case someone 'skip'ed everything in the last batch, so this never got cleared above in the commit
-        
-        self.ClearMedia()
-        
-        self._media_list = ClientMedia.MediaList( self._location_context, [] )
-        
-        self._currently_fetching_pairs = True
-        
-        CG.client_controller.CallToThread( self.THREADFetchPairs, self._potential_duplicates_search_context )
-        
-        self.update()
-        
-    
-    def _MediaAreAlternates( self ):
-        
-        self._ProcessPair( HC.DUPLICATE_ALTERNATE )
-        
-    
-    def _MediaAreFalsePositive( self ):
-        
-        self._ProcessPair( HC.DUPLICATE_FALSE_POSITIVE )
-        
-    
-    def _MediaAreTheSame( self ):
-        
-        self._ProcessPair( HC.DUPLICATE_SAME_QUALITY )
-        
-    
-    def _PrefetchNeighbours( self ):
-        
-        if self._current_media is None:
-            
-            return
-            
-        
-        other_media: ClientMedia.MediaSingleton = self._media_list.GetNext( self._current_media )
-        
-        media_results_to_prefetch = [ other_media.GetMediaResult() ]
-        
-        duplicate_filter_prefetch_num_pairs = CG.client_controller.new_options.GetInteger( 'duplicate_filter_prefetch_num_pairs' )
-        
-        if duplicate_filter_prefetch_num_pairs > 0:
-            
-            # this isn't clever enough to handle pending skip logic, but that's fine
-            
-            start_pos = self._current_pair_index + 1
-            
-            pairs_to_do = self._batch_of_pairs_to_process[ start_pos : start_pos + duplicate_filter_prefetch_num_pairs ]
-            
-            for pair in pairs_to_do:
-                
-                media_results_to_prefetch.extend( pair )
-                
-            
-        
-        delay_base = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'media_viewer_prefetch_delay_base_ms' ) )
-        
-        images_cache = CG.client_controller.images_cache
-        
-        for ( i, media_result ) in enumerate( media_results_to_prefetch ):
-            
-            delay = i * delay_base
-            
-            hash = media_result.GetHash()
-            mime = media_result.GetMime()
-            
-            if media_result.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media_result, self.CANVAS_TYPE ):
-                
-                if not images_cache.HasImageRenderer( hash ):
-                    
-                    CG.client_controller.CallLaterQtSafe( self, delay, 'image pre-fetch', images_cache.PrefetchImageRenderer, media_result )
-                    
-                
-            
-        
-    
-    def _ProcessPair( self, duplicate_type, delete_a = False, delete_b = False, duplicate_content_merge_options = None ):
-        
-        if self._current_media is None:
-            
-            return
-            
-        
-        if duplicate_content_merge_options is None:
-            
-            if duplicate_type in [ HC.DUPLICATE_BETTER, HC.DUPLICATE_SAME_QUALITY ] or ( CG.client_controller.new_options.GetBoolean( 'advanced_mode' ) and duplicate_type == HC.DUPLICATE_ALTERNATE ):
-                
-                new_options = CG.client_controller.new_options
-                
-                duplicate_content_merge_options = new_options.GetDuplicateContentMergeOptions( duplicate_type )
-                
-            else:
-                
-                duplicate_content_merge_options = ClientDuplicates.DuplicateContentMergeOptions()
-                
-            
-        
-        media_a = self._current_media
-        media_b = typing.cast( ClientMedia.MediaSingleton, self._media_list.GetNext( media_a ) )
-        
-        was_auto_skipped = False
-        
-        self._hashes_processed_in_this_batch.update( media_a.GetHashes() )
-        self._hashes_processed_in_this_batch.update( media_b.GetHashes() )
-        
-        if delete_a or delete_b:
-            
-            if delete_a:
-                
-                self._hashes_due_to_be_deleted_in_this_batch.update( media_a.GetHashes() )
-                
-            
-            if delete_b:
-                
-                self._hashes_due_to_be_deleted_in_this_batch.update( media_b.GetHashes() )
-                
-            
-            if duplicate_type == HC.DUPLICATE_BETTER:
-                
-                file_deletion_reason = 'better/worse'
-                
-                if delete_b:
-                    
-                    file_deletion_reason += ', worse file deleted'
-                    
-                
-            else:
-                
-                file_deletion_reason = HC.duplicate_type_string_lookup[ duplicate_type ]
-                
-            
-            if delete_a and delete_b:
-                
-                file_deletion_reason += ', both files deleted'
-                
-            
-            file_deletion_reason = 'Deleted in Duplicate Filter ({}).'.format( file_deletion_reason )
-            
-        else:
-            
-            file_deletion_reason = None
-            
-        
-        content_update_packages = duplicate_content_merge_options.ProcessPairIntoContentUpdatePackages( media_a.GetMediaResult(), media_b.GetMediaResult(), delete_a = delete_a, delete_b = delete_b, file_deletion_reason = file_deletion_reason )
-        
-        process_tuple = ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped )
-        
-        self._ShowNextPair( process_tuple )
-        
-    
-    def _RecoverAfterMediaUpdate( self ):
-        
-        if len( self._media_list ) < 2 and len( self._batch_of_pairs_to_process ) > self._current_pair_index:
-            
-            was_auto_skipped = True
-            
-            ( media_result_a, media_result_b ) = self._batch_of_pairs_to_process[ self._current_pair_index ]
-            
-            media_a = ClientMedia.MediaSingleton( media_result_a )
-            media_b = ClientMedia.MediaSingleton( media_result_b )
-            
-            process_tuple = ( None, media_a, media_b, [], was_auto_skipped )
-            
-            self._ShowNextPair( process_tuple )
-            
-        else:
-            
-            self.update()
-            
-        
-    
-    def _RewindProcessing( self ) -> bool:
-        
-        if self._currently_fetching_pairs:
-            
-            return False
-            
-        
-        def test_we_can_pop():
-            
-            if len( self._processed_pairs ) == 0:
-                
-                # the first one shouldn't be auto-skipped, so if it was and now we can't pop, something weird happened
-                
-                CG.client_controller.pub( 'new_similar_files_potentials_search_numbers' )
-                
-                ClientGUIDialogsMessage.ShowCritical( self, 'Hell!', 'Due to an unexpected series of events, the duplicate filter has no valid pair to back up to. It could be some files were deleted during processing. The filter will now close.' )
-                
-                self.window().deleteLater()
-                
-                return False
-                
-            
-            return True
-            
-        
-        if self._current_pair_index > 0:
-            
-            while True:
-                
-                if not test_we_can_pop():
-                    
-                    return False
-                    
-                
-                ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped ) = self._processed_pairs.pop()
-                
-                self._current_pair_index -= 1
-                
-                if not was_auto_skipped:
-                    
-                    break
-                    
-                
-            
-            # only want this for the one that wasn't auto-skipped
-            for m in ( media_a, media_b ):
-                
-                hash = m.GetHash()
-                
-                self._hashes_due_to_be_deleted_in_this_batch.discard( hash )
-                self._hashes_processed_in_this_batch.discard( hash )
-                
-            
-            return True
-            
-        
-        return False
-        
-    
-    def _ShowCurrentPair( self ):
-        
-        if self._currently_fetching_pairs:
-            
-            return
-            
-        
-        ( media_result_1, media_result_2 ) = self._batch_of_pairs_to_process[ self._current_pair_index ]
-        
-        self._current_pair_score = ClientDuplicates.GetDuplicateComparisonScore( media_result_1, media_result_2 )
-        
-        if self._current_pair_score > 0:
-            
-            media_results_with_better_first = ( media_result_1, media_result_2 )
-            
-        else:
-            
-            self._current_pair_score = - self._current_pair_score
-            
-            media_results_with_better_first = ( media_result_2, media_result_1 )
-            
-        
-        self._media_list = ClientMedia.MediaList( self._location_context, media_results_with_better_first )
-        
-        # reset zoom gubbins
-        self.SetMedia( None )
-        
-        self.SetMedia( self._media_list.GetFirst() )
-        
-        self._media_container.hide()
-        
-        self._media_container.ZoomReinit()
-        
-        self._media_container.ResetCenterPosition()
-        
-        self.EndDrag()
-        
-        self._media_container.show()
-        
-    
-    def _ShowNextPair( self, process_tuple: tuple ):
-        
-        if self._currently_fetching_pairs:
-            
-            return
-            
-        
-        # hackery dackery doo to quick solve something that is calling this a bunch of times while the 'and continue?' dialog is open, making like 16 of them
-        # a full rewrite is needed on this awful workflow
-        
-        tlws = QW.QApplication.topLevelWidgets()
-        
-        for tlw in tlws:
-            
-            if isinstance( tlw, ClientGUITopLevelWindowsPanels.DialogCustomButtonQuestion ) and tlw.isModal():
-                
-                return
-                
-            
-        
-        #
-        
-        def pair_is_good( pair ):
-            
-            ( media_result_a, media_result_b ) = pair
-            
-            hash_a = media_result_a.GetHash()
-            hash_b = media_result_b.GetHash()
-            
-            if hash_a in self._hashes_processed_in_this_batch or hash_b in self._hashes_processed_in_this_batch:
-                
-                return False
-                
-            
-            if hash_a in self._hashes_due_to_be_deleted_in_this_batch or hash_b in self._hashes_due_to_be_deleted_in_this_batch:
-                
-                return False
-                
-            
-            media_a = ClientMedia.MediaSingleton( media_result_a )
-            media_b = ClientMedia.MediaSingleton( media_result_b )
-            
-            if not ClientMedia.CanDisplayMedia( media_a ) or not ClientMedia.CanDisplayMedia( media_b ):
-                
-                return False
-                
-            
-            return True
-            
-        
-        #
-        
-        self._processed_pairs.append( process_tuple )
-        
-        self._current_pair_index += 1
-        
-        while True:
-            
-            num_remaining = self._GetNumRemainingDecisions()
-            
-            if num_remaining == 0:
-                
-                num_committable = self._GetNumCommittableDecisions()
-                num_deletable = self._GetNumCommittableDeletes()
-                
-                if num_committable + num_deletable > 0:
-                    
-                    components = []
-                    
-                    if num_committable > 0:
-                        
-                        components.append( '{} decisions'.format( HydrusNumbers.ToHumanInt( num_committable ) ) )
-                        
-                    
-                    if num_deletable > 0:
-                        
-                        components.append( '{} deletes'.format( HydrusNumbers.ToHumanInt( num_deletable ) ) )
-                        
-                    
-                    label = 'commit {} and continue?'.format( ' and '.join( components ) )
-                    
-                    result = ClientGUIScrolledPanelsCommitFiltering.GetInterstitialFilteringAnswer( self, label )
-                    
-                    if result == QW.QDialog.DialogCode.Accepted:
-                        
-                        self._CommitProcessed( blocking = True )
-                        
-                    else:
-                        
-                        it_went_ok = self._RewindProcessing()
-                        
-                        if it_went_ok:
-                            
-                            self._ShowCurrentPair()
-                            
-                        
-                        return
-                        
-                    
-                else:
-                    
-                    # nothing to commit, so let's see if we have a big problem here or if user just skipped all
-                    
-                    we_saw_a_non_auto_skip = False
-                    
-                    for ( duplicate_type, media_a, media_b, content_update_packages, was_auto_skipped ) in self._processed_pairs:
-                        
-                        if not was_auto_skipped:
-                            
-                            we_saw_a_non_auto_skip = True
-                            
-                            break
-                            
-                        
-                    
-                    if not we_saw_a_non_auto_skip:
-                        
-                        CG.client_controller.pub( 'new_similar_files_potentials_search_numbers' )
-                        
-                        ClientGUIDialogsMessage.ShowCritical( self, 'Hell!', 'It seems an entire batch of pairs were unable to be displayed. The duplicate filter will now close.' )
-                        
-                        self.window().deleteLater()
-                        
-                        return
-                        
-                    
-                
-                self._LoadNextBatchOfPairs()
-                
-                return
-                
-            
-            current_pair = self._batch_of_pairs_to_process[ self._current_pair_index ]
-            
-            if pair_is_good( current_pair ):
-                
-                self._ShowCurrentPair()
-                
-                return
-                
-            else:
-                
-                was_auto_skipped = True
-                
-                self._processed_pairs.append( ( None, None, None, [], was_auto_skipped ) )
-                
-                self._current_pair_index += 1
-                
-            
-        
-    
-    def _ShowPairInPage( self ):
-        
-        if self._current_media is None:
-            
-            return
-            
-        
-        self.showPairInPage.emit( [ self._current_media, self._media_list.GetNext( self._current_media ) ] )
-        
-    
-    def _SkipPair( self ):
-        
-        if self._current_media is None:
-            
-            return
-            
-        
-        was_auto_skipped = False
-
-        ( media_result_a, media_result_b ) = self._batch_of_pairs_to_process[ self._current_pair_index ]
-        
-        media_a = ClientMedia.MediaSingleton( media_result_a )
-        media_b = ClientMedia.MediaSingleton( media_result_b )
-        
-        process_tuple = ( None, media_a, media_b, [], was_auto_skipped )
-        
-        self._ShowNextPair( process_tuple )
-        
-    
-    def _SwitchMedia( self ):
-        
-        if self._current_media is not None:
-            
-            try:
-                
-                other_media = self._media_list.GetNext( self._current_media )
-                
-                self.SetMedia( other_media )
-                
-            except HydrusExceptions.DataMissing:
-                
-                return
-                
-            
-        
-    
-    def Archive( self, canvas_key ):
-        
-        if self._canvas_key == canvas_key:
-            
-            self._Archive()
-            
-        
-    
-    def CleanBeforeDestroy( self ):
-        
-        CG.client_controller.pub( 'new_similar_files_potentials_search_numbers' )
-        
-        ClientDuplicates.hashes_to_jpeg_quality = {} # clear the cache
-        
-        super().CleanBeforeDestroy()
-        
-    
-    def Delete( self, canvas_key ):
-        
-        if self._canvas_key == canvas_key:
-            
-            self._Delete()
-            
-        
-    
-    def Inbox( self, canvas_key ):
-        
-        if self._canvas_key == canvas_key:
-            
-            self._Inbox()
-            
-        
-    
-    def IsShowingAPair( self ):
-        
-        return self._current_media is not None and len( self._media_list ) > 1
-        
-    
-    def IsShowingFileA( self ):
-        
-        if not self.IsShowingAPair():
-            
-            return False
-            
-        
-        return self._current_media == self._media_list.GetFirst()
-        
-    
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
-        
-        command_processed = True
-        
-        if command.IsSimpleCommand():
-            
-            action = command.GetSimpleAction()
-            
-            if action == CAC.SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_AND_DELETE_OTHER:
-                
-                self._CurrentMediaIsBetter( delete_b = True )
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_BUT_KEEP_BOTH:
-                
-                self._CurrentMediaIsBetter( delete_b = False )
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_EXACTLY_THE_SAME:
-                
-                self._MediaAreTheSame()
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_ALTERNATES:
-                
-                self._MediaAreAlternates()
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_FALSE_POSITIVE:
-                
-                self._MediaAreFalsePositive()
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_CUSTOM_ACTION:
-                
-                self._DoCustomAction()
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_SKIP:
-                
-                self._SkipPair()
-                
-            elif action == CAC.SIMPLE_DUPLICATE_FILTER_BACK:
-                
-                self._GoBack()
-                
-            elif action in ( CAC.SIMPLE_VIEW_FIRST, CAC.SIMPLE_VIEW_LAST, CAC.SIMPLE_VIEW_PREVIOUS, CAC.SIMPLE_VIEW_NEXT ):
-                
-                self._SwitchMedia()
-                
-            else:
-                
-                command_processed = False
-                
-            
-        else:
-            
-            command_processed = False
-            
-        
-        if not command_processed:
-            
-            command_processed = super().ProcessApplicationCommand( command )
-            
-        
-        return command_processed
-        
-    
-    def ProcessContentUpdatePackage( self, content_update_package: ClientContentUpdates.ContentUpdatePackage ):
-        
-        self._media_list.ProcessContentUpdatePackage( content_update_package )
-        
-        self._RecoverAfterMediaUpdate()
-        
-    
-    def ProcessServiceUpdates( self, service_keys_to_service_updates: dict[ bytes, collections.abc.Collection[ ClientServices.ServiceUpdate ] ]  ):
-        
-        self._media_list.ProcessServiceUpdates( service_keys_to_service_updates )
-        
-        self._RecoverAfterMediaUpdate()
-        
-    
-    def SetMedia( self, media ):
-        
-        super().SetMedia( media )
-        
-        if media is not None:
-            
-            shown_media = self._current_media
-            comparison_media = self._media_list.GetNext( shown_media )
-            
-            if shown_media != comparison_media:
-                
-                CG.client_controller.pub( 'canvas_new_duplicate_pair', self._canvas_key, shown_media, comparison_media )
-                
-            
-        
-    
-    def SwitchMedia( self, canvas_key ):
-        
-        if canvas_key == self._canvas_key:
-            
-            self._SwitchMedia()
-            
-        
-    
-    def TryToDoPreClose( self ):
-        
-        num_committable = self._GetNumCommittableDecisions()
-        num_deletable = self._GetNumCommittableDeletes()
-        
-        if num_committable + num_deletable > 0:
-            
-            components = []
-            
-            if num_committable > 0:
-                
-                components.append( '{} decisions'.format( HydrusNumbers.ToHumanInt( num_committable ) ) )
-                
-            
-            if num_deletable > 0:
-                
-                components.append( '{} deletes'.format( HydrusNumbers.ToHumanInt( num_deletable ) ) )
-                
-            
-            label = 'commit {}?'.format( ' and '.join( components ) )
-            
-            ( result, cancelled ) = ClientGUIScrolledPanelsCommitFiltering.GetFinishFilteringAnswer( self, label )
-            
-            if cancelled:
-                
-                close_was_triggered_by_everything_being_processed = self._GetNumRemainingDecisions() == 0
-                
-                if close_was_triggered_by_everything_being_processed:
-                    
-                    self._GoBack()
-                    
-                
-                return False
-                
-            elif result == QW.QDialog.DialogCode.Accepted:
-                
-                self._CommitProcessed( blocking = False )
-                
-            
-        
-        return super().TryToDoPreClose()
-        
-    
-    def Undelete( self, canvas_key ):
-        
-        if canvas_key == self._canvas_key:
-            
-            self._Undelete()
-            
-        
-    
-    def THREADFetchPairs( self, potential_duplicates_search_context: ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext ):
-        
-        def qt_close():
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
-            ClientGUIDialogsMessage.ShowInformation( self, 'All pairs have been filtered!' )
-            
-            self._TryToCloseWindow()
-            
-        
-        def qt_continue( unprocessed_pairs ):
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
-            self._batch_of_pairs_to_process = unprocessed_pairs
-            self._current_pair_index = 0
-            
-            self._currently_fetching_pairs = False
-            
-            self._ShowCurrentPair()
-            
-        
-        result = CG.client_controller.Read( 'duplicate_pairs_for_filtering', potential_duplicates_search_context )
-        
-        if len( result ) == 0:
-            
-            QP.CallAfter( qt_close )
-            
-        else:
-            
-            QP.CallAfter( qt_continue, result )
-            
-        
-    
-
 class CanvasMediaList( CanvasWithHovers ):
     
     exitFocusMedia = QC.Signal( ClientMedia.Media )
+    exitFocusMediaForced = QC.Signal( ClientMedia.Media )
     userRemovedMedia = QC.Signal( set )
     
     def __init__( self, parent, page_key, location_context: ClientLocation.LocationContext, media_results ):
@@ -3816,6 +3192,21 @@ class CanvasMediaList( CanvasWithHovers ):
         CG.client_controller.sub( self, 'ProcessServiceUpdates', 'service_updates_gui' )
         
     
+    def _TryToShowMediaThatLaunchedUs( self ):
+        
+        if self._current_media is not None:
+            
+            # this sucks but whatever. who should have responsibility for handling this gubbins? maybe the canvas should have absolute push power, rather than the page deciding whether to catch
+            # because we have two ways of doing this now, from the shortcut command vs the option
+            self.exitFocusMediaForced.emit( self._current_media )
+            
+        
+        if CG.client_controller.new_options.GetBoolean( 'activate_main_gui_on_focusing_viewer_close' ):
+            
+            CG.client_controller.gui.activateWindow()
+            
+        
+    
     def _TryToShowPageThatLaunchedUs( self ):
         
         if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
@@ -3823,18 +3214,13 @@ class CanvasMediaList( CanvasWithHovers ):
             CG.client_controller.gui.ShowPage( self._page_key )
             
         
-    
-    def TryToDoPreClose( self ):
-        
-        if self._current_media is not None and CG.client_controller.new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ):
+        if CG.client_controller.new_options.GetBoolean( 'activate_main_gui_on_focusing_viewer_close' ):
             
-            self.exitFocusMedia.emit( self._current_media )
+            CG.client_controller.gui.activateWindow()
             
         
-        return super().TryToDoPreClose()
-        
     
-    def _GenerateHoverTopFrame( self ):
+    def _GenerateHoverTopFrame( self ) -> ClientGUICanvasHoverFrames.CanvasHoverFrameTop:
         
         raise NotImplementedError()
         
@@ -3853,7 +3239,7 @@ class CanvasMediaList( CanvasWithHovers ):
         return index_string
         
     
-    def _PrefetchNeighbours( self ):
+    def _GetPrefetchNeighboursInPreferenceOrder( self ) -> list[ ClientMediaResult.MediaResult ]:
         
         media_looked_at = set()
         
@@ -3862,66 +3248,54 @@ class CanvasMediaList( CanvasWithHovers ):
         previous = self._current_media
         next = self._current_media
         
-        delay_base = HydrusTime.SecondiseMSFloat( CG.client_controller.new_options.GetInteger( 'media_viewer_prefetch_delay_base_ms' ) )
-        
         num_to_go_back = CG.client_controller.new_options.GetInteger( 'media_viewer_prefetch_num_previous' )
         num_to_go_forward = CG.client_controller.new_options.GetInteger( 'media_viewer_prefetch_num_next' )
         
         # if media_looked_at nukes the list, we want shorter delays, so do next first
         
-        for i in range( num_to_go_forward ):
-            
-            next = self._media_list.GetNext( next )
-            
-            if next in media_looked_at:
-                
-                break
-                
-            else:
-                
-                media_looked_at.add( next )
-                
-            
-            delay = delay_base * ( i + 1 )
-            
-            to_render.append( ( next, delay ) )
-            
+        num_looked_forward = 0
+        num_looked_back = 0
         
-        for i in range( num_to_go_back ):
+        while num_looked_forward < num_to_go_forward or num_looked_back < num_to_go_back:
             
-            previous = self._media_list.GetPrevious( previous )
-            
-            if previous in media_looked_at:
+            if num_looked_forward < num_to_go_forward:
                 
-                break
+                next = self._media_list.GetNext( next )
                 
-            else:
-                
-                media_looked_at.add( previous )
-                
-            
-            delay = delay_base * 2 * ( i + 1 )
-            
-            to_render.append( ( previous, delay ) )
-            
-        
-        images_cache = CG.client_controller.images_cache
-        
-        for ( media, delay ) in to_render:
-            
-            hash = media.GetHash()
-            mime = media.GetMime()
-            
-            if media.IsStaticImage() and ClientGUICanvasMedia.WeAreExpectingToLoadThisMediaFile( media.GetMediaResult(), self.CANVAS_TYPE ):
-                
-                if not images_cache.HasImageRenderer( hash ):
+                if next in media_looked_at:
                     
-                    # we do qt safe to make sure the job is cancelled if we are destroyed
+                    num_looked_forward = num_to_go_forward
                     
-                    CG.client_controller.CallLaterQtSafe( self, delay, 'image pre-fetch', images_cache.PrefetchImageRenderer, media.GetMediaResult() )
+                else:
+                    
+                    to_render.append( next.GetMediaResult() )
+                    
+                    media_looked_at.add( next )
+                    
+                    num_looked_forward += 1
                     
                 
             
+            if num_looked_back < num_to_go_back:
+                
+                previous = self._media_list.GetPrevious( previous )
+                
+                if previous in media_looked_at:
+                    
+                    num_looked_back = num_to_go_back
+                    
+                else:
+                    
+                    to_render.append( previous.GetMediaResult() )
+                    
+                    media_looked_at.add( previous )
+                    
+                    num_looked_back += 1
+                    
+                
+            
+        
+        return to_render
         
     
     def _ShowFirst( self ):
@@ -3964,6 +3338,16 @@ class CanvasMediaList( CanvasWithHovers ):
     def EventFullscreenSwitch( self, event ):
         
         self.ProcessApplicationCommand( CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW ) )
+        
+    
+    def NotifyWeAreClosing( self ):
+        
+        super().NotifyWeAreClosing()
+        
+        if self._current_media is not None:
+            
+            self.exitFocusMedia.emit( self._current_media )
+            
         
     
     def ProcessContentUpdatePackage( self, content_update_package: ClientContentUpdates.ContentUpdatePackage ):
@@ -4047,27 +3431,26 @@ def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContex
     else:
         
         # if we are in a weird search domain, then just say 'delete from all local'
-        deletee_file_service_keys = [ CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ]
+        deletee_file_service_keys = [ CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ]
         
     
-    BLOCK_SIZE = 64
-    num_to_do = len( deleted )
+    BLOCK_SIZE = 10
     
-    for ( i, block_of_deleted ) in enumerate( HydrusLists.SplitListIntoChunks( deleted, BLOCK_SIZE ) ):
+    for ( num_done, num_to_do, block_of_deleted ) in HydrusLists.SplitListIntoChunksRich( deleted, BLOCK_SIZE ):
         
-        if not have_shown_popup and HydrusTime.TimeHasPassedFloat( start_time + 2.0 ):
+        if not have_shown_popup and HydrusTime.TimeHasPassedFloat( start_time + 1 ):
             
             CG.client_controller.pub( 'message', job_status )
             
         
-        job_status.SetStatusText( f'Deleting - {HydrusNumbers.ValueRangeToPrettyString( i * BLOCK_SIZE, num_to_do )}' )
-        job_status.SetVariable( 'popup_gauge_1', ( i * BLOCK_SIZE, num_to_do ) )
+        job_status.SetStatusText( f'Deleting: {HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do )}' )
+        job_status.SetGauge( num_done, num_to_do )
         
         if CG.client_controller.new_options.GetBoolean( 'delete_lock_for_archived_files' ) and CG.client_controller.new_options.GetBoolean( 'delete_lock_reinbox_deletees_after_archive_delete' ):
             
             block_of_deleted_hashes = [ m.GetHash() for m in block_of_deleted if not m.GetLocationsManager().inbox ]
             
-            content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, block_of_deleted_hashes ) )
+            content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, block_of_deleted_hashes ) )
             
             CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
             
@@ -4092,19 +3475,17 @@ def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContex
     
     kept_hashes = [ m.GetHash() for m in kept ]
     
-    num_to_do = len( kept_hashes )
-    
-    for ( i, block_of_kept_hashes ) in enumerate( HydrusLists.SplitListIntoChunks( kept_hashes, BLOCK_SIZE ) ):
+    for ( num_done, num_to_do, block_of_kept_hashes ) in HydrusLists.SplitListIntoChunksRich( kept_hashes, BLOCK_SIZE ):
         
-        if not have_shown_popup and HydrusTime.TimeHasPassedFloat( start_time + 2.0 ):
+        if not have_shown_popup and HydrusTime.TimeHasPassedFloat( start_time + 1 ):
             
             CG.client_controller.pub( 'message', job_status )
             
         
-        job_status.SetStatusText( f'Archiving - {HydrusNumbers.ValueRangeToPrettyString( i * BLOCK_SIZE, num_to_do )}' )
-        job_status.SetVariable( 'popup_gauge_1', ( i * BLOCK_SIZE, num_to_do ) )
+        job_status.SetStatusText( f'Archiving: {HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do )}' )
+        job_status.SetGauge( num_done, num_to_do )
         
-        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, block_of_kept_hashes ) )
+        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, block_of_kept_hashes ) )
         
         CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
         
@@ -4112,7 +3493,7 @@ def CommitArchiveDelete( deletee_location_context: ClientLocation.LocationContex
         
     
     job_status.SetStatusText( 'Done!' )
-    job_status.DeleteVariable( 'popup_gauge_1' )
+    job_status.DeleteGauge()
     
     job_status.FinishAndDismiss( 2 )
     
@@ -4127,6 +3508,8 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
         
         self._my_shortcuts_handler.AddShortcuts( 'archive_delete_filter' )
         
+        self._canvas_type = CC.CANVAS_MEDIA_VIEWER_ARCHIVE_DELETE
+        
         self._kept = set()
         self._deleted = set()
         self._skipped = set()
@@ -4138,7 +3521,7 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
         
         if first_media is not None:
             
-            QP.CallAfter( self.SetMedia, first_media ) # don't set this until we have a size > (20, 20)!
+            CG.client_controller.CallAfterQtSafe( self, self.SetMedia, first_media ) # don't set this until we have a size > (20, 20)!
             
         
     
@@ -4156,141 +3539,6 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
             self._deleted.discard( self._current_media )
             self._skipped.discard( self._current_media )
             
-        
-    
-    def TryToDoPreClose( self ):
-        
-        kept = list( self._kept )
-        
-        deleted = list( self._deleted )
-        
-        skipped = list( self._skipped )
-        
-        if len( kept ) > 0 or len( deleted ) > 0:
-            
-            if len( kept ) > 0:
-                
-                kept_label = 'keep {}'.format( HydrusNumbers.ToHumanInt( len( kept ) ) )
-                
-            else:
-                
-                kept_label = None
-                
-            
-            deletion_options = []
-            
-            if len( deleted ) > 0:
-                
-                location_contexts_to_present_options_for = []
-                
-                possible_location_context_at_top = self._location_context.Duplicate()
-                
-                possible_location_context_at_top.LimitToServiceTypes( CG.client_controller.services_manager.GetServiceType, ( HC.COMBINED_LOCAL_MEDIA, HC.LOCAL_FILE_DOMAIN ) )
-                
-                if len( possible_location_context_at_top.current_service_keys ) > 0:
-                    
-                    location_contexts_to_present_options_for.append( possible_location_context_at_top )
-                    
-                
-                current_local_service_keys = HydrusLists.MassUnion( [ m.GetLocationsManager().GetCurrent() for m in deleted ] )
-                
-                local_file_domain_service_keys = [ service_key for service_key in current_local_service_keys if CG.client_controller.services_manager.GetServiceType( service_key ) == HC.LOCAL_FILE_DOMAIN ]
-                
-                location_contexts_to_present_options_for.extend( [ ClientLocation.LocationContext.STATICCreateSimple( service_key ) for service_key in local_file_domain_service_keys ] )
-                
-                all_my_files_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
-                
-                if len( local_file_domain_service_keys ) > 1:
-                    
-                    location_contexts_to_present_options_for.append( all_my_files_location_context )
-                    
-                elif len( local_file_domain_service_keys ) == 1:
-                    
-                    if all_my_files_location_context in location_contexts_to_present_options_for:
-                        
-                        location_contexts_to_present_options_for.remove( all_my_files_location_context )
-                        
-                    
-                
-                location_contexts_to_present_options_for = HydrusData.DedupeList( location_contexts_to_present_options_for )
-                
-                only_allow_all_media_files = len( location_contexts_to_present_options_for ) > 1 and CG.client_controller.new_options.GetBoolean( 'only_show_delete_from_all_local_domains_when_filtering' ) and True in ( location_context.IsAllMediaFiles() for location_context in location_contexts_to_present_options_for )
-                
-                if only_allow_all_media_files:
-                    
-                    location_contexts_to_present_options_for = [ ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) ]
-                    
-                
-                for location_context in location_contexts_to_present_options_for:
-                    
-                    file_service_keys = location_context.current_service_keys
-                    
-                    num_deletable = len( [ m for m in deleted if len( m.GetLocationsManager().GetCurrent().intersection( file_service_keys ) ) > 0 ] )
-                    
-                    if num_deletable > 0:
-                        
-                        if location_context == ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ):
-                            
-                            location_label = 'all local file domains'
-                            
-                        else:
-                            
-                            location_label = location_context.ToString( CG.client_controller.services_manager.GetName )
-                            
-                        
-                        delete_label = 'delete {} from {}'.format( HydrusNumbers.ToHumanInt( num_deletable ), location_label )
-                        
-                        deletion_options.append( ( location_context, delete_label ) )
-                        
-                    
-                
-            
-            ( result, deletee_location_context, cancelled ) = ClientGUIScrolledPanelsCommitFiltering.GetFinishArchiveDeleteFilteringAnswer( self, kept_label, deletion_options )
-            
-            if cancelled:
-                
-                self._kept.discard( self._current_media )
-                self._deleted.discard( self._current_media )
-                self._skipped.discard( self._current_media )
-                
-                return False
-                
-            elif result == QW.QDialog.DialogCode.Accepted:
-                
-                self._kept = set()
-                self._deleted = set()
-                self._skipped = set()
-                
-                self._current_media = self._media_list.GetFirst() # so the pubsub on close is better
-                
-                if HC.options[ 'remove_filtered_files' ]:
-                    
-                    kept_hashes = [ m.GetHash() for m in kept ]
-                    deleted_hashes = [ m.GetHash() for m in deleted ]
-                    
-                    all_hashes = set()
-                    
-                    all_hashes.update( kept_hashes )
-                    all_hashes.update( deleted_hashes )
-                    
-                    if CG.client_controller.new_options.GetBoolean( 'remove_filtered_files_even_when_skipped' ):
-                        
-                        skipped_hashes = [ m.GetHash() for m in skipped ]
-                        
-                        all_hashes.update( skipped_hashes )
-                        
-                    
-                    self.userRemovedMedia.emit( all_hashes )
-                    
-                
-                kept_mr = [ m.GetMediaResult() for m in kept ]
-                deleted_mr = [ m.GetMediaResult() for m in deleted ]
-                
-                CG.client_controller.CallToThread( CommitArchiveDelete, deletee_location_context, kept_mr, deleted_mr )
-                
-            
-        
-        return CanvasMediaList.TryToDoPreClose( self )
         
     
     def _Delete( self, media = None, reason = None, file_service_key = None ):
@@ -4314,7 +3562,7 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
         return True
         
     
-    def _GenerateHoverTopFrame( self ):
+    def _GenerateHoverTopFrame( self ) -> ClientGUICanvasHoverFrames.CanvasHoverFrameTopArchiveDeleteFilter:
         
         return ClientGUICanvasHoverFrames.CanvasHoverFrameTopArchiveDeleteFilter( self, self, self._canvas_key )
         
@@ -4433,6 +3681,169 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
             
         
     
+    def UserOKToClose( self ):
+        
+        can_close = super().UserOKToClose()
+        
+        if not can_close:
+            
+            self._kept.discard( self._current_media )
+            self._deleted.discard( self._current_media )
+            self._skipped.discard( self._current_media )
+            
+            return can_close
+            
+        
+        kept = list( self._kept )
+        
+        deleted = list( self._deleted )
+        
+        skipped = list( self._skipped )
+        
+        if len( kept ) > 0 or len( deleted ) > 0:
+            
+            if len( kept ) > 0:
+                
+                kept_label = 'keep {}'.format( HydrusNumbers.ToHumanInt( len( kept ) ) )
+                
+            else:
+                
+                kept_label = None
+                
+            
+            deletion_options = []
+            
+            if len( deleted ) > 0:
+                
+                if CG.client_controller.new_options.GetBoolean( 'only_show_delete_from_all_local_domains_when_filtering' ):
+                    
+                    location_contexts_to_present_options_for = [ ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ) ]
+                    
+                else:
+                    
+                    location_contexts_to_present_options_for = []
+                    
+                    possible_location_context_at_top = self._location_context.Duplicate()
+                    
+                    possible_location_context_at_top.LimitToServiceTypes( CG.client_controller.services_manager.GetServiceType, ( HC.COMBINED_LOCAL_FILE_DOMAINS, HC.LOCAL_FILE_DOMAIN ) )
+                    
+                    if len( possible_location_context_at_top.current_service_keys ) > 0:
+                        
+                        location_contexts_to_present_options_for.append( possible_location_context_at_top )
+                        
+                    
+                    current_local_service_keys = HydrusLists.MassUnion( [ m.GetLocationsManager().GetCurrent() for m in deleted ] )
+                    
+                    local_file_domain_service_keys = [ service_key for service_key in current_local_service_keys if CG.client_controller.services_manager.GetServiceType( service_key ) == HC.LOCAL_FILE_DOMAIN ]
+                    
+                    location_contexts_to_present_options_for.extend( [ ClientLocation.LocationContext.STATICCreateSimple( service_key ) for service_key in local_file_domain_service_keys ] )
+                    
+                    combined_local_file_domains_location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
+                    
+                    if len( local_file_domain_service_keys ) > 1:
+                        
+                        location_contexts_to_present_options_for.insert( 0, combined_local_file_domains_location_context )
+                        
+                    
+                    location_contexts_to_present_options_for = HydrusLists.DedupeList( location_contexts_to_present_options_for )
+                    
+                
+                for location_context in location_contexts_to_present_options_for:
+                    
+                    file_service_keys = location_context.current_service_keys
+                    
+                    num_deletable = len( [ m for m in deleted if len( m.GetLocationsManager().GetCurrent().intersection( file_service_keys ) ) > 0 ] )
+                    
+                    if num_deletable > 0:
+                        
+                        location_label = location_context.ToString( CG.client_controller.services_manager.GetName )
+                        
+                        if location_context == ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ):
+                            
+                            if num_deletable == 1:
+                                
+                                num_label = '1'
+                                
+                            else:
+                                
+                                num_label = f'all {HydrusNumbers.ToHumanInt( num_deletable )}'
+                                
+                            
+                            delete_label = f'delete {num_label} from {location_label}, sending directly to trash'
+                            
+                        else:
+                            
+                            delete_label = f'delete {HydrusNumbers.ToHumanInt( num_deletable )} from {location_label}'
+                            
+                        
+                        deletion_options.append( ( location_context, delete_label ) )
+                        
+                    
+                
+            
+            ( result, deletee_location_context, cancelled ) = ClientGUIScrolledPanelsCommitFiltering.GetFinishArchiveDeleteFilteringAnswer( self, kept_label, deletion_options )
+            
+            if cancelled:
+                
+                self._kept.discard( self._current_media )
+                self._deleted.discard( self._current_media )
+                self._skipped.discard( self._current_media )
+                
+                return False
+                
+            elif result == QW.QDialog.DialogCode.Accepted:
+                
+                # TODO: would be cleaner to save this data and then fire the following off in the new 'notifyweareclosing' guy, but it isn't a big deal
+                # HOWEVER, if you do, remember 'accepted' is not the same as 'forget it'--don't always flush pending content, only here
+                # so yeah I guess bundle this into 'stuff to commit'
+                
+                self._kept = set()
+                self._deleted = set()
+                self._skipped = set()
+                
+                self._current_media = self._media_list.GetFirst() # so the pubsub on close is better
+                
+                if HC.options[ 'remove_filtered_files' ]:
+                    
+                    kept_hashes = [ m.GetHash() for m in kept ]
+                    deleted_hashes = [ m.GetHash() for m in deleted ]
+                    
+                    all_hashes = set()
+                    
+                    all_hashes.update( kept_hashes )
+                    all_hashes.update( deleted_hashes )
+                    
+                    if CG.client_controller.new_options.GetBoolean( 'remove_filtered_files_even_when_skipped' ):
+                        
+                        skipped_hashes = [ m.GetHash() for m in skipped ]
+                        
+                        all_hashes.update( skipped_hashes )
+                        
+                    else:
+                        
+                        if len( skipped ) > 0:
+                            
+                            self._current_media = skipped[ 0 ] 
+                            
+                        
+                    
+                    self.userRemovedMedia.emit( all_hashes )
+                    
+                else:
+                    
+                    self._current_media = self._media_list.GetFirst()
+                    
+                
+                kept_mr = [ m.GetMediaResult() for m in kept ]
+                deleted_mr = [ m.GetMediaResult() for m in deleted ]
+                
+                CG.client_controller.CallToThread( CommitArchiveDelete, deletee_location_context, kept_mr, deleted_mr )
+                
+            
+        
+        return True
+        
+    
 
 class CanvasMediaListNavigable( CanvasMediaList ):
     
@@ -4450,7 +3861,7 @@ class CanvasMediaListNavigable( CanvasMediaList ):
         CG.client_controller.sub( self, 'Undelete', 'canvas_undelete' )
         
     
-    def _GenerateHoverTopFrame( self ):
+    def _GenerateHoverTopFrame( self ) -> ClientGUICanvasHoverFrames.CanvasHoverFrameTopNavigableList:
         
         return ClientGUICanvasHoverFrames.CanvasHoverFrameTopNavigableList( self, self, self._canvas_key )
         
@@ -4486,6 +3897,16 @@ class CanvasMediaListNavigable( CanvasMediaList ):
             
             self.SetMedia( next_media )
             
+        
+    
+    def _ShowRandom( self ):
+        
+        self.SetMedia( self._media_list.GetRandom( self._current_media ) )
+        
+    
+    def _UndoRandom( self ):
+        
+        self.SetMedia( self._media_list.UndoRandom( self._current_media ) )
         
     
     def Archive( self, canvas_key ):
@@ -4545,6 +3966,18 @@ class CanvasMediaListNavigable( CanvasMediaList ):
             elif action == CAC.SIMPLE_VIEW_NEXT:
                 
                 self._ShowNext()
+                
+                self.userChangedMedia.emit()
+                
+            elif action == CAC.SIMPLE_VIEW_RANDOM:
+                
+                self._ShowRandom()
+                
+                self.userChangedMedia.emit()
+                
+            elif action == CAC.SIMPLE_UNDO_RANDOM:
+                
+                self._UndoRandom()
                 
                 self.userChangedMedia.emit()
                 
@@ -4614,6 +4047,7 @@ class CanvasMediaListNavigable( CanvasMediaList ):
             
         
     
+
 class CanvasMediaListBrowser( CanvasMediaListNavigable ):
     
     def __init__( self, parent, page_key, location_context: ClientLocation.LocationContext, media_results, first_hash ):
@@ -4636,7 +4070,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 # TODO: fix this ugly, temporary hack from refactoring
                 first_media = self._media_list.GetMediaByHashes( { first_hash } )[0]
                 
-            except:
+            except Exception as e:
                 
                 first_media = self._media_list.GetFirst()
                 
@@ -4644,7 +4078,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
         
         if first_media is not None:
             
-            QP.CallAfter( self.SetMedia, first_media ) # don't set this until we have a size > (20, 20)!
+            CG.client_controller.CallAfterQtSafe( self, self.SetMedia, first_media ) # don't set this until we have a size > (20, 20)!
             
         
         CG.client_controller.sub( self, 'AddMediaResults', 'add_media_results' )
@@ -4786,7 +4220,15 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 return
                 
             
-            self._ShowNext()
+            if CG.client_controller.new_options.GetBoolean( 'slideshows_progress_randomly' ):
+                
+                self._ShowRandom()
+                
+            else:
+                
+                self._ShowNext()
+                
+                
             
             self._RegisterNextSlideshowPresentation()
             
@@ -4798,7 +4240,25 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             self._StopSlideshow()
             
-        elif self._normal_slideshow_period > 0.0:
+        else:
+            
+            if self._normal_slideshow_period == 0.0:
+                
+                slideshow_durations = CG.client_controller.new_options.GetSlideshowDurations()
+                
+                if len( slideshow_durations ) > 0:
+                    
+                    slideshow_default = slideshow_durations[0]
+                    
+                else:
+                    
+                    slideshow_default = 1.0
+                    
+                
+                self._normal_slideshow_period = slideshow_default
+                
+                self._top_hover.SetSlideshowPeriod( self._normal_slideshow_period )
+                
             
             self._StartSlideshow( self._normal_slideshow_period )
             
@@ -4824,6 +4284,8 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             self._normal_slideshow_period = period
             
+            self._top_hover.SetSlideshowPeriod( self._normal_slideshow_period )
+            
             self._slideshow_is_running = True
             
             self._RegisterNextSlideshowPresentation()
@@ -4832,22 +4294,29 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
     
     def _StartSlideshowCustomPeriod( self ):
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the interval, in seconds.', default = '15', min_char_width = 12 ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                try:
-                    
-                    period = float( dlg.GetValue() )
-                    
-                    self._StartSlideshow( period )
-                    
-                except:
-                    
-                    pass
-                    
-                
+            message = 'Enter the interval, in seconds.'
             
+            period_str = ClientGUIDialogsQuick.EnterText( self, message, default = '15.0', min_char_width = 12 )
+            
+        except HydrusExceptions.CancelledException:
+            
+            raise
+            
+        
+        try:
+            
+            period = float( period_str )
+            
+        except Exception as e:
+            
+            ClientGUIDialogsMessage.ShowWarning( self, 'Could not parse that slideshow period!' )
+            
+            return
+            
+        
+        self._StartSlideshow( period )
         
     
     def _StopSlideshow( self ):
@@ -4885,6 +4354,21 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             if action == CAC.SIMPLE_PAUSE_PLAY_SLIDESHOW:
                 
                 self._PausePlaySlideshow()
+                
+            elif action == CAC.SIMPLE_START_SLIDESHOW:
+                
+                data = command.GetSimpleData()
+                
+                if data is None:
+                    
+                    self._StartSlideshowCustomPeriod()
+                    
+                else:
+                    
+                    period_seconds = data
+                    
+                    self._StartSlideshow( period_seconds )
+                    
                 
             elif action == CAC.SIMPLE_SHOW_MENU:
                 
@@ -4986,26 +4470,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 ClientGUIMenus.AppendMenuItem( menu, 'go fullscreen', 'Make this media viewer a fullscreen window without borders.', self.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW ) )
                 
             
-            slideshow = ClientGUIMenus.GenerateMenu( menu )
-            
-            slideshow_durations = CG.client_controller.new_options.GetSlideshowDurations()
-            
-            for slideshow_duration in slideshow_durations:
-                
-                pretty_duration = HydrusTime.TimeDeltaToPrettyTimeDelta( slideshow_duration )
-                
-                ClientGUIMenus.AppendMenuItem( slideshow, pretty_duration, f'Start a slideshow that changes media every {pretty_duration}.', self._StartSlideshow, slideshow_duration )
-                
-            
-            ClientGUIMenus.AppendMenuItem( slideshow, 'very fast', 'Start a very fast slideshow.', self._StartSlideshow, 0.08 )
-            ClientGUIMenus.AppendMenuItem( slideshow, 'custom interval', 'Start a slideshow with a custom interval.', self._StartSlideshowCustomPeriod )
-            
-            ClientGUIMenus.AppendMenu( menu, slideshow, 'start slideshow' )
-            
-            if self._slideshow_is_running:
-                
-                ClientGUIMenus.AppendMenuItem( menu, 'stop slideshow', 'Stop the current slideshow.', self._PausePlaySlideshow )
-                
+            ClientGUICanvasMenus.AppendSlideshowMenu( self, menu, self._slideshow_is_running, slideshow_resume_duration = self._normal_slideshow_period )
             
             ClientGUIMenus.AppendSeparator( menu )
             
@@ -5039,21 +4504,30 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             if len( local_file_service_keys_we_are_in ) > 0:
                 
-                delete_menu = ClientGUIMenus.GenerateMenu( menu )
-                
-                for file_service_key in local_file_service_keys_we_are_in:
+                if len( local_file_service_keys_we_are_in ) == 1:
                     
-                    ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    file_service_key = local_file_service_keys_we_are_in[0]
                     
-                
-                ClientGUIMenus.AppendMenu( menu, delete_menu, 'delete' )
+                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    
+                else:
+                    
+                    delete_menu = ClientGUIMenus.GenerateMenu( menu )
+                    
+                    for file_service_key in local_file_service_keys_we_are_in:
+                        
+                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                        
+                    
+                    ClientGUIMenus.AppendMenu( menu, delete_menu, 'delete' )
+                    
                 
             
             #
             
             if locations_manager.IsTrashed():
                 
-                ClientGUIMenus.AppendMenuItem( menu, 'delete physically now', 'Delete this file immediately. This cannot be undone.', self._Delete, file_service_key = CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+                ClientGUIMenus.AppendMenuItem( menu, 'delete physically now', 'Delete this file immediately. This cannot be undone.', self._Delete, file_service_key = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
                 ClientGUIMenus.AppendMenuItem( menu, 'undelete', 'Take this file out of the trash, returning it to its original file service.', self._Undelete )
                 
             
@@ -5086,15 +4560,17 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             ClientGUIMenus.AppendMenu( menu, manage_menu, 'manage' )
             
-            ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys ) = ClientGUIMediaSimpleActions.GetLocalFileActionServiceKeys( (self._current_media,) )
+            local_file_service_keys = ClientMedia.GetLocalFileServiceKeys( ( self._current_media, ) )
+            
+            ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, local_mergable_from_and_to_file_service_keys ) = ClientGUIMediaSimpleActions.GetLocalFileActionServiceKeys( ( self._current_media, ) )
             
             multiple_selected = False
             
-            if len( local_duplicable_to_file_service_keys ) > 0 or len( local_moveable_from_and_to_file_service_keys ) > 0:
+            if len( local_file_service_keys ) + len( local_duplicable_to_file_service_keys ) + len( local_moveable_from_and_to_file_service_keys ) + len( local_mergable_from_and_to_file_service_keys ) > 0:
                 
                 locations_menu = ClientGUIMenus.GenerateMenu( menu )
                 
-                ClientGUIMediaMenus.AddLocalFilesMoveAddToMenu( self, locations_menu, local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, multiple_selected, self.ProcessApplicationCommand )
+                ClientGUIMediaMenus.AddLocalFilesMoveAddToMenu( self, locations_menu, local_file_service_keys, local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, local_mergable_from_and_to_file_service_keys, multiple_selected, self.ProcessApplicationCommand )
                 
                 ClientGUIMenus.AppendMenu( menu, locations_menu, 'locations' )
                 
@@ -5105,8 +4581,22 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             ClientGUIMediaMenus.AddShareMenu( self, self, menu, self._current_media, [ self._current_media ] )
             
+            ClientGUIMenus.AppendSeparator( menu )
+            
+            self._media_container.AddPlayerMenus( menu )
+            
             CGC.core().PopupMenu( self, menu )
             
+        
+    
+    def SlideshowIsRunning( self ) -> bool:
+        
+        return self._slideshow_is_running
+        
+    
+    def SupportsSlideshow( self ) -> bool:
+        
+        return True
         
     
     def TIMERUIUpdate( self ):

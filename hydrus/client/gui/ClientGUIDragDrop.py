@@ -15,7 +15,6 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.exporting import ClientExportingFiles
 from hydrus.client.gui import ClientGUIFunctions
-from hydrus.client.gui import QtPorting as QP
 
 # we do this because some programs like discord will disallow exports with additional custom mimetypes (like 'application/hydrus-files')
 # as this is only ever an internal transfer, and as the python mimedata object is preserved through the dnd, we can just tack this info on with a subclass and python variables
@@ -131,7 +130,7 @@ def DoFileExportDragDrop( drag_object: QG.QDrag, page_key, media, alt_down ):
                 raise Exception()
                 
             
-        except:
+        except Exception as e:
             
             filename_terms = fallback_filename_terms
             
@@ -149,7 +148,7 @@ def DoFileExportDragDrop( drag_object: QG.QDrag, page_key, media, alt_down ):
                     raise Exception()
                     
                 
-            except:
+            except Exception as e:
                 
                 filename = ClientExportingFiles.GenerateExportFilename( this_dnd_temp_dir, m, fallback_filename_terms, i + 1, do_not_use_filenames = seen_export_filenames )
                 
@@ -157,6 +156,12 @@ def DoFileExportDragDrop( drag_object: QG.QDrag, page_key, media, alt_down ):
             seen_export_filenames.add( filename )
             
             dnd_path = os.path.join( this_dnd_temp_dir, filename )
+            
+            # YO, filename may include a pathsep according to various export filename rules. there are a couple ways we could handle this, but let's just follow the general rules of Export Folders and manual exports
+            
+            path_dir = os.path.dirname( dnd_path )
+            
+            HydrusPaths.MakeSureDirectoryExists( path_dir )
             
             HydrusPaths.MirrorFile( original_path, dnd_path )
             
@@ -280,7 +285,7 @@ class FileDropTarget( QC.QObject ):
                 
                 if page_key is not None:
                     
-                    QP.CallAfter( self._media_callable, page_key, hashes )  # callafter so we can terminate dnd event now
+                    CG.client_controller.CallAfterQtSafe( self, self._media_callable, page_key, hashes )  # callafter so we can terminate dnd event now
                     
                 
             
@@ -303,7 +308,7 @@ class FileDropTarget( QC.QObject ):
                 page_key = bytes.fromhex( encoded_page_key )
                 hashes = [ bytes.fromhex( encoded_hash ) for encoded_hash in encoded_hashes ]
 
-                QP.CallAfter( self._media_callable, page_key, hashes )  # callafter so we can terminate dnd event now
+                CG.client_controller.CallAfterQtSafe( self, self._media_callable, page_key, hashes )  # callafter so we can terminate dnd event now
                 
 
             result = QC.Qt.DropAction.MoveAction
@@ -352,7 +357,7 @@ class FileDropTarget( QC.QObject ):
                 
                 if len( paths ) > 0:
                     
-                    QP.CallAfter( self._filenames_callable, paths ) # callafter to terminate dnd event now
+                    CG.client_controller.CallAfterQtSafe( self, self._filenames_callable, paths ) # callafter to terminate dnd event now
                     
                 
             
@@ -373,7 +378,7 @@ class FileDropTarget( QC.QObject ):
                             continue
                             
                         
-                        QP.CallAfter( self._url_callable, url ) # callafter to terminate dnd event now
+                        CG.client_controller.CallAfterQtSafe( self, self._url_callable, url ) # callafter to terminate dnd event now
                         
                     
                 

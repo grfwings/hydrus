@@ -10,6 +10,7 @@ from hydrus.core import HydrusTags
 
 from hydrus.client.db import ClientDBModule
 from hydrus.client.networking import ClientNetworkingFunctions
+from hydrus.client.networking import ClientNetworkingURLClass
 
 class ClientDBMasterHashes( ClientDBModule.ClientDBModule ):
     
@@ -118,7 +119,7 @@ class ClientDBMasterHashes( ClientDBModule.ClientDBModule ):
                             
                             if not pubbed_error:
                                 
-                                HydrusData.ShowText( 'A file identifier was missing! This is a serious error that means your client database had an orphan file id! You have very likely encountered database corruption, perhaps recently, or perhaps years ago, please check the "help my db is broke.txt" document under install_dir/db folder as background reading. Additional info has been written to the log.' )
+                                HydrusData.ShowText( 'A file identifier was missing! This is a serious error that means your client database had an orphan file id! You have very likely encountered database corruption, perhaps recently, or perhaps years ago, please check the "help I had a file identifier missing error.txt" document under install_dir/db folder. Additional info has been written to the log.' )
                                 
                                 pubbed_error = True
                                 
@@ -476,6 +477,7 @@ class ClientDBMasterTexts( ClientDBModule.ClientDBModule ):
         return text_id
         
     
+
 class ClientDBMasterTags( ClientDBModule.ClientDBModule ):
     
     def __init__( self, cursor: sqlite3.Cursor ):
@@ -740,7 +742,7 @@ class ClientDBMasterTags( ClientDBModule.ClientDBModule ):
             
             tag = HydrusTags.CleanTag( tag )
             
-        except:
+        except Exception as e:
             
             return False
             
@@ -847,27 +849,21 @@ class ClientDBMasterURLs( ClientDBModule.ClientDBModule ):
         return domain_id
         
     
-    def GetURLDomainAndSubdomainIds( self, domain, only_www_subdomains = False ):
+    def GetURLDomainAndSubdomainIds( self, url_domain_mask: ClientNetworkingURLClass.URLDomainMask ):
         
-        domain = ClientNetworkingFunctions.RemoveWWWFromDomain( domain )
-        
-        domain_ids = set()
-        
-        domain_ids.add( self.GetURLDomainId( domain ) )
-        
-        if only_www_subdomains:
+        if url_domain_mask.NoRegexes():
             
-            search_phrase = 'www%.{}'.format( domain )
+            # OK I used to have gubbins here that did 'WHERE domain LIKE www%.domain' to be clever, but as I moved to domain mask, I realised this was not faster than just ripping everything and scanning myself
+            # IF we move to domains stored with the top country code as a searchable id, then we can un-False this section and write multiple slimmer fetches with 'where country_domain_id IN blah'
+            
+            all_domain_info = self._Execute( 'SELECT domain_id, domain FROM url_domains;' ).fetchall()
             
         else:
             
-            search_phrase = '%.{}'.format( domain )
+            all_domain_info = self._Execute( 'SELECT domain_id, domain FROM url_domains;' ).fetchall()
             
         
-        for ( domain_id, ) in self._Execute( 'SELECT domain_id FROM url_domains WHERE domain LIKE ?;', ( search_phrase, ) ):
-            
-            domain_ids.add( domain_id )
-            
+        domain_ids = { domain_id for ( domain_id, domain ) in all_domain_info if url_domain_mask.Matches( domain ) }
         
         return domain_ids
         

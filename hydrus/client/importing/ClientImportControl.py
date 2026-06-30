@@ -1,5 +1,3 @@
-import typing
-
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusTime
@@ -7,13 +5,18 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.importing import ClientImportFileSeeds
 from hydrus.client.importing import ClientImportGallerySeeds
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import LocationImportOptions
 
 def CheckImporterCanDoFileWorkBecausePaused( paused: bool, file_seed_cache: ClientImportFileSeeds.FileSeedCache, page_key: bytes ):
     
     if paused:
         
         raise HydrusExceptions.VetoException( 'paused' )
+        
+    
+    if CG.client_controller.new_options.GetBoolean( 'pause_all_paged_importers' ):
+        
+        raise HydrusExceptions.VetoException( 'all paged importers are paused! hit network->pause to resume!' )
         
     
     if CG.client_controller.new_options.GetBoolean( 'pause_all_file_queues' ):
@@ -34,11 +37,11 @@ def CheckImporterCanDoFileWorkBecausePaused( paused: bool, file_seed_cache: Clie
         
     
 
-def CheckImporterCanDoFileWorkBecausePausifyingProblem( file_import_options: FileImportOptions ):
+def CheckImporterCanDoFileWorkBecausePausifyingProblem( location_import_options: LocationImportOptions.LocationImportOptions ):
     
     try:
         
-        file_import_options.CheckReadyToImport()
+        location_import_options.CheckReadyToImport()
         
     except Exception as e:
         
@@ -46,11 +49,16 @@ def CheckImporterCanDoFileWorkBecausePausifyingProblem( file_import_options: Fil
         
     
 
-def CheckImporterCanDoGalleryWorkBecausePaused( paused: bool, gallery_seed_log: typing.Optional[ ClientImportGallerySeeds.GallerySeedLog ] ):
+def CheckImporterCanDoGalleryWorkBecausePaused( paused: bool, gallery_seed_log: ClientImportGallerySeeds.GallerySeedLog | None ):
     
     if paused:
         
         raise HydrusExceptions.VetoException( 'paused' )
+        
+    
+    if CG.client_controller.new_options.GetBoolean( 'pause_all_paged_importers' ):
+        
+        raise HydrusExceptions.VetoException( 'all paged importers are paused! hit network->pause to resume!' )
         
     
     if CG.client_controller.new_options.GetBoolean( 'pause_all_gallery_searches' ):

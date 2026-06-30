@@ -12,8 +12,10 @@ from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 
+from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientTime
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientTags
 from hydrus.client.search import ClientNumberTest
@@ -29,7 +31,7 @@ PREDICATE_TYPE_SYSTEM_UNTAGGED = 7
 PREDICATE_TYPE_SYSTEM_NUM_TAGS = 8
 PREDICATE_TYPE_SYSTEM_LIMIT = 9
 PREDICATE_TYPE_SYSTEM_SIZE = 10
-PREDICATE_TYPE_SYSTEM_AGE = 11
+PREDICATE_TYPE_SYSTEM_IMPORT_TIME = 11
 PREDICATE_TYPE_SYSTEM_HASH = 12
 PREDICATE_TYPE_SYSTEM_WIDTH = 13
 PREDICATE_TYPE_SYSTEM_HEIGHT = 14
@@ -73,6 +75,8 @@ PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE = 51
 PREDICATE_TYPE_SYSTEM_NUM_URLS = 52
 PREDICATE_TYPE_SYSTEM_URLS = 53
 PREDICATE_TYPE_SYSTEM_TAG_ADVANCED = 54
+PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY = 55 # not using
+PREDICATE_TYPE_SYSTEM_RATING_ADVANCED = 66
 
 SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_EVERYTHING,
@@ -82,7 +86,7 @@ SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_NUM_TAGS,
     PREDICATE_TYPE_SYSTEM_LIMIT,
     PREDICATE_TYPE_SYSTEM_SIZE,
-    PREDICATE_TYPE_SYSTEM_AGE,
+    PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
     PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
     PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
     PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
@@ -101,6 +105,7 @@ SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE,
     PREDICATE_TYPE_SYSTEM_MIME,
     PREDICATE_TYPE_SYSTEM_RATING,
+    PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
     PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES,
     PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA,
     PREDICATE_TYPE_SYSTEM_SIMILAR_TO,
@@ -123,7 +128,7 @@ SYSTEM_PREDICATE_TYPES = {
     PREDICATE_TYPE_SYSTEM_URLS,
     PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS,
     PREDICATE_TYPE_SYSTEM_TIME,
-    PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE
+    PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE,
 }
 
 def ConvertSpecificFiletypesToSummary( specific_mimes: collections.abc.Collection[ int ], only_searchable = True ) -> collections.abc.Collection[ int ]:
@@ -180,7 +185,7 @@ def ConvertSummaryFiletypesToString( summary_mimes: collections.abc.Collection[ 
     
     if set( summary_mimes ) == HC.GENERAL_FILETYPES:
         
-        mime_text = 'anything'
+        mime_text = 'all filetypes'
         
     else:
         
@@ -198,8 +203,8 @@ class PredicateCount( object ):
         self,
         min_current_count: int,
         min_pending_count: int,
-        max_current_count: typing.Optional[ int ],
-        max_pending_count: typing.Optional[ int ]
+        max_current_count: int | None,
+        max_pending_count: int | None
         ):
         
         self.min_current_count = min_current_count
@@ -326,7 +331,7 @@ class PredicateCount( object ):
     
 
 EDIT_PRED_TYPES = {
-    PREDICATE_TYPE_SYSTEM_AGE,
+    PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
     PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
     PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
     PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
@@ -344,6 +349,7 @@ EDIT_PRED_TYPES = {
     PREDICATE_TYPE_SYSTEM_LIMIT,
     PREDICATE_TYPE_SYSTEM_MIME,
     PREDICATE_TYPE_SYSTEM_RATING,
+    PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
     PREDICATE_TYPE_SYSTEM_NUM_TAGS,
     PREDICATE_TYPE_SYSTEM_NUM_NOTES,
     PREDICATE_TYPE_SYSTEM_HAS_NOTE_NAME,
@@ -369,11 +375,27 @@ PREDICATE_TYPES_WE_CAN_TEST_ON_MEDIA_RESULTS = [
     PREDICATE_TYPE_SYSTEM_MIME,
     PREDICATE_TYPE_SYSTEM_WIDTH,
     PREDICATE_TYPE_SYSTEM_HEIGHT,
+    PREDICATE_TYPE_SYSTEM_DURATION,
+    PREDICATE_TYPE_SYSTEM_FRAMERATE,
+    PREDICATE_TYPE_SYSTEM_NUM_FRAMES,
     PREDICATE_TYPE_SYSTEM_NUM_URLS,
+    PREDICATE_TYPE_SYSTEM_NUM_TAGS,
     PREDICATE_TYPE_SYSTEM_KNOWN_URLS,
     PREDICATE_TYPE_SYSTEM_HAS_EXIF,
     PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE,
-    PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA
+    PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA,
+    PREDICATE_TYPE_SYSTEM_HAS_AUDIO,
+    PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY,
+    PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE,
+    PREDICATE_TYPE_SYSTEM_TAG_ADVANCED,
+    PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+    PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+    PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+    PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
+    PREDICATE_TYPE_OR_CONTAINER,
+    PREDICATE_TYPE_NAMESPACE,
+    PREDICATE_TYPE_WILDCARD,
+    PREDICATE_TYPE_TAG
 ]
 
 # this has useful order
@@ -384,9 +406,29 @@ PREDICATE_TYPES_WE_CAN_EXTRACT_FROM_MEDIA_RESULTS = [
     PREDICATE_TYPE_SYSTEM_HEIGHT,
     PREDICATE_TYPE_SYSTEM_NUM_PIXELS,
     PREDICATE_TYPE_SYSTEM_DURATION,
+    PREDICATE_TYPE_SYSTEM_FRAMERATE,
     PREDICATE_TYPE_SYSTEM_NUM_FRAMES,
-    PREDICATE_TYPE_SYSTEM_NUM_URLS
+    PREDICATE_TYPE_SYSTEM_NUM_TAGS,
+    PREDICATE_TYPE_SYSTEM_NUM_URLS,
+    PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+    PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+    PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+    PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
 ]
+
+def compile_wildcard_tag_into_re( wildcard: str ):
+    
+    regular_parts_of_wildcard = wildcard.split( '*' )
+    
+    escaped_parts_of_wildcard = [ re.escape( part ) for part in regular_parts_of_wildcard ]
+    
+    # \A is start of string
+    # \Z is end of string
+    
+    wildcard_re_text = r'\A' + '.*'.join( escaped_parts_of_wildcard ) + r'\Z'
+    
+    return re.compile( wildcard_re_text )
+    
 
 class Predicate( HydrusSerialisable.SerialisableBase ):
     
@@ -396,7 +438,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def __init__(
         self,
-        predicate_type: typing.Optional[ int ] = None,
+        predicate_type: int | None = None,
         value: typing.Any = None,
         inclusive: bool = True,
         count = None
@@ -491,73 +533,95 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def _GetSerialisableInfo( self ):
         
-        if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_RATING, PREDICATE_TYPE_SYSTEM_FILE_SERVICE ):
+        if self._value is None:
             
-            ( operator, value, service_key ) = self._value
-            
-            serialisable_value = ( operator, value, service_key.hex() )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES:
-            
-            ( hashes, max_hamming ) = self._value
-            
-            serialisable_value = ( [ hash.hex() for hash in hashes ], max_hamming )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA:
-            
-            ( pixel_hashes, perceptual_hashes, max_hamming ) = self._value
-            
-            serialisable_value = (
-                [ pixel_hash.hex() for pixel_hash in pixel_hashes ],
-                [ perceptual_hash.hex() for perceptual_hash in perceptual_hashes ],
-                max_hamming
-            )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_KNOWN_URLS:
-            
-            ( operator, rule_type, rule, description ) = self._value
-            
-            if rule_type in ( 'url_match', 'url_class' ):
-                
-                serialisable_rule = rule.GetSerialisableTuple()
-                
-            else:
-                
-                serialisable_rule = rule
-                
-            
-            serialisable_value = ( operator, rule_type, serialisable_rule, description )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HASH:
-            
-            ( hashes, hash_type ) = self._value
-            
-            serialisable_value = ( [ hash.hex() for hash in hashes ], hash_type )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
-            
-            ( service_key_or_none, tag_display_type, statuses, tag ) = self._value
-            
-            serialisable_service_key_or_none = HydrusData.BytesToNoneOrHex( service_key_or_none )
-            serialisable_statuses = tuple( statuses )
-            
-            serialisable_value = ( serialisable_service_key_or_none, tag_display_type, serialisable_statuses, tag )
-            
-        elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
-            
-            or_predicates = self._value
-            
-            serialisable_value = HydrusSerialisable.SerialisableList( or_predicates ).GetSerialisableTuple()
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
-            
-            number_test_or_none = typing.cast( typing.Optional[ ClientNumberTest.NumberTest ], self._value )
-            
-            serialisable_value = HydrusSerialisable.GetNoneableSerialisableTuple( number_test_or_none )
+            serialisable_value = None
             
         else:
             
-            serialisable_value = self._value
+            if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_RATING, PREDICATE_TYPE_SYSTEM_FILE_SERVICE ):
+                
+                ( operator, value, service_key ) = self._value
+                
+                serialisable_value = ( operator, value, service_key.hex() )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY:
+                
+                ( operator, value ) = self._value
+                
+                serialisable_value = ( operator, value )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = self._value
+                
+                serialisable_service_specifier_primary = service_specifier_primary.GetSerialisableTuple()
+                serialisable_service_specifier_secondary = service_specifier_secondary.GetSerialisableTuple()
+                
+                serialisable_value = ( logical_operator, serialisable_service_specifier_primary, serialisable_service_specifier_secondary, rated )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES:
+                
+                ( hashes, max_hamming ) = self._value
+                
+                serialisable_value = ( [ hash.hex() for hash in hashes ], max_hamming )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA:
+                
+                ( pixel_hashes, perceptual_hashes, max_hamming ) = self._value
+                
+                serialisable_value = (
+                    [ pixel_hash.hex() for pixel_hash in pixel_hashes ],
+                    [ perceptual_hash.hex() for perceptual_hash in perceptual_hashes ],
+                    max_hamming
+                )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_KNOWN_URLS:
+                
+                ( operator, rule_type, rule, description ) = self._value
+                
+                if rule_type in ( 'url_match', 'url_class' ):
+                    
+                    serialisable_rule = rule.GetSerialisableTuple()
+                    
+                else:
+                    
+                    serialisable_rule = rule
+                    
+                
+                serialisable_value = ( operator, rule_type, serialisable_rule, description )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HASH:
+                
+                ( hashes, hash_type ) = self._value
+                
+                serialisable_value = ( [ hash.hex() for hash in hashes ], hash_type )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+                
+                ( service_key_or_none, tag_display_type, statuses, tag ) = self._value
+                
+                serialisable_service_key_or_none = HydrusData.BytesToNoneOrHex( service_key_or_none )
+                serialisable_statuses = tuple( statuses )
+                
+                serialisable_value = ( serialisable_service_key_or_none, tag_display_type, serialisable_statuses, tag )
+                
+            elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
+                
+                or_predicates = self._value
+                
+                serialisable_value = HydrusSerialisable.SerialisableList( or_predicates ).GetSerialisableTuple()
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
+                
+                number_test_or_none = typing.cast( ClientNumberTest.NumberTest | None, self._value )
+                
+                serialisable_value = HydrusSerialisable.GetNoneableSerialisableTuple( number_test_or_none )
+                
+            else:
+                
+                serialisable_value = self._value
+                
             
         
         return ( self._predicate_type, serialisable_value, self._inclusive )
@@ -567,95 +631,129 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
         
         ( self._predicate_type, serialisable_value, self._inclusive ) = serialisable_info
         
-        if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_RATING, PREDICATE_TYPE_SYSTEM_FILE_SERVICE ):
+        if serialisable_value is None:
             
-            ( operator, value, service_key ) = serialisable_value
-            
-            self._value = ( operator, value, bytes.fromhex( service_key ) )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES:
-            
-            ( serialisable_hashes, max_hamming ) = serialisable_value
-            
-            self._value = ( tuple( [ bytes.fromhex( serialisable_hash ) for serialisable_hash in serialisable_hashes ] ) , max_hamming )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA:
-            
-            ( serialisable_pixel_hashes, serialisable_perceptual_hashes, max_hamming ) = serialisable_value
-            
-            self._value = (
-                tuple( [ bytes.fromhex( serialisable_pixel_hash ) for serialisable_pixel_hash in serialisable_pixel_hashes ] ),
-                tuple( [ bytes.fromhex( serialisable_perceptual_hash ) for serialisable_perceptual_hash in serialisable_perceptual_hashes ] ),
-                max_hamming
-            )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_KNOWN_URLS:
-            
-            ( operator, rule_type, serialisable_rule, description ) = serialisable_value
-            
-            if rule_type in ( 'url_match', 'url_class' ):
-                
-                rule = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_rule )
-                
-            else:
-                
-                rule = serialisable_rule
-                
-            
-            self._value = ( operator, rule_type, rule, description )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HASH:
-            
-            ( serialisable_hashes, hash_type ) = serialisable_value
-            
-            self._value = ( tuple( [ bytes.fromhex( serialisable_hash ) for serialisable_hash in serialisable_hashes ] ), hash_type )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
-            
-            ( serialisable_key_or_none, tag_display_type, serialisable_statuses, tag ) = serialisable_value
-            
-            service_key_or_none = HydrusData.HexToNoneOrBytes( serialisable_key_or_none )
-            statuses = tuple( serialisable_statuses )
-            
-            self._value = ( service_key_or_none, tag_display_type, statuses, tag )
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_AGE, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
-            
-            ( operator, age_type, age_value ) = serialisable_value
-            
-            self._value = ( operator, age_type, tuple( age_value ) )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS:
-            
-            ( view_type, viewing_locations, operator, viewing_value ) = serialisable_value
-            
-            self._value = ( view_type, tuple( viewing_locations ), operator, viewing_value )
-            
-        elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
-            
-            serialisable_or_predicates = serialisable_value
-            
-            self._value = tuple( sorted( HydrusSerialisable.CreateFromSerialisableTuple( serialisable_or_predicates ), key = lambda p: HydrusText.HumanTextSortKey( p.ToString() ) ) )
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
-            
-            serialisable_number_test = serialisable_value
-            
-            self._value = HydrusSerialisable.CreateFromNoneableSerialisableTuple( serialisable_number_test )
+            self._value = None
             
         else:
             
-            self._value = serialisable_value
-            
-            if self._predicate_type == PREDICATE_TYPE_SYSTEM_MIME and self._value is not None:
+            if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_RATING, PREDICATE_TYPE_SYSTEM_FILE_SERVICE ):
                 
-                self._value = tuple( sorted( ConvertSpecificFiletypesToSummary( self._value ) ) )
+                ( operator, value, service_key ) = serialisable_value
+                
+                self._value = ( operator, value, bytes.fromhex( service_key ) )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY:
+                
+                ( operator, value ) = serialisable_value
+                
+                self._value = ( operator, value )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                ( logical_operator, serialisable_service_specifier_primary, serialisable_service_specifier_secondary, rated ) = serialisable_value
+                
+                service_specifier_primary = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_service_specifier_primary )
+                service_specifier_secondary = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_service_specifier_secondary )
+                
+                self._value = ( logical_operator, service_specifier_primary, service_specifier_secondary, rated )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES:
+                
+                ( serialisable_hashes, max_hamming ) = serialisable_value
+                
+                self._value = ( tuple( [ bytes.fromhex( serialisable_hash ) for serialisable_hash in serialisable_hashes ] ) , max_hamming )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA:
+                
+                ( serialisable_pixel_hashes, serialisable_perceptual_hashes, max_hamming ) = serialisable_value
+                
+                self._value = (
+                    tuple( [ bytes.fromhex( serialisable_pixel_hash ) for serialisable_pixel_hash in serialisable_pixel_hashes ] ),
+                    tuple( [ bytes.fromhex( serialisable_perceptual_hash ) for serialisable_perceptual_hash in serialisable_perceptual_hashes ] ),
+                    max_hamming
+                )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_KNOWN_URLS:
+                
+                ( operator, rule_type, serialisable_rule, description ) = serialisable_value
+                
+                if rule_type in ( 'url_match', 'url_class' ):
+                    
+                    rule = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_rule )
+                    
+                else:
+                    
+                    rule = serialisable_rule
+                    
+                
+                self._value = ( operator, rule_type, rule, description )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HASH:
+                
+                ( serialisable_hashes, hash_type ) = serialisable_value
+                
+                self._value = ( tuple( [ bytes.fromhex( serialisable_hash ) for serialisable_hash in serialisable_hashes ] ), hash_type )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+                
+                ( serialisable_key_or_none, tag_display_type, serialisable_statuses, tag ) = serialisable_value
+                
+                service_key_or_none = HydrusData.HexToNoneOrBytes( serialisable_key_or_none )
+                statuses = tuple( serialisable_statuses )
+                
+                self._value = ( service_key_or_none, tag_display_type, statuses, tag )
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_IMPORT_TIME, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
+                
+                ( operator, age_type, age_value ) = serialisable_value
+                
+                self._value = ( operator, age_type, tuple( age_value ) )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS:
+                
+                ( view_type, viewing_locations, operator, viewing_value ) = serialisable_value
+                
+                self._value = ( view_type, tuple( viewing_locations ), operator, viewing_value )
+                
+            elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
+                
+                serialisable_or_predicates = serialisable_value
+                
+                self._value = tuple( HydrusSerialisable.CreateFromSerialisableTuple( serialisable_or_predicates ) )
+                
+                if CG.client_controller.IsBooted():
+                    
+                    try:
+                        
+                        self._value = tuple( sorted( self._value, key = lambda p: HydrusText.HumanTextSortKey( p.ToString() ) ) )
+                        
+                    except Exception as e:
+                        
+                        pass
+                        
+                    
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_WIDTH, PREDICATE_TYPE_SYSTEM_HEIGHT, PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION, PREDICATE_TYPE_SYSTEM_FRAMERATE ):
+                
+                serialisable_number_test = serialisable_value
+                
+                self._value = HydrusSerialisable.CreateFromNoneableSerialisableTuple( serialisable_number_test )
+                
+            else:
+                
+                self._value = serialisable_value
+                
+                if self._predicate_type == PREDICATE_TYPE_SYSTEM_MIME and self._value is not None:
+                    
+                    self._value = tuple( sorted( ConvertSpecificFiletypesToSummary( self._value ) ) )
+                    
                 
             
-        
-        if isinstance( self._value, list ):
-            
-            self._value = tuple( self._value )
+            if isinstance( self._value, list ):
+                
+                self._value = tuple( self._value )
+                
             
         
         self._RecalcPythonHash()
@@ -684,7 +782,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             ( predicate_type, serialisable_value, inclusive ) = old_serialisable_info
             
-            if predicate_type == PREDICATE_TYPE_SYSTEM_AGE:
+            if predicate_type == PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
                 
                 ( operator, years, months, days, hours ) = serialisable_value
                 
@@ -756,7 +854,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             ( predicate_type, serialisable_value, inclusive ) = old_serialisable_info
             
-            if predicate_type in ( PREDICATE_TYPE_SYSTEM_AGE, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
+            if predicate_type in ( PREDICATE_TYPE_SYSTEM_IMPORT_TIME, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
                 
                 ( operator, age_type, age_value ) = serialisable_value
                 
@@ -840,10 +938,29 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def CanTestMediaResult( self ) -> bool:
         
+        if self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
+            
+            predicates = self._value
+            
+            return False not in [ predicate.CanTestMediaResult() for predicate in predicates ]
+            
+        
         return self._predicate_type in PREDICATE_TYPES_WE_CAN_TEST_ON_MEDIA_RESULTS
         
     
-    def ExtractValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> typing.Optional[ float ]:
+    def ExtractComparableValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> float | None:
+        
+        result = self.ExtractValueFromMediaResult( media_result )
+        
+        if result is None and self.ExtractValueOfNoneIsValidButZero():
+            
+            result = 0
+            
+        
+        return result
+        
+    
+    def ExtractValueFromMediaResult( self, media_result: ClientMediaResult.MediaResult ) -> float | None:
         
         if self._predicate_type == PREDICATE_TYPE_SYSTEM_SIZE:
             
@@ -874,18 +991,52 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             return media_result.GetFileInfoManager().duration_ms
             
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FRAMERATE:
+            
+            return media_result.GetFileInfoManager().GetFramerate()
+            
         elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_FRAMES:
             
             return media_result.GetFileInfoManager().num_frames
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_TAGS:
+            
+            return len( media_result.GetTagsManager().GetCurrentAndPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) )
             
         elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_URLS:
             
             return len( media_result.GetLocationsManager().GetURLs() )
             
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
+            
+            return media_result.GetTimesManager().GetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_MODIFIED_TIME:
+            
+            return media_result.GetTimesManager().GetAggregateModifiedTimestampMS()
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME:
+            
+            return media_result.GetTimesManager().GetLastViewedTimestampMS( CC.CANVAS_MEDIA_VIEWER )
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME:
+            
+            return media_result.GetTimesManager().GetArchivedTimestampMS()
+            
         else:
             
             raise NotImplementedError( f'The given predicate, "{self.ToString()}", cannot extract a value from a media result! You should not be able to get into this situation, so please contact hydev with details.' )
             
+        
+    
+    def ExtractValueOfNoneIsValidButZero( self ):
+        
+        return self._predicate_type not in (
+            PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
+        )
         
     
     def GetCopy( self ):
@@ -982,56 +1133,193 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
     
     def GetInverseCopy( self ):
         
-        if self._predicate_type == PREDICATE_TYPE_SYSTEM_ARCHIVE:
+        try:
             
-            return Predicate( PREDICATE_TYPE_SYSTEM_INBOX )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_INBOX:
-            
-            return Predicate( PREDICATE_TYPE_SYSTEM_ARCHIVE )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_LOCAL:
-            
-            return Predicate( PREDICATE_TYPE_SYSTEM_NOT_LOCAL )
-            
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NOT_LOCAL:
-            
-            return Predicate( PREDICATE_TYPE_SYSTEM_LOCAL )
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_TAG, PREDICATE_TYPE_NAMESPACE, PREDICATE_TYPE_WILDCARD ):
-            
-            return Predicate( self._predicate_type, self._value, not self._inclusive )
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_HAS_AUDIO, PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY, PREDICATE_TYPE_SYSTEM_HAS_EXIF, PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE ):
-            
-            return Predicate( self._predicate_type, not self._value )
-            
-        elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION ):
-            
-            number_test: ClientNumberTest.NumberTest = self._value
-            
-            if number_test is not None:
+            if self._predicate_type == PREDICATE_TYPE_SYSTEM_ARCHIVE:
                 
-                if number_test.IsZero():
+                return Predicate( PREDICATE_TYPE_SYSTEM_INBOX )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_INBOX:
+                
+                return Predicate( PREDICATE_TYPE_SYSTEM_ARCHIVE )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_LOCAL:
+                
+                return Predicate( PREDICATE_TYPE_SYSTEM_NOT_LOCAL )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NOT_LOCAL:
+                
+                return Predicate( PREDICATE_TYPE_SYSTEM_LOCAL )
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_TAG, PREDICATE_TYPE_NAMESPACE, PREDICATE_TYPE_WILDCARD ):
+                
+                return Predicate( self._predicate_type, self._value, not self._inclusive )
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_HAS_AUDIO, PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY, PREDICATE_TYPE_SYSTEM_HAS_EXIF, PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE, PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_KING ):
+                
+                if self._value is None: # weird default that sometimes kicks in, means 'yes, has'
                     
-                    return Predicate( self._predicate_type, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '>', 0 ) )
+                    value = True
                     
-                elif number_test.IsAnythingButZero():
+                else:
                     
-                    return Predicate( self._predicate_type, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 0 ) )
+                    value = self._value
                     
                 
+                return Predicate( self._predicate_type, not value )
+                
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_NUM_NOTES, PREDICATE_TYPE_SYSTEM_NUM_WORDS, PREDICATE_TYPE_SYSTEM_NUM_URLS, PREDICATE_TYPE_SYSTEM_NUM_FRAMES, PREDICATE_TYPE_SYSTEM_DURATION ):
+                
+                if self._value is None:
+                    
+                    return None
+                    
+                
+                number_test: ClientNumberTest.NumberTest = self._value
+                
+                if number_test is not None:
+                    
+                    if number_test.IsZero():
+                        
+                        return Predicate( self._predicate_type, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '>', 0 ) )
+                        
+                    elif number_test.IsAnythingButZero():
+                        
+                        return Predicate( self._predicate_type, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 0 ) )
+                        
+                    
+                
+                return None
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATIO:
+                
+                if self._value is None:
+                    
+                    return None
+                    
+                
+                operator, *dims = self._value
+                
+                # the taller/wider swap here is imperfect, and when we change to a NumberTest or whatever, we'd then have >=, <=
+                if operator == 'taller than':
+                    
+                    return Predicate( self._predicate_type, ( 'wider than', *dims ) )
+                    
+                elif operator == 'wider than':
+                    
+                    return Predicate( self._predicate_type, ( 'taller than', *dims ) )
+                    
+                elif operator == '=':
+                    
+                    return Predicate( self._predicate_type, ( HC.UNICODE_NOT_EQUAL, *dims ) )
+                    
+                elif operator == HC.UNICODE_NOT_EQUAL:
+                    
+                    return Predicate( self._predicate_type, ( '=', *dims ) )
+                    
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING:
+                
+                if self._value is None:
+                    
+                    return None
+                    
+                
+                ( operator, val, service_key ) = self._value
+                
+                if operator == '=':
+                    
+                    if val == 'not rated':
+                        
+                        return Predicate( self._predicate_type, ( operator, 'rated', service_key ) )
+                        
+                    elif val == 'rated':
+                        
+                        return Predicate( self._predicate_type, ( operator, 'not rated', service_key ) )
+                        
+                    
+                else:
+                    
+                    try:
+                        
+                        service_type = CG.client_controller.services_manager.GetServiceType( service_key )
+                        
+                    except Exception as e:
+                        
+                        return None
+                        
+                    
+                    if service_type == HC.LOCAL_RATING_INCDEC:
+                        
+                        if operator == '>':
+                            
+                            # again these are imperfect and we'd want NumberTest tech so we could go <=, >= here
+                            
+                            return Predicate( self._predicate_type, ( '<', val + 1, service_key ) )
+                            
+                        elif operator == '<':
+                            
+                            new_val = max( val - 1, 0 )
+                            
+                            return Predicate( self._predicate_type, ( '>', new_val, service_key ) )
+                            
+                        
+                    
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY:
+                
+                if self._value is None:
+                    
+                    return None
+                    
+                
+                ( operator, val ) = self._value
+                
+                if val == 'was rated':
+                    
+                    return Predicate( self._predicate_type, ( operator, 'never rated' ) )
+                    
+                elif val == 'never rated':
+                    
+                    return Predicate( self._predicate_type, ( operator, 'was rated' ) )
+                    
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                if self._value is None:
+                    
+                    return None
+                    
+                
+                ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = self._value
+                
+                if logical_operator == HC.LOGICAL_OPERATOR_ALL:
+                    
+                    # all( a, b, c ) inverts to any not( a b c )
+                    return Predicate( self._predicate_type, ( HC.LOGICAL_OPERATOR_ANY, service_specifier_primary, service_specifier_secondary, not rated ) )
+                    
+                elif logical_operator == HC.LOGICAL_OPERATOR_ANY:
+                    
+                    # opposite of above
+                    return Predicate( self._predicate_type, ( HC.LOGICAL_OPERATOR_ALL, service_specifier_primary, service_specifier_secondary, not rated ) )
+                    
+                elif logical_operator == HC.LOGICAL_OPERATOR_ONLY:
+                    
+                    # all( a, b ) and all not( c, d ) inverts to any not( a, b ) and any( c, d ) I think
+                    # my brain isn't working but I think we don't support that here
+                    
+                    pass
+                    
+                
+            
+        except Exception as e:
+            
+            HydrusData.PrintException( e )
             
             return None
             
-        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FILE_RELATIONSHIPS_KING:
-            
-            return Predicate( self._predicate_type, not self._value )
-            
-        else:
-            
-            return None
-            
+        
+        return None
         
     
     def GetMagicSortValue( self ):
@@ -1207,7 +1495,7 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             return ideal_value is None
             
         
-        if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_AGE, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
+        if self._predicate_type in ( PREDICATE_TYPE_SYSTEM_IMPORT_TIME, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
             
             # age_type
             if self._value[1] != ideal_value[1]:
@@ -1301,6 +1589,26 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             
             return number_test.Test( media_result.GetFileInfoManager().width )
             
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_DURATION:
+            
+            number_test: ClientNumberTest.NumberTest = self._value
+            
+            return number_test.Test( media_result.GetFileInfoManager().duration_ms )
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_FRAMERATE:
+            
+            number_test: ClientNumberTest.NumberTest = self._value
+            
+            framerate = media_result.GetFileInfoManager().GetFramerate()
+            
+            return number_test.Test( framerate )
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_FRAMES:
+            
+            number_test: ClientNumberTest.NumberTest = self._value
+            
+            return number_test.Test( media_result.GetFileInfoManager().num_frames )
+            
         elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HAS_EXIF:
             
             inclusive_hack = self._value is None or self._value is True
@@ -1318,6 +1626,49 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
             inclusive_hack = self._value is None or self._value is True
             
             return media_result.GetFileInfoManager().has_human_readable_embedded_metadata == inclusive_hack
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HAS_AUDIO:
+            
+            inclusive_hack = self._value is None or self._value is True
+            
+            return media_result.GetFileInfoManager().has_audio == inclusive_hack
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HAS_FORCED_FILETYPE:
+            
+            inclusive_hack = self._value is None or self._value is True
+            
+            return media_result.GetFileInfoManager().FiletypeIsForced() == inclusive_hack
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_HAS_TRANSPARENCY:
+            
+            inclusive_hack = self._value is None or self._value is True
+            
+            return media_result.GetFileInfoManager().has_transparency == inclusive_hack
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_TAGS:
+            
+            ( namespace, operator, value ) = self._value
+            
+            number_test = ClientNumberTest.NumberTest.STATICCreateFromCharacters( operator, value )
+            
+            tags = media_result.GetTagsManager().GetCurrentAndPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL )
+            
+            if namespace == '*':
+                
+                pertinent_tags = tags
+                
+            elif '*' in namespace:
+                
+                re_rule = compile_wildcard_tag_into_re( namespace + ':*' )
+                
+                pertinent_tags = { tag for tag in tags if re_rule.match( tag ) is not None }
+                
+            else:
+                
+                pertinent_tags = { tag for tag in tags if HydrusTags.SplitTag( tag )[0] == namespace }
+                
+            
+            return number_test.Test( len( pertinent_tags ) )
             
         elif self._predicate_type == PREDICATE_TYPE_SYSTEM_NUM_URLS:
             
@@ -1377,13 +1728,241 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                 return not matches
                 
             
+        elif self._predicate_type in [
+            PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
+            PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
+            PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME,
+            PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME
+        ]:
+            
+            ( operator, age_type, age_value ) = self._value
+            
+            min_timestamp_ms = None
+            max_timestamp_ms = None
+            
+            if age_type == 'delta':
+                
+                ( years, months, days, hours ) = age_value
+                
+                dt = HydrusTime.CalendarDeltaToDateTime( years, months, days, hours )
+                
+                time_pivot_ms = HydrusTime.DateTimeToTimestampMS( dt )
+                
+                # this is backwards (less than means min timestamp) because we are talking about age, not timestamp
+                
+                # the before/since semantic logic is:
+                # '<' 7 days age means 'since that date'
+                # '>' 7 days ago means 'before that date'
+                
+                if operator == '<':
+                    
+                    min_timestamp_ms = time_pivot_ms
+                    
+                elif operator == '>':
+                    
+                    max_timestamp_ms = time_pivot_ms
+                    
+                elif operator == HC.UNICODE_APPROX_EQUAL:
+                    
+                    rough_timedelta_gap = HydrusTime.CalendarDeltaToRoughDateTimeTimeDelta( years, months, days, hours ) * 0.15
+                    
+                    earliest_dt = dt - rough_timedelta_gap
+                    latest_dt = dt + rough_timedelta_gap
+                    
+                    earliest_time_pivot_ms = HydrusTime.DateTimeToTimestampMS( earliest_dt )
+                    latest_time_pivot_ms = HydrusTime.DateTimeToTimestampMS( latest_dt )
+                    
+                    min_timestamp_ms = earliest_time_pivot_ms
+                    max_timestamp_ms = latest_time_pivot_ms
+                    
+                
+            elif age_type == 'date':
+                
+                ( year, month, day, hour, minute ) = age_value
+                
+                dt = datetime.datetime( year, month, day, hour, minute )
+                
+                time_pivot_ms = HydrusTime.DateTimeToTimestampMS( dt )
+                
+                dt_day_of_start = HydrusTime.GetDateTime( year, month, day, 0, 0 )
+                
+                day_of_start_timestamp_ms = HydrusTime.DateTimeToTimestampMS( dt_day_of_start )
+                day_of_end_timestamp_ms = HydrusTime.DateTimeToTimestampMS( ClientTime.CalendarDelta( dt_day_of_start, day_delta = 1 ) )
+                
+                # the before/since semantic logic is:
+                # '<' 2022-05-05 means 'before that date'
+                # '>' 2022-05-05 means 'since that date'
+                
+                if operator == '<':
+                    
+                    max_timestamp_ms = time_pivot_ms
+                    
+                elif operator == '>':
+                    
+                    min_timestamp_ms = time_pivot_ms
+                    
+                elif operator == '=':
+                    
+                    min_timestamp_ms = day_of_start_timestamp_ms
+                    max_timestamp_ms = day_of_end_timestamp_ms
+                    
+                elif operator == HC.UNICODE_APPROX_EQUAL:
+                    
+                    previous_month_timestamp_ms = HydrusTime.DateTimeToTimestampMS( ClientTime.CalendarDelta( dt, month_delta = -1 ) )
+                    next_month_timestamp_ms = HydrusTime.DateTimeToTimestampMS( ClientTime.CalendarDelta( dt, month_delta = 1 ) )
+                    
+                    min_timestamp_ms = previous_month_timestamp_ms
+                    max_timestamp_ms = next_month_timestamp_ms
+                    
+                
+            
+            if min_timestamp_ms is None and max_timestamp_ms is None:
+                
+                return False
+                
+            
+            file_timestamp_ms_to_test = None
+            
+            if self._predicate_type == PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
+                
+                file_timestamp_ms_to_test = media_result.GetTimesManager().GetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_MODIFIED_TIME:
+                
+                file_timestamp_ms_to_test = media_result.GetTimesManager().GetAggregateModifiedTimestampMS()
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME:
+                
+                file_timestamp_ms_to_test = media_result.GetTimesManager().GetLastViewedTimestampMS( CC.CANVAS_MEDIA_VIEWER )
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME:
+                
+                file_timestamp_ms_to_test = media_result.GetTimesManager().GetArchivedTimestampMS()
+                
+            
+            if file_timestamp_ms_to_test is None: # probably means no actual archived time etc..
+                
+                return False
+                
+            
+            if min_timestamp_ms is not None:
+                
+                if file_timestamp_ms_to_test < min_timestamp_ms:
+                    
+                    return False
+                    
+                
+            
+            if max_timestamp_ms is not None:
+                
+                if file_timestamp_ms_to_test > max_timestamp_ms:
+                    
+                    return False
+                    
+                
+            
+            return True
+            
+        elif self._predicate_type == PREDICATE_TYPE_SYSTEM_TAG_ADVANCED:
+            
+            ( service_key_or_none, tag_display_type, statuses, tag ) = self._value
+            
+            tags_manager = media_result.GetTagsManager()
+            
+            we_found_it = False
+            
+            if service_key_or_none is None:
+                
+                service_key_or_none = CC.COMBINED_TAG_SERVICE_KEY
+                
+            
+            for status in statuses:
+                
+                if tag in tags_manager.GetTags( service_key_or_none, tag_display_type, status ):
+                    
+                    we_found_it = True
+                    
+                    break
+                    
+                
+            
+            if self._inclusive:
+                
+                return we_found_it
+                
+            else:
+                
+                return not we_found_it
+                
+            
+        elif self._predicate_type in ( PREDICATE_TYPE_NAMESPACE, PREDICATE_TYPE_WILDCARD, PREDICATE_TYPE_TAG ):
+            
+            tags_manager = media_result.GetTagsManager()
+            
+            tags = tags_manager.GetCurrentAndPending( CC.COMBINED_TAG_SERVICE_KEY, ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL )
+            
+            if self._predicate_type == PREDICATE_TYPE_TAG:
+                
+                tag = self._value
+                
+                inclusive_result = tag in tags
+                
+            elif self._predicate_type == PREDICATE_TYPE_NAMESPACE:
+                
+                namespace = self._value
+                
+                if '*' in namespace:
+                    
+                    re_rule = compile_wildcard_tag_into_re( namespace + ':*' )
+                    
+                    inclusive_result = True in ( re_rule.match( tag ) is not None for tag in tags )
+                    
+                else:
+                    
+                    inclusive_result = True in ( namespace == t_namespace for ( t_namespace, t_subtag ) in ( HydrusTags.SplitTag( tag ) for tag in tags ) )
+                    
+                
+            elif self._predicate_type == PREDICATE_TYPE_WILDCARD:
+                
+                # there are a bunch of possible ways to handle this, with ConvertTagToSearchable and such
+                # at the db level, however, things are pretty simple and strict
+                # let's keep it KISS here too
+                
+                wildcard = self._value
+                
+                re_rule = compile_wildcard_tag_into_re( wildcard )
+                
+                inclusive_result = True in ( re_rule.match( tag ) is not None for tag in tags )
+                
+            else:
+                
+                raise NotImplementedError( 'Unknown tag predicate type!' )
+                
+            
+            if self._inclusive:
+                
+                return inclusive_result
+                
+            else:
+                
+                return not inclusive_result
+                
+            
+        elif self._predicate_type == PREDICATE_TYPE_OR_CONTAINER:
+            
+            predicates = self._value
+            
+            return True in ( predicate.TestMediaResult( media_result ) for predicate in predicates )
+            
         else:
             
             raise NotImplementedError( f'The given predicate, "{self.ToString()}", cannot test a media result! You should not be able to get into this situation, so please contact hydev with details.' )
             
         
+        return False
+        
     
-    def ToString( self, with_count: bool = True, render_for_user: bool = False, or_under_construction: bool = False, for_parsable_export: bool = False ) -> str:
+    def _ToString( self, with_count: bool = True, render_for_user: bool = False, or_under_construction: bool = False, for_parsable_export: bool = False ) -> str:
         
         base = ''
         count_text = ''
@@ -1604,9 +2183,9 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                     base += ' is ' + HydrusNumbers.ToHumanInt( value )
                     
                 
-            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_AGE, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME  ):
+            elif self._predicate_type in ( PREDICATE_TYPE_SYSTEM_IMPORT_TIME, PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME  ):
                 
-                if self._predicate_type == PREDICATE_TYPE_SYSTEM_AGE:
+                if self._predicate_type == PREDICATE_TYPE_SYSTEM_IMPORT_TIME:
                     
                     base = 'import time'
                     
@@ -1700,6 +2279,10 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                         elif operator == HC.UNICODE_APPROX_EQUAL:
                             
                             pretty_operator = 'a month either side of '
+                            
+                        else:
+                            
+                            pretty_operator = 'unknown operator'
                             
                         
                         include_24h_time = operator != '=' and ( hour > 0 or minute > 0 )
@@ -1938,6 +2521,46 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                     base += connector + mime_text
                     
                 
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED_LEGACY:
+                
+                base = 'any rating (no longer in use, please delete this pred)'
+                
+            elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                base = 'advanced rating'
+                
+                if self._value is not None:
+                    
+                    ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = self._value
+                    
+                    base = {
+                        HC.LOGICAL_OPERATOR_ALL : 'all ',
+                        HC.LOGICAL_OPERATOR_ANY : 'any ',
+                        HC.LOGICAL_OPERATOR_ONLY : 'only ',
+                    }.get( logical_operator, 'unknown ' )
+                    
+                    if service_specifier_primary.IsOneServiceKey() and logical_operator != HC.LOGICAL_OPERATOR_ONLY:
+                        
+                        base = ''
+                        
+                    
+                    base += service_specifier_primary.ToString()
+                    
+                    if logical_operator == HC.LOGICAL_OPERATOR_ONLY and not service_specifier_secondary.IsAllRatings():
+                        
+                        base += f' (amongst {service_specifier_secondary.ToString()})'
+                        
+                    
+                    if rated:
+                        
+                        base += ' rated'
+                        
+                    else:
+                        
+                        base += ' not rated'
+                        
+                    
+                
             elif self._predicate_type == PREDICATE_TYPE_SYSTEM_RATING:
                 
                 base = 'rating'
@@ -1990,6 +2613,10 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
                             
                         
                     except HydrusExceptions.DataMissing:
+                        
+                        base = 'missing rating service system predicate'
+                        
+                    except Exception as e:
                         
                         base = 'unknown rating service system predicate'
                         
@@ -2318,6 +2945,18 @@ class Predicate( HydrusSerialisable.SerialisableBase ):
         return base
         
     
+    def ToString( self, with_count: bool = True, render_for_user: bool = False, or_under_construction: bool = False, for_parsable_export: bool = False ) -> str:
+        
+        try:
+            
+            return self._ToString( with_count = with_count, render_for_user = render_for_user, or_under_construction = or_under_construction, for_parsable_export = for_parsable_export )
+            
+        except Exception as e:
+            
+            return 'error:cannot render this predicate' + str( e )
+            
+        
+    
 
 def MergePredicates( predicates: collections.abc.Collection[ Predicate ] ):
     
@@ -2338,6 +2977,38 @@ def MergePredicates( predicates: collections.abc.Collection[ Predicate ] ):
         
     
     return list( master_predicate_dict.values() )
+    
+
+NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES = {
+    PREDICATE_TYPE_TAG,
+    PREDICATE_TYPE_NAMESPACE,
+    PREDICATE_TYPE_WILDCARD
+}
+
+def SetPredicatesInclusivity( predicates: list[ Predicate ], inclusive: bool ):
+    
+    # it is lame to set it every time, but how these lists can be populated from caches and stuff gets complicated, so we'll be comprehensively KISS
+    
+    if inclusive:
+        
+        for predicate in predicates:
+            
+            if predicate.GetType() in NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES:
+                
+                predicate.SetInclusive( True )
+                
+            
+        
+    else:
+        
+        for predicate in predicates:
+            
+            if predicate.GetType() in NON_INCLUSIVE_CAPABLE_PREDICATE_TYPES:
+                
+                predicate.SetInclusive( False )
+                
+            
+        
     
 
 def SortPredicates( predicates: list[ Predicate ] ):

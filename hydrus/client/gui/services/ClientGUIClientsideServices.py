@@ -8,10 +8,10 @@ from qtpy import QtGui as QG
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetwork
@@ -26,18 +26,18 @@ from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
 from hydrus.client.gui import ClientGUIAPI
 from hydrus.client.gui import ClientGUIAsync
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIPanels
-from hydrus.client.gui import ClientGUITags
+from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.metadata import ClientGUIMigrateTags
+from hydrus.client.gui.metadata import ClientGUITagFilter
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUIBandwidth
 from hydrus.client.gui.widgets import ClientGUIColourPicker
@@ -56,20 +56,20 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_MANAGE_SERVICES.ID, self._ConvertServiceToDisplayTuple, self._ConvertServiceToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 25, model, delete_key_callback = self._Delete, activation_callback = self._Edit)
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self._Delete, activation_callback = self._Edit, max_height_num_chars = 24 )
         
-        menu_items = []
+        menu_template_items = []
         
         for service_type in HC.ADDREMOVABLE_SERVICES:
             
             service_string = HC.service_string_lookup[ service_type ]
             
-            menu_items.append( ( 'normal', service_string, 'Add a new {}.'.format( service_string ), HydrusData.Call( self._Add, service_type ) ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( service_string, 'Add a new {}.'.format( service_string ), HydrusData.Call( self._Add, service_type ) ) )
             
         
         # TODO: wrap this list in a panel and improve these buttons' "enabled logic"
         
-        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_items = menu_items )
+        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_template_items )
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit', self._Edit )
         self._delete_button = ClientGUICommon.BetterButton( self, 'delete', self._Delete )
         
@@ -119,7 +119,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
                 
                 new_service = panel.GetValue()
                 
-                HydrusSerialisable.SetNonDupeName( new_service, self._GetExistingNames() )
+                HydrusSerialisable.SetNonDupeName( new_service, self._GetExistingNames(), do_casefold = True )
                 
                 self._listctrl.AddData( new_service, select_sort_and_scroll = True )
                 
@@ -290,7 +290,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
                 
                 existing_names.discard( service.GetName() )
                 
-                HydrusSerialisable.SetNonDupeName( edited_service, existing_names )
+                HydrusSerialisable.SetNonDupeName( edited_service, existing_names, do_casefold = True )
                 
                 self._listctrl.ReplaceData( service, edited_service, sort_and_scroll = True )
                 
@@ -342,6 +342,7 @@ class ManageClientServicesPanel( ClientGUIScrolledPanels.ManagePanel ):
         return True
         
     
+
 class EditClientServicePanel( ClientGUIScrolledPanels.EditPanel ):
     
     def __init__( self, parent, service, auto_account_creation_service_key = None ):
@@ -380,18 +381,20 @@ class EditClientServicePanel( ClientGUIScrolledPanels.EditPanel ):
         
         if self._service_type in HC.RATINGS_SERVICES:
             
-            self._panels.append( EditServiceRatingsSubPanel( self, self._service_type, self._dictionary ) )
+            ratings_live_settings_preview = EditServiceRatingSettingExamplePanel( self, self._service_key, self._service_type, self._dictionary )
+            
+            self._panels.append( EditServiceRatingsSubPanel( self, self._service_type, self._dictionary, ratings_live_settings_preview ) )
             
             if self._service_type in HC.STAR_RATINGS_SERVICES:
                 
-                self._panels.append( EditServiceStarRatingsSubPanel( self, self._dictionary ) )
+                self._panels.append( EditServiceStarRatingsSubPanel( self, self._dictionary, ratings_live_settings_preview ) )
                 
                 if self._service_type == HC.LOCAL_RATING_NUMERICAL:
                     
-                    self._panels.append( EditServiceRatingsNumericalSubPanel( self, self._dictionary ) )
+                    self._panels.append( EditServiceRatingsNumericalSubPanel( self, self._dictionary, ratings_live_settings_preview ) )
                     
                 
-            
+            self._panels.append( ratings_live_settings_preview )
         
         if self._service_type == HC.IPFS:
             
@@ -412,22 +415,6 @@ class EditClientServicePanel( ClientGUIScrolledPanels.EditPanel ):
         vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
-        
-    
-    def _GetArchiveNameToDisplay( self, portable_hta_path, namespaces ):
-        
-        hta_path = HydrusPaths.ConvertPortablePathToAbsPath( portable_hta_path )
-        
-        if len( namespaces ) == 0:
-            
-            name_to_display = hta_path
-            
-        else:
-            
-            name_to_display = hta_path + ' (' + ', '.join( HydrusTags.ConvertUglyNamespacesToPrettyStrings( namespaces ) ) + ')'
-            
-        
-        return name_to_display
         
     
     def GetValue( self ):
@@ -545,11 +532,6 @@ class EditServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_done( message ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
             self._test_address_button.setEnabled( True )
@@ -582,11 +564,11 @@ class EditServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
                 
                 network_job.WaitUntilDone()
                 
-                QP.CallAfter( qt_done, 'Looks good!' )
+                CG.client_controller.CallAfterQtSafe( self, qt_done, 'Looks good!' )
                 
             except HydrusExceptions.NetworkException as e:
                 
-                QP.CallAfter( qt_done, 'Problem with that address: ' + str(e) )
+                CG.client_controller.CallAfterQtSafe( self, qt_done, 'Problem with that address: ' + str(e) )
                 
             
         
@@ -773,35 +755,32 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( account_types ):
             
-            self._EnableDisableButtons( True )
-            
             self._SelectAccountTypeForAutoAccountCreation( account_types )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
     
     def _EnterRegistrationKey( self ):
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the registration token.' ) as dlg:
+        message = 'Enter the registration token.'
+        
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                registration_key_encoded = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            registration_key_encoded = ClientGUIDialogsQuick.EnterText( self, message )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
             
         
         if registration_key_encoded[0] == 'r':
@@ -866,20 +845,18 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( registration_key ):
             
-            self._EnableDisableButtons( True )
-            
             # break this up into the 'yep, now I have the key' and call that
             self._STARTGetAccessKeyFromRegistrationKey( registration_key )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -920,19 +897,17 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             
             self._access_key.setText( access_key_encoded )
             
-            self._EnableDisableButtons( True )
-            
             ClientGUIDialogsMessage.ShowInformation( self, 'Looks good!' )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1011,19 +986,6 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         credentials = self.GetCredentials()
         service_type = self._service_type
         
-        def qt_done( message ):
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
-            ClientGUIDialogsMessage.ShowInformation( self, message )
-            
-            self._test_credentials_button.setEnabled( True )
-            self._test_credentials_button.setText( 'test access key' )
-            
-        
         def work_callable():
             
             service = ClientServices.GenerateService( CC.TEST_SERVICE_KEY, service_type, 'test service' )
@@ -1061,19 +1023,17 @@ class EditServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         def publish_callable( message ):
             
-            self._EnableDisableButtons( True )
-            
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
         
-        def errback_ui_cleanup_callable():
+        def ui_restoration_callable():
             
             self._EnableDisableButtons( True )
             
         
         self._EnableDisableButtons( False )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1318,9 +1278,53 @@ class EditServiceTagSubPanel( ClientGUICommon.StaticBox ):
         
     
 
+class EditServiceRatingSettingExamplePanel( ClientGUICommon.StaticBox ):
+    
+    SetExampleData = QC.Signal( str, object )
+    
+    def __init__( self, parent, original_service, service_type, dictionary ):
+        
+        super().__init__( parent, 'example display', can_expand = True, start_expanded = True)
+        
+        self._rating_example_service = ClientGUIRatings.RatingPreviewServiceWrapper( original_service, CC.PREVIEW_RATINGS_SERVICE_KEY, service_type, dictionary )
+        
+        self._rating_example_display_thumbnails = self._rating_example_service.GetWidget( None, self )
+        self._rating_example_display_media_viewer = self._rating_example_service.GetWidget( CC.CANVAS_MEDIA_VIEWER, self )
+        self._rating_example_display_preview_window = self._rating_example_service.GetWidget( CC.CANVAS_PREVIEW, self )
+        self._rating_example_display_dialog = self._rating_example_service.GetWidget( CC.CANVAS_DIALOG, self )
+        
+        self.SetExampleData.connect( self._rating_example_service.SetLiveData, QC.Qt.ConnectionType.QueuedConnection )
+        self.SetExampleData.connect( self._UpdateWidgets )
+        
+        #
+        
+        rows = []
+        
+        rows.append( [ 'Thumbnails', 'Media Viewer', 'Preview Window', 'Dialog (Default)' ] )
+        rows.append( [ self._rating_example_display_thumbnails, self._rating_example_display_media_viewer, self._rating_example_display_preview_window, self._rating_example_display_dialog ] )
+        
+        gridbox = ClientGUICommon.WrapInTable( self, list( zip( *rows ) ) )
+        
+        self.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+    
+    def _UpdateWidgets( self, key_to_set, new_val ):
+        
+        self._rating_example_display_thumbnails.UpdateSize()
+        self._rating_example_display_media_viewer.UpdateSize()
+        self._rating_example_display_preview_window.UpdateSize()
+        self._rating_example_display_dialog.UpdateSize()
+        
+    
+    def GetValue( self ):
+        
+        return {}
+        
+    
+
 class EditServiceRatingsSubPanel( ClientGUICommon.StaticBox ):
     
-    def __init__( self, parent, service_type, dictionary ):
+    def __init__( self, parent, service_type, dictionary, preview_widget ):
         
         super().__init__( parent, 'rating display' )
         
@@ -1410,12 +1414,26 @@ class EditServiceRatingsSubPanel( ClientGUICommon.StaticBox ):
         
         self._show_in_thumbnail.clicked.connect( self._UpdateControls )
         
+        self._preview_widget = preview_widget
+        
+        for ( border_ctrl, fill_ctrl ) in self._colour_ctrls.values():
+            
+            border_ctrl.colourChanged.connect( self._UpdatePreviewExample )
+            fill_ctrl.colourChanged.connect( self._UpdatePreviewExample )
+            
+        
         self._UpdateControls()
         
     
     def _UpdateControls( self ):
         
         self._show_in_thumbnail_even_when_null.setEnabled( self._show_in_thumbnail.isChecked() )
+        
+    
+    def _UpdatePreviewExample( self ):
+        
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'colours', self.GetValue()[ 'colours' ] )()
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'colours', self.GetValue()[ 'colours' ] )()
         
     
     def GetValue( self ):
@@ -1446,17 +1464,19 @@ class EditServiceRatingsSubPanel( ClientGUICommon.StaticBox ):
 
 class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
     
-    def __init__( self, parent, dictionary ):
+    def __init__( self, parent, dictionary, preview_widget ):
         
         super().__init__( parent, 'rating shape' )
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_RATINGS )
         
-        menu_items.append( ( 'normal', 'open the ratings help', 'Open the help page for ratings.', page_func ) )
+        self._preview_widget = preview_widget
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the ratings help', 'Open the help page for ratings.', page_func ) )
+        
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help -->', object_name = 'HydrusIndeterminate' )
         
@@ -1541,14 +1561,14 @@ class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
             rows.append( ( 'svg: ', self._rating_svg ) )
             
         
-        # preview here, ideally a manipulable fake control, or maybe we need to be more clever with num_stars in a numerical rating
-        # fake bitmaps can also be fine
-        # scaling size dynamically would also be nice, or at least showing what the current sizes are for media viewer, thumbs, and default 12px for anywhere else
-        
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
         self.Add( help_hbox, CC.FLAGS_ON_RIGHT )
         self.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        self._shape_or_svg.radioBoxChanged.connect( self._UpdatePreviewExample )
+        self._shape.currentIndexChanged.connect( self._UpdatePreviewExample )
+        self._rating_svg.currentIndexChanged.connect( self._UpdatePreviewExample )
         
         self._UpdateControls()
         
@@ -1561,6 +1581,12 @@ class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
         
         self._shape.setEnabled( selection == 'shape' )
         self._rating_svg.setEnabled( selection == 'rating_svg' )
+        
+    
+    def _UpdatePreviewExample( self ):
+        
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'shape', self.GetValue()[ 'shape' ] )()
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'rating_svg', self.GetValue()[ 'rating_svg' ] )()
         
     
     def GetValue( self ):
@@ -1597,22 +1623,28 @@ class EditServiceStarRatingsSubPanel( ClientGUICommon.StaticBox ):
 
 class EditServiceRatingsNumericalSubPanel( ClientGUICommon.StaticBox ):
     
-    def __init__( self, parent, dictionary ):
+    def __init__( self, parent, dictionary, preview_widget ):
         
         super().__init__( parent, 'numerical ratings' )
         
         self._num_stars = ClientGUICommon.BetterSpinBox( self, min=1, max=20 )
         self._allow_zero = QW.QCheckBox( self )
         self._custom_pad = ClientGUICommon.BetterSpinBox( self, min=-64, max=64 )
-
+        self._draw_fraction = ClientGUICommon.BetterChoice( self )
+        
+        self._draw_fraction.addItem( 'do not', ClientRatings.DRAW_NO )
+        self._draw_fraction.addItem( 'show on left', ClientRatings.DRAW_ON_LEFT )
+        self._draw_fraction.addItem( 'show on right', ClientRatings.DRAW_ON_RIGHT )
         
         #
         
         self._num_stars.setValue( dictionary['num_stars'] )
         self._allow_zero.setChecked( dictionary[ 'allow_zero' ] )
         self._custom_pad.setValue( dictionary[ 'custom_pad' ] )
+        self._draw_fraction.SetValue( dictionary[ 'show_fraction_beside_stars' ] )
         
         self._custom_pad.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set the distance, in pixels, between shapes in the row. Just set this to 0 if you want to go back to the old way these icons were rendered, with them displaying as a seamless loading bar.' ) )
+        self._draw_fraction.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will add the fractional display (e.g. \'4/5\') beside the rating stars. You can choose whether it appears on the right or left.' ) )
         
         #
         
@@ -1621,10 +1653,24 @@ class EditServiceRatingsNumericalSubPanel( ClientGUICommon.StaticBox ):
         rows.append( ( 'number of \'stars\': ', self._num_stars ) )
         rows.append( ( 'allow a zero rating: ', self._allow_zero ) )
         rows.append( ( 'icon padding: ', self._custom_pad ) )
+        rows.append( ( 'draw fraction beside the rating', self._draw_fraction ) )
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
         self.Add( gridbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        
+        self._preview_widget = preview_widget
+        
+        self._num_stars.valueChanged.connect( self._UpdatePreviewExample )
+        self._custom_pad.valueChanged.connect( self._UpdatePreviewExample )
+        self._draw_fraction.currentIndexChanged.connect( self._UpdatePreviewExample )
+        
+    
+    def _UpdatePreviewExample( self ):
+        
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'num_stars', self.GetValue()[ 'num_stars' ] )()
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'custom_pad', self.GetValue()[ 'custom_pad' ] )()
+        HydrusData.Call( self._preview_widget.SetExampleData.emit, 'show_fraction_beside_stars', self.GetValue()[ 'show_fraction_beside_stars' ] )()
         
     
     def GetValue( self ):
@@ -1634,6 +1680,7 @@ class EditServiceRatingsNumericalSubPanel( ClientGUICommon.StaticBox ):
         num_stars = self._num_stars.value()
         allow_zero = self._allow_zero.isChecked()
         custom_pad = self._custom_pad.value()
+        draw_fraction = self._draw_fraction.GetValue()
         
         if num_stars == 1 and not allow_zero:
             
@@ -1643,6 +1690,7 @@ class EditServiceRatingsNumericalSubPanel( ClientGUICommon.StaticBox ):
         dictionary_part[ 'num_stars' ] = num_stars
         dictionary_part[ 'allow_zero' ] = allow_zero
         dictionary_part[ 'custom_pad' ] = custom_pad
+        dictionary_part[ 'show_fraction_beside_stars' ] = draw_fraction
         
         return dictionary_part
         
@@ -1721,7 +1769,7 @@ class ReviewServicePanel( QW.QWidget ):
         
         self._service_key_button = ClientGUICommon.BetterButton( self, 'copy service key', CG.client_controller.pub, 'clipboard', 'text', service.GetServiceKey().hex() )
         
-        self._refresh_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().refresh, self._RefreshButton )
+        self._refresh_button = ClientGUICommon.IconButton( self, CC.global_icons().refresh, self._RefreshButton )
         
         service_type = self._service.GetServiceType()
         
@@ -1744,9 +1792,9 @@ class ReviewServicePanel( QW.QWidget ):
             subpanels.append( ( ReviewServiceFileSubPanel( self, service ), CC.FLAGS_EXPAND_PERPENDICULAR ) )
             
         
-        if self._service.GetServiceKey() == CC.COMBINED_LOCAL_FILE_SERVICE_KEY:
+        if self._service.GetServiceKey() == CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY:
             
-            subpanels.append( ( ReviewServiceCombinedLocalFilesSubPanel( self, service ), CC.FLAGS_EXPAND_PERPENDICULAR ) )
+            subpanels.append( ( ReviewServiceHydrusLocalFileStorageSubPanel( self, service ), CC.FLAGS_EXPAND_PERPENDICULAR ) )
             
         
         if self._service.GetServiceKey() == CC.TRASH_SERVICE_KEY:
@@ -1855,12 +1903,6 @@ class ReviewServicePanel( QW.QWidget ):
             
             update_speed_string = ''
             
-            content_update_index_string = 'content row ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
-            
-            job_status.SetStatusText( content_update_index_string + 'committing' + update_speed_string )
-            
-            job_status.SetVariable( 'popup_gauge_1', ( c_u_p_total_weight_processed, c_u_p_num_rows ) )
-            
             for ( content_updates, weight ) in content_update_package.IterateContentUpdateChunks():
                 
                 ( i_paused, should_quit ) = job_status.WaitIfNeeded()
@@ -1872,11 +1914,11 @@ class ReviewServicePanel( QW.QWidget ):
                     return
                     
                 
-                content_update_index_string = 'content row ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
+                content_update_index_string = 'content ' + HydrusNumbers.ValueRangeToPrettyString( c_u_p_total_weight_processed, c_u_p_num_rows ) + ': '
                 
                 job_status.SetStatusText( content_update_index_string + 'committing' + update_speed_string )
                 
-                job_status.SetVariable( 'popup_gauge_1', ( c_u_p_total_weight_processed, c_u_p_num_rows ) )
+                job_status.SetGauge( c_u_p_total_weight_processed, c_u_p_num_rows )
                 
                 precise_timestamp = HydrusTime.GetNowPrecise()
                 
@@ -1891,7 +1933,7 @@ class ReviewServicePanel( QW.QWidget ):
                 c_u_p_total_weight_processed += weight
                 
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             self._service.SyncThumbnails( job_status )
             
@@ -1919,6 +1961,7 @@ class ReviewServiceSubPanel( ClientGUICommon.StaticBox ):
         self._my_updater = ClientGUIAsync.FastThreadToGUIUpdater( self, self._Refresh )
         
         self._name_and_type = ClientGUICommon.BetterStaticText( self )
+        self._name_and_type.setWordWrap( True )
         
         #
         
@@ -1933,15 +1976,12 @@ class ReviewServiceSubPanel( ClientGUICommon.StaticBox ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         name = self._service.GetName()
         service_type = self._service.GetServiceType()
         
         label = name + ' - ' + HC.service_string_lookup[ service_type ]
+        label += '\n\n'
+        label += HC.service_description_lookup[ service_type ]
         
         self._name_and_type.setText( label )
         
@@ -1956,6 +1996,7 @@ class ReviewServiceSubPanel( ClientGUICommon.StaticBox ):
             
         
     
+
 class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
     
     def __init__( self, parent, service ):
@@ -1972,16 +2013,16 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CLIENT_API_PERMISSIONS.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, 10, model, delete_key_callback = self._Delete, activation_callback = self._Edit )
+        self._permissions_list = ClientGUIListCtrl.BetterListCtrlTreeView( permissions_list_panel, 4, model, delete_key_callback = self._Delete, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         permissions_list_panel.SetListCtrl( self._permissions_list )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'manually', 'Enter the details of the share manually.', self._AddManually ) )
-        menu_items.append( ( 'normal', 'from api request', 'Listen for an access permission request from an external program via the API.', self._AddFromAPI ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'manually', 'Enter the details of the share manually.', self._AddManually ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from api request', 'Listen for an access permission request from an external program via the API.', self._AddFromAPI ) )
         
-        permissions_list_panel.AddMenuButton( 'add', menu_items )
+        permissions_list_panel.AddMenuButton( 'add', menu_template_items )
         permissions_list_panel.AddButton( 'edit', self._Edit, enabled_only_on_single_selection = True )
         permissions_list_panel.AddButton( 'duplicate', self._Duplicate, enabled_only_on_selection = True )
         permissions_list_panel.AddButton( 'delete', self._Delete, enabled_only_on_selection = True )
@@ -2144,7 +2185,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
             
             dupe.GenerateNewAccessKey()
             
-            dupe.SetNonDupeName( existing_names )
+            dupe.SetNonDupeName( existing_names, do_casefold = True )
             
             existing_names.add( dupe.GetName() )
             
@@ -2213,11 +2254,6 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         port = self._service.GetPort()
         
         if port is None:
@@ -2256,7 +2292,7 @@ class ReviewServiceClientAPISubPanel( ClientGUICommon.StaticBox ):
         
     
 
-class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
+class ReviewServiceHydrusLocalFileStorageSubPanel( ClientGUICommon.StaticBox ):
     
     def __init__( self, parent, service ):
         
@@ -2301,7 +2337,7 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
                 
                 content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, hashes )
                 
-                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                 
                 CG.client_controller.Write( 'content_updates', content_update_package )
                 
@@ -2311,11 +2347,6 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
         
     
     def _Refresh( self ):
-        
-        if not self or not QP.isValid( self ):
-            
-            return
-            
         
         CG.client_controller.CallToThread( self.THREADFetchInfo, self._service )
         
@@ -2334,11 +2365,6 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( text ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._deferred_delete_status.setText( text )
             
         
@@ -2353,7 +2379,7 @@ class ReviewServiceCombinedLocalFilesSubPanel( ClientGUICommon.StaticBox ):
             text = '{} files and {} thumbnails are awaiting physical deletion from file storage.'.format( HydrusNumbers.ToHumanInt( num_files ), HydrusNumbers.ToHumanInt( num_thumbnails ) )
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, text )
         
     
 class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
@@ -2381,11 +2407,6 @@ class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         CG.client_controller.CallToThread( self.THREADFetchInfo, self._service )
         
     
@@ -2403,11 +2424,6 @@ class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( text ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._file_info_st.setText( text )
             
         
@@ -2418,14 +2434,14 @@ class ReviewServiceFileSubPanel( ClientGUICommon.StaticBox ):
         
         text = HydrusNumbers.ToHumanInt( num_files ) + ' files, totalling ' + HydrusData.ToHumanBytes( total_size )
         
-        if service.GetServiceType() in ( HC.LOCAL_FILE_DOMAIN, HC.COMBINED_LOCAL_MEDIA, HC.COMBINED_LOCAL_FILE, HC.FILE_REPOSITORY ):
+        if service.GetServiceType() in ( HC.LOCAL_FILE_DOMAIN, HC.COMBINED_LOCAL_FILE_DOMAINS, HC.HYDRUS_LOCAL_FILE_STORAGE, HC.FILE_REPOSITORY ):
             
             num_deleted_files = service_info[ HC.SERVICE_INFO_NUM_DELETED_FILES ]
             
             text += ' - ' + HydrusNumbers.ToHumanInt( num_deleted_files ) + ' deleted files'
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, text )
         
     
 class ReviewServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
@@ -2467,11 +2483,6 @@ class ReviewServiceRemoteSubPanel( ClientGUICommon.StaticBox ):
         
     
     def _Refresh( self ):
-        
-        if not self or not QP.isValid( self ):
-            
-            return
-            
         
         credentials = self._service.GetCredentials()
         
@@ -2561,7 +2572,7 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         self._rule_widgets = []
         
-        self._network_sync_paused_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pause, self._PausePlayNetworkSync )
+        self._network_sync_paused_button = ClientGUICommon.IconButton( self, CC.global_icons().pause, self._PausePlayNetworkSync )
         self._network_sync_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play account sync' ) )
         
         self._refresh_account_button = ClientGUICommon.BetterButton( self, 'refresh account', self._RefreshAccount )
@@ -2610,11 +2621,6 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         account = self._service.GetAccount()
         
         account_type = account.GetAccountType()
@@ -2657,11 +2663,11 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         
         if self._service.IsPausedNetworkSync():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._network_sync_paused_button, CC.global_pixmaps().play )
+            self._network_sync_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._network_sync_paused_button, CC.global_pixmaps().pause )
+            self._network_sync_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         #
@@ -2718,23 +2724,23 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             self._copy_account_key_button.setEnabled( True )
             
         
-        menu_items = []
+        menu_template_items = []
         
         p_s = account_type.GetPermissionStrings()
         
         if len( p_s ) == 0:
             
-            menu_items.append( ( 'label', 'can only download', 'can only download', None ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemLabel( 'can only download', 'can only download' ) )
             
         else:
             
             for s in p_s:
                 
-                menu_items.append( ( 'label', s, s, None ) )
+                menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemLabel( s, s ) )
                 
             
         
-        self._permissions_button.SetMenuItems( menu_items )
+        self._permissions_button.SetMenuItems( menu_template_items )
         
     
     def _RefreshAccount( self ):
@@ -2748,9 +2754,9 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
             return 1
             
         
-        def publish_callable( result ):
+        def publish_callable( _ ):
             
-            self._my_updater.Update()
+            pass
             
         
         def errback_callable( etype, value, tb ):
@@ -2761,6 +2767,9 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
                 
             
             ClientGUIDialogsMessage.ShowCritical( self, 'Problem!', str( value ) )
+            
+        
+        def ui_restoration_callable():
             
             self._my_updater.Update()
             
@@ -2782,7 +2791,7 @@ class ReviewServiceRestrictedSubPanel( ClientGUICommon.StaticBox ):
         self._refresh_account_button.setEnabled( False )
         self._refresh_account_button.setText( 'fetching' + HC.UNICODE_ELLIPSIS )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -2824,18 +2833,18 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._download_progress = ClientGUICommon.TextAndGauge( self._network_panel )
         
-        self._update_downloading_paused_button = ClientGUICommon.BetterBitmapButton( self._network_panel, CC.global_pixmaps().pause, self._PausePlayUpdateDownloading )
+        self._update_downloading_paused_button = ClientGUICommon.IconButton( self._network_panel, CC.global_icons().pause, self._PausePlayUpdateDownloading )
         self._update_downloading_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play update downloading' ) )
         
         self._service_info_button = ClientGUICommon.BetterButton( self._network_panel, 'fetch service info', self._FetchServiceInfo )
         
         self._sync_remote_now_button = ClientGUICommon.BetterButton( self._network_panel, 'download now', self._SyncRemoteNow )
         
-        reset_menu_items = []
+        reset_menu_template_items = []
         
-        reset_menu_items.append( ( 'normal', 'do a full metadata resync', 'Resync all update information.', self._DoAFullMetadataResync ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'do a full metadata resync', 'Resync all update information.', self._DoAFullMetadataResync ) )
         
-        self._reset_downloading_button = ClientGUIMenuButton.MenuButton( self._network_panel, 'reset downloading', reset_menu_items )
+        self._reset_downloading_button = ClientGUIMenuButton.MenuButton( self._network_panel, 'reset downloading', reset_menu_template_items )
         
         self._export_updates_button = ClientGUICommon.BetterButton( self._network_panel, 'export updates', self._ExportUpdates )
         
@@ -2843,7 +2852,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._processing_panel = ClientGUICommon.StaticBox( self, 'processing sync', can_expand = True, start_expanded = False )
         
-        self._update_processing_paused_button = ClientGUICommon.BetterBitmapButton( self._processing_panel, CC.global_pixmaps().pause, self._PausePlayUpdateProcessing )
+        self._update_processing_paused_button = ClientGUICommon.IconButton( self._processing_panel, CC.global_icons().pause, self._PausePlayUpdateProcessing )
         self._update_processing_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play all update processing' ) )
         
         self._processing_definitions_progress = ClientGUICommon.TextAndGauge( self._processing_panel )
@@ -2858,7 +2867,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             processing_progress = ClientGUICommon.TextAndGauge( self._processing_panel )
             
-            processing_paused_button = ClientGUICommon.BetterBitmapButton( self._processing_panel, CC.global_pixmaps().pause, self._PausePlayUpdateProcessing, content_type )
+            processing_paused_button = ClientGUICommon.IconButton( self._processing_panel, CC.global_icons().pause, self._PausePlayUpdateProcessing, content_type )
             processing_paused_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'pause/play update processing for {}'.format( HC.content_type_string_lookup[ content_type ] ) ) )
             
             self._content_types_to_gauges_and_buttons[ content_type ] = ( processing_progress, processing_paused_button )
@@ -2870,16 +2879,16 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         self._sync_processing_now_button = ClientGUICommon.BetterButton( self._processing_panel, 'process now', self._SyncProcessingNow )
         
-        reset_menu_items = []
+        reset_menu_template_items = []
         
-        reset_menu_items.append( ( 'normal', 'fill in definition gaps', 'Reprocess all definitions.', self._ReprocessDefinitions ) )
-        reset_menu_items.append( ( 'normal', 'fill in content gaps', 'Reprocess all content.', self._ReprocessContent ) )
-        reset_menu_items.append( ( 'separator', None, None, None ) )
-        reset_menu_items.append( ( 'normal', 'delete and reprocess specific content', 'Reset some of the repository\'s content.', self._ResetProcessing ) )
-        reset_menu_items.append( ( 'separator', None, None, None ) )
-        reset_menu_items.append( ( 'normal', 'wipe all database data and reprocess', 'Reset entire repository.', self._Reset ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'fill in definition gaps', 'Reprocess all definitions.', self._ReprocessDefinitions ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'fill in content gaps', 'Reprocess all content.', self._ReprocessContent ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'delete and reprocess specific content', 'Reset some of the repository\'s content.', self._ResetProcessing ) )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        reset_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'wipe all database data and reprocess', 'Reset entire repository.', self._Reset ) )
         
-        self._reset_processing_button = ClientGUIMenuButton.MenuButton( self, 'reset processing', reset_menu_items )
+        self._reset_processing_button = ClientGUIMenuButton.MenuButton( self, 'reset processing', reset_menu_template_items )
         
         #
         
@@ -2986,11 +2995,6 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         def qt_done():
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._export_updates_button.setText( 'export updates' )
             self._export_updates_button.setEnabled( True )
             
@@ -3043,8 +3047,8 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                                 
                             finally:
                                 
-                                job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i + 1, num_to_do ) )
-                                job_status.SetVariable( 'popup_gauge_1', ( i, num_to_do ) )
+                                job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i, num_to_do ) )
+                                job_status.SetGauge( i, num_to_do )
                                 
                             
                         
@@ -3052,7 +3056,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                         
                     finally:
                         
-                        job_status.DeleteVariable( 'popup_gauge_1' )
+                        job_status.DeleteGauge()
                         
                         job_status.Finish()
                         
@@ -3060,22 +3064,23 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfterQtSafe( self, qt_done )
                 
             
         
-        with QP.DirDialog( self, 'Select export location.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                self._export_updates_button.setText( 'exporting' + HC.UNICODE_ELLIPSIS )
-                self._export_updates_button.setEnabled( False )
-                
-                CG.client_controller.CallToThread( do_it, path, self._service )
-                
+            path = ClientGUIDialogsQuick.PickDirectory( self, 'Select export location.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        self._export_updates_button.setText( 'exporting' + HC.UNICODE_ELLIPSIS )
+        self._export_updates_button.setEnabled( False )
+        
+        CG.client_controller.CallToThread( do_it, path, self._service )
         
     
     def _FetchServiceInfo( self ):
@@ -3110,8 +3115,6 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
-            self._my_updater.Update()
-            
         
         def errback_callable( etype, value, tb ):
             
@@ -3122,13 +3125,16 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             ClientGUIDialogsMessage.ShowCritical( self, 'Problem!', str( value ) )
             
+        
+        def ui_restoration_callable():
+            
             self._my_updater.Update()
             
         
         self._service_info_button.setEnabled( False )
         self._service_info_button.setText( 'fetching' + HC.UNICODE_ELLIPSIS )
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -3145,11 +3151,6 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         self._sync_remote_now_button.setEnabled( False )
         self._sync_processing_now_button.setEnabled( False )
         
@@ -3157,11 +3158,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         if self._service.IsPausedUpdateDownloading():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_downloading_paused_button, CC.global_pixmaps().play )
+            self._update_downloading_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_downloading_paused_button, CC.global_pixmaps().pause )
+            self._update_downloading_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         #
@@ -3177,11 +3178,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         if all_processing_paused:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_processing_paused_button, CC.global_pixmaps().play )
+            self._update_processing_paused_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._update_processing_paused_button, CC.global_pixmaps().pause )
+            self._update_processing_paused_button.SetIconSmart( CC.global_icons().pause )
             
         
         for ( gauge, button ) in self._content_types_to_gauges_and_buttons.values():
@@ -3195,11 +3196,11 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
             
             if self._service.IsPausedUpdateProcessing( content_type ):
                 
-                ClientGUIFunctions.SetBitmapButtonBitmap( button, CC.global_pixmaps().play )
+                button.SetIconSmart( CC.global_icons().play )
                 
             else:
                 
-                ClientGUIFunctions.SetBitmapButtonBitmap( button, CC.global_pixmaps().pause )
+                button.SetIconSmart( CC.global_icons().pause )
                 
             
         
@@ -3382,7 +3383,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         namespaces = CG.client_controller.network_engine.domain_manager.GetParserNamespaces()
         
-        panel = ClientGUITags.EditTagFilterPanel( frame, tag_filter, namespaces = namespaces, message = message, read_only = True )
+        panel = ClientGUITagFilter.EditTagFilterPanel( frame, tag_filter, namespaces = namespaces, message = message, read_only = True )
         
         frame.SetPanel( panel )
         
@@ -3455,11 +3456,6 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
     def THREADFetchInfo( self, service ):
         
         def qt_code( num_local_updates, num_updates, content_types_to_num_processed_updates, content_types_to_num_updates, is_mostly_caught_up ):
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
             
             download_text = 'downloaded {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_local_updates, num_updates ) )
             
@@ -3540,7 +3536,7 @@ class ReviewServiceRepositorySubPanel( QW.QWidget ):
         
         is_mostly_caught_up = service.IsMostlyCaughtUp()
         
-        QP.CallAfter( qt_code, num_local_updates, num_updates, content_types_to_num_processed_updates, content_types_to_num_updates, is_mostly_caught_up )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, num_local_updates, num_updates, content_types_to_num_processed_updates, content_types_to_num_updates, is_mostly_caught_up )
         
     
 
@@ -3560,7 +3556,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_IPFS_SHARES.ID, self._ConvertDataToDisplayTuple, self._ConvertDataToSortTuple )
         
-        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, 6, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes )
+        self._ipfs_shares = ClientGUIListCtrl.BetterListCtrlTreeView( self._ipfs_shares_panel, 4, model, delete_key_callback = self._Unpin, activation_callback = self._SetNotes, max_height_num_chars = 12 )
         
         self._ipfs_shares_panel.SetListCtrl( self._ipfs_shares )
         
@@ -3625,11 +3621,6 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
     
     def _Refresh( self ):
         
-        if not self or not QP.isValid( self ):
-            
-            return
-            
-        
         CG.client_controller.CallToThread( self.THREADFetchInfo, self._service )
         
     
@@ -3639,39 +3630,37 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         if len( datas ) > 0:
             
-            with ClientGUIDialogs.DialogTextEntry( self, 'Set a note for these shares.' ) as dlg:
+            message = 'Set a note for these shares.'
+            
+            try:
                 
-                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    note = dlg.GetValue()
-                    
-                    content_updates = []
-                    
-                    for ( multihash, num_files, total_size, old_note ) in datas:
-                        
-                        hashes = CG.client_controller.Read( 'service_directory', self._service.GetServiceKey(), multihash )
-                        
-                        content_update_row = ( hashes, multihash, note )
-                        
-                        content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_DIRECTORIES, HC.CONTENT_UPDATE_ADD, content_update_row ) )
-                        
-                    
-                    CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( self._service.GetServiceKey(), content_updates ) )
-                    
-                    self._my_updater.Update()
-                    
+                note = ClientGUIDialogsQuick.EnterText( self, message )
                 
+            except HydrusExceptions.CancelledException:
+                
+                return
+                
+            
+            content_updates = []
+            
+            for ( multihash, num_files, total_size, old_note ) in datas:
+                
+                hashes = CG.client_controller.Read( 'service_directory', self._service.GetServiceKey(), multihash )
+                
+                content_update_row = ( hashes, multihash, note )
+                
+                content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_DIRECTORIES, HC.CONTENT_UPDATE_ADD, content_update_row ) )
+                
+            
+            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( self._service.GetServiceKey(), content_updates ) )
+            
+            self._my_updater.Update()
             
         
     
     def _ShowSelectedInNewPages( self ):
         
         def qt_done():
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
             
             self._ipfs_shares_panel.setEnabled( True )
             
@@ -3680,7 +3669,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
             
             try:
                 
-                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                 
                 for ( multihash, num_files, total_size, note ) in shares:
                     
@@ -3693,7 +3682,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfterQtSafe( self, qt_done )
                 
             
         
@@ -3707,11 +3696,6 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
     def _Unpin( self ):
         
         def qt_done():
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
             
             self._ipfs_shares_panel.setEnabled( True )
             
@@ -3729,7 +3713,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
                 
             finally:
                 
-                QP.CallAfter( qt_done )
+                CG.client_controller.CallAfterQtSafe( self, qt_done )
                 
             
         
@@ -3764,11 +3748,6 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( ipfs_shares ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             # list of ( multihash, num_files, total_size, note )
             
             self._ipfs_shares.SetData( ipfs_shares )
@@ -3776,7 +3755,7 @@ class ReviewServiceIPFSSubPanel( ClientGUICommon.StaticBox ):
         
         ipfs_shares = CG.client_controller.Read( 'service_directories', service.GetServiceKey() )
         
-        QP.CallAfter( qt_code, ipfs_shares )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, ipfs_shares )
         
     
 
@@ -3792,14 +3771,14 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         self._rating_info_st = ClientGUICommon.BetterStaticText( self )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'for deleted files', 'delete all set ratings for files that have since been deleted', HydrusData.Call(  self._ClearRatings, 'delete_for_deleted_files', 'deleted files' ) ) )
-        menu_items.append( ( 'normal', 'for all non-local files', 'delete all set ratings for files that are not in this client right now', HydrusData.Call( self._ClearRatings, 'delete_for_non_local_files', 'non-local files' ) ) )
-        menu_items.append( ( 'separator', None, None, None ) )
-        menu_items.append( ( 'normal', 'for all files', 'delete all set ratings for all files', HydrusData.Call( self._ClearRatings, 'delete_for_all_files', 'ALL FILES' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for deleted files', 'delete all set ratings for files that have since been deleted', HydrusData.Call(  self._ClearRatings, 'delete_for_deleted_files', 'deleted files' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for all non-local files', 'delete all set ratings for files that are not in this client right now', HydrusData.Call( self._ClearRatings, 'delete_for_non_local_files', 'non-local files' ) ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'for all files', 'delete all set ratings for all files', HydrusData.Call( self._ClearRatings, 'delete_for_all_files', 'ALL FILES' ) ) )
         
-        self._clear_deleted = ClientGUIMenuButton.MenuButton( self, 'clear ratings', menu_items )
+        self._clear_deleted = ClientGUIMenuButton.MenuButton( self, 'clear ratings', menu_template_items )
         
         #
         
@@ -3852,11 +3831,6 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( text ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._rating_info_st.setText( text )
             
         
@@ -3866,7 +3840,7 @@ class ReviewServiceRatingSubPanel( ClientGUICommon.StaticBox ):
         
         text = HydrusNumbers.ToHumanInt( num_files ) + ' files are rated'
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, text )
         
     
 
@@ -3926,11 +3900,6 @@ class ReviewServiceTagSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( text ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._tag_info_st.setText( text )
             
         
@@ -3949,7 +3918,7 @@ class ReviewServiceTagSubPanel( ClientGUICommon.StaticBox ):
             text += ' - ' + HydrusNumbers.ToHumanInt( num_deleted_mappings ) + ' deleted mappings'
             
         
-        QP.CallAfter( qt_code, text )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, text )
         
     
 
@@ -3999,11 +3968,11 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
                 
                 hashes = CG.client_controller.Read( 'trash_hashes' )
                 
-                for group_of_hashes in HydrusData.SplitIteratorIntoChunks( hashes, 16 ):
+                for group_of_hashes in HydrusLists.SplitIteratorIntoChunks( hashes, 16 ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, group_of_hashes )
                     
-                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                     
                     CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
                     
@@ -4026,7 +3995,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
     
     def _UndeleteAll( self ):
         
-        message = 'This will instruct your database to restore all files currently in the trash to all the local file services they have been in.'
+        message = 'This will instruct your database to restore all files currently in the trash to all the local file domains they have been in.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message, yes_label = 'do it', no_label = 'forget it' )
         
@@ -4061,11 +4030,6 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
         
         def qt_code( num_files ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._clear_trash.setEnabled( num_files > 0 )
             self._undelete_all.setEnabled( num_files > 0 )
             
@@ -4074,7 +4038,7 @@ class ReviewServiceTrashSubPanel( ClientGUICommon.StaticBox ):
         
         num_files = service_info[ HC.SERVICE_INFO_NUM_FILES ]
         
-        QP.CallAfter( qt_code, num_files )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, num_files )
         
     
 class ReviewServicesPanel( ClientGUIScrolledPanels.ReviewPanel ):
@@ -4123,7 +4087,7 @@ class ReviewServicesPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 previous_service_key = page.GetServiceKey()
                 
             
-        except:
+        except Exception as e:
             
             previous_service_key = None
             

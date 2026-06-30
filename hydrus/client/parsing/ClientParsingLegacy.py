@@ -317,7 +317,7 @@ class ParseRootFileLookup( HydrusSerialisable.SerialisableBaseNamed ):
                 
                 return other_hash
                 
-            except:
+            except Exception as e:
                 
                 raise Exception( 'I do not know that file\'s ' + hash_type + ' hash, so I cannot look it up!' )
                 
@@ -453,6 +453,13 @@ class ParseRootFileLookup( HydrusSerialisable.SerialisableBaseNamed ):
                 
                 f.close()
                 
+            
+        
+        if self._query_type == HC.GET:
+            
+            actual_fetched_url = network_job.GetActualFetchedURL()
+            
+            job_status.AddURL( actual_fetched_url )
             
         
         if job_status.IsCancelled():

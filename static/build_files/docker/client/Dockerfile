@@ -1,4 +1,4 @@
-FROM alpine:3.19
+FROM alpine:3.23
 
 ARG UID
 ARG GID
@@ -7,13 +7,16 @@ ARG GID
 ENTRYPOINT ["/bin/sh", "/opt/hydrus/static/build_files/docker/client/entrypoint.sh"]
 LABEL git="https://github.com/hydrusnetwork/hydrus"
 
-RUN apk --no-cache add fvwm xvfb opencv mpv mpv-libs ffmpeg jq libheif \
+RUN apk --no-cache add fvwm xvfb xpra dbus-x11 opencv mpv mpv-libs ffmpeg jq libheif shadow \
  openssl nodejs patch font-noto font-noto-emoji font-noto-cjk \
- py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet \
- py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity
-RUN apk --no-cache add build-base python3-dev fribidi-dev harfbuzz-dev jpeg-dev lcms2-dev openjpeg-dev libjpeg-turbo-dev libheif-dev
-RUN apk --no-cache add xpra dbus-x11
-RUN pip install --break-system-packages Send2Trash cbor2 Pympler pillow-heif dateparser
+ py3-pyside6 py3-beautifulsoup4 py3-pillow py3-numpy py3-openssl py3-cryptography py3-pip py3-opencv py3-lxml py3-chardet py3-send2trash py3-cbor2 \
+ py3-psutil py3-pysocks py3-requests py3-twisted py3-yaml py3-lz4 py3-html5lib py3-dateutil py3-qtpy py3-mpv py3-service_identity py3-parsing py3-olefile \
+ build-base libavif-dev libheif-dev libjxl-dev python3-dev freetype-dev fribidi-dev lcms2-dev libimagequant-dev libjpeg-turbo-dev libpng-dev libwebp-dev libxcb-dev openjpeg-dev py3-gpep517 py3-setuptools py3-wheel python3-dev tiff-dev zlib-dev
+
+RUN python3 -m venv /opt/venv --system-site-packages
+RUN /opt/venv/bin/pip install dateparser Pympler pillow-avif-plugin pillow-heif pillow-jxl-plugin
+
+RUN ln -fs /usr/bin/python3 /usr/bin/python && ln -fs /usr/bin/pip3 /usr/bin/pip
 
 RUN set -xe \
     && mkdir -p /opt/hydrus \
@@ -22,13 +25,12 @@ RUN set -xe \
 
 COPY --chown=hydrus . /opt/hydrus
 
-RUN ln -fs /usr/bin/python3 /usr/bin/python && ln -fs /usr/bin/pip3 /usr/bin/pip
-
 VOLUME /opt/hydrus/db
 
 ENV QT_SCALE_FACTOR=1.1 \
-    SUPERVISOR_PORT=9001 \
     UID=${UID:-1000} \
     GID=${GID:-1000} \
     DB_DIR=/opt/hydrus/db \
     HYDRUS_EXTRA=""
+
+EXPOSE 2222

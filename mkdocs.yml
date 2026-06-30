@@ -35,16 +35,17 @@ nav:
     - advanced.md
     - reducing_lag.md
     - database_migration.md
+    - database_merging.md
+    - custom_assets.md
     - launch_arguments.md
     - ipfs.md
     - server.md
     - Alternate Installations:
+      - running_from_source.md
       - docker.md
       - wine.md
-      - running_from_source.md
     - Downloader Creation:
       - Introduction: downloader_intro.md
-      - downloader_gugs.md
       - downloader_url_classes.md
       - Parsers:
         - Overview: downloader_parsers.md
@@ -56,6 +57,7 @@ nav:
           - downloader_parsers_full_example_gallery_page.md
           - downloader_parsers_full_example_file_page.md
           - downloader_parsers_full_example_api.md
+      - downloader_gugs.md
       - downloader_completion.md
       - downloader_sharing.md
       - downloader_login.md
@@ -119,8 +121,10 @@ extra:
     - icon: fontawesome/brands/tumblr
       link: https://hydrus.tumblr.com/
     - icon: fontawesome/solid/envelope
-      link: mailto:hydrus.admin@gmail.com
+      link: mailto:hydrus_dev@proton.me
     - icon: fontawesome/brands/discord
+      link: mailto:hydrus.admin@gmail.com
+    - icon: fontawesome/solid/envelope
       link: https://discord.gg/wPHPCUZ
     - icon: fontawesome/brands/patreon
       link: https://www.patreon.com/hydrus_dev

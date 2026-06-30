@@ -1,8 +1,8 @@
 import collections.abc
 import os
-import typing
 
 from hydrus.core import HydrusConstants as HC
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
@@ -32,7 +32,7 @@ class SingleFileMetadataImporter( ClientMetadataMigrationCore.ImporterExporterNo
         return self._string_processor
         
     
-    def Import( self, *args, **kwargs ) -> collections.abc.Collection[ str ]:
+    def Import( self, *args, **kwargs ) -> list[ str ]:
         
         rows = self.ImportSansStringProcessing( *args, **kwargs )
         
@@ -44,7 +44,7 @@ class SingleFileMetadataImporter( ClientMetadataMigrationCore.ImporterExporterNo
         return rows
         
     
-    def ImportSansStringProcessing( self, *args, **kwargs ) -> collections.abc.Collection[ str ]:
+    def ImportSansStringProcessing( self, *args, **kwargs ) -> list[ str ]:
         
         raise NotImplementedError()
         
@@ -57,12 +57,12 @@ class SingleFileMetadataImporter( ClientMetadataMigrationCore.ImporterExporterNo
 
 class SingleFileMetadataImporterMedia( SingleFileMetadataImporter ):
     
-    def Import( self, media_result: ClientMediaResult.MediaResult ) -> collections.abc.Collection[ str ]:
+    def Import( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
         return super().Import( media_result )
         
     
-    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> collections.abc.Collection[ str ]:
+    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
         return super().ImportSansStringProcessing( media_result )
         
@@ -79,7 +79,7 @@ class SingleFileMetadataImporterMediaNotes( SingleFileMetadataImporterMedia, Hyd
     SERIALISABLE_NAME = 'Metadata Single File Importer Media Notes'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, string_processor: typing.Optional[ ClientStrings.StringProcessor ] = None ):
+    def __init__( self, string_processor: ClientStrings.StringProcessor | None = None ):
         
         if string_processor is None:
             
@@ -113,7 +113,7 @@ class SingleFileMetadataImporterMediaNotes( SingleFileMetadataImporterMedia, Hyd
         return examples
         
     
-    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ):
+    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
         names_to_notes = media_result.GetNotesManager().GetNamesToNotes()
         
@@ -239,12 +239,16 @@ class SingleFileMetadataImporterMediaTags( SingleFileMetadataImporterMedia, Hydr
         return self._tag_display_type
         
     
-    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ):
+    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
         tags = media_result.GetTagsManager().GetCurrent( self._service_key, self._tag_display_type )
         
         # turning ::) into :)
-        tags = { HydrusText.re_leading_double_colon.sub( ':', tag ) for tag in tags }
+        tags = [ HydrusText.re_leading_double_colon.sub( ':', tag ) for tag in tags ]
+        
+        tags = HydrusLists.DedupeList( tags )
+        
+        HydrusText.HumanTextSort( tags )
         
         return tags
         
@@ -260,7 +264,7 @@ class SingleFileMetadataImporterMediaTags( SingleFileMetadataImporterMedia, Hydr
             
             name = CG.client_controller.services_manager.GetName( self._service_key )
             
-        except:
+        except Exception as e:
             
             name = 'unknown service'
             
@@ -333,7 +337,7 @@ class SingleFileMetadataImporterMediaTimestamps( SingleFileMetadataImporterMedia
         return self._timestamp_data_stub
         
     
-    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ):
+    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
         rows = []
         
@@ -425,9 +429,9 @@ class SingleFileMetadataImporterMediaURLs( SingleFileMetadataImporterMedia, Hydr
         return examples
         
     
-    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ):
+    def ImportSansStringProcessing( self, media_result: ClientMediaResult.MediaResult ) -> list[ str ]:
         
-        urls = media_result.GetLocationsManager().GetURLs()
+        urls = sorted( media_result.GetLocationsManager().GetURLs() )
         
         return urls
         
@@ -461,7 +465,7 @@ class SingleFileMetadataImporterSidecar( SingleFileMetadataImporter, ClientMetad
         raise NotImplementedError()
         
     
-    def GetSidecarPath( self, actual_file_path ) -> typing.Optional[ str ]:
+    def GetSidecarPath( self, actual_file_path ) -> str | None:
         
         possible_paths = self.GetPossibleSidecarPaths( actual_file_path )
         
@@ -476,12 +480,12 @@ class SingleFileMetadataImporterSidecar( SingleFileMetadataImporter, ClientMetad
         return None
         
     
-    def Import( self, actual_file_path: str ) -> collections.abc.Collection[ str ]:
+    def Import( self, actual_file_path: str ) -> list[ str ]:
         
         return super().Import( actual_file_path )
         
     
-    def ImportSansStringProcessing( self, actual_file_path: str ) -> collections.abc.Collection[ str ]:
+    def ImportSansStringProcessing( self, actual_file_path: str ) -> list[ str ]:
         
         return super().ImportSansStringProcessing( actual_file_path )
         
@@ -593,7 +597,7 @@ class SingleFileMetadataImporterJSON( SingleFileMetadataImporterSidecar, HydrusS
         return self._json_parsing_formula
         
     
-    def ImportSansStringProcessing( self, actual_file_path: str ) -> collections.abc.Collection[ str ]:
+    def ImportSansStringProcessing( self, actual_file_path: str ) -> list[ str ]:
         
         path = self.GetSidecarPath( actual_file_path )
         
@@ -752,7 +756,7 @@ class SingleFileMetadataImporterTXT( SingleFileMetadataImporterSidecar, HydrusSe
         return self._separator
         
     
-    def ImportSansStringProcessing( self, actual_file_path: str ) -> collections.abc.Collection[ str ]:
+    def ImportSansStringProcessing( self, actual_file_path: str ) -> list[ str ]:
         
         path = self.GetSidecarPath( actual_file_path )
         

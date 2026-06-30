@@ -2,13 +2,13 @@ import collections
 import collections.abc
 import threading
 import time
-import typing
 
 import sqlite3
 
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusPaths
+from hydrus.core import HydrusProfiling
 from hydrus.core import HydrusPSUtil
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusTemp
@@ -50,7 +50,7 @@ def CheckHasSpaceForDBTransaction( db_dir, num_bytes, no_temp_needed = False ):
         
     else:
         
-        temp_dir = HydrusTemp.GetCurrentTempDir()
+        temp_dir = HydrusTemp.GetCurrentSQLiteTempDir()
         
         temp_disk_free_space = HydrusPaths.GetFreeSpace( temp_dir )
         
@@ -62,14 +62,14 @@ def CheckHasSpaceForDBTransaction( db_dir, num_bytes, no_temp_needed = False ):
             
             if temp_disk_free_space is not None and temp_disk_free_space < space_needed:
                 
-                raise Exception( f'I believe you need about {HydrusData.ToHumanBytes( space_needed )} on your db\'s disk partition (perhaps only temporarily), which I think also holds your temporary path ({temp_dir}), but you only seem to have {HydrusData.ToHumanBytes( temp_disk_free_space )}.' )
+                raise Exception( f'I believe you need about {HydrusData.ToHumanBytes( space_needed )} on your db\'s disk partition (perhaps only temporarily), which I think also holds your SQLite temporary path ({temp_dir}), but you only seem to have {HydrusData.ToHumanBytes( temp_disk_free_space )}.' )
                 
             
         else:
             
             if temp_disk_free_space is not None and temp_disk_free_space < temp_space_needed:
                 
-                message = f'I believe you need about {HydrusData.ToHumanBytes( temp_space_needed )} on your temporary path\'s disk partition, which I think is "{temp_dir}", but you only seem to have {HydrusData.ToHumanBytes( temp_disk_free_space )}.'
+                message = f'I believe you need about {HydrusData.ToHumanBytes( temp_space_needed )} free on the disk partition holding your SQLite temporary path, which I think is "{temp_dir}", but you only seem to have {HydrusData.ToHumanBytes( temp_disk_free_space )}.'
                 
                 temp_total_space = HydrusPaths.GetTotalSpace( temp_dir )
                 
@@ -243,6 +243,10 @@ class TemporaryIntegerTable( object ):
             if not self._initialised:
                 
                 column_defs = ', '.join( ( f'{column_name} INTEGER' for column_name in self._column_names ) )
+                
+                columns_listed = ', '.join( self._column_names )
+                
+                column_defs += f', PRIMARY KEY ( {columns_listed} )'
                 
                 self._cursor.execute( f'CREATE TABLE IF NOT EXISTS {self._table_name} ( {column_defs} );' )
                 
@@ -433,19 +437,22 @@ class DBBase( object ):
     
     def _Execute( self, query, *query_args ) -> sqlite3.Cursor:
         
-        if HG.query_planner_mode and query not in HG.queries_planned:
+        if HydrusProfiling.query_planner_mode and query not in HydrusProfiling.queries_planned:
             
             plan_lines = self._c.execute( 'EXPLAIN QUERY PLAN {}'.format( query ), *query_args ).fetchall()
             
-            HG.query_planner_query_count += 1
-            
-            HG.controller.PrintQueryPlan( query, plan_lines )
+            HydrusProfiling.PrintQueryPlan( query, plan_lines )
             
         
         return self._c.execute( query, *query_args )
         
     
     def _ExecuteCancellable( self, query, query_args, cancelled_hook: collections.abc.Callable[ [], bool ] ):
+        
+        if cancelled_hook is not None and cancelled_hook():
+            
+            return []
+            
         
         cursor = self._Execute( query, query_args )
         
@@ -454,7 +461,7 @@ class DBBase( object ):
     
     def _ExecuteMany( self, query, args_iterator ):
         
-        if HG.query_planner_mode and query not in HG.queries_planned:
+        if HydrusProfiling.query_planner_mode and query not in HydrusProfiling.queries_planned:
             
             args_iterator = list( args_iterator )
             
@@ -462,9 +469,7 @@ class DBBase( object ):
                 
                 plan_lines = self._c.execute( 'EXPLAIN QUERY PLAN {}'.format( query ), args_iterator[0] ).fetchall()
                 
-                HG.query_planner_query_count += 1
-                
-                HG.controller.PrintQueryPlan( query, plan_lines )
+                HydrusProfiling.PrintQueryPlan( query, plan_lines )
                 
             
         
@@ -511,7 +516,7 @@ class DBBase( object ):
             
         
     
-    def _GetSumResult( self, result: typing.Optional[ tuple[ typing.Optional[ int ] ] ] ) -> int:
+    def _GetSumResult( self, result: tuple[ int | None ] | None ) -> int:
         
         if result is None or result[0] is None:
             
@@ -688,7 +693,7 @@ class DBCursorTransactionWrapper( DBBase ):
         
     
     def _ZeroJournal( self ):
-    
+        
         if HG.db_journal_mode not in ( 'PERSIST', 'WAL' ):
             
             return
@@ -876,6 +881,9 @@ class DBCursorTransactionWrapper( DBBase ):
     
     def TimeToCommit( self ):
         
-        return self._in_transaction and self._transaction_contains_writes and ( HydrusTime.TimeHasPassed( self._transaction_start_time + self._transaction_commit_period ) or self._committing_as_soon_as_possible )
+        p1 = self._committing_as_soon_as_possible
+        p2 = self._transaction_contains_writes and HydrusTime.TimeHasPassed( self._transaction_start_time + self._transaction_commit_period )
+        
+        return self._in_transaction and ( p1 or p2 )
         
     

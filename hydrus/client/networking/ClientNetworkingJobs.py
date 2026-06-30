@@ -1,9 +1,8 @@
 import datetime
-import io
 import os
-import typing
 
 import requests
+import tempfile
 import threading
 import traceback
 import time
@@ -14,16 +13,20 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
-from hydrus.core import HydrusThreading
+from hydrus.core import HydrusPaths
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetworking
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientTime
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingFunctions
+from hydrus.client.networking import ClientNetworkingDomainSettings
+
+from hydrus.client.importing.options import FileFilteringImportOptions
 
 def ConvertStatusCodeAndDataIntoExceptionInfo( status_code, data, is_hydrus_service = False ):
     
@@ -46,6 +49,8 @@ def ConvertStatusCodeAndDataIntoExceptionInfo( status_code, data, is_hydrus_serv
         eclass = HydrusExceptions.MissingCredentialsException
         
     elif status_code == 403:
+        
+        print_long_error_text = False
         
         eclass = HydrusExceptions.InsufficientCredentialsException
         
@@ -83,13 +88,21 @@ def ConvertStatusCodeAndDataIntoExceptionInfo( status_code, data, is_hydrus_serv
         
         eclass = HydrusExceptions.BandwidthException
         
+    elif status_code == 451:
+        
+        eclass = HydrusExceptions.CensorshipException
+        
     elif status_code in ( 509, 529 ):
         
         eclass = HydrusExceptions.BandwidthException
         
-    elif status_code == 502:
+        print_long_error_text = False
+        
+    elif status_code in ( 502, 522 ):
         
         eclass = HydrusExceptions.ShouldReattemptNetworkException
+        
+        print_long_error_text = False
         
     elif status_code == 503:
         
@@ -101,6 +114,8 @@ def ConvertStatusCodeAndDataIntoExceptionInfo( status_code, data, is_hydrus_serv
             
             eclass = HydrusExceptions.ShouldReattemptNetworkException
             
+        
+        print_long_error_text = False
         
     elif status_code >= 500:
         
@@ -166,16 +181,6 @@ class NetworkJob( object ):
         self._response_server_header = None
         self._response_last_modified = None
         
-        if self._temp_path is None:
-            
-            # 100MB HTML file lmao
-            self._max_allowed_bytes = 104857600
-            
-        else:
-            
-            self._max_allowed_bytes = None
-            
-        
         self._files = None
         self._for_login = False
         
@@ -196,10 +201,9 @@ class NetworkJob( object ):
         self._encoding = 'utf-8'
         self._the_network_job_gave_an_encoding = False
         
-        self._stream_io = io.BytesIO()
+        self._stream_io = tempfile.SpooledTemporaryFile( max_size = 10 * 1048576, mode = 'w+b' )
         
-        self._error_exception = Exception( 'Exception not initialised.' ) # PyLint hint, wew
-        self._error_exception = None
+        self._error_exception: Exception | None = None
         self._error_text = None
         
         self._is_done_event = threading.Event()
@@ -225,11 +229,16 @@ class NetworkJob( object ):
         self._num_bytes_expected_in_this_range_chunk = None
         self._number_of_concurrent_empty_chunks = 0
         
-        self._file_import_options = None
+        self._file_filtering_import_options = None
         
         self._network_contexts = self._GenerateNetworkContexts()
         
         ( self._session_network_context, self._login_network_context ) = self._GenerateSpecificNetworkContexts()
+        
+    
+    def __del__( self ):
+        
+        self._stream_io.close()
         
     
     def _CanReattemptConnection( self ):
@@ -277,7 +286,7 @@ class NetworkJob( object ):
                 
                 try:
                     
-                    last_modified_time = ClientTime.ParseDate( last_modified_string )
+                    last_modified_time = int( ClientTime.ParseDate( last_modified_string ) )
                     
                     if ClientTime.TimestampIsSensible( last_modified_time ):
                         
@@ -286,7 +295,7 @@ class NetworkJob( object ):
                         we_did_it = True
                         
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -312,7 +321,7 @@ class NetworkJob( object ):
                         we_did_it = True
                         
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -467,16 +476,11 @@ class NetworkJob( object ):
                 
                 if self._num_bytes_to_read is not None:
                     
-                    if self._max_allowed_bytes is not None and self._num_bytes_to_read > self._max_allowed_bytes:
-                        
-                        raise HydrusExceptions.NetworkException( 'The url was apparently {} but the max network size for this type of job is {}!'.format( HydrusData.ToHumanBytes( self._num_bytes_to_read ), HydrusData.ToHumanBytes( self._max_allowed_bytes ) ) )
-                        
-                    
-                    if self._file_import_options is not None:
+                    if self._file_filtering_import_options is not None:
                         
                         is_complete_file_size = True
                         
-                        self._file_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_to_read, is_complete_file_size )
+                        self._file_filtering_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_to_read, is_complete_file_size )
                         
                     
                 
@@ -524,12 +528,12 @@ class NetworkJob( object ):
                                 
                                 self._num_bytes_expected_in_this_range_chunk = ( byte_end - byte_start ) + 1
                                 
-                            except:
+                            except Exception as e:
                                 
                                 pass
                                 
                             
-                        except:
+                        except Exception as e:
                             
                             pass
                             
@@ -545,7 +549,7 @@ class NetworkJob( object ):
                                 
                                 self._num_bytes_to_read = num_bytes
                                 
-                            except:
+                            except Exception as e:
                                 
                                 pass
                                 
@@ -616,16 +620,11 @@ class NetworkJob( object ):
                         
                     
                 
-                if self._max_allowed_bytes is not None and self._num_bytes_read > self._max_allowed_bytes:
-                    
-                    raise HydrusExceptions.NetworkException( 'The url exceeded the max network size for this type of job, which is {}!'.format( HydrusData.ToHumanBytes( self._max_allowed_bytes ) ) )
-                    
-                
-                if self._file_import_options is not None:
+                if self._file_filtering_import_options is not None:
                     
                     is_complete_file_size = False
                     
-                    self._file_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_read, is_complete_file_size )
+                    self._file_filtering_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_read, is_complete_file_size )
                     
                 
             
@@ -679,11 +678,11 @@ class NetworkJob( object ):
         
         if not we_know_there_is_more_to_download:
             
-            if self._file_import_options is not None:
+            if self._file_filtering_import_options is not None:
                 
                 is_complete_file_size = True
                 
-                self._file_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_read, is_complete_file_size )
+                self._file_filtering_import_options.CheckNetworkDownload( self._response_mime, self._num_bytes_read, is_complete_file_size )
                 
             
         
@@ -706,7 +705,8 @@ class NetworkJob( object ):
         
         self._encoding = 'utf-8'
         
-        self._stream_io = io.BytesIO()
+        self._stream_io.close()
+        self._stream_io = tempfile.SpooledTemporaryFile( max_size = 10 * 1048576, mode = 'w+b' )
         
         self._num_bytes_read = 0
         self._num_bytes_to_read = None
@@ -759,7 +759,6 @@ class NetworkJob( object ):
                 headers[ 'Range' ] = 'bytes={}-'.format( self._num_bytes_read )
                 
             
-            
             ClientNetworkingFunctions.NetworkReportMode( f'Network Jobs Referral URLs for {url}:\nGiven: {self._referral_url}\nUsed: {referral_url}' )
             
             if referral_url is not None:
@@ -775,7 +774,7 @@ class NetworkJob( object ):
                         # it prob has some weird unicode characters in it, so let's encode
                         referral_url = ClientNetworkingFunctions.EnsureURLIsEncoded( referral_url )
                         
-                    except:
+                    except Exception as e:
                         
                         # ok this situation is crazy, so let's fall back to what I read in StackExchange an eon ago
                         # quick and dirty way to quote this url when it comes here with full unicode chars. not perfect, but does the job
@@ -912,7 +911,7 @@ class NetworkJob( object ):
             
             with self._lock:
                 
-                self._status_text = '{} - retrying in {}'.format( status_text, HydrusTime.TimestampToPrettyTimeDelta( self._connection_error_wake_time ) )
+                self._status_text = '{} - retrying {}'.format( status_text, HydrusTime.TimestampToPrettyTimeDelta( self._connection_error_wake_time ) )
                 
             
             time.sleep( 1 )
@@ -965,7 +964,7 @@ class NetworkJob( object ):
             
             with self._lock:
                 
-                self._status_text = '{} - retrying in {}'.format( status_text, HydrusTime.TimestampToPrettyTimeDelta( self._serverside_bandwidth_wake_time ) )
+                self._status_text = '{} - retrying {}'.format( status_text, HydrusTime.TimestampToPrettyTimeDelta( self._serverside_bandwidth_wake_time ) )
                 
             
             time.sleep( 1 )
@@ -1198,7 +1197,7 @@ class NetworkJob( object ):
             
         
     
-    def GetLastModifiedTime( self ) -> typing.Optional[ int ]:
+    def GetLastModifiedTime( self ) -> int | None:
         
         with self._lock:
             
@@ -1408,11 +1407,11 @@ class NetworkJob( object ):
             
         
     
-    def SetFileImportOptions( self, file_import_options ):
+    def SetFileFilteringImportOptions( self, file_filtering_import_options: FileFilteringImportOptions.FileFilteringImportOptions ):
         
         with self._lock:
             
-            self._file_import_options = file_import_options
+            self._file_filtering_import_options = file_filtering_import_options
             
         
     
@@ -1558,8 +1557,10 @@ class NetworkJob( object ):
                             self._status_text = str( response.status_code ) + ' - ' + str( response.reason )
                             
                         
+                        stream_dest = self._stream_io
+                        
                         # don't care about 'more_to_download' here. lmao if some server ever tried to pull it off anyway
-                        self._ReadResponse( response, self._stream_io )
+                        self._ReadResponse( response, stream_dest )
                         
                         data = self.GetContentBytes()
                         
@@ -1601,15 +1602,15 @@ class NetworkJob( object ):
                                 
                                 num_seconds_to_wait = int( retry_after )
                                 
-                            except:
+                            except Exception as e:
                                 
                                 try:
                                     
-                                    timestamp = ClientTime.ParseDate( retry_after )
+                                    timestamp = int( ClientTime.ParseDate( retry_after ) )
                                     
                                     num_seconds_to_wait = min( max( 60, timestamp - HydrusTime.GetNow() ), 86400 )
                                     
-                                except:
+                                except Exception as e:
                                     
                                     HydrusData.Print( f'Was given an unparsable Retry-After of {retry_after}!' )
                                     
@@ -1621,7 +1622,7 @@ class NetworkJob( object ):
                     
                     if self._CanReattemptRequest():
                         
-                        self.engine.domain_manager.ReportNetworkInfrastructureError( self._url )
+                        self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_SERVERSIDE_BANDWIDTH )
                         
                     else:
                         
@@ -1679,7 +1680,7 @@ class NetworkJob( object ):
                     
                     if self._CanReattemptConnection():
                         
-                        self.engine.domain_manager.ReportNetworkInfrastructureError( self._url )
+                        self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
                         
                     else:
                         
@@ -1710,7 +1711,7 @@ class NetworkJob( object ):
                         
                         if self._CanReattemptConnection():
                             
-                            self.engine.domain_manager.ReportNetworkInfrastructureError( self._url )
+                            self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
                             
                         else:
                             
@@ -1755,7 +1756,7 @@ class NetworkJob( object ):
                 
                 if isinstance( e, HydrusExceptions.NetworkInfrastructureException ):
                     
-                    self.engine.domain_manager.ReportNetworkInfrastructureError( self._url )
+                    self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
                     
                 
                 self._status_text = 'Error: ' + str( e )
@@ -1951,6 +1952,24 @@ class NetworkJob( object ):
         return self.WILLING_TO_WAIT_ON_INVALID_LOGIN
         
     
+    def WriteContentBytesToPath( self, dest_path: str ):
+        
+        with self._lock:
+            
+            with open( dest_path, 'wb' ) as f_write:
+                
+                self._stream_io.seek( 0 )
+                
+                for block in HydrusPaths.ReadFileLikeAsBlocks( self._stream_io ):
+                    
+                    f_write.write( block )
+                    
+                
+            
+        
+    
+    
+
 class NetworkJobDownloader( NetworkJob ):
     
     def __init__( self, downloader_page_key, method, url, body = None, referral_url = None, temp_path = None ):

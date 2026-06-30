@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 try:
     
@@ -7,7 +6,7 @@ try:
     
     CHARDET_OK = True
     
-except:
+except Exception as e:
     
     CHARDET_OK = False
     
@@ -66,7 +65,7 @@ def CleanseImportText( text: str ):
             
             return text.encode( 'utf-16', 'surrogatepass' ).decode( 'utf-16' )
             
-        except:
+        except Exception as e:
             
             import HydrusData
             
@@ -119,7 +118,7 @@ def ConvertManyStringsToNiceInsertableHumanSummary( texts: collections.abc.Colle
     
     if do_sort:
         
-        SortStringsIgnoringCase( texts )
+        HumanTextSort( texts )
         
     
     if len( texts ) == 1:
@@ -141,7 +140,57 @@ def ConvertManyStringsToNiceInsertableHumanSummary( texts: collections.abc.Colle
             
         else:
             
-            t = ', '.join( texts )
+            LINE_NO_LONGER_THAN = 64
+            NUM_LINES_LIMIT = 24
+            
+            lines = []
+            line_under_construction = ''
+            
+            texts_to_do = list( texts )
+            
+            while len( texts_to_do ) > 0:
+                
+                text = texts_to_do.pop( 0 )
+                
+                if line_under_construction == '':
+                    
+                    line_under_construction = text
+                    
+                else:
+                    
+                    potential_next_line = f'{line_under_construction}, {text}'
+                    
+                    if len( potential_next_line ) > LINE_NO_LONGER_THAN:
+                        
+                        lines.append( line_under_construction )
+                        
+                        if len( lines ) >= NUM_LINES_LIMIT:
+                            
+                            line_under_construction = ''
+                            texts_to_do.insert( 0, text )
+                            
+                            lines.append( f'and {HydrusNumbers.ToHumanInt( len( texts_to_do ) )} others' )
+                            
+                            break
+                            
+                        else:
+                            
+                            line_under_construction = text
+                            
+                        
+                    else:
+                        
+                        line_under_construction = potential_next_line
+                        
+                    
+                
+            
+            if len( line_under_construction ) > 0:
+                
+                lines.append( line_under_construction )
+                
+            
+            t = '\n'.join( lines )
             
         
         if no_trailing_whitespace:
@@ -169,7 +218,7 @@ def ConvertManyStringsToNiceInsertableHumanSummarySingleLine( texts: collections
     
     if do_sort:
         
-        SortStringsIgnoringCase( texts )
+        HumanTextSort( texts )
         
     
     LINE_NO_LONGER_THAN = 48
@@ -189,24 +238,27 @@ def ConvertManyStringsToNiceInsertableHumanSummarySingleLine( texts: collections
         
     else:
         
-        if sum( ( len( text ) + 4 for text in texts ) ) > LINE_NO_LONGER_THAN:
+        full_result = ', '.join( ( f'"{text}"' for text in texts ) )
+        
+        if len( full_result ) <= LINE_NO_LONGER_THAN:
             
-            first_text = texts[0]
-            
-            possible = f'"{first_text}" & {HydrusNumbers.ToHumanInt(len(texts)-1)} other {collective_description_noun}'
-            
-            if len( possible ) <= LINE_NO_LONGER_THAN:
-                
-                return possible
-                
-            else:
-                
-                return f'{HydrusNumbers.ToHumanInt(len(texts))} {collective_description_noun}'
-                
+            return full_result
             
         else:
             
-            return ', '.join( ( f'"{text}"' for text in texts ) )
+            first_text = texts[0]
+            num_texts = len( texts )
+            
+            leading_example_result = f'"{first_text}" & {HydrusNumbers.ToHumanInt( num_texts - 1 )} other {collective_description_noun}'
+            
+            if len( leading_example_result ) <= LINE_NO_LONGER_THAN:
+                
+                return leading_example_result
+                
+            else:
+                
+                return f'{HydrusNumbers.ToHumanInt( num_texts )} {collective_description_noun}'
+                
             
         
     
@@ -248,7 +300,7 @@ def ElideText( text, max_length, elide_center = False ):
     return text
     
 
-def GetFirstLine( text: typing.Optional[ str ] ) -> str:
+def GetFirstLine( text: str | None ) -> str:
     
     if text is None:
         
@@ -265,7 +317,7 @@ def GetFirstLine( text: typing.Optional[ str ] ) -> str:
         
     
 
-def GetFirstLineSummary( text: typing.Optional[ str ] ) -> str:
+def GetFirstLineSummary( text: str | None ) -> str:
     
     if text is None:
         
@@ -312,7 +364,7 @@ def HumanTextSort( texts ):
     texts.sort( key = HumanTextSortKey ) 
     
 
-def LooksLikeHTML( file_data: typing.Union[ str, bytes ] ):
+def LooksLikeHTML( file_data: str | bytes ):
     # this will false-positive if it is json that contains html, ha ha
     
     if isinstance( file_data, bytes ):
@@ -356,7 +408,7 @@ def LooksLikeSVG( file_data ):
     return False
     
 
-def LooksLikeJSON( file_data: typing.Union[ str, bytes ] ) -> bool:
+def LooksLikeJSON( file_data: str | bytes ) -> bool:
     
     try:
         
@@ -369,7 +421,7 @@ def LooksLikeJSON( file_data: typing.Union[ str, bytes ] ) -> bool:
         
         return True
         
-    except:
+    except Exception as e:
         
         return False
         
@@ -417,7 +469,7 @@ def NonFailingUnicodeDecode( data, encoding, trust_the_encoding = False ):
             
             return ( text, encoding )
             
-        except:
+        except Exception as e:
             
             # ok, the encoding type wasn't recognised locally or something, so revert to trying our best
             encoding = None
@@ -489,7 +541,7 @@ def NonFailingUnicodeDecode( data, encoding, trust_the_encoding = False ):
                     text = default_text
                     encoding = default_encoding
                     
-                except:
+                except Exception as e:
                     
                     text = f'Could not decode the page--problem with given encoding "{encoding}" and no chardet library available.'
                     encoding = 'utf-8'
@@ -530,11 +582,6 @@ def RemoveNewlines( text: str ) -> str:
     text = ''.join( good_lines )
     
     return text
-    
-
-def SortStringsIgnoringCase( list_of_strings: list[ str ] ):
-    
-    list_of_strings.sort( key = lambda s: s.lower() )
     
 
 def StripIOInputLine( t ):

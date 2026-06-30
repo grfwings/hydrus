@@ -1,7 +1,6 @@
 import numpy
 import threading
 import time
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtGui as QG
@@ -252,6 +251,12 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
             
             self._numpy_image = HydrusImageHandling.GenerateNumPyImage( self._path, self._mime )
             
+        except HydrusExceptions.NoRenderFileException as e:
+            
+            self._numpy_image = self._InitialiseErrorImage( e, mention_log = False )
+            
+            self._render_failed = True
+            
         except Exception as e:
             
             self._numpy_image = self._InitialiseErrorImage( e )
@@ -265,17 +270,14 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
         
         self._is_ready = True
         
+        CG.client_controller.pub( 'notify_image_finished_rendering' )
+        
         if not self._this_is_for_metadata_alone:
             
             # TODO: Move this error code to a nice button or something
             # old recovery code, before the ErrorImage
             # I think move to show a nice 'check integrity' button when a file errors, so the user can kick it off, and we avoid the popup spam
             '''
-            # (if image failed to render)
-            m = 'There was a problem rendering the image with hash {}! It may be damaged.'.format(
-                self._hash.hex()
-            )
-            
             m += '\n' * 2
             m += 'Jobs to check its integrity and metadata have been scheduled. If it is damaged, it may be redownloaded or removed from the client completely. If it is not damaged, it may be fixed automatically or further action may be required.'
             
@@ -287,19 +289,26 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
             
             if not self._render_failed:
                 
-                my_resolution_size = QC.QSize( self._resolution[0], self._resolution[1] )
-                my_numpy_size = QC.QSize( self._numpy_image.shape[1], self._numpy_image.shape[0] )
+                my_expected_size = ( self._resolution[0], self._resolution[1] )
+                my_numpy_size = ( self._numpy_image.shape[1], self._numpy_image.shape[0] )
                 
-                if my_resolution_size != my_numpy_size:
+                expectation_rotated = ( self._resolution[1], self._resolution[0] )
+                
+                hash_hex = self._hash.hex()
+                
+                if my_expected_size != my_numpy_size:
                     
-                    m = 'There was a problem rendering the image with hash {}! Hydrus thinks its resolution is {}, but it was actually {}.'.format(
-                        self._hash.hex(),
-                        my_resolution_size,
-                        my_numpy_size
-                    )
+                    if my_numpy_size == expectation_rotated:
+                        
+                        m = f'There was a problem rendering the image with hash {hash_hex}! Hydrus thought its resolution would be {my_expected_size}, but it looks like we rendered it to the rotated value of {my_numpy_size}. This happens sometimes with weirder rotation metadata where support changes over time.'
+                        
+                    else:
+                        
+                        m = f'There was a problem rendering the image with hash {hash_hex}! Hydrus thought its resolution would be {my_expected_size}, but it actually rendered to {my_numpy_size}. This is an odd situation.'
+                        
                     
                     m += '\n' * 2
-                    m += 'You may see some black squares in the image. A metadata regeneration has been scheduled, so with luck the image will fix itself soon.'
+                    m += 'You may see some black squares in the image. A metadata regeneration has been scheduled, so with luck it will fix itself soon. If the file is still broken, hydev would like to see it!'
                     
                     HydrusData.ShowText( m )
                     
@@ -309,7 +318,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
             
         
     
-    def _InitialiseErrorImage( self, e: Exception ):
+    def _InitialiseErrorImage( self, e: Exception, mention_log = True ):
         
         ( width, height ) = self._resolution
         
@@ -341,8 +350,12 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
         text = 'Image failed to render:'
         text += '\n'
         text += str( e )
-        text += '\n'
-        text += 'Full info written to the log.'
+        
+        if mention_log:
+            
+            text += '\n'
+            text += 'Full info written to the log.'
+            
         
         painter.drawText( QC.QRectF( 0, 0, width, height ), QC.Qt.AlignmentFlag.AlignCenter, text )
         
@@ -371,7 +384,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
     
     def GetResolution( self ): return self._resolution
     
-    def GetQtImage( self, clip_rect: typing.Optional[ QC.QRect ] = None, target_resolution: typing.Optional[ QC.QSize ] = None ):
+    def GetQtImage( self, clip_rect: QC.QRect | None = None, target_resolution: QC.QSize | None = None ):
         
         if clip_rect is None:
             
@@ -412,7 +425,7 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
                 qt_image.setColorSpace( self._qt_colourspace )
                 qt_image.convertToColorSpace( QG.QColorSpace.NamedColorSpace.SRgb )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.Print( 'Failed to load the ICC Profile for {} into a Qt Colourspace!'.format( self._path ) )
                 
@@ -474,6 +487,11 @@ class ImageRenderer( ClientCachesBase.CacheableObject ):
         return pixmap
         
     
+    def IsFinishedLoading( self ):
+        
+        return self._is_ready
+        
+    
     def IsReady( self ):
         
         return self._is_ready
@@ -503,6 +521,12 @@ class ImageTile( ClientCachesBase.CacheableObject ):
         return self._num_bytes
         
     
+    def IsFinishedLoading( self ):
+        
+        return True
+        
+    
+
 class RasterContainer( object ):
     
     def __init__( self, media: ClientMedia.MediaSingleton, target_resolution = None ):
@@ -639,6 +663,11 @@ class RasterContainerVideo( RasterContainer ):
         CG.client_controller.CallToThread( self.THREADRender )
         
     
+    def __del__( self ):
+        
+        self.Stop()
+        
+    
     def _HasFrame( self, index ):
         
         return index in self._frames
@@ -661,10 +690,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def CanHaveVariableFramerate( self ):
         
-        with self._lock:
-            
-            return self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA
-            
+        return self._media.GetMime() in ( HC.ANIMATION_GIF, HC.ANIMATION_UGOIRA, HC.ANIMATION_WEBP )
         
     
     def GetBufferIndices( self ):
@@ -681,7 +707,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetDurationMS( self, index ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             if 0 <= index <= len( self._frame_durations_ms ) - 1:
                 
@@ -733,6 +759,11 @@ class RasterContainerVideo( RasterContainer ):
     def GetReadyForFrame( self, next_index_to_expect ):
         
         num_frames_in_video = self.GetNumFrames()
+        
+        if num_frames_in_video == 0 or num_frames_in_video is None:
+            
+            return
+            
         
         frame_request_is_impossible = FrameIndexOutOfRange( next_index_to_expect, 0, num_frames_in_video - 1 )
         
@@ -813,7 +844,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetFrameIndex( self, timestamp_ms ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             so_far = 0
             
@@ -846,7 +877,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetTimestampMS( self, frame_index ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             return sum( self._frame_durations_ms[ : frame_index ] )
             
@@ -858,7 +889,7 @@ class RasterContainerVideo( RasterContainer ):
     
     def GetTotalDuration( self ):
         
-        if self._media.GetMime() == HC.ANIMATION_GIF or self._media.GetMime() == HC.ANIMATION_UGOIRA:
+        if self.CanHaveVariableFramerate():
             
             return sum( self._frame_durations_ms )
             
@@ -913,7 +944,7 @@ class RasterContainerVideo( RasterContainer ):
                 
                 ( self._frame_durations_ms, self._times_to_play_animation ) = HydrusAnimationHandling.GetWebPFrameDurationsMS( self._path )
                 
-            except:
+            except Exception as e:
                 
                 self._frame_durations_ms = []
                 self._times_to_play_animation = 0
@@ -929,7 +960,7 @@ class RasterContainerVideo( RasterContainer ):
                 
                 ( self._frame_durations_ms, self._times_to_play_animation ) = HydrusAnimationHandling.GetFrameDurationsMSPILAnimation( self._path )
                 
-            except:
+            except Exception as e:
                 
                 self._frame_durations_ms = []
                 self._times_to_play_animation = 0
@@ -1171,5 +1202,10 @@ class HydrusBitmap( ClientCachesBase.CacheableObject ):
     def GetSize( self ):
         
         return self._size
+        
+    
+    def IsFinishedLoading( self ):
+        
+        return True
         
     

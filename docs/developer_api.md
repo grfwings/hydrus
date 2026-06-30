@@ -18,19 +18,19 @@ In general, the API deals with standard UTF-8 JSON. POST requests and 200 OK res
 *   Your list of tags:
     
     ```
-    [ 'character:samus aran', 'creator:青い桜', 'system:height > 2000' ]
+    [ 'character:space bounty hunter', 'creator:青い桜', 'system:height > 2000' ]
     ```
     
 *   JSON-encoded:
     
     ```json
-    ["character:samus aran", "creator:\\u9752\\u3044\\u685c", "system:height > 2000"]
+    ["character:space bounty hunter", "creator:\\u9752\\u3044\\u685c", "system:height > 2000"]
     ```
     
 *   Then URL-encoded:
     
     ```
-    %5B%22character%3Asamus%20aran%22%2C%20%22creator%3A%5Cu9752%5Cu3044%5Cu685c%22%2C%20%22system%3Aheight%20%3E%202000%22%5D
+    %5B%22character%3Aspace%20bounty%20hunter%22%2C%20%22creator%3A%5Cu9752%5Cu3044%5Cu685c%22%2C%20%22system%3Aheight%20%3E%202000%22%5D
     ```
     
 *   In python, converting your tag list to the URL-encoded string would be:
@@ -42,7 +42,7 @@ In general, the API deals with standard UTF-8 JSON. POST requests and 200 OK res
 *   Full URL path example:
     
     ```
-    /get_files/search_files?file_sort_type=6&file_sort_asc=false&tags=%5B%22character%3Asamus%20aran%22%2C%20%22creator%3A%5Cu9752%5Cu3044%5Cu685c%22%2C%20%22system%3Aheight%20%3E%202000%22%5D
+    /get_files/search_files?file_sort_type=6&file_sort_asc=false&tags=%5B%22character%3Aspace%20bounty%20hunter%22%2C%20%22creator%3A%5Cu9752%5Cu3044%5Cu685c%22%2C%20%22system%3Aheight%20%3E%202000%22%5D
     ```
     
 
@@ -154,9 +154,9 @@ You can play around with this yourself by clicking 'multiple locations' in the c
 
 In extreme edge cases, these two can be mixed by populating both A and B selective, making a larger union of both current and deleted file records.
 
-Please note that unions can be very very computationally expensive. If you can achieve what you want with a single file_service_key, two queries in a row with different service keys, or an umbrella like `all my files` or `all local files`, please do. Otherwise, let me know what is running slow and I'll have a look at it.
+Please note that unions can be very very computationally expensive. If you can achieve what you want with a single file_service_key, two queries in a row with different service keys, or an umbrella like `combined local file domains` or `hydrus local file storage`, please do. Otherwise, let me know what is running slow and I'll have a look at it.
 
-'deleted from all local files' includes all files that have been physically deleted (i.e. deleted from the trash) and not available any more for fetch file/thumbnail requests. 'deleted from all my files' includes all of those physically deleted files _and_ the trash. If a file is deleted with the special 'do not leave a deletion record' command, then it won't show up in a 'deleted from file domain' search!
+'deleted from hydrus local file storage' is all files that have been physically deleted (i.e. deleted from the trash) and not available any more for fetch file/thumbnail requests. 'deleted from combined local file domains' includes all of those physically deleted files _and_ the trash. If a file is deleted with the special 'do not leave a deletion record' command, then it won't show up in a 'deleted from file domain' search!
 
 'all known files' is a tricky domain. It converts much of the search tech to ignore where files actually are and look at the accompanying tag domain (e.g. all the files that have been tagged), and can sometimes be very expensive.
 
@@ -191,7 +191,7 @@ When it does this, it gives you this structure, typically under a `services` key
   "c6f63616c2074616773" : {
     "name" : "my tags",
     "type": 5,
-    "type_pretty" : "local tag service"
+    "type_pretty" : "local tag domain"
   },
   "5674450950748cfb28778b511024cfbf0f9f67355cf833de632244078b5a6f8d" : {
     "name" : "example tag repo",
@@ -214,43 +214,93 @@ When it does this, it gives you this structure, typically under a `services` key
     "type_pretty" : "hydrus file repository"
   },
   "616c6c206c6f63616c2066696c6573" : {
-    "name" : "all local files",
+    "name" : "hydrus local file storage",
     "type": 15,
-    "type_pretty" : "virtual combined local file service"
+    "type_pretty" : "virtual combined local file domain"
   },
   "616c6c206c6f63616c206d65646961" : {
-    "name" : "all my files",
+    "name" : "combined local file domains",
     "type" : 21,
-    "type_pretty" : "virtual combined local media service"
+    "type_pretty" : "virtual combined local media domain"
   },
   "616c6c206b6e6f776e2066696c6573" : {
     "name" : "all known files",
     "type" : 11,
-    "type_pretty" : "virtual combined file service"
+    "type_pretty" : "virtual combined file domain"
   },
   "616c6c206b6e6f776e2074616773" : {
     "name" : "all known tags",
     "type": 10,
-    "type_pretty" : "virtual combined tag service"
+    "type_pretty" : "virtual combined tag domain"
   },
   "74d52c6238d25f846d579174c11856b1aaccdb04a185cb2c79f0d0e499284f2c" : {
     "name" : "example local rating like service",
     "type" : 7,
     "type_pretty" : "local like/dislike rating service",
-    "star_shape" : "circle"
+    "star_shape" : "svg",
+    "show_in_thumbnail" : true,
+    "show_in_thumbnail_even_when_null" : true,
+    "colours": {
+        "dislike": {
+            "brush": "#FFFFFF",
+            "pen": "#000000"
+        },
+        "like": {
+            "brush": "#50C878",
+            "pen": "#000000"
+        },
+        "mixed": {
+            "brush": "#5F5F5F",
+            "pen": "#000000"
+        },
+        "null": {
+            "brush": "#BFBFBF",
+            "pen": "#000000"
+        }
   },
   "90769255dae5c205c975fc4ce2efff796b8be8a421f786c1737f87f98187ffaf" : {
     "name" : "example local rating numerical service",
     "type" : 6,
     "type_pretty" : "local numerical rating service",
     "star_shape" : "fat star",
+    "allows_zero" : false,
     "min_stars" : 1,
-    "max_stars" : 5
+    "max_stars" : 5,
+    "show_in_thumbnail" : true,
+    "show_in_thumbnail_even_when_null" : false,
+    "colours": {
+        "dislike": {
+            "brush": "#FFFFFF",
+            "pen": "#000000"
+        },
+        "like": {
+            "brush": "#50C878",
+            "pen": "#000000"
+        },
+        "mixed": {
+            "brush": "#5F5F5F",
+            "pen": "#000000"
+        },
+        "null": {
+            "brush": "#BFBFBF",
+            "pen": "#000000"
+        }
   },
   "b474e0cbbab02ca1479c12ad985f1c680ea909a54eb028e3ad06750ea40d4106" : {
     "name" : "example local rating inc/dec service",
     "type" : 22,
-    "type_pretty" : "local inc/dec rating service"
+    "type_pretty" : "local inc/dec rating service",
+    "show_in_thumbnail" : false,
+    "show_in_thumbnail_even_when_null" : false,
+    "colours": {
+        "like": {
+            "brush": "#50C878",
+            "pen": "#000000"
+        },
+        "mixed": {
+            "brush": "#5F5F5F",
+            "pen": "#000000"
+        }
   },
   "7472617368" : {
     "name" : "trash",
@@ -265,7 +315,7 @@ I hope you recognise some of the information here. But what's that hex key on ea
 All services have these properties:
 
 - `name` - A mutable human-friendly name like 'my tags'. You can use this to present the service to the user--they should recognise it.
-- `type` - An integer enum saying whether the service is a local tag service or like/dislike rating service or whatever. This cannot change.
+- `type` - An integer enum saying whether the service is a local tag domain or like/dislike rating or whatever. This cannot change.
 - `service_key` - The true 'id' of the service. It is a string of hex, sometimes just twenty or so characters but in many cases 64 characters. This cannot change, and it is how we will refer to different services.
 
 This `service_key` is important. A user can rename their services, so `name` is not an excellent identifier, and definitely not something you should save to any permanent config file.
@@ -285,21 +335,23 @@ You won't see all of these, but the service `type` enum is:
 * 12 - the local booru -- you can ignore this
 * 13 - IPFS
 * 14 - trash
-* 15 - all local files -- all files on hard disk ('all my files' + updates + trash) 
+* 15 - hydrus local file storage -- all files on hard disk ('combined local file domains' + updates + trash) 
 * 17 - file notes
 * 18 - Client API
 * 19 - deleted from anywhere -- you can ignore this
 * 20 - local updates -- a file domain to store repository update files in
-* 21 - all my files -- union of all local file domains
+* 21 - combined local file domains -- union of combined local file domains
 * 22 - a 'inc/dec' rating service with positive integer rating
 * 99 - server administration
 
 `type_pretty` is something you can show users. Hydrus uses the same labels in _manage services_ and so on.
 
-Rating services now have some extra data:
+Rating services have some extra data:
 
-- like/dislike and numerical services have `star_shape`, which is one of `circle | square | fat star | pentagram star | six point star | eight point star | x shape | square cross | triangle up | triangle down | triangle right | triangle left | diamond | rhombus right | rhombus left | hourglass | pentagon | hexagon | small hexagon | heart | teardrop | crescent moon` -or- `svg`, which means a custom user svg that cannot currently be fetched over the Client API.
-- numerical services have `min_stars` (0 or 1) and `max_stars` (1 to 20)
+- They all have some `colours` for differing rating states, the same as you'd see in `manage services`. Pen and brush are the line and the fill of the rating star shape, respectively. `like` generally means set/left-click, `dislike` means off/right-click, `null` means not set, and `mixed` is what I show in the edit rating dialog for multiple files when the files have differing values. Feel free to use them however you like.
+- They all have `show_in_thumbnail` and `show_in_thumbnail_even_if_null`, which you can obey in your display context if convenient.
+- Like/dislike and numerical services have `star_shape`, which is one of `circle | square | fat star | pentagram star | six point star | eight point star | x shape | square cross | triangle up | triangle down | triangle right | triangle left | diamond | rhombus right | rhombus left | hourglass | pentagon | hexagon | small hexagon | heart | teardrop | crescent moon` -or- `svg`, which means a custom user svg that can be fetched with [/get\_service\_rating\_svg](#get_service_rating_svg).
+- Numerical services have `min_stars` (0 or 1) and `max_stars` (1 to 20). `allows_zero` lines up with `min_stars` and is for your convenience.
 
 If you are displaying ratings, don't feel crazy obligated to obey the shape! Show a 4/5, select from a dropdown list, do whatever you like!
 
@@ -505,7 +557,7 @@ Response:
     "name" : "my tags",
     "service_key" : "6c6f63616c2074616773",
     "type" : 5,
-    "type_pretty" : "local tag service"
+    "type_pretty" : "local tag domain"
   }
 }
 ```
@@ -539,6 +591,39 @@ This now primarily uses [The Services Object](#services_object).
 !!! note
     If you do the request and look at the actual response, you will see a lot more data under different keys--this is deprecated, and will be deleted in 2024. If you use the old structure, please move over!
 
+### **GET `/get_service_rating_svg`** { id="get_service_rating_svg" }
+
+_Ask the client for the SVG star shape for a ratings service. Use this when a rating service in [The Services Object](#services_object) has a `star_shape` of `svg`._
+
+Restricted access: 
+:   YES. At least one of Add Files, Add Tags, Manage Pages, or Search Files permission needed.
+    
+Required Headers: n/a
+    
+Arguments:
+:       
+    *   `service_name`: (selective, string, the name of the service)
+    *   `service_key`: (selective, hex string, the service key of the service)
+
+Example requests:
+:   
+    ```title="Example requests"
+    /get_service_rating_svg?service_name=example%20local%20rating%20like%20service
+    /get_service_rating_svg?service_key=74d52c6238d25f846d579174c11856b1aaccdb04a185cb2c79f0d0e499284f2c
+    ```
+
+Response:
+:  Returns an image/svg+xml to be rendered by a browser.
+
+```http title="Example response"
+Content-Type: image/svg+xml
+```
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="512" height="512"><path d="M364.842 44.305c-37.937.575-72.915 18.49-91.705 51.035-1.088-.989-10.822 25.476-20.965 26.664-9.396 1.1-11.295-14.946-18.06-23.934-36.163-48.039-101.573-66.684-160.33-32.76C15.022 99.236-.822 164.909 21.985 220.544c28.648 69.88 35.985 82.604 121.912 192 8.38 10.668 49.137 47.437 95.221 53.812 36.165 7.366 79.734-15.941 121.496-55.474 48.473-45.886 122.43-145.012 134.79-195.97 13.98-57.64-3.18-118.407-61.938-152.33-22.035-12.722-45.863-18.621-68.625-18.276zM174.088 206.77c8.45-.295 16.45 5.9 18.9 15.256l.325 1.235c2.8 10.692-2.744 21.343-12.428 23.879l-70.822 18.545c-9.685 2.535-19.738-4.03-22.538-14.723l-.322-1.234c-2.8-10.693 2.744-21.342 12.428-23.877l70.824-18.545a16.613 16.613 0 0 1 3.633-.536zm163.824 5.34c1.207.043 2.424.218 3.635.535l70.822 18.547c9.684 2.536 15.228 13.185 12.428 23.877l-.322 1.233c-2.8 10.692-12.85 17.26-22.534 14.724l-70.826-18.547c-9.684-2.535-15.227-13.186-12.428-23.878l.325-1.235c2.45-9.356 10.45-15.551 18.9-15.256zm-122.168 60.965c1.075.021 2.217.702 3.227 2.408 1.468 2.483 2.659 7.136 4.285 10.23 1.626 3.096 3.688 4.633 5.681 5.542 1.994.909 3.916 1.187 6.713.715 2.798-.472 6.47-1.696 9.407-3.27 2.937-1.573 5.14-3.494 7.185-5.33 2.046-1.836 3.936-3.585 5.877-3.463 1.94.123 3.932 2.114 6.223 4.055 2.29 1.94 4.877 3.83 7.78 5.21a26.974 26.974 0 0 0 9.458 2.518c3.34.263 6.803-.086 10.09-.855 3.287-.77 6.4-1.96 8.97-2.711 2.57-.752 4.598-1.066 6.434-.926 1.836.14 3.48.735 4.266 1.96.787 1.223.717 3.075 0 4.841s-2.082 3.444-4.652 5.07c-2.57 1.626-6.346 3.2-9.458 4.272-3.11 1.072-5.557 1.642-8.793 1.828-3.235.185-7.26-.013-10.828-.508-3.567-.495-6.677-1.287-9.228-2.242-2.552-.955-4.547-2.072-6.235-3.934-1.687-1.862-3.067-4.467-4.746-4.59-1.678-.122-3.653 2.238-6.232 4.118-2.579 1.88-5.763 3.279-8.945 4.363-3.182 1.084-6.363 1.852-9.563 1.555-3.2-.298-6.414-1.661-9.037-3.2-2.623-1.538-4.652-3.253-6.453-5.7-1.801-2.449-3.375-5.63-4.406-8.637-1.032-3.008-1.522-5.841-1.225-8.149.297-2.308 1.38-4.09 2.797-4.824.443-.23.92-.356 1.408-.346z" style="display:inline;opacity:1;stroke-width:2.71885;stroke-linecap:round;stroke-linejoin:round;fill:#000"/></svg>
+```
+
+If the service does not exist or doesn't actually have an SVG for its icon, you will get the corresponding error.
+
 ## Importing and Deleting Files
 
 ### **POST `/add_files/add_file`** { id="add_files_add_file" }
@@ -563,7 +648,7 @@ Arguments (in JSON):
 }
 ```
 
-If you include a [file domain](#parameters_file_domain), it can only include 'local' file domains (by default on a new client this would just be "my files"), but you can send multiple to import to more than one location at once. Asking to import to 'all local files', 'all my files', 'trash', 'repository updates', or a file repository/ipfs will give you 400.
+If you include a [file domain](#parameters_file_domain), it can only include 'local' file domains (by default on a new client this would just be "my files"), but you can send multiple to import to more than one location at once. Asking to import to 'hydrus local file storage', 'combined local file domains', 'trash', 'repository updates', or a file repository/ipfs will give you 400.
 
 Arguments (as bytes): 
 :   
@@ -606,7 +691,7 @@ Required Headers:
 Arguments (in JSON):
 :   
 *   [files](#parameters_files)
-*   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+*   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
 *   `reason`: (optional, string, the reason attached to the delete action)
 
 ```json title="Example request body"
@@ -618,7 +703,15 @@ Arguments (in JSON):
 Response:
 :   200 and no content.
 
-If you specify a file service, the file will only be deleted from that location. Only local file domains are allowed (so you can't delete from a file repository or unpin from ipfs yet), or the umbrella `all my files` and `all local files` domains. It defaults to `all my files`, which will delete from all local services (i.e. force sending to trash). Sending `all local files` on a file already in the trash will trigger a physical file delete. 
+!!! note "Careful"
+    `combined local file domains` and `hydrus local file storage` are different!
+    
+    - Deleting from `combined local file domains` sends files straight to the trash, no matter how many local file domains they are in.
+    - Deleting from `hydrus local file storage` removes files from any local domain, including trash, and triggers an immediate physical delete.
+    
+    Check [here](advanced_multiple_local_file_services.md#meta_file_domains) for more info.
+
+If you specify a file service, the file will only be deleted from that location. Only local file domains are allowed (so you can't delete from a file repository or unpin from ipfs yet), or the umbrella `combined local file domains` and `hydrus local file storage` domains. It defaults to `combined local file domains`, which will delete from all local services (i.e. force-sending to trash). Sending `hydrus local file storage` on a file, be it already in the trash or not, will remove it from everywhere and trigger a physical file delete. 
 
 ### **POST `/add_files/undelete_files`** { id="add_files_undelete_files" }
 
@@ -634,7 +727,7 @@ Required Headers:
 Arguments (in JSON):
 :   
 *   [files](#parameters_files)
-*   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+*   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
 
 ```json title="Example request body"
 {
@@ -645,9 +738,9 @@ Arguments (in JSON):
 Response: 
 :   200 and no content.
 
-This is the reverse of a delete_files--restoring files back to where they came from. If you specify a file service, the files will only be undeleted to there (if they have a delete record, otherwise this is nullipotent). The default, 'all my files', undeletes to all local file services for which there are deletion records.
+This is the reverse of a delete_files--restoring files back to where they came from. If you specify a file service, the files will only be undeleted to there (if they have a delete record, otherwise this is nullipotent). The default, 'combined local file domains', undeletes to all the local file domains for which there are deletion records.
 
-This operation will only occur on files that are currently in your file store (i.e. in 'all local files', and maybe, but not necessarily, in 'trash'). You cannot 'undelete' something you do not have!
+This operation will only occur on files that are currently in your file store (i.e. in 'hydrus local file storage', and maybe, but not necessarily, in 'trash'). You cannot 'undelete' something you do not have!
 
 ### **POST `/add_files/clear_file_deletion_record`** { id="add_files_clear_file_deletion_record" }
 
@@ -673,7 +766,7 @@ Arguments (in JSON):
 Response: 
 :   200 and no content.
 
-This is the same as the advanced deletion option of the same basic name. It will erase the record that a file has been physically deleted (i.e. it only applies to deletion records in the 'all local files' domain). A file that no longer has a 'all local files' deletion record will pass a 'exclude previously deleted files' check in a _file import options_.
+This is the same as the advanced deletion option of the same basic name. It will erase the record that a file has been physically deleted (i.e. it only applies to deletion records in the 'hydrus local file storage' domain). A file that no longer has a 'hydrus local file storage' deletion record will pass a 'exclude previously deleted files' check in a _file import options_.
 
 
 ### **POST `/add_files/migrate_files`** { id="add_files_migrate_files" }
@@ -702,11 +795,11 @@ Arguments (in JSON):
 Response:
 :   200 and no content.
 
-This is only appropriate if the user has multiple local file services. It does the same as the media _files->add to->domain_ menu action. If the files are originally in local file domain A, and you say to add to B, then afterwards they will be in both A and B. You can say 'B and C' to add to multiple domains at once, if needed. The action is idempotent and will not overwrite 'already in' files with fresh timestamps or anything.
+This is only appropriate if the user has multiple local file domains. It does the same as the media _files->add to->domain_ menu action. If the files are originally in local file domain A, and you say to add to B, then afterwards they will be in both A and B. You can say 'B and C' to add to multiple domains at once, if needed. The action is idempotent and will not overwrite 'already in' files with fresh timestamps or anything.
 
 If you need to do a 'move' migrate, then please follow this command with a delete from wherever you need to remove from.
 
-If you try to add non-local files (specifically, files that are not in 'all my files'), or migrate to a file domain that is not a local file domain, then this will 400!
+If you try to add non-local files (specifically, files that are not currently in 'combined local file domains'), or migrate to a file domain that is not a local file domain, then this will 400!
 
 ### **POST `/add_files/archive_files`** { id="add_files_archive_files" }
 
@@ -819,9 +912,9 @@ Arguments:
     *   `doublecheck_file_system`: true or false (optional, defaults False)
 
 Example request:
-:   for URL `http://safebooru.org/index.php?page=post&s=view&id=2753608`:
+:   for URL `http://somebooru.org/index.php?page=post&s=view&id=2753608`:
     ```
-    /add_urls/get_url_files?url=http%3A%2F%2Fsafebooru.org%2Findex.php%3Fpage%3Dpost%26s%3Dview%26id%3D2753608
+    /add_urls/get_url_files?url=http%3A%2F%2Fsomebooru.org%2Findex.php%3Fpage%3Dpost%26s%3Dview%26id%3D2753608
     ```
 
 Response: 
@@ -839,7 +932,7 @@ Response:
 }
 ```
 
-The `url_file_statuses` is a list of zero-to-n JSON Objects, each representing a file match the client found in its database for the URL. Typically, it will be of length 0 (for as-yet-unvisited URLs or Gallery/Watchable URLs that are not attached to files) or 1, but sometimes multiple files are given the same URL (sometimes by mistaken misattribution, sometimes by design, such as pixiv manga pages). Handling n files per URL is a pain but an unavoidable issue you should account for.
+The `url_file_statuses` is a list of zero-to-n JSON Objects, each representing a file match the client found in its database for the URL. Typically, it will be of length 0 (for as-yet-unvisited URLs or Gallery/Watchable URLs that are not attached to files) or 1, but sometimes multiple files are given the same URL (sometimes by mistaken misattribution, sometimes by design, such as a mini-manga Post URL that hosts 4 files). Handling n files per URL is a pain but an unavoidable issue you should account for.
 
 `status` mas the same mapping as for `/add_files/add_file`, but the possible results are different:
 
@@ -878,7 +971,7 @@ Response:
   "normalised_url" : "https://someimageboard.org/cool/thread/123456",
   "url_type" : 4,
   "url_type_string" : "watchable url",
-  "match_name" : "8chan thread",
+  "match_name" : "Some Imageboard thread",
   "can_parse" : true
 }
 ```
@@ -947,7 +1040,7 @@ filterable_tags works like the tags parsed by a hydrus downloader. It is just a 
   "filterable_tags" : [
     "1girl",
     "artist name",
-    "creator:azto dio",
+    "creator:some guy",
     "blonde hair",
     "blue eyes",
     "breasts",
@@ -965,12 +1058,12 @@ filterable_tags works like the tags parsed by a hydrus downloader. It is just a 
     "long hair",
     "long sleeves",
     "looking at viewer",
-    "series:metroid",
+    "series:bountyvania",
     "mole",
     "mole under mouth",
     "patreon username",
     "ponytail",
-    "character:samus aran",
+    "character:space bounty hunter",
     "solo",
     "standing",
     "suit",
@@ -1042,16 +1135,16 @@ Arguments (in percent-encoded JSON):
 *   `tags`: (a list of the tags you want cleaned)
 
 Example request:
-:   Given tags `#!json [ " bikini ", "blue    eyes", " character : samus aran ", " :)", "   ", "", "10", "11", "9", "system:wew", "-flower" ]`:
+:   Given tags `#!json [ " bikini ", "blue    eyes", " character : space bounty hunter ", " :)", "   ", "", "10", "11", "9", "system:wew", "-flower" ]`:
     ```
-    /add_tags/clean_tags?tags=%5B%22%20bikini%20%22%2C%20%22blue%20%20%20%20eyes%22%2C%20%22%20character%20%3A%20samus%20aran%20%22%2C%20%22%3A%29%22%2C%20%22%20%20%20%22%2C%20%22%22%2C%20%2210%22%2C%20%2211%22%2C%20%229%22%2C%20%22system%3Awew%22%2C%20%22-flower%22%5D
+    /add_tags/clean_tags?tags=%5B%22%20bikini%20%22%2C%20%22blue%20%20%20%20eyes%22%2C%20%22%20character%20%3A%20space%20bounty%20hunter%20%22%2C%20%22%3A%29%22%2C%20%22%20%20%20%22%2C%20%22%22%2C%20%2210%22%2C%20%2211%22%2C%20%229%22%2C%20%22system%3Awew%22%2C%20%22-flower%22%5D
     ```
 
 Response: 
 :  The tags cleaned according to hydrus rules. They will also be in hydrus human-friendly sorting order.
 ```json title="Example response"
 {
-  "tags" : ["9", "10", "11", " ::)", "bikini", "blue eyes", "character:samus aran", "flower", "wew"]
+  "tags" : ["9", "10", "11", " ::)", "bikini", "blue eyes", "character:space bounty hunter", "flower", "wew"]
 }
 ```
 
@@ -1100,9 +1193,9 @@ Arguments (in percent-encoded JSON):
 *   `tags`: (a list of the tags you want info on)
 
 Example request:
-:   Given tags `#!json [ "blue eyes", "samus aran" ]`:
+:   Given tags `#!json [ "blue eyes", "space bounty hunter" ]`:
     ```
-    /add_tags/get_siblings_and_parents?tags=%5B%22blue%20eyes%22%2C%20%22samus%20aran%22%5D
+    /add_tags/get_siblings_and_parents?tags=%5B%22blue%20eyes%22%2C%20%22space%20bounty%20hunter%22%5D
     ```
 
 Response: 
@@ -1132,31 +1225,31 @@ Response:
         "ancestors" : []
       }
     },
-    "samus aran" : {
+    "space bounty hunter" : {
       "6c6f63616c2074616773" : {
-        "ideal_tag" : "character:samus aran",
+        "ideal_tag" : "character:space bounty hunter",
         "siblings" : [
-          "samus aran",
-          "samus_aran",
-          "character:samus aran"
+          "space bounty hunter",
+          "space_bounty_hunter",
+          "character:space bounty hunter"
         ],
         "descendants" : [
-          "character:samus aran (zero suit)"
-          "cosplay:samus aran"
+          "character:space bounty hunter (zero suit)"
+          "cosplay:space bounty hunter"
         ],
         "ancestors" : [
-          "series:metroid",
-          "studio:nintendo"
+          "series:bountyvania",
+          "studio:cool project house"
         ]
       },
       "877bfcf81f56e7e3e4bc3f8d8669f92290c140ba0acfd6c7771c5e1dc7be62d7": {
-        "ideal_tag" : "samus aran",
+        "ideal_tag" : "space bounty hunter",
         "siblings" : [
-          "samus aran"
+          "space bounty hunter"
         ],
         "descendants" : [
-          "zero suit samus",
-          "samus_aran_(cosplay)"
+          "zero suit space bounty hunter",
+          "space_bounty_hunter_(cosplay)"
         ],
         "ancestors" : []
       }
@@ -1198,7 +1291,7 @@ Required Headers: n/a
 Arguments:
 :   
     * `search`: (the tag text to search for, enter exactly what you would in the client UI)
-    * [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+    * [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
     * `tag_service_key`: (optional, hexadecimal, the tag domain on which to search, defaults to _all known tags_)
     * `tag_display_type`: (optional, string, to select whether to search raw or sibling-processed tags, defaults to `storage`)
 
@@ -1206,7 +1299,7 @@ The `file domain` and `tag_service_key` perform the function of the file and tag
 
 The `tag_display_type` can be either `storage` (the default), which searches your file's stored tags, just as they appear in a 'manage tags' dialog, or `display`, which searches the sibling-processed tags, just as they appear in a normal file search page. In the example above, setting the `tag_display_type` to `display` could well combine the two kim possible tags and give a count of 3 or 4. 
 
-'all my files'/'all known tags' works fine for most cases, but a specific tag service or 'all known files'/'tag service' can work better for editing tag repository `storage` contexts, since it provides results just for that service, and for repositories, it gives tags for all the non-local files other users have tagged.
+'combined local file domains'/'all known tags' works fine for most cases, but a specific tag service or 'all known files'/'tag service' can work better for editing tag repository `storage` contexts, since it provides results just for that service, and for repositories, it gives tags for all the non-local files other users have tagged.
 
 Example request:
 :   
@@ -1220,6 +1313,10 @@ Response:
 :   
 ```json title="Example response"
 {
+  "autocomplete_text" : {
+    "search_text" : "kim",
+    "inclusive" : true,
+  },
   "tags" : [
     {
       "value" : "series:kim possible", 
@@ -1238,6 +1335,8 @@ Response:
 ```
 
 The `tags` list will be sorted by descending count. The various rules in _tags->manage tag display and search_ (e.g. no pure `*` searches on certain services) will also be checked--and if violated, you will get 200 OK but an empty result.
+
+The `autocomplete_text` structure lets you know how hydrus sees the search. `search_text` is a basic cleaned-up version of what text the user entered, and `inclusive` is whether they prepended their search text with a hyphen '-' character. If the user has entered an exclusive search, you may with to prepend all the results' display, similarly, with a hypen.
 
 Note that if your client api access is only allowed to search certain tags, the results will be similarly filtered.
 
@@ -1266,8 +1365,8 @@ Arguments (in JSON):
     
     The permitted 'actions' are:
 
-    *   0 - Add to a local tag service.
-    *   1 - Delete from a local tag service.
+    *   0 - Add to a local tag domain.
+    *   1 - Delete from a local tag domain.
     *   2 - Pend to a tag repository.
     *   3 - Rescind a pend from a tag repository.
     *   4 - Petition from a tag repository. (This is special)
@@ -1722,8 +1821,8 @@ Required Headers: n/a
 Arguments (in percent-encoded JSON):
 :   
     *   `tags`: (a list of tags you wish to search for)
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
-    *   `tag_service_key`: (optional, hexadecimal, the tag domain on which to search, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
+    *   `tag_service_key`: (optional, hexadecimal, the tag domain on which to search, defaults to _combined local file domains_)
     *   `include_current_tags`: (optional, bool, whether to search 'current' tags, defaults to `true`)
     *   `include_pending_tags`: (optional, bool, whether to search 'pending' tags, defaults to `true`)
     *   `file_sort_type`: (optional, integer, the results sort method, defaults to `2` for `import time`)
@@ -1818,10 +1917,10 @@ Wildcards and namespace searches are supported, so if you search for 'character:
     *   system:does not have a url matching regex index\\.php
     *   system:has url https://somebooru.org/posts/123456
     *   system:does not have url https://somebooru.org/posts/123456
-    *   system:has domain safebooru.com
-    *   system:does not have domain safebooru.com
-    *   system:has a url with class safebooru file page
-    *   system:does not have a url with url class safebooru file page
+    *   system:has domain somebooru.com
+    *   system:does not have domain somebooru.com
+    *   system:has a url with class somebooru file page
+    *   system:does not have a url with url class somebooru file page
     *   system:tag as number page < 5
     *   system:has notes
     *   system:no notes
@@ -1841,15 +1940,15 @@ Please test out the system predicates you want to send. If you are in _help-&gt;
 
 Also, OR predicates are now supported! Just nest within the tag list, and it'll be treated like an OR. For instance:
 
-*   `#!json [ "skirt", [ "samus aran", "lara croft" ], "system:height > 1000" ]`
+*   `#!json [ "skirt", [ "space bounty hunter", "jane raider" ], "system:height > 1000" ]`
 
 Makes:
 
 *   skirt
-*   samus aran OR lara croft
+*   space bounty hunter OR jane raider
 *   system:height > 1000
 
-The file and tag services are for search domain selection, just like clicking the buttons in the client. They are optional--default is 'all my files' and 'all known tags'.
+The file and tag services are for search domain selection, just like clicking the buttons in the client. They are optional--default is 'combined local file domains' and 'all known tags'.
 
 `include_current_tags` and `include_pending_tags` do the same as the buttons on the normal search interface. They alter the search of normal tags and tag-related system predicates like 'system:number of tags', including or discluding that type of tag from whatever the search is doing. If you set both of these to `false`, you'll often get no results.
 
@@ -2125,7 +2224,7 @@ Response:
       "known_urls" : [
         "https://somebooru.org/index.php?page=post&s=view&id=12345",
         "https://cdn.somebooru.org/images/4d/7f/4d7f62bb8675cef84760d6263e4c254c5129ef56.jpg",
-        "http://somegallerysite.com/post/123456/samus_is_cool.jpg"
+        "http://somegallerysite.com/post/123456/space bounty hunter_is_cool.jpg"
       ],
       "ratings" : {
         "74d52c6238d25f846d579174c11856b1aaccdb04a185cb2c79f0d0e499284f2c" : true,
@@ -2135,11 +2234,11 @@ Response:
       "tags" : {
         "6c6f63616c2074616773" : {
           "storage_tags" : {
-            "0" : ["samus favourites"],
+            "0" : ["space bounty hunter favourites"],
             "2" : ["process this later"]
           },
           "display_tags" : {
-            "0" : ["samus favourites", "favourites"],
+            "0" : ["space bounty hunter favourites", "favourites"],
             "2" : ["process this later"]
           }
         },
@@ -2155,11 +2254,11 @@ Response:
         },
         "616c6c206b6e6f776e2074616773" : {
           "storage_tags" : {
-            "0" : ["samus favourites", "blonde_hair", "blue_eyes", "looking_at_viewer"],
+            "0" : ["space bounty hunter favourites", "blonde_hair", "blue_eyes", "looking_at_viewer"],
             "1" : ["bodysuit"]
           },
           "display_tags" : {
-            "0" : ["samus favourites", "favourites", "blonde hair", "blue_eyes", "looking at viewer"],
+            "0" : ["space bounty hunter favourites", "favourites", "blonde hair", "blue_eyes", "looking at viewer"],
             "1" : ["bodysuit", "clothing"]
           }
         }
@@ -2642,7 +2741,7 @@ Required Headers: n/a
 Arguments (in percent-encoded JSON):
 :   
     *   [files](#parameters_files)
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
 
 ``` title="Example request"
 /manage_file_relationships/get_file_relationships?hash=ac940bb9026c430ea9530b4f4f6980a12d9432c2af8d9d39dfc67b05d91df11d
@@ -2673,11 +2772,11 @@ Response:
 }
 ```
 
-`king` refers to which file is set as the best of a duplicate group. If you are doing potential duplicate comparisons, the kings of your two groups are usually the ideal representatives, and the 'get some pairs to filter'-style commands try to select the kings of the various to-be-compared duplicate groups. `is_king` is a convenience bool for when a file is king of its own group.
+`king` refers to which file is set as the best of a duplicate group. If you are doing potential duplicate comparisons, the kings of your two groups are usually the ideal representatives, and the 'get some pairs to filter'-style commands will always select the kings of the various to-be-compared duplicate groups. `is_king` is a convenience bool for when a file is king of its own group.
 
-**It is possible for the king to not be available.** Every group has a king, but if that file has been deleted, or if the file domain here is limited and the king is on a different file service, then it may not be available. A similar issue occurs when you search for filtering pairs--while it is ideal to compare kings with kings, if you set 'files must be pixel dupes', then the user will expect to see those pixel duplicates, not their champions--you may be forced to compare non-kings. `king_is_on_file_domain` lets you know if the king is on the file domain you set, and `king_is_local` lets you know if it is on the hard disk--if `king_is_local=true`, you can do a `/get_files/file` request on it. It is generally rare, but you have to deal with the king being unavailable--in this situation, your best bet is to just use the file itself as its own representative.
+**It is possible for the king to not be available.** Every group has a king, but if that file has been deleted, or if the file domain here is limited and the king is on a different file service, then it may not be available. The regular hydrus potential duplicate pair commands always look at kings, so a group like this will not contribute to any 'potential duplicate pairs' count or filter fetch and so on. If you need to do your own clever manual lookups, `king_is_on_file_domain` lets you know if the king is on the file domain you set, and `king_is_local` lets you know if it is on the hard disk--if `king_is_local=true`, you can do a `/get_files/file` request on it. It is generally rare, but you have to deal with the king being unavailable--in this situation, your best bet is to just use the file itself as its own representative.
 
-All the relationships you get are filtered by the file domain. If you set the file domain to 'all known files', you will get every relationship a file has, including all deleted files, which is often less useful than you would think. The default, 'all my files', is usually most useful.
+All the relationships you get are filtered by the file domain. If you set the file domain to 'all known files', you will get every relationship a file has, including with any deleted files, which is often less useful than you would think. The default, 'combined local file domains', is usually most useful.
 
 A file that has no duplicates is considered to be in a duplicate group of size 1 and thus is always its own king.
 
@@ -2690,7 +2789,7 @@ The numbers are from a duplicate status enum, as so:
 
 Note that because of JSON constraints, these are the string versions of the integers since they are Object keys.
 
-All the hashes given here are in 'all my files', i.e. not in the trash. A file may have duplicates that have long been deleted, but, like the null king above, they will not show here.
+All the hashes given here are in 'combined local file domains', i.e. not in the trash. A file may have duplicates that have long been deleted, but, like the null king above, they will not show here.
 
 ### **GET `/manage_file_relationships/get_potentials_count`** { id="manage_file_relationships_get_potentials_count" }
 
@@ -2703,7 +2802,7 @@ Required Headers: n/a
     
 Arguments (in percent-encoded JSON):
 :   
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
     *   `tag_service_key_1`: (optional, default 'all known tags', a hex tag service key)
     *   `tags_1`: (optional, default system:everything, a list of tags you wish to search for)
     *   `tag_service_key_2`: (optional, default 'all known tags', a hex tag service key)
@@ -2716,7 +2815,7 @@ Arguments (in percent-encoded JSON):
 /manage_file_relationships/get_potentials_count?tag_service_key_1=c1ba23c60cda1051349647a151321d43ef5894aacdfb4b4e333d6c4259d56c5f&tags_1=%5B%22dupes_to_process%22%2C%20%22system%3Awidth%3C400%22%5D&potentials_search_type=1&pixel_duplicates=2&max_hamming_distance=0&max_num_pairs=50
 ```
 
-`tag_service_key_x` and `tags_x` work the same as [/get\_files/search\_files](#get_files_search_files). The `_2` variants are only useful if the `potentials_search_type` is 2.
+The arguments here reflect the same options as you see in duplicate page sidebar and auto-resolution system that search for potential duplicate pairs. `tag_service_key_x` and `tags_x` work the same as [/get\_files/search\_files](#get_files_search_files). The `_2` variants are only useful if the `potentials_search_type` is 2.
 
 `potentials_search_type` and `pixel_duplicates` are enums:
 
@@ -2753,7 +2852,7 @@ Required Headers: n/a
     
 Arguments (in percent-encoded JSON):
 :   
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
     *   `tag_service_key_1`: (optional, default 'all known tags', a hex tag service key)
     *   `tags_1`: (optional, default system:everything, a list of tags you wish to search for)
     *   `tag_service_key_2`: (optional, default 'all known tags', a hex tag service key)
@@ -2762,6 +2861,9 @@ Arguments (in percent-encoded JSON):
     *   `pixel_duplicates`: (optional, integer, default 1, regarding whether the pairs should be pixel duplicates)
     *   `max_hamming_distance`: (optional, integer, default 4, the max 'search distance' of the pairs)
     *   `max_num_pairs`: (optional, integer, defaults to client's option, how many pairs to get in a batch)
+    *   `group_mode`: (optional, bool, defaults to false, whether to be in "mixed" or "group mode")
+    *   `duplicate_pair_sort_type`: (optional, integer, defaults to 'filesize of larger file')
+    *   `duplicate_pair_sort_asc`: (optional, bool, defaults to false)
 
 ``` title="Example request"
 /manage_file_relationships/get_potential_pairs?tag_service_key_1=c1ba23c60cda1051349647a151321d43ef5894aacdfb4b4e333d6c4259d56c5f&tags_1=%5B%22dupes_to_process%22%2C%20%22system%3Awidth%3C400%22%5D&potentials_search_type=1&pixel_duplicates=2&max_hamming_distance=0&max_num_pairs=50
@@ -2769,7 +2871,18 @@ Arguments (in percent-encoded JSON):
 
 The search arguments work the same as [/manage\_file\_relationships/get\_potentials\_count](#manage_file_relationships_get_potentials_count).
 
-`max_num_pairs` is simple and just caps how many pairs you get.
+`max_num_pairs` is simple and just caps how many pairs you get in mixed mode.
+
+In `group_mode=true`, the pairs will all be related to each other, just like setting 'group mode' in the client. `max_num_pairs` is ignored in this mode--you get the whole group. In some fun situations, this can be a group of size 2,700!
+
+`duplicate_pair_sort_type` and `duplicate_pair_sort_asc` control the order of the pairs given. This is still somewhat experimental, and I may add new ones or rework the "similarity" one because it doesn't work too well, but they are currently (with True/False 'asc' values after):
+
+* 0 - "filesize of larger file" (smallest first/largest first)
+* 1 - "similarity (distance/filesize ratio)"  (most similar first/least similar first)
+* 2 - "filesize of smaller file" (smallest first/largest first)
+* 4 - "random" (N/A)
+
+I think the default, "filesize of larger file -- largest first" works the best. Maybe try random.
 
 Response:
 :   A JSON Object listing a batch of hash pairs.
@@ -2783,9 +2896,16 @@ Response:
 }
 ```
 
-The selected pair sample and their order is strictly hardcoded for now (e.g. to guarantee that a decision will not invalidate any other pair in the batch, you shouldn't see the same file twice in a batch, nor two files in the same duplicate group). Treat it as the client filter does, where you fetch batches to process one after another. I expect to make it more flexible in future, in the client itself and here.
+These file hashes are all kings that are available in the given file domain. Treat it as the client filter does, where you fetch batches to process one after another. I expect to add grouping/sorting options in the near future.
 
-You will see significantly fewer than `max_num_pairs` (and potential duplicate count) as you close to the last available pairs, and when there are none left, you will get an empty list.
+You may see the same file more than once in this batch, and if you expect to process and commit these as a batch, just like the filter does, you would be wise to skip through pairs that are implicated by a previous decision. When considering whether to display the 'next' pair, you should test:
+
+- In the current batch of decisions, has either file been manually deleted by the user?
+- In the current batch of decisions, has either file been adjudicated as the B in a 'A is better than B' or 'A is the same as B'?
+
+If either is true, you should skip the pair, since, after your current decisions are committed, that file is no longer in any potential duplicate pairs in the search you gave. The respective file is either no longer in the file domain, or it has been merged into another group (that file is no longer a king and either the potential pair no longer exists via transitive collapse or, rarely, hydrus can present you with a better comparison pair if you ask for a new batch).
+
+You will see significantly fewer than `max_num_pairs` as you close to the last available pairs, and when there are none left, you will get an empty list.
 
 ### **GET `/manage_file_relationships/get_random_potentials`** { id="manage_file_relationships_get_random_potentials" }
 
@@ -2798,7 +2918,7 @@ Required Headers: n/a
     
 Arguments (in percent-encoded JSON):
 :   
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
     *   `tag_service_key_1`: (optional, default 'all known tags', a hex tag service key)
     *   `tags_1`: (optional, default system:everything, a list of tags you wish to search for)
     *   `tag_service_key_2`: (optional, default 'all known tags', a hex tag service key)
@@ -2832,7 +2952,7 @@ Response:
 }
 ```
 
-If there are no potential duplicate groups in the search, this returns an empty list.
+These will all be kings. If there are no potential duplicate groups in the search, this returns an empty list.
 
 ### **POST `/manage_file_relationships/remove_potentials`** { id="manage_file_relationships_remove_potentials" }
 
@@ -2893,9 +3013,8 @@ Each Object is:
 * 2 - set as same quality
 * 3 - set as alternates
 * 4 - set A as better
-* 7 - set B as better
 
-2, 4, and 7 all make the files 'duplicates' (8 under `/get_file_relationships`), which, specifically, merges the two files' duplicate groups. 'same quality' has different duplicate content merge options to the better/worse choices, but it ultimately sets something similar to A>B (but see below for more complicated outcomes). You obviously don't have to use 'B is better' if you prefer just to swap the hashes. Do what works for you.
+2 and 4 will make the files 'duplicates' (8 under `/get_file_relationships`), which, specifically, merges the two files' duplicate groups. 'same quality' has different duplicate content merge options to the better/worse choices, but it ultimately sets something similar to A>B (but see below for more complicated outcomes). Do what works for you.
 
 `do_default_content_merge` sets whether the user's duplicate content merge options should be loaded and applied to the files along with the relationship. Most operations in the client do this automatically, so the user may expect it to apply, but if you want to do content merge yourself, set this to false.
 
@@ -2974,7 +3093,7 @@ The logic here can get tricky, but I have tried my best to avoid overcommitting 
         * King of A stays king of A
         * King of B stays king of B
 
-So, if you can, always present kings to your users, and action using those kings' hashes. It makes the merge logic easier in all cases. Remember that you can set `system:is the best quality file of its duplicate group` in any file search to exclude any non-kings (e.g. if you are hunting for easily actionable pixel potential duplicates).
+So, if you can, always present kings to your users, and action using those kings' hashes. It makes the merge logic easier in all cases. When you ask hydrus to 'get potential duplicate pairs' with these API calls, and it will _always_ present you kings or counts of available kings. If it cannot present a king (e.g. some group members are in the file domain, but the king is deleted, say), hydrus will _not_ count that as a potential duplicate pair in that potential duplicate pair search. If you are doing your own file duplicate search, remember that you can set `system:is the best quality file of its duplicate group` to exclude any non-kings.
 
 ### **POST `/manage_file_relationships/set_kings`** { id="manage_file_relationships_set_kings" }
 
@@ -3308,7 +3427,210 @@ Send an empty string to reset the client back to the default User-Agent, which s
 
 ## Managing Pages
 
-This refers to the pages of the main client UI.
+This refers to the pages and viewers of the main client UI.
+
+### **GET `/manage_pages/get_media_viewers`** { id="manage_pages_get_media_viewers" }
+
+_Get information about the currently open media viewer windows. Does not include the small preview viewers embedded into the bottom-left of normal search pages._
+
+Restricted access: 
+:   YES. Manage Pages permission needed.
+
+Required Headers: n/a
+
+Arguments: n/a
+
+Response description
+:   A JSON List of Objects, each representing a media viewer that is open and what media they are currently looking at. The list might be empty, will often have one viewer, and for some users will have two or three.
+```json title="Example response"
+{
+    "media_viewers": [
+        {
+            "canvas_type": 0,
+            "canvas_key": "f0bfad96c34f91d457f32baa30592957873ece1f3f6639458d52bf72a8fe0868",
+            "current_media": {
+                "file_id": 2732536,
+                "hash": "8d1c40c73d6f6bf0c33fe010d28c9eacdb4c010bfac1eebe8303810e5abc226d",
+                "size": 645363,
+                "mime": "image/jpeg",
+                "filetype_human": "jpeg",
+                "filetype_enum": 1,
+                "ext": ".jpg",
+                "width": 2000,
+                "height": 2000,
+                "duration": null,
+                "num_frames": null,
+                "num_words": null,
+                "has_audio": false,
+                "blurhash": "UCL.@[}N8zKr*^7|B4I0}?G09G-mKgVr+~os",
+                "pixel_hash": "886e4f0102efde11cc0307bb431eb2c628c327485e61c9ce2b0ee5180238cd67",
+                "filetype_forced": false,
+                "thumbnail_width": 119,
+                "thumbnail_height": 120,
+                "notes": {},
+                "file_services": {
+                    "current": {
+                        "6c6f63616c2066696c6573": {
+                            "name": "muh files",
+                            "type": 2,
+                            "type_pretty": "local file domain",
+                            "time_imported": 1768168342.422
+                        },
+                        "616c6c206c6f63616c2066696c6573": {
+                            "name": "hydrus local file storage",
+                            "type": 15,
+                            "type_pretty": "virtual combined local file domain",
+                            "time_imported": 1768168342.422
+                        },
+                        "616c6c206c6f63616c206d65646961": {
+                            "name": "combined local file domains",
+                            "type": 21,
+                            "type_pretty": "virtual combined local media domain",
+                            "time_imported": 1768168342.422
+                        }
+                    },
+                    "deleted": {}
+                },
+                "time_modified": 1767681014.0,
+                "time_modified_details": {
+                    "somebooru.org": 1767681014.0,
+                    "local": 1768168342.197
+                },
+                "is_inbox": true,
+                "is_local": true,
+                "is_trashed": false,
+                "is_deleted": false,
+                "has_transparency": false,
+                "has_exif": false,
+                "has_human_readable_embedded_metadata": true,
+                "has_icc_profile": false,
+                "known_urls": [
+                    "https://somebooru.org//images/1063/blah.jpg",
+                    "https://somebooru.org/index.php?id=123456&page=post&s=view",
+                    "https://twitter.com/blah/status/123456"
+                ],
+                "ipfs_multihashes": {},
+                "detailed_known_urls": [
+                    {
+                        "normalised_url": "https://somebooru.org//images/1063/blah.jpg",
+                        "url_type": 5,
+                        "url_type_string": "unknown url",
+                        "match_name": "unknown url",
+                        "can_parse": false,
+                        "cannot_parse_reason": "unknown url class"
+                    },
+                    {
+                        "normalised_url": "https://somebooru.org/index.php?id=123456&page=post&s=view",
+                        "url_type": 0,
+                        "url_type_string": "post url",
+                        "match_name": "somebooru file page",
+                        "can_parse": true
+                    },
+                    {
+                        "normalised_url": "https://twitter.com/blah/status/123456",
+                        "url_type": 0,
+                        "url_type_string": "post url",
+                        "match_name": "twitter tweet",
+                        "can_parse": true
+                    }
+                ],
+                "ratings": {
+                    "f1de621a87caa9317a6ad780bc096fd88e14975da5c122e4ae611babf3c2917f": null,
+                    "be0e7517d7b567880bcb6fbff7de3fd6085ac7fc3416fc4b982b598867ab43dd": 0,
+                },
+                "tags": {
+                    "616c6c206b6e6f776e2074616773": {
+                        "name": "all known tags",
+                        "type": 10,
+                        "type_pretty": "virtual combined tag domain",
+                        "storage_tags": {
+                            "1": [
+                                "1girl",
+                                "arm cannon",
+                                "blonde hair",
+                                "blue eyes",
+                                "white skin"
+                            ]
+                        },
+                        "display_tags": {
+                            "1": [
+                                "1girl",
+                                "arm cannon",
+                                "blonde hair",
+                                "blue eyes",
+                                "white skin"
+                            ]
+                        }
+                    },
+                    "6c6f63616c2074616773": {
+                        "name": "my tags",
+                        "type": 5,
+                        "type_pretty": "local tag domain",
+                        "storage_tags": {},
+                        "display_tags": {}
+                    },
+                    "9623237dfe205de278071b053c49568dfab2c7502b0b65978831dbf11ad9a7d4": {
+                        "name": "public tag repo",
+                        "type": 0,
+                        "type_pretty": "hydrus tag repository",
+                        "storage_tags": {
+                            "1": [
+                                "1girl",
+                                "arm cannon",
+                                "blonde hair",
+                                "blue eyes",
+                                "white skin"
+                            ]
+                        },
+                        "display_tags": {
+                            "1": [
+                                "1girl",
+                                "arm cannon",
+                                "blonde hair",
+                                "blue eyes",
+                                "white skin"
+                            ]
+                        }
+                    }
+                },
+                "file_viewing_statistics": [
+                    {
+                        "canvas_type": 0,
+                        "canvas_type_pretty": "media viewer",
+                        "views": 0,
+                        "viewtime": 0.0,
+                        "last_viewed_timestamp": null
+                    },
+                    {
+                        "canvas_type": 1,
+                        "canvas_type_pretty": "preview viewer",
+                        "views": 0,
+                        "viewtime": 0.0,
+                        "last_viewed_timestamp": null
+                    },
+                    {
+                        "canvas_type": 4,
+                        "canvas_type_pretty": "client api viewer",
+                        "views": 0,
+                        "viewtime": 0.0,
+                        "last_viewed_timestamp": null
+                    }
+                ]
+            }
+        }
+    ]
+}
+```
+
+Although this looks pretty beastly, it is actually just three keys:
+
+- `canvas_type` - An enum with the following definition:  
+    - 0 - Normal Navigable Media Viewer
+    - 1 - Preview Canvas (you should not see this)
+    - 2 - Duplicates Filter
+    - 3 - Archive/Delete Filter
+- `canvas_key` - An identifier for this particular media viewer. If we end up adding commands for media viewers, we'll pivot around this id.
+- `current_media` - In edge cases, `null`, but otherwise just a normal media result as you'd see in [/get\_files/file\_metadata](#get_files_file_metadata) that shows all available info about the file currently in view.
 
 ### **GET `/manage_pages/get_pages`** { id="manage_pages_get_pages" }
 
@@ -3499,7 +3821,8 @@ Response description
     }
   },
   "media" : {
-    "num_files" : 4
+    "num_files" : 4,
+    "hash_ids" : [ 12345, 12346, 88754, 23 ]
   }
 }
 ```
@@ -3693,7 +4016,7 @@ Response:
       "creation_time": 1700689162.6635988,
       "status_text_1": "downloading files for \"elf\" (1/1)",
       "status_text_2": "file 4/27: downloading file",
-      "status_title": "subscriptions - safebooru",
+      "status_title": "subscriptions - somebooru",
       "had_error": false,
       "is_cancellable": true,
       "is_cancelled": false,
@@ -3701,7 +4024,7 @@ Response:
       "is_pausable": false,
       "is_paused": false,
       "is_working": true,
-      "nice_string": "subscriptions - safebooru\r\ndownloading files for \"elf\" (1/1)\r\nfile 4/27: downloading file",
+      "nice_string": "subscriptions - somebooru\r\ndownloading files for \"elf\" (1/1)\r\nfile 4/27: downloading file",
       "popup_gauge_2": [
         3,
         27
@@ -3712,7 +4035,7 @@ Response:
           "cd6ebafb8b39b3455fe382cba0daeefea87848950a6af7b3f000b05b43f2d4f2",
           "422cebabc95fabcc6d9a9488060ea88fd2f454e6eb799de8cafa9acd83595d0d"
         ],
-        "label": "safebooru: elf"
+        "label": "somebooru: elf"
       },
       "network_job": {
         "url": "https://somebooru.org//images/12345/4d7f62bb8675cef84760d6263e4c254c5129ef56.jpg",
@@ -4043,7 +4366,7 @@ Response:
 
 ### **GET `/manage_database/mr_bones`** { id="manage_database_mr_bones" }
 
-_Get the data from help->how boned am I?. This is a simple Object of numbers just for hacky advanced purposes if you want to build up some stats in the background. The numbers are the same as the dialog shows, so double check that to confirm what means what._
+_Gets the data from database->how boned am I?. This is a simple Object of numbers for advanced purposes. Useful if you want to show or record some stats. The numbers are the same as the dialog shows, so double check that to confirm what each value is for._
 
 Restricted access:
 :   YES. Manage Database permission needed.
@@ -4051,8 +4374,8 @@ Restricted access:
 Arguments (in percent-encoded JSON):
 :   
     *   `tags`: (optional, a list of tags you wish to search for)
-    *   [file domain](#parameters_file_domain) (optional, defaults to _all my files_)
-    *   `tag_service_key`: (optional, hexadecimal, the tag domain on which to search, defaults to _all my files_)
+    *   [file domain](#parameters_file_domain) (optional, defaults to _combined local file domains_)
+    *   `tag_service_key`: (optional, hexadecimal, the tag domain on which to search, defaults to _combined local file domains_)
     
     ``` title="Example requests"
     /manage_database/mr_bones

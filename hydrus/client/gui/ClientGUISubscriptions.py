@@ -4,6 +4,7 @@ import threading
 import time
 import typing
 
+from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
@@ -18,7 +19,6 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIAsync
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -27,7 +27,8 @@ from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.importing import ClientGUIFileSeedCache
 from hydrus.client.gui.importing import ClientGUIGallerySeedLog
 from hydrus.client.gui.importing import ClientGUIImport
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsLegacy
+from hydrus.client.gui.importing import ClientGUIImportOptionsPanels
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
 from hydrus.client.gui.metadata import ClientGUITime
@@ -262,20 +263,22 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_GETTING_STARTED_SUBSCRIPTIONS )
         
-        menu_items.append( ( 'normal', 'open the html subscriptions help', 'Open the help page for subscriptions in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the html subscriptions help', 'Open the help page for subscriptions in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
         #
         
         self._name = QW.QLineEdit( self )
-        self._delay_st = ClientGUICommon.BetterStaticText( self )
+        self._delay_st = ClientGUICommon.BetterStaticText( self, ellipsize_end = True )
+        
+        self._delay_st.setWordWrap( True )
         
         #
         
@@ -284,13 +287,20 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._query_panel = ClientGUICommon.StaticBox( self, 'site and queries' )
         
+        label = 'You have selected a downloader that appears to download from multiple sites. Subscriptions make careful timing calculations based on file velocity, and multiple sites offering new files at different times will confuse things! Also, errors or certain search 404s that block a sub query will stop work for all sites in the downloader. Unless you are certain this complex downloader sources data from the same unified stream behind the scenes, and this single website simply has a complicated multi-domain setup, I strongly recommend you duplicate this whole subscription in the dialog above and set each duplicate to check each respective site separately. The subs will clear faster, and your check timings and DEAD results will be far more efficient and reliable!'
+        
+        self._multi_domain_ngug_warning_label = ClientGUICommon.BetterStaticText( self._query_panel, label = label )
+        self._multi_domain_ngug_warning_label.setWordWrap( True )
+        self._multi_domain_ngug_warning_label.setObjectName( 'HydrusWarning' )
+        self._multi_domain_ngug_warning_label.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
+        
         self._gug_key_and_name = ClientGUIImport.GUGKeyAndNameSelector( self._query_panel, gug_key_and_name )
         
         queries_panel = ClientGUIListCtrl.BetterListCtrlPanel( self._query_panel )
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTION_QUERIES.ID, self._ConvertQueryHeaderToDisplayTuple, self._ConvertQueryHeaderToSortTuple )
         
-        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, 10, model, use_simple_delete = True, activation_callback = self._EditQuery )
+        self._query_headers = ClientGUIListCtrl.BetterListCtrlTreeView( queries_panel, 6, model, use_simple_delete = True, activation_callback = self._EditQuery, max_height_num_chars = 24 )
         
         queries_panel.SetListCtrl( self._query_headers )
         
@@ -301,8 +311,21 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         queries_panel.AddDeleteButton()
         queries_panel.AddSeparator()
         queries_panel.AddButton( 'pause/play', self._PausePlay, enabled_only_on_selection = True )
-        queries_panel.AddButton( 'retry failed', self._STARTRetryFailed, enabled_check_func = self._ListCtrlCanRetryFailed )
-        queries_panel.AddButton( 'retry ignored', self._STARTRetryIgnored, enabled_check_func = self._ListCtrlCanRetryIgnored )
+        
+        menu_template_items = []
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry ignored', 'Retry the files that were moved over for one reason or another.', self._STARTRetryIgnored )
+        menu_template_item.SetVisibleCallable( self._ListCtrlCanRetryIgnored )
+        
+        menu_template_items.append( menu_template_item )
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry failed', 'Retry the files that failed.', self._STARTRetryFailed )
+        menu_template_item.SetVisibleCallable( self._ListCtrlCanRetryFailed )
+        
+        menu_template_items.append( menu_template_item )
+        
+        queries_panel.AddMenuIconButton( CC.global_icons().retry, 'retry commands', menu_template_items, enabled_check_func = self._ListCtrlCanRetryAnything )
+        
         queries_panel.AddButton( 'check now', self._CheckNow, enabled_check_func = self._ListCtrlCanCheckNow )
         queries_panel.AddButton( 'reset', self._STARTReset, enabled_check_func = self._ListCtrlCanResetCache )
         
@@ -310,12 +333,12 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             
             queries_panel.AddSeparator()
             
-            menu_items = []
+            menu_template_items = []
             
-            menu_items.append( ( 'normal', 'show', 'Show quality info.', self._STARTShowQualityInfo ) )
-            menu_items.append( ( 'normal', 'copy csv data to clipboard', 'Copy quality info to clipboard.', self._STARTCopyQualityInfo ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'show', 'Show quality info.', self._STARTShowQualityInfo ) )
+            menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'copy csv data to clipboard', 'Copy quality info to clipboard.', self._STARTCopyQualityInfo ) )
             
-            queries_panel.AddMenuButton( 'quality info', menu_items, enabled_check_func = self._ListCtrlHasExistingQueriesSelected )
+            queries_panel.AddMenuButton( 'quality info', menu_template_items, enabled_check_func = self._ListCtrlHasExistingQueriesSelected )
             
         
         #
@@ -335,7 +358,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         self._initial_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'The first sync will add no more than this many URLs.' ) )
         
         self._periodic_file_limit = ClientGUICommon.BetterSpinBox( self._file_limits_panel, min=1, max=limits_max )
-        self._periodic_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'Normal syncs will add no more than this many URLs, stopping early if they find several URLs the query has seen before. Note that this generally means top-level posts. If those posts include multiple files, e.g. as on Pixiv, they will still only count for one URL at the stage when this is checked.' ) )
+        self._periodic_file_limit.setToolTip( ClientGUIFunctions.WrapToolTip( 'Normal syncs will add no more than this many URLs, stopping early if they find several URLs the query has seen before. Note that this generally means top-level posts. If those posts can themselves include multiple files, they will still only count for one URL at the stage when this is checked.' ) )
         
         self._this_is_a_random_sample_sub = QW.QCheckBox( self._file_limits_panel )
         self._this_is_a_random_sample_sub.setToolTip( ClientGUIFunctions.WrapToolTip( 'If you check this, you will not get warnings if the normal file limit is hit. Useful if you have a randomly sorted gallery, or you just want a recurring small sample of files.' ) )
@@ -373,7 +396,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = True
         allow_default_selection = True
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetFileImportOptions( file_import_options )
         self._import_options_button.SetTagImportOptions( tag_import_options )
@@ -404,6 +427,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
+        self._query_panel.Add( self._multi_domain_ngug_warning_label, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._query_panel.Add( self._gug_key_and_name, CC.FLAGS_EXPAND_PERPENDICULAR )
         self._query_panel.Add( queries_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
@@ -479,6 +503,28 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._UpdateDelayText()
         
+        self._gug_key_and_name.valueChanged.connect( self._UpdateNGUGWidget )
+        
+        self._UpdateNGUGWidget()
+        
+    
+    def _UpdateNGUGWidget( self ):
+        
+        gug_key_and_name = self._gug_key_and_name.GetValue()
+        
+        try:
+            
+            gug = CG.client_controller.network_engine.domain_manager.GetGUG( gug_key_and_name )
+            
+            show_warning = gug.IsMultiDomainNGUG()
+            
+        except Exception as e:
+            
+            show_warning = False
+            
+        
+        self._multi_domain_ngug_warning_label.setVisible( show_warning )
+        
     
     def _AddQuery( self ):
         
@@ -502,11 +548,13 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 ( query_header, query_log_container ) = panel.GetValue()
                 
-                query_text = query_header.GetQueryText()
+                query_text_lower = query_header.GetQueryText().lower()
                 
-                if query_text in self._GetCurrentQueryTexts():
+                lower_query_texts_to_human_names = self._GetCurrentLowerQueryTextsToHumanNames()
+                
+                if query_text_lower in lower_query_texts_to_human_names:
                     
-                    ClientGUIDialogsMessage.ShowWarning( self, f'You already have a query for "{query_text}", so nothing new has been added.' )
+                    ClientGUIDialogsMessage.ShowWarning( self, f'You already have a query for "{lower_query_texts_to_human_names[ query_text_lower ]}", so nothing new has been added.' )
                     
                     return
                     
@@ -594,7 +642,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         paused = query_header.IsPaused()
         checker_status = query_header.GetCheckerStatus()
         
-        name = query_header.GetHumanName()
+        name = query_header.GetFullHumanName()
         pretty_name = name
         
         if paused:
@@ -654,7 +702,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 pretty_delay = 'bandwidth: ' + HydrusTime.TimeDeltaToPrettyTimeDelta( estimate )
                 
             
-        except:
+        except Exception as e:
             
             pretty_delay = 'could not determine bandwidth--there may be a problem with some of the urls in this query'
             
@@ -669,7 +717,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         paused = query_header.IsPaused()
         checker_status = query_header.GetCheckerStatus()
         
-        name = query_header.GetHumanName()
+        name = query_header.GetFullHumanName()
         
         file_seed_cache_status = query_header.GetFileSeedCacheStatus()
         
@@ -690,7 +738,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 delay = estimate
                 
             
-        except:
+        except Exception as e:
             
             delay = 0
             
@@ -828,9 +876,13 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 edited_query_text = edited_query_header.GetQueryText()
                 
-                if edited_query_text != old_query_header.GetQueryText() and edited_query_text in self._GetCurrentQueryTexts():
+                edited_query_text_lower = edited_query_text.lower()
+                
+                lower_query_texts_to_human_names = self._GetCurrentLowerQueryTextsToHumanNames()
+                
+                if edited_query_text != old_query_header.GetQueryText() and edited_query_text_lower in lower_query_texts_to_human_names:
                     
-                    ClientGUIDialogsMessage.ShowWarning( self, f'You already have a query for "{edited_query_text}"! The edit you just made will not be saved.' )
+                    ClientGUIDialogsMessage.ShowWarning( self, f'You already have a query for "{lower_query_texts_to_human_names[ edited_query_text_lower ]}"! The edit you just made will not be saved.' )
                     
                     return
                     
@@ -843,16 +895,28 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         
     
-    def _GetCurrentQueryTexts( self ):
+    def _GetCurrentLowerQueryTextsToHumanNames( self ):
         
-        query_strings = set()
+        # lower, not casefold; let's not get too clever here
+        
+        lower_query_texts_to_human_names = dict()
         
         for query_header in self._query_headers.GetData():
             
-            query_strings.add( query_header.GetQueryText() )
+            query_text_lower = query_header.GetQueryText().lower()
+            query_human_name = query_header.GetFullHumanName()
+            
+            if query_text_lower in lower_query_texts_to_human_names:
+                
+                lower_query_texts_to_human_names[ query_text_lower ] += ', ' + query_human_name
+                
+            else:
+                
+                lower_query_texts_to_human_names[ query_text_lower ] = query_human_name
+                
             
         
-        return query_strings
+        return lower_query_texts_to_human_names
         
     
     def _GetSelectedExistingQueries( self ):
@@ -996,6 +1060,11 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         return False
         
     
+    def _ListCtrlCanRetryAnything( self ):
+        
+        return self._ListCtrlCanRetryIgnored() or self._ListCtrlCanRetryFailed()
+        
+    
     def _ListCtrlCanRetryFailed( self ):
         
         for query_header in self._query_headers.GetData( only_selected = True ):
@@ -1031,7 +1100,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def _PasteQueries( self ):
         
-        message = 'This will add new queries by pulling them from your clipboard. It assumes they are currently in your clipboard and newline separated. Queries that are already in the subscription (with any combination of upper/lower case) will not be duplicated, but if they are DEAD, they will be revived. Is that ok?'
+        message = 'This will add new queries by pulling them from your clipboard. It assumes they are currently in your clipboard and newline separated. Queries that are already in the subscription (with any combination of upper/lower case) will not be duplicated, but if they are DEAD, they can be revived. Sound good?'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
@@ -1071,18 +1140,20 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
             return
             
         
-        current_query_texts_lower = { query_text.lower() for query_text in self._GetCurrentQueryTexts() }
+        lower_query_texts_to_human_names = self._GetCurrentLowerQueryTextsToHumanNames()
         
-        already_existing_query_texts = set()
+        already_existing_query_header_texts = set()
+        already_existing_human_names = set()
         new_query_texts = set()
         
         for query_text in pasted_query_texts:
             
             query_text_lower = query_text.lower()
             
-            if query_text_lower in current_query_texts_lower:
+            if query_text_lower in lower_query_texts_to_human_names:
                 
-                already_existing_query_texts.add( query_text )
+                already_existing_query_header_texts.add( query_text_lower )
+                already_existing_human_names.add( lower_query_texts_to_human_names[ query_text_lower ] )
                 
             else:
                 
@@ -1092,22 +1163,24 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         revive_dead = True
         
-        DEAD_query_headers = { query_header for query_header in self._query_headers.GetData() if query_header.GetQueryText() in already_existing_query_texts and query_header.IsDead() }
+        DEAD_query_headers = { query_header for query_header in self._query_headers.GetData() if query_header.GetQueryText().lower() in already_existing_query_header_texts and query_header.IsDead() }
         
-        already_existing_query_texts = sorted( already_existing_query_texts )
-        new_query_texts = sorted( new_query_texts )
+        already_existing_human_names = sorted( already_existing_human_names, key = HydrusText.HumanTextSortKey )
+        new_query_texts = sorted( new_query_texts, key = HydrusText.HumanTextSortKey )
         
-        message = ''
+        #
         
-        if len( already_existing_query_texts ) > 0:
+        paste_message_components = []
+        
+        if len( already_existing_human_names ) > 0:
             
-            message += f'The queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(already_existing_query_texts)}were already in the subscription.'
+            paste_message_components.append( f'The queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(already_existing_human_names)}were already in the subscription.' )
             
             if len( DEAD_query_headers ) > 0:
                 
-                DEAD_query_header_texts = [ query_header.GetQueryText() for query_header in DEAD_query_headers ]
+                DEAD_human_names = sorted( [ query_header.GetFullHumanName() for query_header in DEAD_query_headers ], key = HydrusText.HumanTextSortKey )
                 
-                DEAD_revive_message = f'Some of the queries you pasted already exist in the subscription but are DEAD. Do you want to revive them? They are:{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(DEAD_query_header_texts)}'
+                DEAD_revive_message = f'Some of the queries you pasted already exist in the subscription but are DEAD. Do you want to revive them? They are:{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(DEAD_human_names)}'
                 
                 result = ClientGUIDialogsQuick.GetYesNo( self, DEAD_revive_message )
                 
@@ -1115,8 +1188,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     revive_dead = True
                     
-                    message += '\n' * 2
-                    message += f'The DEAD queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(DEAD_query_header_texts)}were revived.'
+                    paste_message_components.append( f'The DEAD queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(DEAD_human_names)}were revived.' )
                     
                 else:
                     
@@ -1127,15 +1199,12 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if len( new_query_texts ) > 0:
             
-            if len( already_existing_query_texts ) > 0:
-                
-                message += '\n' * 2
-                
-            
-            message += f'The queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(new_query_texts)}were added.'
+            paste_message_components.append( f'The queries{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary(new_query_texts)}were added.' )
             
         
-        if len( message ) > 0:
+        if len( paste_message_components ) > 0:
+            
+            message = '\n\n'.join( paste_message_components )
             
             ClientGUIDialogsMessage.ShowInformation( self, message )
             
@@ -1164,7 +1233,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
                 query_header.CheckNow()
                 
             
-            
+        
         self._query_headers.AddDatas( new_query_headers, select_sort_and_scroll = True )
         
         self._query_headers.UpdateDatas( DEAD_query_headers )
@@ -1273,7 +1342,7 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         self._DoAsyncGetQueryLogContainers( query_headers, call )
         
     
-    def _RetryIgnored( self, query_headers: collections.abc.Collection[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex = typing.Optional[ str ] ):
+    def _RetryIgnored( self, query_headers: collections.abc.Collection[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex = str | None ):
         
         for query_header in query_headers:
             
@@ -1336,9 +1405,17 @@ class EditSubscriptionPanel( ClientGUIScrolledPanels.EditPanel ):
         tag_import_options = self._import_options_button.GetTagImportOptions()
         note_import_options = self._import_options_button.GetNoteImportOptions()
         
-        subscription.SetTuple( gug_key_and_name, checker_options, initial_file_limit, periodic_file_limit, paused, file_import_options, tag_import_options, self._no_work_until )
+        subscription.SetGUGKeyAndName( gug_key_and_name )
+        subscription.SetCheckerOptions( checker_options )
+        subscription.SetFileLimits( initial_file_limit, periodic_file_limit )
         
+        subscription.SetPaused( paused )
+        
+        subscription.SetFileImportOptions( file_import_options )
+        subscription.SetTagImportOptions( tag_import_options )
         subscription.SetNoteImportOptions( note_import_options )
+        
+        subscription.SetNoWorkUntil( self._no_work_until )
         
         subscription.SetThisIsARandomSampleSubscription( self._this_is_a_random_sample_sub.isChecked() )
         
@@ -1370,7 +1447,7 @@ class EditSubscriptionQueryPanel( ClientGUIScrolledPanels.EditPanel ):
         
         name_panel = ClientGUICommon.StaticBox( self, 'query and name' )
         
-        self._display_name = ClientGUICommon.NoneableTextCtrl( name_panel, '', placeholder_text = 'my subscription', none_phrase = 'use query text' )
+        self._display_name = ClientGUICommon.NoneableTextCtrl( name_panel, '', placeholder_text = 'query name', none_phrase = 'use query text' )
         self._query_text = QW.QLineEdit( name_panel )
         
         #
@@ -1402,7 +1479,7 @@ class EditSubscriptionQueryPanel( ClientGUIScrolledPanels.EditPanel ):
         show_downloader_options = False # just for additional tags, no parsing gubbins needed
         allow_default_selection = False
         
-        self._import_options_button = ClientGUIImportOptions.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
+        self._import_options_button = ClientGUIImportOptionsLegacy.ImportOptionsButton( self, show_downloader_options, allow_default_selection )
         
         self._import_options_button.SetTagImportOptions( tag_import_options )
         
@@ -1582,13 +1659,13 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_GETTING_STARTED_SUBSCRIPTIONS )
         
-        menu_items.append( ( 'normal', 'open the html subscriptions help', 'Open the help page for subscriptions in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the html subscriptions help', 'Open the help page for subscriptions in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1596,7 +1673,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSCRIPTIONS.ID, self._ConvertSubscriptionToDisplayTuple, self._ConvertSubscriptionToSortTuple )
         
-        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, 12, model, use_simple_delete = True, activation_callback = self.Edit )
+        self._subscriptions = ClientGUIListCtrl.BetterListCtrlTreeView( self._subscriptions_panel, 6, model, use_simple_delete = True, activation_callback = self.Edit, max_height_num_chars = 24 )
         
         self._subscriptions_panel.SetListCtrl( self._subscriptions )
         
@@ -1618,8 +1695,21 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._subscriptions_panel.AddSeparator()
         
         self._subscriptions_panel.AddButton( 'pause/resume', self.PauseResume, enabled_only_on_selection = True )
-        self._subscriptions_panel.AddButton( 'retry failed', self._STARTRetryFailed, enabled_check_func = self._CanRetryFailed )
-        self._subscriptions_panel.AddButton( 'retry ignored', self._STARTRetryIgnored, enabled_check_func = self._CanRetryIgnored )
+        
+        menu_template_items = []
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry ignored', 'Retry the files that were moved over for one reason or another.', self._STARTRetryIgnored )
+        menu_template_item.SetVisibleCallable( self._CanRetryIgnored )
+        
+        menu_template_items.append( menu_template_item )
+        
+        menu_template_item = ClientGUIMenuButton.MenuTemplateItemCall( 'retry failed', 'Retry the files that failed.', self._STARTRetryFailed )
+        menu_template_item.SetVisibleCallable( self._CanRetryFailed )
+        
+        menu_template_items.append( menu_template_item )
+        
+        self._subscriptions_panel.AddMenuIconButton( CC.global_icons().retry, 'retry commands', menu_template_items, enabled_check_func = self._CanRetryAnything )
+        
         self._subscriptions_panel.AddButton( 'scrub delays', self.ScrubDelays, enabled_check_func = self._CanScrubDelays )
         self._subscriptions_panel.AddButton( 'check queries now', self.CheckNow, enabled_check_func = self._CanCheckNow )
         
@@ -1628,6 +1718,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._subscriptions_panel.NewButtonRow()
         
         self._subscriptions_panel.AddButton( 'select subscriptions', self.SelectSubscriptions )
+        self._subscriptions_panel.AddButton( 'overwrite downloader', self.SetDownloader, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite checker options', self.SetCheckerOptions, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite file import options', self.SetFileImportOptions, enabled_only_on_selection = True )
         self._subscriptions_panel.AddButton( 'overwrite tag import options', self.SetTagImportOptions, enabled_only_on_selection = True )
@@ -1719,7 +1810,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             subscription = unknown_subscription
             
         
-        subscription.SetNonDupeName( self._GetExistingNames() )
+        subscription.SetNonDupeName( self._GetExistingNames(), do_casefold = True )
         
         self._subscriptions.AddData( subscription, select_sort_and_scroll = True )
         
@@ -1767,6 +1858,11 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         return True in ( subscription.CanReset() for subscription in subscriptions )
         
     
+    def _CanRetryAnything( self ):
+        
+        return self._CanRetryIgnored() or self._CanRetryFailed()
+        
+    
     def _CanRetryFailed( self ):
         
         subscriptions = self._subscriptions.GetData( only_selected = True )
@@ -1811,7 +1907,19 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ( name, gug_key_and_name, query_headers, checker_options, initial_file_limit, periodic_file_limit, paused, file_import_options, tag_import_options, no_work_until, no_work_until_reason ) = subscription.ToTuple()
         
-        pretty_site = gug_key_and_name[1]
+        try:
+            
+            pretty_site = gug_key_and_name[1]
+            
+        except:
+            
+            pretty_site = 'unknown downloader'
+                
+        
+        if pretty_site == '':
+            
+            pretty_site = 'no downloader set!'
+            
         
         if len( query_headers ) > 0:
             
@@ -1913,7 +2021,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 pretty_delay = 'could not determine bandwidth, there may be an error with the sub or its urls'
                 
@@ -2016,7 +2124,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 delay = 0
                 
@@ -2349,7 +2457,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         self._DoAsyncGetQueryLogContainers( query_headers, call )
         
     
-    def _RetryIgnored( self, query_headers: collections.abc.Iterable[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex: typing.Optional[ str ] ):
+    def _RetryIgnored( self, query_headers: collections.abc.Iterable[ ClientImportSubscriptionQuery.SubscriptionQueryHeader ], ignored_regex: str | None ):
         
         for query_header in query_headers:
             
@@ -2372,7 +2480,16 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def Add( self ):
         
-        gug_key_and_name = CG.client_controller.network_engine.domain_manager.GetDefaultGUGKeyAndName()
+        try:
+            
+            default_gug_key_and_name = CG.client_controller.network_engine.domain_manager.GetDefaultGUGKeyAndName()
+            
+            gug_key_and_name = ClientGUIImport.SelectGUGKeyAndName( self, default_gug_key_and_name, for_new_sub = True )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
         
         empty_subscription = ClientImportSubscriptions.Subscription( 'new subscription', gug_key_and_name = gug_key_and_name )
         
@@ -2471,8 +2588,8 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         if can_do_cased and can_do_caseless:
             
             choice_tuples = [
-                ( 'do a normal upper/lower case deduplication', False, 'Dedupe "samus_aran" with "samus_aran" or "Samus_Aran". This is usually the best option to go with--most sites ignore case.' ),
-                ( 'only do exact text deduplication', True, 'Dedupe "samus_aran" with "samus_aran", but not "Samus_Aran". Usually not important, but some specific galleries may care about this.' )
+                ( 'do a normal upper/lower case deduplication', False, 'Dedupe "my_query" with "my_query" or "My_Query". This is usually the best option to go with--most sites ignore case.' ),
+                ( 'only do exact text deduplication', True, 'Dedupe "my_query" with "my_query", but not "My_Query". Usually not important, but some specific galleries may care about this.' )
             ]
             
             message = 'Which kind of duplication are we going to do?'
@@ -2488,7 +2605,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         elif can_do_caseless:
             
-            message = 'There are no exact text duplicates. Only upper/lower case deduplication is available, merging queries like "samus_aran" and "Samus_Aran". Is this ok?'
+            message = 'There are no exact text duplicates. Only upper/lower case deduplication is available, merging queries like "my_query" and "My_Query". Is this ok?'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -2789,7 +2906,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 if edited_subscription.GetName() != subscription.GetName():
                     
-                    edited_subscription.SetNonDupeName( self._GetExistingNames() )
+                    edited_subscription.SetNonDupeName( self._GetExistingNames(), do_casefold = True )
                     
                 
                 self._subscriptions.ReplaceData( subscription, edited_subscription, sort_and_scroll = True )
@@ -2826,7 +2943,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def LowerCaseQueries( self ):
         
-        message = 'This will convert the selected subscriptions\' queries to lowercase text. "Samus_Aran" will become "samus_aran". Most sites do not care about case, but it can help things stay neat.'
+        message = 'This will convert the selected subscriptions\' queries to lowercase text. "My_Query" will become "my_query". Most sites do not care about case, but it can help things stay neat.'
         
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
@@ -2926,17 +3043,19 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 message = f'{primary_sub_name} was able to merge {HydrusNumbers.ToHumanInt( len( eaten_subs ) )} other subscriptions. If you wish to change its name, do so here.'
                 
-                with ClientGUIDialogs.DialogTextEntry( self, message, default = primary_sub_name ) as dlg:
+                name = primary_sub_name
+                
+                try:
                     
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        name = dlg.GetValue()
-                        
-                        merged_sub.SetName( name )
-                        
+                    name = ClientGUIDialogsQuick.EnterText( self, message, default = name )
+                    
+                except HydrusExceptions.CancelledException:
                     
                     # don't care about a cancel here--we'll take that as 'I didn't want to change its name', not 'abort'
+                    pass
                     
+                
+                merged_sub.SetName( name )
                 
                 primary_and_merged_replacement_tuples.append( ( original_primary_sub, merged_sub ) )
                 
@@ -2951,7 +3070,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 if merged_sub.GetName() != primary.GetName():
                     
-                    merged_sub.SetNonDupeName( existing_names )
+                    merged_sub.SetNonDupeName( existing_names, do_casefold = True )
                     
                 
                 existing_names.add( merged_sub.GetName() )
@@ -2991,27 +3110,28 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         message = 'This selects subscriptions based on query text. Please enter some search text, and any subscription that has a query that includes that text will be selected.'
         
-        with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+            search_text = ClientGUIDialogsQuick.EnterText( self, message )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        self._subscriptions.clearSelection()
+        
+        selectee_subscriptions = []
+        
+        for subscription in self._subscriptions.GetData():
+            
+            if subscription.HasQuerySearchTextFragment( search_text ):
                 
-                search_text = dlg.GetValue()
-                
-                self._subscriptions.clearSelection()
-                
-                selectee_subscriptions = []
-                
-                for subscription in self._subscriptions.GetData():
-                    
-                    if subscription.HasQuerySearchTextFragment( search_text ):
-                        
-                        selectee_subscriptions.append( subscription )
-                        
-                    
-                
-                self._subscriptions.SelectDatas( selectee_subscriptions )
+                selectee_subscriptions.append( subscription )
                 
             
+        
+        self._subscriptions.SelectDatas( selectee_subscriptions )
         
     
     def Separate( self ):
@@ -3055,6 +3175,8 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         want_post_merge = False
         
+        query_headers_to_extract = []
+        
         if action == 'part':
             
             query_headers = subscription.GetQueryHeaders()
@@ -3091,6 +3213,8 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 
             
         
+        name = subscription.GetName()
+        
         if action != 'half':
             
             if want_post_merge:
@@ -3102,16 +3226,13 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
                 message = 'Please enter the base name for the new subscriptions. They will be named \'[NAME]: query\'.'
                 
             
-            with ClientGUIDialogs.DialogTextEntry( self, message, default = subscription.GetName() ) as dlg:
+            try:
                 
-                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    name = dlg.GetValue()
-                    
-                else:
-                    
-                    return
-                    
+                name = ClientGUIDialogsQuick.EnterText( self, message, default = subscription.GetName() )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return
                 
             
         
@@ -3152,7 +3273,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         elif action == 'half':
             
-            query_headers = sorted( subscription.GetQueryHeaders(), key = lambda q: q.GetQueryText() )
+            query_headers = sorted( subscription.GetQueryHeaders(), key = lambda q: HydrusText.HumanTextSortKey( q.GetQueryText() ) )
             
             query_headers_to_extract = query_headers[ : len( query_headers ) // 2 ]
             
@@ -3177,7 +3298,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         for final_subscription in final_subscriptions:
             
-            final_subscription.SetNonDupeName( existing_names )
+            final_subscription.SetNonDupeName( existing_names, do_casefold = True )
             
             existing_names.add( final_subscription.GetName() )
             
@@ -3218,6 +3339,34 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
             
         
     
+    def SetDownloader( self ):
+        
+        subscriptions = self._subscriptions.GetData( only_selected = True )
+        
+        if len( subscriptions ) == 0:
+            
+            return
+            
+        
+        gug_key_and_name = subscriptions[0].GetGUGKeyAndName()
+        
+        try:
+            
+            edited_gug_key_and_name = ClientGUIImport.SelectGUGKeyAndName( self, gug_key_and_name )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        for subscription in subscriptions:
+            
+            subscription.SetGUGKeyAndName( edited_gug_key_and_name )
+            
+        
+        self._subscriptions.UpdateDatas( subscriptions )
+        
+    
     def SetFileImportOptions( self ):
         
         subscriptions = self._subscriptions.GetData( only_selected = True )
@@ -3233,7 +3382,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit file import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditFileImportOptionsPanel( dlg, file_import_options, show_downloader_options, allow_default_selection )
+            panel = ClientGUIImportOptionsPanels.EditFileImportOptionsLegacyPanel( dlg, file_import_options, show_downloader_options, allow_default_selection )
             
             dlg.SetPanel( panel )
             
@@ -3265,13 +3414,17 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit note import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditNoteImportOptionsPanel( dlg, note_import_options, allow_default_selection )
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+            
+            edit_notes_widget = ClientGUIImportOptionsPanels.EditNoteImportOptionsLegacyPanel( panel, note_import_options, allow_default_selection )
+            
+            panel.SetControl( edit_notes_widget )
             
             dlg.SetPanel( panel )
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
-                note_import_options = panel.GetValue()
+                note_import_options = edit_notes_widget.GetValue()
                 
                 for subscription in subscriptions:
                     
@@ -3298,7 +3451,7 @@ class EditSubscriptionsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit tag import options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditTagImportOptionsPanel( dlg, tag_import_options, show_downloader_options, allow_default_selection )
+            panel = ClientGUIImportOptionsPanels.EditTagImportOptionsLegacyPanel( dlg, tag_import_options, show_downloader_options, allow_default_selection )
             
             dlg.SetPanel( panel )
             

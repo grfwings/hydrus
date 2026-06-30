@@ -5,7 +5,7 @@ from hydrus.core import HydrusTemp
 
 def ExtractDBPNGToPath( path, temp_path ):
     
-    ( os_file_handle, sqlite_temp_path ) = HydrusTemp.GetTempPath()
+    ( os_file_handle, sqlite_temp_path ) = HydrusTemp.GetTempPath( 'clip_sqlite' )
     
     try:
         
@@ -27,7 +27,7 @@ def ExtractDBPNGToPath( path, temp_path ):
             db.close()
             
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.NoThumbnailFileException()
         
@@ -39,7 +39,7 @@ def ExtractDBPNGToPath( path, temp_path ):
 
 def GetClipProperties( path ):
     
-    ( os_file_handle, sqlite_temp_path ) = HydrusTemp.GetTempPath()
+    ( os_file_handle, sqlite_temp_path ) = HydrusTemp.GetTempPath( 'clip_sqlite' )
     
     num_frames = None
     duration_ms = None
@@ -74,7 +74,7 @@ def GetClipProperties( path ):
                         duration_ms = duration_s * 1000
                         
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -165,7 +165,7 @@ def GetSQLiteDB( path, sqlite_temp_path ):
         
         c = db.cursor()
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.DamagedOrUnusualFileException( 'This clip file seemed to have an invalid internal SQLite file!' )
         

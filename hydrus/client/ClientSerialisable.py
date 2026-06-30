@@ -149,12 +149,12 @@ def DumpToPNG( width, payload_bytes, title, payload_description, text, path ):
     
     header_and_payload_bytes = payload_length_header + payload_bytes + b'\x00' * num_empty_bytes
     
-    payload_image = numpy.fromstring( header_and_payload_bytes, dtype = 'uint8' ).reshape( ( payload_height, width ) )
+    payload_image = numpy.frombuffer( header_and_payload_bytes, dtype = 'uint8' ).reshape( ( payload_height, width ) )
     
     finished_image = numpy.concatenate( ( top_image, payload_image ) )
     
     # this is to deal with unicode paths, which cv2 can't handle
-    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( suffix = '.png' )
+    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'serialisable_png', suffix = '.png' )
     
     try:
         
@@ -173,6 +173,7 @@ def DumpToPNG( width, payload_bytes, title, payload_description, text, path ):
         HydrusTemp.CleanUpTempPath( os_file_handle, temp_path )
         
     
+
 def GetPayloadBytesAndLength( payload_obj ):
     
     if isinstance( payload_obj, bytes ):
@@ -241,7 +242,7 @@ def LoadFromQtImage( qt_image: QG.QImage ):
 def LoadFromPNG( path ):
     
     # this is to deal with unicode paths, which cv2 can't handle
-    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+    ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'serialised_png' )
     
     try:
         
@@ -267,7 +268,14 @@ def LoadFromPNG( path ):
                 
                 # leave strip_useless_alpha = True in here just to catch the very odd LA situation
                 
-                numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( pil_image )
+                try:
+                    
+                    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( pil_image )
+                    
+                finally:
+                    
+                    pil_image.close()
+                    
                 
             except Exception as e:
                 
@@ -312,7 +320,7 @@ def LoadFromNumPyImage( numpy_image: numpy.ndarray ):
             
             payload_and_header_bytes = complete_data[ width * top_height : ]
             
-        except:
+        except Exception as e:
             
             raise Exception( 'Header bytes were invalid!' )
             
@@ -325,7 +333,7 @@ def LoadFromNumPyImage( numpy_image: numpy.ndarray ):
             
             payload_bytes = payload_and_header_bytes[ 4 : 4 + payload_bytes_length ]
             
-        except:
+        except Exception as e:
             
             raise Exception( 'Payload bytes were invalid!' )
             
@@ -351,7 +359,7 @@ def LoadStringFromPNG( path: str ) -> str:
         
         payload_string = HydrusCompression.DecompressBytesToString( payload_bytes )
         
-    except:
+    except Exception as e:
         
         # older payloads were not compressed
         payload_string = str( payload_bytes, 'utf-8' )

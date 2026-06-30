@@ -8,7 +8,6 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
 from hydrus.core.files import HydrusFileHandling
 from hydrus.core.files import HydrusPSDHandling
@@ -17,6 +16,7 @@ from hydrus.core.files.images import HydrusImageHandling
 from hydrus.core.files.images import HydrusImageMetadata
 from hydrus.core.files.images import HydrusImageOpening
 from hydrus.core.networking import HydrusNetworking
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
@@ -140,7 +140,7 @@ All missing/incorrect files will also have their hashes, tags, and URLs exported
     REGENERATE_FILE_DATA_JOB_CHECK_SIMILAR_FILES_MEMBERSHIP : '''This checks to see if files should be in the similar files system, and if they are falsely in or falsely out, it will remove their record or queue them up for a search as appropriate. It is useful to repair database damage.''',
     REGENERATE_FILE_DATA_JOB_SIMILAR_FILES_METADATA : '''This forces a regeneration of the file's similar-files 'phashes'. It is not useful unless you know there is missing data to repair.''',
     REGENERATE_FILE_DATA_JOB_FILE_MODIFIED_TIMESTAMP : '''This rechecks the file's modified timestamp and saves it to the database.''',
-    REGENERATE_FILE_DATA_JOB_FILE_HAS_TRANSPARENCY : '''This loads the file to see if it has an alpha channel with useful data (completely opaque/transparency alpha channels are discarded). Only works for images and animated gif.''',
+    REGENERATE_FILE_DATA_JOB_FILE_HAS_TRANSPARENCY : '''This loads the file to see if it has an alpha channel with useful data (the strictness of this test is determined in the options). Only works for images and some animations.''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_EXIF : '''This loads the file to see if it has EXIF metadata, which can be shown in the media viewer and searched with "system:image has exif".''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA : '''This loads the file to see if it has non-EXIF human-readable embedded metadata, which can be shown in the media viewer and searched with "system:image has human-readable embedded metadata".''',
     REGENERATE_FILE_DATA_JOB_FILE_HAS_ICC_PROFILE : '''This loads the file to see if it has an ICC profile, which is used in "system:has icc profile" search.''',
@@ -497,7 +497,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                             
                             add_it = can_parse
                             
-                        except:
+                        except Exception as e:
                             
                             continue
                             
@@ -549,7 +549,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     message = 'During file maintenance, a file was found to be invalid. It and any known URLs have been moved to "{}".'.format( error_dir )
                     message += '\n' * 2
-                    message += 'More files may be invalid, but this message will not appear again during this boot.'
+                    message += 'To stop spam, this message will only show one time per program boot. The error may happen again, silently.'
                     
                     HydrusData.ShowText( message )
                     
@@ -564,7 +564,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 for url in useful_urls:
                     
-                    CG.client_controller.CallBlockingToQt( CG.client_controller.gui, qt_add_url, url )
+                    CG.client_controller.CallBlockingToQtTLW( qt_add_url, url )
                     
                 
             
@@ -590,7 +590,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, ( hash, ), reason = reason )
                     
-                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, content_update )
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, content_update )
                     
                     self._controller.WriteSynchronous( 'content_updates', content_update_package )
                     
@@ -611,7 +611,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         message = 'During file maintenance, a file was found to be missing or invalid. Unfortunately, it appears to be archived and the archived file delete lock is on, so I cannot fully delete the file record. I have simply sent the file to the trash instead. You should search up recently trashed files and inbox & physically delete them yourself.'
                         message += '\n' * 2
-                        message += 'More files may be in this situation, but this message will not appear again during this boot.'
+                        message += 'To stop spam, this message will only show one time per program boot. The error may happen again, silently.'
                         
                         HydrusData.ShowText( message )
                         
@@ -622,7 +622,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, ( hash, ), reason = 'Record deleted during File Integrity check.' )
                     
-                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                     
                     self._controller.WriteSynchronous( 'content_updates', content_update_package )
                     
@@ -634,7 +634,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, ( hash, ) )
                         
-                        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                         
                         self._controller.WriteSynchronous( 'content_updates', content_update_package )
                         
@@ -654,7 +654,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         message = 'During file maintenance, a file was found to be missing or invalid. {} Its file hash and any known URLs have been written to "{}".'.format( m, error_dir )
                         message += '\n' * 2
-                        message += 'This may happen to more files in the near future, but this message will not appear again during this boot.'
+                        message += 'To stop spam, this message will only show one time per program boot. The error may happen again, silently.'
                         
                         HydrusData.ShowText( message )
                         
@@ -724,9 +724,16 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
                 
-                has_exif = HydrusImageMetadata.HasEXIF( raw_pil_image )
+                try:
+                    
+                    has_exif = HydrusImageMetadata.HasEXIF( raw_pil_image )
+                    
+                finally:
+                    
+                    raw_pil_image.close()
+                    
                 
-            except:
+            except Exception as e:
                 
                 has_exif = False
                 
@@ -787,7 +794,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     has_icc_profile = HydrusPSDHandling.PSDHasICCProfile( path )
                     
-                except:
+                except Exception as e:
                     
                     return None
                     
@@ -797,12 +804,19 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
                     
-                except:
+                    try:
+                        
+                        has_icc_profile = HydrusImageMetadata.HasICCProfile( raw_pil_image )
+                        
+                    finally:
+                        
+                        raw_pil_image.close()
+                        
+                    
+                except Exception as e:
                     
                     return None
                     
-                
-                has_icc_profile = HydrusImageMetadata.HasICCProfile( raw_pil_image )
                 
             
             additional_data = has_icc_profile
@@ -1000,7 +1014,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 pixel_hash = HydrusImageHandling.GetImagePixelHash( path, mime )
                 
-            except:
+            except Exception as e:
                 
                 return None
                 
@@ -1039,7 +1053,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             return HydrusBlurhash.GetBlurhashFromNumPy( numpy_image )
             
-        except:
+        except Exception as e:
             
             return None
             
@@ -1255,7 +1269,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         job_status = ClientThreading.JobStatus()
                         
-                        message = 'Hey, while performing file maintenance task "{}" on file {}, the client ran into an I/O Error! This could be just some media library moaning about a weird (probably truncated) file, but it could also be a significant hard drive problem. Look at the error yourself. If it looks serious, you should shut the client down and check your hard drive health immediately. Just to be safe, no more file maintenance jobs will be run this boot, and a full traceback has been written to the log.'.format( regen_file_enum_to_str_lookup[ job_type ], hash.hex() )
+                        message = 'Hey, while performing file maintenance task "{}" on file {}, the client ran into an I/O Error! This could be just some media library moaning about a weird (probably truncated) file, but it could also be a significant hard drive problem. Look at the error yourself. If it looks serious, you should shut the client down and check your hard drive health immediately. Just to be safe, no more file maintenance jobs will be run this program boot, and a full traceback has been written to the log.'.format( regen_file_enum_to_str_lookup[ job_type ], hash.hex() )
                         message += '\n' * 2
                         message += str( e )
                         
@@ -1363,11 +1377,11 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             num_jobs_done = vr_status[ 'num_jobs_done' ]
             
-            status_text = '{}'.format( HydrusNumbers.ValueRangeToPrettyString( num_jobs_done, total_num_jobs_to_do ) )
+            status_text = HydrusNumbers.ValueRangeToPrettyString( num_jobs_done, total_num_jobs_to_do )
             
             job_status.SetStatusText( status_text )
             
-            job_status.SetVariable( 'popup_gauge_1', ( num_jobs_done, total_num_jobs_to_do ) )
+            job_status.SetGauge( num_jobs_done, total_num_jobs_to_do )
             
             add_extra_comments_to_job_status( job_status )
             
@@ -1413,7 +1427,22 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                     hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
                     
-                    media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                    try:
+                        
+                        media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                        
+                    except KeyError:
+                        
+                        message = 'There appears to be a problem with your file metadata store. Some files that were supposed to be undergoing maintenance did not return the correct metadata. Extra information has been printed to the log; please let hydev know.'
+                        
+                        HydrusData.Print( message )
+                        HydrusData.Print( 'Desired hashes:' )
+                        HydrusData.Print( '\n'.join( sorted( [ h.hex() for h in hashes ] ) ) )
+                        HydrusData.Print( 'Received hashes:' )
+                        HydrusData.Print( '\n'.join( sorted( [ h.hex() for h in hashes_to_media_results.keys() ] ) ) )
+                        
+                        raise Exception( message )
+                        
                     
                     with self._lock:
                         
@@ -1427,7 +1456,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 job_status.SetStatusText( 'done!' )
                 
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
                 job_status.FinishAndDismiss( 5 )
                 
@@ -1540,15 +1569,21 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                     
                 
             
-            if not did_work:
+            if did_work:
                 
-                self._wake_event.wait( 600 )
+                wake_event = self._wake_from_work_sleep_event
+                wait_time = 0.5
                 
-                self._wake_event.clear()
+            else:
+                
+                wake_event = self._wake_from_idle_sleep_event
+                wait_time = 600
                 
             
-            # a small delay here is helpful for the forcemaintenance guy to have a chance to step in on reset
-            time.sleep( 1 )
+            wake_event.wait( wait_time )
+            
+            self._wake_from_work_sleep_event.clear()
+            self._wake_from_idle_sleep_event.clear()
             
         
     
@@ -1564,7 +1599,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         
         if self._serious_error_encountered and pub_job_status:
             
-            HydrusData.ShowText( 'Sorry, the file maintenance system has encountered a serious error and will perform no more jobs this boot. Please shut down and check your hard drive health immediately.' )
+            HydrusData.ShowText( 'Sorry, the file maintenance system has encountered a serious error and will perform no more jobs this program boot. Please shut the client down and check your hard drive health immediately.' )
             
             return
             
@@ -1588,7 +1623,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             job_status.SetStatusText( status_text )
             
-            job_status.SetVariable( 'popup_gauge_1', ( num_jobs_done, total_num_jobs_to_do ) )
+            job_status.SetGauge( num_jobs_done, total_num_jobs_to_do )
             
             add_extra_comments_to_job_status( job_status )
             
@@ -1615,7 +1650,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             job_status.SetStatusText( 'done!' )
             
-            job_status.DeleteVariable( 'popup_gauge_1' )
+            job_status.DeleteGauge()
             
             job_status.FinishAndDismiss( 5 )
             
@@ -1629,8 +1664,8 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             self._controller.Write( 'file_maintenance_add_jobs_hashes', hashes, job_type, time_can_start )
             
-            self._wake_event.set()
-            
+        
+        self.WakeIfNotWorking()
         
     
     def ScheduleJobHashIds( self, hash_ids, job_type, time_can_start = 0 ):
@@ -1639,7 +1674,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             self._controller.Write( 'file_maintenance_add_jobs', hash_ids, job_type, time_can_start )
             
-            self._wake_event.set()
-            
+        
+        self.WakeIfNotWorking()
         
     

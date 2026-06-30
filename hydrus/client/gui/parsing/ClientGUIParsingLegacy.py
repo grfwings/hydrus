@@ -16,6 +16,7 @@ from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
 from hydrus.client import ClientStrings
 from hydrus.client import ClientThreading
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -48,14 +49,14 @@ class EditNodes( QW.QWidget ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_NODES.ID, self._ConvertNodeToDisplayTuple, self._ConvertNodeToSortTuple )
         
-        self._nodes = ClientGUIListCtrl.BetterListCtrlTreeView( self, 20, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
+        self._nodes = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'content node', 'A node that parses the given data for content.', self.AddContentNode ) )
-        menu_items.append( ( 'normal', 'link node', 'A node that parses the given data for a link, which it then pursues.', self.AddLinkNode ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'content node', 'A node that parses the given data for content.', self.AddContentNode ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'link node', 'A node that parses the given data for a link, which it then pursues.', self.AddLinkNode ) )
         
-        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_items )
+        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_template_items )
         
         self._copy_button = ClientGUICommon.BetterButton( self, 'copy', self.Copy )
         
@@ -464,11 +465,6 @@ The formula should attempt to parse full or relative urls. If the url is relativ
         
         def qt_code( parsed_urls ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             if len( parsed_urls ) > 0:
                 
                 self._my_example_url = parsed_urls[0]
@@ -496,7 +492,7 @@ The formula should attempt to parse full or relative urls. If the url is relativ
                 
                 parsed_urls = node.ParseURLs( job_status, data, referral_url )
                 
-                QP.CallAfter( qt_code, parsed_urls )
+                CG.client_controller.CallAfterQtSafe( self, qt_code, parsed_urls )
                 
             except Exception as e:
                 
@@ -789,11 +785,6 @@ And pass that html to a number of 'parsing children' that will each look through
         
         def qt_code( parsed_post: ClientParsingResults.ParsedPost ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             result_lines = [ '*** ' + HydrusNumbers.ToHumanInt( len( parsed_post ) ) + ' RESULTS BEGIN ***' ]
             
             result_lines.extend( [ parsed_content.ToString() for parsed_content in parsed_post.parsed_contents ] )
@@ -811,7 +802,7 @@ And pass that html to a number of 'parsing children' that will each look through
                 
                 parsed_post = script.Parse( job_status, data )
                 
-                QP.CallAfter( qt_code, parsed_post )
+                CG.client_controller.CallAfterQtSafe( self, qt_code, parsed_post )
                 
             except Exception as e:
                 
@@ -878,27 +869,27 @@ class ManageParsingScriptsPanel( ClientGUIScrolledPanels.ManagePanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PARSING_SCRIPTS.ID, self._ConvertScriptToDisplayTuple, self._ConvertScriptToSortTuple )
         
-        self._scripts = ClientGUIListCtrl.BetterListCtrlTreeView( self, 20, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
+        self._scripts = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, delete_key_callback = self.Delete, activation_callback = self.Edit )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'file lookup script', 'A script that fetches content for a known file.', self.AddFileLookupScript ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'file lookup script', 'A script that fetches content for a known file.', self.AddFileLookupScript ) )
         
-        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_items )
+        self._add_button = ClientGUIMenuButton.MenuButton( self, 'add', menu_template_items )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'to clipboard', 'Serialise the script and put it on your clipboard.', self.ExportToClipboard ) )
-        menu_items.append( ( 'normal', 'to png', 'Serialise the script and encode it to an image file you can easily share with other hydrus users.', self.ExportToPNG ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the script and put it on your clipboard.', self.ExportToClipboard ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the script and encode it to an image file you can easily share with other hydrus users.', self.ExportToPNG ) )
         
-        self._export_button = ClientGUIMenuButton.MenuButton( self, 'export', menu_items )
+        self._export_button = ClientGUIMenuButton.MenuButton( self, 'export', menu_template_items )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'from clipboard', 'Load a script from text in your clipboard.', self.ImportFromClipboard ) )
-        menu_items.append( ( 'normal', 'from png', 'Load a script from an encoded png.', self.ImportFromPNG ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a script from text in your clipboard.', self.ImportFromClipboard ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from png', 'Load a script from an encoded png.', self.ImportFromPNG ) )
         
-        self._import_button = ClientGUIMenuButton.MenuButton( self, 'import', menu_items )
+        self._import_button = ClientGUIMenuButton.MenuButton( self, 'import', menu_template_items )
         
         self._duplicate_button = ClientGUICommon.BetterButton( self, 'duplicate', self.Duplicate )
         
@@ -1164,7 +1155,7 @@ class ManageParsingScriptsPanel( ClientGUIScrolledPanels.ManagePanel ):
     
     def ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png with the encoded script', wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png with the encoded script', wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1219,10 +1210,10 @@ class ScriptManagementControl( QW.QWidget ):
         
         self._status.setWordWrap( True )
         
-        self._link_button = ClientGUICommon.BetterBitmapButton( main_panel, CC.global_pixmaps().link, self.LinkButton )
+        self._link_button = ClientGUICommon.IconButton( main_panel, CC.global_icons().link, self.LinkButton )
         self._link_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'urls found by the script' ) )
         
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( main_panel, CC.global_pixmaps().stop, self.CancelButton )
+        self._cancel_button = ClientGUICommon.IconButton( main_panel, CC.global_icons().stop, self.CancelButton )
         
         #
         
@@ -1361,10 +1352,17 @@ class ScriptManagementControl( QW.QWidget ):
         
         menu = ClientGUIMenus.GenerateMenu( self )
         
+        open_submenu = ClientGUIMenus.GenerateMenu( menu )
+        copy_submenu = ClientGUIMenus.GenerateMenu( menu )
+        
         for url in urls:
             
-            ClientGUIMenus.AppendMenuItem( menu, url, 'launch this url in your browser', ClientPaths.LaunchURLInWebBrowser, url )
+            ClientGUIMenus.AppendMenuItem( open_submenu, url, 'launch this url in your browser', ClientPaths.LaunchURLInWebBrowser, url )
+            ClientGUIMenus.AppendMenuItem( copy_submenu, url, 'copy this url to your clipboard', CG.client_controller.pub, 'clipboard', 'text', url )
             
+        
+        ClientGUIMenus.AppendMenu( menu, open_submenu, 'open' )
+        ClientGUIMenus.AppendMenu( menu, copy_submenu, 'copy' )
         
         CGC.core().PopupMenu( self, menu )
         

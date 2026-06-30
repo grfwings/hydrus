@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusData
@@ -19,11 +17,9 @@ from hydrus.client.search import ClientSearchPredicate
 
 class ORPredicateControl( QW.QWidget ):
     
-    def __init__( self, parent: QW.QWidget, predicate: ClientSearchPredicate.Predicate, empty_file_search_context: typing.Optional[ ClientSearchFileSearchContext.FileSearchContext ] = None ):
+    def __init__( self, parent: QW.QWidget, predicate: ClientSearchPredicate.Predicate, empty_file_search_context: ClientSearchFileSearchContext.FileSearchContext | None = None, for_metadata_conditional: bool = False ):
         
         super().__init__( parent )
-        
-        from hydrus.client.gui.search import ClientGUIACDropdown
         
         if predicate.GetType() != ClientSearchPredicate.PREDICATE_TYPE_OR_CONTAINER:
             
@@ -49,7 +45,18 @@ class ORPredicateControl( QW.QWidget ):
             file_search_context = empty_file_search_context
             
         
-        self._search_control = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context, hide_favourites_edit_actions = True )
+        if for_metadata_conditional:
+            
+            from hydrus.client.gui.metadata import ClientGUIMetadataConditional
+            
+            self._search_control = ClientGUIMetadataConditional.AutoCompleteDropdownMetadataConditional( self, file_search_context )
+            
+        else:
+            
+            from hydrus.client.gui.search import ClientGUIACDropdown
+            
+            self._search_control = ClientGUIACDropdown.AutoCompleteDropdownTagsRead( self, page_key, file_search_context, hide_favourites_edit_actions = True )
+            
         
         self._search_control.setMinimumWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self._search_control, 64 ) )
         

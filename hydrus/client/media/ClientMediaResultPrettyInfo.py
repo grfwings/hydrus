@@ -9,7 +9,6 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientUgoiraHandling
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultPrettyInfoObjects
 
@@ -74,61 +73,32 @@ def GetPrettyMediaResultInfoLines( media_result: ClientMediaResult.MediaResult, 
         
         info_string += f', {HydrusTime.MillisecondsDurationToPrettyTime( duration_ms )}'
         
-    elif mime == HC.ANIMATION_UGOIRA:
+    elif media_result.HasSimulatedDuration():
         
-        if ClientUgoiraHandling.HasFrameTimesNote( media_result ):
-            
-            try:
-                
-                # this is more work than we'd normally want to do, but prettyinfolines is called on a per-file basis so I think we are good. a tiny no-latency json load per human click is fine
-                # we'll see how it goes
-                frame_durations_ms = ClientUgoiraHandling.GetFrameDurationsMSFromNote( media_result )
-                
-                if frame_durations_ms is not None:
-                    
-                    note_duration_ms = sum( frame_durations_ms )
-                    
-                    info_string += f', {HydrusTime.MillisecondsDurationToPrettyTime( note_duration_ms )} (note-based)'
-                    
-                
-            except:
-                
-                info_string += f', unknown note-based duration'
-                
-            
-        else:
-            
-            if num_frames is not None:
-                
-                simulated_duration_ms = num_frames * ClientUgoiraHandling.UGOIRA_DEFAULT_FRAME_DURATION_MS
-                
-                info_string += f', {HydrusTime.MillisecondsDurationToPrettyTime( simulated_duration_ms )} (speculated)'
-                
-            
+        ( simulated_duration_ms, source_string ) = media_result.GetSimulatedDurationMSAndSource()
+        
+        info_string += f', {HydrusTime.MillisecondsDurationToPrettyTime( simulated_duration_ms )} ({source_string})'
         
     
     if num_frames is not None:
         
-        if duration_ms is None or duration_ms == 0 or num_frames == 0:
+        framerate = media_result.GetFileInfoManager().GetFramerate()
+        
+        if framerate is None:
             
             framerate_insert = ''
             
+        elif framerate < 1:
+            
+            framerate_insert = ', {:.2f}fps'.format( framerate )
+            
+        elif framerate < 10:
+            
+            framerate_insert = ', {:.1f}fps'.format( framerate )
+            
         else:
             
-            fps = num_frames / HydrusTime.SecondiseMSFloat( duration_ms )
-            
-            if fps < 1:
-                
-                framerate_insert = ', {:.2f}fps'.format( fps )
-                
-            elif fps < 10:
-                
-                framerate_insert = ', {:.1f}fps'.format( fps )
-                
-            else:
-                
-                framerate_insert = f', {round( fps )}fps'
-                
+            framerate_insert = f', {round( framerate )}fps'
             
         
         info_string += f' ({HydrusNumbers.ToHumanInt( num_frames )} frames{framerate_insert})'
@@ -165,9 +135,9 @@ def GetPrettyMediaResultInfoLines( media_result: ClientMediaResult.MediaResult, 
     
     seen_local_file_service_timestamps_ms = set()
     
-    if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in current_service_keys:
+    if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in current_service_keys:
         
-        timestamp_ms = times_manager.GetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+        timestamp_ms = times_manager.GetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
         
         line = f'imported: {HydrusTime.TimestampToPrettyTimeDelta( HydrusTime.SecondiseMS( timestamp_ms ) )}'
         
@@ -178,6 +148,28 @@ def GetPrettyMediaResultInfoLines( media_result: ClientMediaResult.MediaResult, 
         pretty_info_lines.append( ClientMediaResultPrettyInfoObjects.PrettyMediaResultInfoLine( line, line_is_interesting, tooltip = tooltip ) )
         
         seen_local_file_service_timestamps_ms.add( timestamp_ms )
+        
+    else:
+        
+        if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in deleted_service_keys:
+            
+            line = 'you do not have this file, but you did once'
+            
+        else:
+            
+            if file_info_manager.size is None:
+                
+                line = 'you do not have this file, and you have never had it'
+                
+            else:
+                
+                line = 'you do not have this file, but your client has heard a bit about it'
+                
+            
+        
+        line_is_interesting = True
+        
+        pretty_info_lines.append( ClientMediaResultPrettyInfoObjects.PrettyMediaResultInfoLine( line, line_is_interesting ) )
         
     
     local_file_services = CG.client_controller.services_manager.GetLocalMediaFileServices()
@@ -217,9 +209,9 @@ def GetPrettyMediaResultInfoLines( media_result: ClientMediaResult.MediaResult, 
     
     local_file_deletion_reason = locations_manager.GetLocalFileDeletionReason()
     
-    if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in deleted_service_keys:
+    if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in deleted_service_keys:
         
-        timestamp_ms = times_manager.GetDeletedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+        timestamp_ms = times_manager.GetDeletedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
         
         line = f'deleted from this client {HydrusTime.TimestampToPrettyTimeDelta( HydrusTime.SecondiseMS( timestamp_ms ) )} ({local_file_deletion_reason})'
         
@@ -373,7 +365,7 @@ def GetPrettyMediaResultInfoLines( media_result: ClientMediaResult.MediaResult, 
     
     #
     
-    if not locations_manager.inbox:
+    if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in current_service_keys and not locations_manager.inbox:
         
         state_archived_timestamp = not only_interesting_lines or CG.client_controller.new_options.GetBoolean( 'file_info_line_consider_archived_time_interesting' )
         

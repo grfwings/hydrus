@@ -11,6 +11,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientSerialisable
 from hydrus.client import ClientStrings
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -49,13 +50,13 @@ class EditContextVariableFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_CONTEXT_VARIABLE_FORMULA )
         
-        menu_items.append( ( 'normal', 'open the context variable formula help', 'Open the help page for context variable formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the context variable formula help', 'Open the help page for context variable formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -171,19 +172,19 @@ class EditFormulaPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._change_formula_type = ClientGUICommon.BetterButton( my_panel, 'change formula type', self._ChangeFormulaType )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'to clipboard', 'Serialise the formula and put it on your clipboard.', self.ExportToClipboard ) )
-        menu_items.append( ( 'normal', 'to png', 'Serialise the formula and encode it to an image file you can easily share with other hydrus users.', self.ExportToPNG ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the formula and put it on your clipboard.', self.ExportToClipboard ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the formula and encode it to an image file you can easily share with other hydrus users.', self.ExportToPNG ) )
         
-        self._export_button = ClientGUIMenuButton.MenuButton( self, 'export', menu_items )
+        self._export_button = ClientGUIMenuButton.MenuButton( self, 'export', menu_template_items )
         
-        menu_items = []
+        menu_template_items = []
         
-        menu_items.append( ( 'normal', 'from clipboard', 'Load a formula from text in your clipboard.', self.ImportFromClipboard ) )
-        menu_items.append( ( 'normal', 'from png', 'Load a formula from an encoded png.', self.ImportFromPNG ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a formula from text in your clipboard.', self.ImportFromClipboard ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from png', 'Load a formula from an encoded png.', self.ImportFromPNG ) )
         
-        self._import_button = ClientGUIMenuButton.MenuButton( self, 'import', menu_items )
+        self._import_button = ClientGUIMenuButton.MenuButton( self, 'import', menu_template_items )
         
         #
         
@@ -401,7 +402,7 @@ class EditFormulaPanel( ClientGUIScrolledPanels.EditPanel ):
     
     def ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png with the encoded formula', wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png with the encoded formula', wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -501,7 +502,7 @@ class EditHTMLTagRulePanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._tag_attributes = ClientGUIStringControls.StringToStringDictControl( self, tag_attributes, min_height = 4 )
         
-        self._tag_index = ClientGUICommon.NoneableSpinCtrl( self, 0, message = 'index to fetch', none_phrase = 'get all', min = -65536, max = 65535 )
+        self._tag_index = ClientGUICommon.NoneableSpinCtrl( self, 0, none_phrase = 'get all', min = -65536, max = 65535 )
         self._tag_index.setToolTip( ClientGUIFunctions.WrapToolTip( 'You can make this negative to do negative indexing, e.g. -2 for "Select the second from last item".' ) )
         
         self._tag_depth = ClientGUICommon.BetterSpinBox( self, min=1, max=255 )
@@ -667,13 +668,13 @@ class EditHTMLFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_HTML_FORMULA )
         
-        menu_items.append( ( 'normal', 'open the html formula help', 'Open the help page for html formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the html formula help', 'Open the help page for html formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -948,6 +949,8 @@ class EditJSONParsingRulePanel( ClientGUIScrolledPanels.EditPanel ):
         QP.AddToLayout( vbox, self._index_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._number_of_steps_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         
+        vbox.addStretch( 0 )
+        
         self.widget().setLayout( vbox )
         
         #
@@ -1012,13 +1015,13 @@ class EditJSONFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_JSON_FORMULA )
         
-        menu_items.append( ( 'normal', 'open the json formula help', 'Open the help page for json formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the json formula help', 'Open the help page for json formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1172,13 +1175,13 @@ class EditNestedFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_NESTED_FORMULA )
         
-        menu_items.append( ( 'normal', 'open the nested formula help', 'Open the help page for nested formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the nested formula help', 'Open the help page for nested formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1291,7 +1294,7 @@ class EditNestedFormulaPanel( EditSpecificFormulaPanel ):
                     
                 
             
-        except:
+        except Exception as e:
             
             main_texts = [ '' ]
             
@@ -1320,13 +1323,13 @@ class EditStaticFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_STATIC )
         
-        menu_items.append( ( 'normal', 'open the static formula help', 'Open the help page for static formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the static formula help', 'Open the help page for static formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1428,13 +1431,13 @@ class EditZipperFormulaPanel( EditSpecificFormulaPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_ZIPPER_FORMULA )
         
-        menu_items.append( ( 'normal', 'open the zipper formula help', 'Open the help page for zipper formulae in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the zipper formula help', 'Open the help page for zipper formulae in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         

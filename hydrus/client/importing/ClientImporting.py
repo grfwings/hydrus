@@ -9,7 +9,7 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.importing import ClientImportFileSeeds
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
 from hydrus.client.networking import ClientNetworkingJobs
 from hydrus.client.parsing import ClientParsingResults
 
@@ -37,7 +37,7 @@ DID_SUBSTANTIAL_FILE_WORK_MINIMUM_SLEEP_TIME = 0.1
 
 REPEATING_JOB_TYPICAL_PERIOD = 30.0
 
-def ConvertParsedPostsToFileSeeds( parsed_posts: list[ ClientParsingResults.ParsedPost ], source_url: str, file_import_options: FileImportOptions.FileImportOptions ):
+def ConvertParsedPostsToFileSeeds( parsed_posts: list[ ClientParsingResults.ParsedPost ], source_url: str, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ):
     
     file_seeds = []
     
@@ -65,6 +65,7 @@ def ConvertParsedPostsToFileSeeds( parsed_posts: list[ ClientParsingResults.Pars
     
     return file_seeds
     
+
 def GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ):
     
     def network_job_presentation_context_factory( network_job ):
@@ -135,7 +136,7 @@ def THREADDownloadURL( job_status, url, url_string ):
     
     #
     
-    file_import_options = FileImportOptions.FileImportOptions()
+    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
     file_import_options.SetIsDefault( True )
     
     def network_job_factory( *args, **kwargs ):
@@ -160,7 +161,7 @@ def THREADDownloadURL( job_status, url, url_string ):
     
     try:
         
-        file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptions.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
+        file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
         
         status = file_seed.status
         
@@ -205,7 +206,7 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
     presentation_hashes = []
     presentation_hashes_fast = set()
     
-    file_import_options = FileImportOptions.FileImportOptions()
+    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
     file_import_options.SetIsDefault( True )
     
     def network_job_factory( *args, **kwargs ):
@@ -233,14 +234,14 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
             break
             
         
-        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i + 1, len( urls ) ) )
-        job_status.SetVariable( 'popup_gauge_1', ( i + 1, len( urls ) ) )
+        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i, len( urls ) ) )
+        job_status.SetGauge( i, len( urls ) )
         
         file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
         
         try:
             
-            file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptions.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
+            file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
             
             status = file_seed.status
             
@@ -286,7 +287,7 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
             
         finally:
             
-            job_status.DeleteStatusText( 2 )
+            job_status.DeleteStatusText( level = 2 )
             
         
     
@@ -321,7 +322,7 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
         job_status.SetFiles( presentation_hashes, 'downloads' )
         
     
-    job_status.DeleteVariable( 'popup_gauge_1' )
+    job_status.DeleteGauge()
     
     job_status.Finish()
     
@@ -368,6 +369,7 @@ def WakeRepeatingJob( job ):
         job.Wake()
         
     
+
 class NetworkJobPresentationContext( object ):
     
     def __init__( self, enter_call, exit_call ):

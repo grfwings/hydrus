@@ -25,8 +25,10 @@ from hydrus.client import ClientSerialisable
 from hydrus.client import ClientServices
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICore as CGC
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIShortcuts
@@ -34,10 +36,10 @@ from hydrus.client.gui import ClientGUITagSorting
 from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxesData
-from hydrus.client.gui.search import ClientGUISearch
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientTagSorting
 from hydrus.client.search import ClientSearchPredicate
@@ -297,7 +299,16 @@ class BetterQListWidget( QW.QListWidget ):
             
             data = self._GetRowData( list_widget_item )
             
-            list_widget_item.setSelected( data in datas )
+            try:
+                
+                selected = data in datas # has been known to 'unhashable', so let's failsafe
+                
+            except Exception as e:
+                
+                selected = False
+                
+            
+            list_widget_item.setSelected( selected )
             
         
     
@@ -341,7 +352,7 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         #
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 20, height_num_chars ) )
+        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 10, height_num_chars ) )
         
         self._listbox.setMinimumWidth( width )
         self._listbox.setMinimumHeight( height )
@@ -429,6 +440,13 @@ class AddEditDeleteListBox( QW.QWidget ):
     def _CheckImportObjectCustom( self, obj ):
         
         pass
+        
+    
+    def _CopyTextToClipboard( self ):
+        
+        separated_text = '\n'.join( [ obj for obj in self.GetData( only_selected = True ) ] )
+        
+        CG.client_controller.pub( 'clipboard', 'text', separated_text )
         
     
     def _Delete( self ):
@@ -600,13 +618,15 @@ class AddEditDeleteListBox( QW.QWidget ):
             
         except Exception as e:
             
+            from hydrus.client.gui import ClientGUIDialogsQuick
+            
             ClientGUIDialogsQuick.PresentClipboardParseError( self, raw_text, 'JSON-serialised Hydrus Object(s)', e )
             
         
     
     def _ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -728,6 +748,35 @@ class AddEditDeleteListBox( QW.QWidget ):
         return ( num_added, bad_object_type_names, other_bad_errors )
         
     
+    def _PasteTextFromClipboard( self ):
+        
+        try:
+            
+            raw_text = CG.client_controller.GetClipboardText()
+            
+        except HydrusExceptions.DataMissing as e:
+            
+            HydrusData.PrintException( e )
+            
+            ClientGUIDialogsMessage.ShowCritical( self, 'Problem pasting!', str(e) )
+            
+            return
+            
+        
+        try:
+            
+            urls = HydrusText.DeserialiseNewlinedTexts( raw_text )
+            
+        except Exception as e:
+            
+            ClientGUIDialogsQuick.PresentClipboardParseError( self, raw_text, 'Lines of URLs', e )
+            
+            raise
+            
+        
+        self.AddDatas( urls )
+        
+    
     def _SetNonDupeName( self, obj ):
         
         pass
@@ -767,17 +816,29 @@ class AddEditDeleteListBox( QW.QWidget ):
         self.listBoxChanged.emit()
         
     
+    def AddSimpleCopyPasteTextButtons( self ):
+        
+        button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._CopyTextToClipboard )
+        QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
+        self._enabled_only_on_selection_buttons.append( button )
+        
+        button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._PasteTextFromClipboard )
+        QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
+        
+        self._ShowHideButtons()
+        
+    
     def AddDefaultsButton( self, defaults_callable ):
         
-        import_menu_items = []
+        import_menu_template_items = []
         
         all_call = HydrusData.Call( self._AddAllDefaults, defaults_callable )
         some_call = HydrusData.Call( self._AddSomeDefaults, defaults_callable )
         
-        import_menu_items.append( ( 'normal', 'add them all', 'Load all the defaults.', all_call ) )
-        import_menu_items.append( ( 'normal', 'select from a list', 'Load some of the defaults.', some_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'add them all', 'Load all the defaults.', all_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'select from a list', 'Load some of the defaults.', some_call ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'add defaults', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'add defaults', import_menu_template_items )
         
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         
@@ -786,28 +847,28 @@ class AddEditDeleteListBox( QW.QWidget ):
         
         self._permitted_object_types = tuple( permitted_object_types )
         
-        export_menu_items = []
+        export_menu_template_items = []
         
-        export_menu_items.append( ( 'normal', 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
-        export_menu_items.append( ( 'normal', 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
         
         all_objs_are_named = False not in ( issubclass( o, HydrusSerialisable.SerialisableBaseNamed ) for o in self._permitted_object_types )
         
         if all_objs_are_named:
             
-            export_menu_items.append( ( 'normal', 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
+            export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
             
         
-        import_menu_items = []
+        import_menu_template_items = []
         
-        import_menu_items.append( ( 'normal', 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
-        import_menu_items.append( ( 'normal', 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         self._enabled_only_on_selection_buttons.append( button )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         button = ClientGUICommon.BetterButton( self, 'duplicate', self._Duplicate )
@@ -883,7 +944,7 @@ class QueueListBox( QW.QWidget ):
         self._down_button = ClientGUICommon.BetterButton( self, '\u2193', self._Down )
         
         self._add_button = ClientGUICommon.BetterButton( self, 'add', self._Add )
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._edit_button = ClientGUICommon.BetterButton( self, 'edit', self._Edit )
         
         self._enabled_only_on_selection_buttons = []
@@ -931,7 +992,7 @@ class QueueListBox( QW.QWidget ):
         
         #
         
-        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 20, height_num_chars ) )
+        ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self._listbox, ( 10, height_num_chars ) )
         
         self._listbox.setMinimumWidth( width )
         self._listbox.setMinimumHeight( height )
@@ -1163,13 +1224,15 @@ class QueueListBox( QW.QWidget ):
             
         except Exception as e:
             
+            from hydrus.client.gui import ClientGUIDialogsQuick
+            
             ClientGUIDialogsQuick.PresentClipboardParseError( self, raw_text, 'JSON-serialised Hydrus Object(s)', e )
             
         
     
     def _ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1351,28 +1414,28 @@ class QueueListBox( QW.QWidget ):
         
         self._permitted_object_types = tuple( permitted_object_types )
         
-        export_menu_items = []
+        export_menu_template_items = []
         
-        export_menu_items.append( ( 'normal', 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
-        export_menu_items.append( ( 'normal', 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
         
         all_objs_are_named = False not in ( issubclass( o, HydrusSerialisable.SerialisableBaseNamed ) for o in self._permitted_object_types )
         
         if all_objs_are_named:
             
-            export_menu_items.append( ( 'normal', 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
+            export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
             
         
-        import_menu_items = []
+        import_menu_template_items = []
         
-        import_menu_items.append( ( 'normal', 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
-        import_menu_items.append( ( 'normal', 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from pngs', 'Load a data from an encoded png.', self._ImportFromPNG ) )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'export', export_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_EXPAND_BOTH_WAYS )
         self._enabled_only_on_selection_buttons.append( button )
         
-        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, 'import', import_menu_template_items )
         QP.AddToLayout( self._buttons_hbox, button, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         button = ClientGUICommon.BetterButton( self, 'duplicate', self._Duplicate )
@@ -1455,8 +1518,8 @@ class ListBox( QW.QScrollArea ):
         self._last_view_start = None
         
         self._height_num_chars = height_num_chars
-        self._minimum_height_num_chars = 8
-        self._max_height_num_chars = None
+        self._minimum_height_num_chars = 1
+        self._maximum_height_num_chars = None
         
         self._num_rows_per_page = 0
         
@@ -1674,9 +1737,10 @@ class ListBox( QW.QScrollArea ):
     
     def _GetCopyableTagStrings( self, command, include_parents = False, collapse_ors = False ):
         
-        only_selected = command in ( COPY_SELECTED_TAGS, COPY_SELECTED_TAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS, COPY_SELECTED_SUBTAGS_WITH_COUNTS )
+        only_selected = command in ( COPY_SELECTED_TAGS, COPY_SELECTED_TAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS, COPY_SELECTED_SUBTAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES )
         with_counts = command in ( COPY_ALL_TAGS_WITH_COUNTS, COPY_ALL_SUBTAGS_WITH_COUNTS, COPY_SELECTED_TAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS_WITH_COUNTS )
-        only_subtags = command in ( COPY_ALL_SUBTAGS, COPY_ALL_SUBTAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS, COPY_SELECTED_SUBTAGS_WITH_COUNTS )
+        only_subtags = command in ( COPY_ALL_SUBTAGS, COPY_ALL_SUBTAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS, COPY_SELECTED_SUBTAGS_WITH_COUNTS, COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES )
+        switch_to_underscores = command == COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES
         
         if only_selected:
             
@@ -1708,9 +1772,14 @@ class ListBox( QW.QScrollArea ):
             copyable_tag_strings.remove( '' )
             
         
-        if not with_counts:
+        if switch_to_underscores:
             
-            copyable_tag_strings = HydrusData.DedupeList( copyable_tag_strings )
+            copyable_tag_strings = [ subtag.replace( ' ', '_' ) for subtag in copyable_tag_strings ]
+            
+        
+        if switch_to_underscores or not with_counts:
+            
+            copyable_tag_strings = HydrusLists.DedupeList( copyable_tag_strings )
             
         
         return copyable_tag_strings
@@ -2177,7 +2246,7 @@ class ListBox( QW.QScrollArea ):
             self._DataHasChanged()
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'tags list box text info updater', self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
         
     
     def _LogicalIndexIsSelected( self, logical_index ):
@@ -2322,7 +2391,7 @@ class ListBox( QW.QScrollArea ):
                             
                             painter.fillRect( background_colour_x, y_top, rect_width, text_height, rect_drawing_fill )
                             
-                        except:
+                        except Exception as e:
                             
                             painter.fillRect( background_colour_x, y_top, rect_width, text_height, namespace_colour )
                             
@@ -2750,9 +2819,16 @@ class ListBox( QW.QScrollArea ):
         
         def paintEvent( self, event ):
             
-            painter = QG.QPainter( self )
-            
-            self._parent._Redraw( painter )
+            try:
+                
+                painter = QG.QPainter( self )
+                
+                self._parent._Redraw( painter )
+                
+            except Exception as e:
+                
+                ClientGUIExceptionHandling.HandlePaintEventException( self, e )
+                
             
         
     
@@ -2939,6 +3015,7 @@ COPY_SELECTED_SUBTAGS = 4
 COPY_SELECTED_SUBTAGS_WITH_COUNTS = 5
 COPY_ALL_SUBTAGS = 6
 COPY_ALL_SUBTAGS_WITH_COUNTS = 7
+COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES = 8
 
 class ListBoxTags( ListBox ):
     
@@ -2967,8 +3044,6 @@ class ListBoxTags( ListBox ):
             self._extra_parent_rows_allowed = CG.client_controller.new_options.GetBoolean( 'expand_parents_on_storage_taglists' )
             
         
-        self._render_for_user = not self._tag_display_type == ClientTags.TAG_DISPLAY_STORAGE
-        
         self._page_key = None # placeholder. if a subclass sets this, it changes menu behaviour to allow 'select this tag' menu pubsubs
         
         self._sibling_connector_string = CG.client_controller.new_options.GetString( 'sibling_connector' )
@@ -2988,7 +3063,7 @@ class ListBoxTags( ListBox ):
     
     def _GetCurrentLocationContext( self ):
         
-        return ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        return ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
     
     def _GetCurrentPagePredicates( self ) -> set[ ClientSearchPredicate.Predicate ]:
@@ -3026,7 +3101,9 @@ class ListBoxTags( ListBox ):
         
         show_parent_rows = self._show_parent_decorators and self._extra_parent_rows_allowed
         
-        rows_of_texts_and_namespaces = term.GetRowsOfPresentationTextsWithNamespaces( self._render_for_user, self._show_sibling_decorators, self._sibling_connector_string, self._sibling_connector_namespace, self._show_parent_decorators, show_parent_rows )
+        render_for_user = not self._tag_display_type == ClientTags.TAG_DISPLAY_STORAGE
+        
+        rows_of_texts_and_namespaces = term.GetRowsOfPresentationTextsWithNamespaces( render_for_user, self._show_sibling_decorators, self._sibling_connector_string, self._sibling_connector_namespace, self._show_parent_decorators, show_parent_rows )
         
         rows_of_texts_and_colours = []
         
@@ -3063,6 +3140,8 @@ class ListBoxTags( ListBox ):
         
         activate_window = CG.client_controller.new_options.GetBoolean( 'activate_window_on_tag_search_page_activation' )
         
+        from hydrus.client.gui.search import ClientGUISearch
+        
         predicates = ClientGUISearch.FleshOutPredicates( self, predicates )
         
         if len( predicates ) == 0:
@@ -3082,6 +3161,8 @@ class ListBoxTags( ListBox ):
     def _NewSearchPages( self, pages_of_predicates ):
         
         activate_window = CG.client_controller.new_options.GetBoolean( 'activate_window_on_tag_search_page_activation' )
+        
+        from hydrus.client.gui.search import ClientGUISearch
         
         for predicates in pages_of_predicates:
             
@@ -3157,8 +3238,6 @@ class ListBoxTags( ListBox ):
             
         else:
             
-            from hydrus.client.gui import ClientGUITags
-            
             if command == 'parent':
                 
                 title = 'manage tag parents'
@@ -3174,11 +3253,15 @@ class ListBoxTags( ListBox ):
                 
                 if command == 'parent':
                     
-                    panel = ClientGUITags.ManageTagParents( dlg, tags )
+                    from hydrus.client.gui.metadata import ClientGUIManageTagParents
+                    
+                    panel = ClientGUIManageTagParents.ManageTagParents( dlg, tags )
                     
                 elif command == 'sibling':
                     
-                    panel = ClientGUITags.ManageTagSiblings( dlg, tags )
+                    from hydrus.client.gui.metadata import ClientGUIManageTagSiblings
+                    
+                    panel = ClientGUIManageTagSiblings.ManageTagSiblings( dlg, tags )
                     
                 
                 dlg.SetPanel( panel )
@@ -3344,12 +3427,16 @@ class ListBoxTags( ListBox ):
         copy_menu = ClientGUIMenus.GenerateMenu( menu )
         
         selected_copyable_tag_strings = self._GetCopyableTagStrings( COPY_SELECTED_TAGS )
-        selected_copyable_subtag_strings = self._GetCopyableTagStrings( COPY_SELECTED_SUBTAGS )
         
-        selected_copyable_tag_strings_with_parents = self._GetCopyableTagStrings( COPY_SELECTED_TAGS, include_parents = True )
-        selected_copyable_tag_strings_with_collapsed_ors = self._GetCopyableTagStrings( COPY_SELECTED_TAGS, collapse_ors = True )
+        selection_string = ''
         
         if len( selected_copyable_tag_strings ) > 0:
+            
+            selected_copyable_subtag_strings_set = set( self._GetCopyableTagStrings( COPY_SELECTED_SUBTAGS ) )
+            selected_copyable_subtag_strings_with_underscores_set = set( self._GetCopyableTagStrings( COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES ) )
+            
+            selected_copyable_tag_strings_with_parents = self._GetCopyableTagStrings( COPY_SELECTED_TAGS, include_parents = True )
+            selected_copyable_tag_strings_with_collapsed_ors = self._GetCopyableTagStrings( COPY_SELECTED_TAGS, collapse_ors = True )
             
             if len( selected_copyable_tag_strings ) == 1:
                 
@@ -3364,23 +3451,40 @@ class ListBoxTags( ListBox ):
             
             sub_selection_string = None
             
-            if len( selected_copyable_subtag_strings ) > 0:
+            if len( selected_copyable_subtag_strings_set ) > 0:
                 
-                if len( selected_copyable_subtag_strings ) == 1:
+                if selected_copyable_subtag_strings_set != set( selected_copyable_tag_strings ):
                     
-                    # this does a quick test for 'are we selecting a namespaced tags' that also allows for having both 'samus aran' and 'character:samus aran'
-                    if set( selected_copyable_subtag_strings ) != set( selected_copyable_tag_strings ):
+                    if len( selected_copyable_subtag_strings_set ) == 1:
                         
-                        ( sub_selection_string, ) = selected_copyable_subtag_strings
+                        ( sub_selection_string, ) = selected_copyable_subtag_strings_set
                         
                         ClientGUIMenus.AppendMenuItem( copy_menu, sub_selection_string, 'Copy the selected subtag to your clipboard.', self._ProcessMenuCopyEvent, COPY_SELECTED_SUBTAGS )
                         
+                    else:
+                        
+                        sub_selection_string = '{} selected subtags'.format( HydrusNumbers.ToHumanInt( len( selected_copyable_subtag_strings_set ) ) )
+                        
+                        ClientGUIMenus.AppendMenuItem( copy_menu, sub_selection_string, 'Copy the selected subtags to your clipboard.', self._ProcessMenuCopyEvent, COPY_SELECTED_SUBTAGS )
+                        
                     
-                else:
+            
+            if len( selected_copyable_subtag_strings_with_underscores_set ) > 0:
+                
+                if selected_copyable_subtag_strings_with_underscores_set != selected_copyable_subtag_strings_set:
                     
-                    sub_selection_string = '{} selected subtags'.format( HydrusNumbers.ToHumanInt( len( selected_copyable_subtag_strings ) ) )
-                    
-                    ClientGUIMenus.AppendMenuItem( copy_menu, sub_selection_string, 'Copy the selected subtags to your clipboard.', self._ProcessMenuCopyEvent, COPY_SELECTED_SUBTAGS )
+                    if len( selected_copyable_subtag_strings_with_underscores_set ) == 1:
+                        
+                        ( sub_selection_string_underscores, ) = selected_copyable_subtag_strings_with_underscores_set
+                        
+                        ClientGUIMenus.AppendMenuItem( copy_menu, sub_selection_string_underscores, 'Copy the selected subtag to your clipboard, with underscores.', self._ProcessMenuCopyEvent, COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES )
+                        
+                    else:
+                        
+                        sub_selection_string_underscores = '{} selected subtags with underscores'.format( HydrusNumbers.ToHumanInt( len( selected_copyable_subtag_strings_with_underscores_set ) ) )
+                        
+                        ClientGUIMenus.AppendMenuItem( copy_menu, sub_selection_string_underscores, 'Copy the selected subtags to your clipboard, with underscores.', self._ProcessMenuCopyEvent, COPY_SELECTED_SUBTAGS_WITH_UNDERSCORES )
+                        
                     
                 
             
@@ -3703,36 +3807,38 @@ class ListBoxTags( ListBox ):
                 
                 if self.can_spawn_new_windows or self._CanProvideCurrentPagePredicates():
                     
-                    search_menu = ClientGUIMenus.GenerateMenu( menu )
-                    
-                    ClientGUIMenus.AppendMenu( menu, search_menu, 'search' )
-                    
                     if self.can_spawn_new_windows:
                         
-                        ClientGUIMenus.AppendMenuItem( search_menu, 'open a new search page for ' + selection_string, 'Open a new search page starting with the selected predicates.', self._NewSearchPages, [ predicates ] )
+                        open_menu = ClientGUIMenus.GenerateMenu( menu )
+                        
+                        ClientGUIMenus.AppendMenu( menu, open_menu, 'open' )
+                        
+                        ClientGUIMenus.AppendMenuItem( open_menu, 'open a new search page for ' + selection_string, 'Open a new search page starting with the selected predicates.', self._NewSearchPages, [ predicates ] )
                         
                         if or_predicate is not None:
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'open a new OR search page for ' + selection_string, 'Open a new search page starting with the selected merged as an OR search predicate.', self._NewSearchPages, [ ( or_predicate, ) ] )
+                            ClientGUIMenus.AppendMenuItem( open_menu, 'open a new OR search page for ' + selection_string, 'Open a new search page starting with the selected merged as an OR search predicate.', self._NewSearchPages, [ ( or_predicate, ) ] )
                             
                         
                         if len( predicates ) > 1:
                             
                             for_each_predicates = [ ( predicate, ) for predicate in predicates ]
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'open new search pages for each in selection', 'Open one new search page for each selected predicate.', self._NewSearchPages, for_each_predicates )
+                            ClientGUIMenus.AppendMenuItem( open_menu, 'open new search pages for each in selection', 'Open one new search page for each selected predicate.', self._NewSearchPages, for_each_predicates )
                             
                         
-                        ClientGUIMenus.AppendSeparator( search_menu )
+                        ClientGUIMenus.AppendSeparator( open_menu )
                         
-                        ClientGUIMenus.AppendMenuItem( search_menu, f'open a new duplicate filter page for {selection_string}', 'Open a new duplicate filter page starting with the selected predicates.', self._NewDuplicateFilterPage, predicates )
-                        
-                        ClientGUIMenus.AppendSeparator( search_menu )
+                        ClientGUIMenus.AppendMenuItem( open_menu, f'open a new duplicate filter page for {selection_string}', 'Open a new duplicate filter page starting with the selected predicates.', self._NewDuplicateFilterPage, predicates )
                         
                     
-                    self._AddEditMenu( search_menu )
+                    edit_menu = ClientGUIMenus.GenerateMenu( menu )
                     
-                    ClientGUIMenus.AppendSeparator( search_menu )
+                    ClientGUIMenus.AppendMenu( menu, edit_menu, 'search' )
+                    
+                    self._AddEditMenu( edit_menu )
+                    
+                    ClientGUIMenus.AppendSeparator( edit_menu )
                     
                     if self._CanProvideCurrentPagePredicates():
                         
@@ -3756,49 +3862,39 @@ class ListBoxTags( ListBox ):
                         
                         if some_selected_not_in_current:
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'add {} to current search'.format( predicates_selection_string ), 'Add the selected predicates to the current search.', self._ProcessMenuPredicateEvent, 'add_predicates' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, 'add {} to current search'.format( predicates_selection_string ), 'Add the selected predicates to the current search.', self._ProcessMenuPredicateEvent, 'add_predicates' )
                             
                         
                         some_selected_in_current = HydrusLists.SetsIntersect( predicates, current_predicates )
                         
                         if some_selected_in_current:
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'remove {} from current search'.format( predicates_selection_string ), 'Remove the selected predicates from the current search.', self._ProcessMenuPredicateEvent, 'remove_predicates' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, 'remove {} from current search'.format( predicates_selection_string ), 'Remove the selected predicates from the current search.', self._ProcessMenuPredicateEvent, 'remove_predicates' )
                             
                         
                         we_can_flip_some_of_selection = len( inverse_predicates ) > 0
                         
                         if we_can_flip_some_of_selection:
                             
-                            inclusives = { p.IsInclusive() for p in inverse_predicates }
-                            
-                            inverse_all_exclusive = True not in inclusives
-                            inverse_all_inclusive = False not in inclusives
-                            
-                            if inverse_all_exclusive:
-                                
-                                text = 'exclude {} from the current search'.format( predicates_selection_string )
-                                desc = 'Disallow the selected predicates for the current search.'
-                                
-                            elif inverse_all_inclusive and len( inverse_predicates ) == 1:
+                            if len( inverse_predicates ) == 1:
                                 
                                 ( p, ) = inverse_predicates
                                 
                                 inverse_selection_string = p.ToString( with_count = False )
                                 
-                                text = 'require {} for the current search'.format( inverse_selection_string )
-                                desc = 'Stop disallowing the selected predicates from the current search.'
+                                text = 'invert: add {} to current search'.format( inverse_selection_string )
                                 
                             else:
                                 
-                                text = 'invert selection for the current search'
-                                desc = 'Flip the inclusive/exclusive nature of the selected predicates from the current search.'
+                                text = 'invert selected and add to current search'
                                 
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, text, desc, self._ProcessMenuPredicateEvent, 'add_inverse_predicates' )
+                            desc = 'Invert the selected predicates for the current search.'
+                            
+                            ClientGUIMenus.AppendMenuItem( edit_menu, text, desc, self._ProcessMenuPredicateEvent, 'add_inverse_predicates' )
                             
                         
-                        ClientGUIMenus.AppendSeparator( search_menu )
+                        ClientGUIMenus.AppendSeparator( edit_menu )
                         
                         if or_predicate is not None and or_predicate not in predicates:
                             
@@ -3806,36 +3902,36 @@ class ListBoxTags( ListBox ):
                             
                             if all_selected_in_current:
                                 
-                                ClientGUIMenus.AppendMenuItem( search_menu, f'replace {predicates_selection_string} with their OR', 'Remove the selected predicates and replace them with an OR predicate that searches for any of them.', self._ProcessMenuPredicateEvent, 'replace_or_predicate')
+                                ClientGUIMenus.AppendMenuItem( edit_menu, f'replace {predicates_selection_string} with their OR', 'Remove the selected predicates and replace them with an OR predicate that searches for any of them.', self._ProcessMenuPredicateEvent, 'replace_or_predicate')
                                 
                             else:
                                 
-                                ClientGUIMenus.AppendMenuItem( search_menu, 'add an OR of {} to current search'.format( predicates_selection_string ), 'Add the selected predicates as an OR predicate to the current search.', self._ProcessMenuPredicateEvent, 'add_or_predicate' )
+                                ClientGUIMenus.AppendMenuItem( edit_menu, 'add an OR of {} to current search'.format( predicates_selection_string ), 'Add the selected predicates as an OR predicate to the current search.', self._ProcessMenuPredicateEvent, 'add_or_predicate' )
                                 
                             
                         
                         if True not in ( p.IsORPredicate() for p in predicates ):
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, f'start an OR predicate with {predicates_selection_string}', 'Start up the Edit OR Predicate panel starting with this.', self._ProcessMenuPredicateEvent, 'start_or_predicate' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, f'start an OR predicate with {predicates_selection_string}', 'Start up the Edit OR Predicate panel starting with this.', self._ProcessMenuPredicateEvent, 'start_or_predicate' )
                             
                         
                         if False not in ( p.IsORPredicate() for p in predicates ):
                             
                             label = f'dissolve {predicates_selection_string} into single predicates'
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, label, 'Convert OR predicates to their constituent parts.', self._ProcessMenuPredicateEvent, 'dissolve_or_predicate' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, label, 'Convert OR predicates to their constituent parts.', self._ProcessMenuPredicateEvent, 'dissolve_or_predicate' )
                             
                         
-                        ClientGUIMenus.AppendSeparator( search_menu )
+                        ClientGUIMenus.AppendSeparator( edit_menu )
                         
                         if namespace_predicate is not None and namespace_predicate not in current_predicates:
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'add {} to current search'.format( namespace_predicate.ToString( with_count = False ) ), 'Add the namespace predicate to the current search.', self._ProcessMenuPredicateEvent, 'add_namespace_predicate' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, 'add {} to current search'.format( namespace_predicate.ToString( with_count = False ) ), 'Add the namespace predicate to the current search.', self._ProcessMenuPredicateEvent, 'add_namespace_predicate' )
                             
                         
                         if inverse_namespace_predicate is not None and inverse_namespace_predicate not in current_predicates:
                             
-                            ClientGUIMenus.AppendMenuItem( search_menu, 'exclude {} from the current search'.format( namespace_predicate.ToString( with_count = False ) ), 'Disallow the namespace predicate from the current search.', self._ProcessMenuPredicateEvent, 'add_inverse_namespace_predicate' )
+                            ClientGUIMenus.AppendMenuItem( edit_menu, 'exclude {} from the current search'.format( namespace_predicate.ToString( with_count = False ) ), 'Disallow the namespace predicate from the current search.', self._ProcessMenuPredicateEvent, 'add_inverse_namespace_predicate' )
                             
                         
                     
@@ -4042,6 +4138,8 @@ class ListBoxTags( ListBox ):
                 message += '\n' * 2
                 message += 'It might take a while to run, perhaps many minutes for a heavily-siblinged/-parented/-mapped tag, during which the database will be locked. Doing it on a thousand tags is going to completely gonk you. Also, any sibling or parent rules will be reset, and they will have to be recalculated, which will probably occur in a few seconds in the background after the regeneration job completes.'
                 
+                from hydrus.client.gui import ClientGUIDialogsQuick
+                
                 result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Regen tags?', yes_label = 'let\'s go', no_label = 'forget it' )
                 
                 if result == QW.QDialog.DialogCode.Accepted:
@@ -4104,7 +4202,7 @@ class ListBoxTags( ListBox ):
                                 ClientGUIMenus.AppendMenuItem( service_submenu, label, 'Change the tag filter for this service.', ClientGUIModalServersideServiceActions.ManageServiceOptionsTagFilter, self, service_key, new_tags_to_allow = tags_currently_not_ok )
                                 
                             
-                        except:
+                        except Exception as e:
                             
                             ClientGUIMenus.AppendMenuLabel( service_submenu, 'could not fetch service tag filter! maybe your account is unsynced?' )
                             
@@ -4486,7 +4584,7 @@ class ListBoxTagsDisplayCapable( ListBoxTags ):
             
             terms_to_info = { term : None for term in to_lookup }
             
-            for batch_to_lookup in HydrusLists.SplitListIntoChunks( to_lookup, 500 ):
+            for ( num_done, num_to_do, batch_to_lookup ) in HydrusLists.SplitListIntoChunksRich( to_lookup, 500 ):
                 
                 tags_to_terms = { term.GetTag() : term for term in batch_to_lookup }
                 
@@ -4710,7 +4808,7 @@ class ListBoxTagsStringsAddRemove( ListBoxTagsStrings ):
             ctrl_down = modifier == ClientGUIShortcuts.SHORTCUT_MODIFIER_CTRL
             shift_down = modifier == ClientGUIShortcuts.SHORTCUT_MODIFIER_SHIFT
             
-            action_occurred = self._Activate( ctrl_down, shift_down )
+            self._Activate( ctrl_down, shift_down )
             
         else:
             
@@ -4979,13 +5077,13 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
                     callable = HydrusData.Call( self.SetTagDisplayType, tag_display_type )
                     
                 
-                label = 'switch to "{}" tag display'.format( ClientTags.tag_display_str_lookup[ tag_display_type ] )
+                label = 'switch to "{}"'.format( ClientTags.tag_display_str_lookup[ tag_display_type ] )
                 description = 'Switch which tags this list shows, this may not work!'
                 
                 ClientGUIMenus.AppendMenuCheckItem( submenu, label, description, checked, callable )
                 
             
-            ClientGUIMenus.AppendMenu( menu, submenu, 'experimental' )
+            ClientGUIMenus.AppendMenu( menu, submenu, 'tag display (experimental)' )
             
         
     
@@ -4998,7 +5096,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
         self.IncrementTagsByMediaResults( media_results )
         
     
-    def IncrementTagsByMediaResults( self, media_results ):
+    def IncrementTagsByMediaResults( self, media_results: collections.abc.Collection[ ClientMediaResult.MediaResult ] ):
         
         if not isinstance( media_results, set ):
             
@@ -5040,7 +5138,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
         self.SetTagsByMediaResults( media_results )
         
     
-    def SetTagsByMediaResults( self, media_results ):
+    def SetTagsByMediaResults( self, media_results: collections.abc.Collection[ ClientMediaResult.MediaResult ] ):
         
         if not isinstance( media_results, set ):
             
@@ -5070,7 +5168,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
         self.SetTagsByMediaResultsFromMediaResultsPanel( media_results, tags_changed, capped_due_to_setting )
         
     
-    def SetTagsByMediaResultsFromMediaResultsPanel( self, media_results, tags_changed, capped_due_to_setting ):
+    def SetTagsByMediaResultsFromMediaResultsPanel( self, media_results: collections.abc.Collection[ ClientMediaResult.MediaResult ], tags_changed, capped_due_to_setting ):
         
         self.cappedDueToSetting.emit( capped_due_to_setting )
         
@@ -5166,6 +5264,8 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
         elif show_type == 'petitioned': self._show_petitioned = value
         
         self._UpdateTerms()
+        
+        self._DataHasChanged()
         
     
     def ForceTagRecalc( self ):
@@ -5282,7 +5382,9 @@ class ListBoxTagsMediaHoverFrame( ListBoxTagsMedia ):
     
     def __init__( self, parent, canvas_key, location_context: ClientLocation.LocationContext ):
         
-        super().__init__( parent, ClientTags.TAG_DISPLAY_SINGLE_MEDIA, CC.TAG_PRESENTATION_MEDIA_VIEWER, include_counts = False )
+        tag_display_type = CG.client_controller.new_options.GetInteger( 'tag_list_tag_display_type_media_viewer_hover' )
+        
+        super().__init__( parent, tag_display_type, CC.TAG_PRESENTATION_MEDIA_VIEWER, include_counts = False )
         
         self._canvas_key = canvas_key
         self._location_context = location_context
@@ -5306,6 +5408,8 @@ class ListBoxTagsMediaTagsDialog( ListBoxTagsMedia ):
     def __init__( self, parent, tag_presentation_location, enter_func, delete_func ):
         
         super().__init__( parent, ClientTags.TAG_DISPLAY_STORAGE, tag_presentation_location, include_counts = True )
+        
+        self.SetMinimumHeightNumChars( 6 )
         
         self._enter_func = enter_func
         self._delete_func = delete_func

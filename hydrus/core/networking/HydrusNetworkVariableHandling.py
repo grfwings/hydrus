@@ -10,7 +10,7 @@ try:
     import cbor2
     import base64
     CBOR_AVAILABLE = True
-except:
+except Exception as e:
     pass
 
 from hydrus.core import HydrusConstants as HC
@@ -80,7 +80,7 @@ def DumpHydrusArgsToNetworkBytes( args ):
     
     return network_bytes
     
-def DumpToGETQuery( args ):
+def DumpToGETQuery( args: dict[ str, object ] ):
     
     args = dict( args )
     
@@ -123,7 +123,9 @@ def DumpToGETQuery( args ):
         
         if name in args:
             
-            args[ name ] = str( args[ name ] )
+            value = typing.cast( int, args[ name ] )
+            
+            args[ name ] = str( value )
             
         
     
@@ -131,7 +133,9 @@ def DumpToGETQuery( args ):
         
         if name in args:
             
-            args[ name ] = args[ name ].hex()
+            value = typing.cast( bytes, args[ name ] )
+            
+            args[ name ] = value.hex()
             
         
     
@@ -139,7 +143,9 @@ def DumpToGETQuery( args ):
         
         if name in args:
             
-            args[ name ] = urllib.parse.quote( args[ name ] )
+            value = typing.cast( str, args[ name ] )
+            
+            args[ name ] = urllib.parse.quote( value )
             
         
     
@@ -512,7 +518,7 @@ class ParsedRequestArguments( dict ):
         return GetValueFromDict( self, key, expected_type, expected_list_type = expected_list_type, expected_dict_types = expected_dict_types, default_value = default_value )
         
     
-    def GetValueOrNone( self, key, expected_type: EXPECTED_TYPE, expected_list_type = None, expected_dict_types = None ) -> typing.Optional[ EXPECTED_TYPE ]:
+    def GetValueOrNone( self, key, expected_type: EXPECTED_TYPE, expected_list_type = None, expected_dict_types = None ) -> EXPECTED_TYPE | None:
         
         return GetValueFromDict( self, key, expected_type, expected_list_type = expected_list_type, expected_dict_types = expected_dict_types, none_on_missing = True )
         

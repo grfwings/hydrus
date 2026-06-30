@@ -1,5 +1,4 @@
 import json
-import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -22,10 +21,11 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUINumberTest
 from hydrus.client.importing.options import ClientImportOptions
+from hydrus.client.search import ClientNumberTest
 
 # TODO: maybe break this into ClientGUITimeWidgets for gui.widgets and then shoot EditCheckerOptions off to something appropriate
 
-def QDateTimeToPrettyString( dt: typing.Optional[ QC.QDateTime ], include_milliseconds = False ):
+def QDateTimeToPrettyString( dt: QC.QDateTime | None, include_milliseconds = False ):
     
     if dt is None:
         
@@ -52,7 +52,7 @@ class EditCheckerOptions( ClientGUIScrolledPanels.EditPanel ):
         
         super().__init__( parent )
         
-        help_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().help, self._ShowHelp )
+        help_button = ClientGUICommon.IconButton( self, CC.global_icons().help, self._ShowHelp )
         help_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Show help regarding these checker options.' ) )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
@@ -103,7 +103,11 @@ class EditCheckerOptions( ClientGUIScrolledPanels.EditPanel ):
         
         self._reactive_check_panel = ClientGUICommon.StaticBox( self, 'reactive checking' )
         
-        self._intended_files_per_check = ClientGUICommon.BetterSpinBox( self._reactive_check_panel, min=1, max=1000 )
+        self._intended_files_per_check = QW.QDoubleSpinBox( self._reactive_check_panel )
+        self._intended_files_per_check.setDecimals( 2 )
+        self._intended_files_per_check.setSingleStep( 0.05 )
+        self._intended_files_per_check.setMinimum( 0.25 )
+        self._intended_files_per_check.setMaximum( 1000.0 )
         self._intended_files_per_check.setToolTip( ClientGUIFunctions.WrapToolTip( 'How many new files you want the checker to find on each check. If a source is producing about 2 files a day, and this is set to 6, you will probably get a check every three days. You probably want this to be a low number, like 1-4.' ) )
         
         self._never_faster_than = TimeDeltaWidget( self._reactive_check_panel, min = never_faster_than_min, days = True, hours = True, minutes = True, seconds = True )
@@ -382,14 +386,14 @@ class DateTimeWidgetValueRange( object ):
         return ( min_value, max_value, self._set_count, self._null_count, self._step_ms )
         
     
-    def AddValueTimestampMS( self, timestamp_ms: typing.Optional[ int ], num_to_add = 1 ):
+    def AddValueTimestampMS( self, timestamp_ms: int | None, num_to_add = 1 ):
         
         qt_datetime = None if timestamp_ms is None else QC.QDateTime.fromMSecsSinceEpoch( timestamp_ms, QC.QTimeZone.systemTimeZone() )
         
         self.AddValueQtDateTime( qt_datetime, num_to_add = num_to_add )
         
     
-    def AddValueQtDateTime( self, qt_datetime: typing.Optional[ QC.QDateTime ], num_to_add = 1 ):
+    def AddValueQtDateTime( self, qt_datetime: QC.QDateTime | None, num_to_add = 1 ):
         
         if num_to_add == 0:
             
@@ -423,7 +427,7 @@ class DateTimeWidgetValueRange( object ):
             
         
     
-    def DuplicateWithNewQtDateTime( self, value: typing.Optional[ QC.QDateTime ], overwrite_nulls = False ) -> "DateTimeWidgetValueRange":
+    def DuplicateWithNewQtDateTime( self, value: QC.QDateTime | None, overwrite_nulls = False ) -> "DateTimeWidgetValueRange":
         
         datetime_value_range = DateTimeWidgetValueRange()
         
@@ -451,7 +455,7 @@ class DateTimeWidgetValueRange( object ):
         return datetime_value_range
         
     
-    def DuplicateWithNewTimestampMS( self, timestamp_ms: typing.Optional[ int ], overwrite_nulls = False ) -> "DateTimeWidgetValueRange":
+    def DuplicateWithNewTimestampMS( self, timestamp_ms: int | None, overwrite_nulls = False ) -> "DateTimeWidgetValueRange":
         
         qt_datetime = None if timestamp_ms is None else QC.QDateTime.fromMSecsSinceEpoch( timestamp_ms, QC.QTimeZone.systemTimeZone() )
         
@@ -463,7 +467,7 @@ class DateTimeWidgetValueRange( object ):
         return self.DuplicateWithNewQtDateTime( self.GetBestVisualValue(), overwrite_nulls = True )
         
     
-    def GetBestVisualValue( self ) -> typing.Optional[ QC.QDateTime ]:
+    def GetBestVisualValue( self ) -> QC.QDateTime | None:
         
         if self._set_count > 0:
             
@@ -708,11 +712,14 @@ class DateTimesCtrl( QW.QWidget ):
         tt += 'Negative values are allowed!'
         self._step.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
-        self._copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._Copy )
+        self._copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._Copy )
         self._copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy timestamp to the clipboard.' ) )
         
-        self._paste_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().paste, self._Paste )
+        self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste a timestamp. Needs to be a simple string but can handle pretty much anything.' ) )
+        
+        self._now_button = ClientGUICommon.BetterButton( self, 'now', self._SetNow )
+        self._now_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Set the time to now.' ) )
         
         #
         
@@ -776,6 +783,7 @@ class DateTimesCtrl( QW.QWidget ):
         
         QP.AddToLayout( button_hbox, self._copy_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( button_hbox, self._paste_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._now_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         QP.AddToLayout( vbox, button_hbox, CC.FLAGS_ON_RIGHT )
         
@@ -856,7 +864,7 @@ class DateTimesCtrl( QW.QWidget ):
                         
                     
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -870,7 +878,7 @@ class DateTimesCtrl( QW.QWidget ):
                 
                 timestamp_set = True
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -914,6 +922,16 @@ class DateTimesCtrl( QW.QWidget ):
         
         self.SetValue( datetime_value_range )
         
+    
+    def _SetNow( self ):
+        
+        qt_datetime = QC.QDateTime.currentDateTime()
+        
+        datetime_value_range = self._current_datetime_value_range.DuplicateWithNewQtDateTime( qt_datetime )
+        
+        self.SetValue( datetime_value_range )
+        
+    
     
     def _UpdateLabelAndStep( self ):
         
@@ -1085,7 +1103,7 @@ class TimeDeltaWidget( QW.QWidget ):
     
     timeDeltaChanged = QC.Signal()
     
-    def __init__( self, parent, min = 1, days = False, hours = False, minutes = False, seconds = False, milliseconds = False, monthly_allowed = False, monthly_label = 'monthly', negative_allowed = False ):
+    def __init__( self, parent, min = 1, days = False, hours = False, minutes = False, seconds = False, milliseconds = False, monthly_allowed = False, monthly_label = 'monthly', negative_allowed = False, max_days = 3523 ):
         
         super().__init__( parent )
         
@@ -1103,7 +1121,7 @@ class TimeDeltaWidget( QW.QWidget ):
         
         if self._show_days:
             
-            self._days = ClientGUICommon.BetterSpinBox( self, min=0, max=3653, width = 50 )
+            self._days = ClientGUICommon.BetterSpinBox( self, min=0, max=max_days, width = 50 )
             self._days.valueChanged.connect( self.EventChange )
             self._days.installEventFilter( self )
             
@@ -1242,7 +1260,7 @@ class TimeDeltaWidget( QW.QWidget ):
         
         self.blockSignals( True )
         
-        self.SetValue( self._min )
+        self.SetValue( 0 )
         
         self.blockSignals( False )
         
@@ -1313,7 +1331,7 @@ class TimeDeltaWidget( QW.QWidget ):
         self.timeDeltaChanged.emit()
         
     
-    def GetValue( self ) -> typing.Optional[ float ]:
+    def GetValue( self ) -> float | None:
         
         if self._monthly_allowed and self._monthly.isChecked():
             
@@ -1465,7 +1483,7 @@ class NoneableTimeDeltaWidget( QW.QWidget ):
         self._time_delta_widget.setEnabled( controls_interactable )
         
     
-    def GetValue( self ) -> typing.Optional[ float ]:
+    def GetValue( self ) -> float | None:
         
         if self._checkbox.isChecked():
             
@@ -1513,7 +1531,7 @@ class TimestampDataStubCtrl( QW.QWidget ):
     
     valueChanged = QC.Signal()
     
-    def __init__( self, parent, timestamp_data_stub = None ):
+    def __init__( self, parent, timestamp_data_stub = None, show_aggregate_modified_time = False ):
         
         super().__init__( parent )
         
@@ -1522,11 +1540,18 @@ class TimestampDataStubCtrl( QW.QWidget ):
             timestamp_data_stub = ClientTime.TimestampData.STATICSimpleStub( HC.TIMESTAMP_TYPE_ARCHIVED )
             
         
+        self._show_aggregate_modified_time = show_aggregate_modified_time
+        
         #
         
         self._timestamp_type = ClientGUICommon.BetterChoice( self )
         
-        for timestamp_type in [ HC.TIMESTAMP_TYPE_ARCHIVED, HC.TIMESTAMP_TYPE_MODIFIED_FILE, HC.TIMESTAMP_TYPE_MODIFIED_DOMAIN, HC.TIMESTAMP_TYPE_IMPORTED, HC.TIMESTAMP_TYPE_DELETED, HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED, HC.TIMESTAMP_TYPE_LAST_VIEWED ]:
+        for timestamp_type in [ HC.TIMESTAMP_TYPE_ARCHIVED, HC.TIMESTAMP_TYPE_MODIFIED_FILE, HC.TIMESTAMP_TYPE_MODIFIED_DOMAIN, HC.TIMESTAMP_TYPE_MODIFIED_AGGREGATE, HC.TIMESTAMP_TYPE_IMPORTED, HC.TIMESTAMP_TYPE_DELETED, HC.TIMESTAMP_TYPE_PREVIOUSLY_IMPORTED, HC.TIMESTAMP_TYPE_LAST_VIEWED ]:
+            
+            if timestamp_type == HC.TIMESTAMP_TYPE_MODIFIED_AGGREGATE and not show_aggregate_modified_time:
+                
+                continue
+                
             
             label = HC.timestamp_type_str_lookup[ timestamp_type ]
             
@@ -1718,6 +1743,105 @@ class NumberTestWidgetDuration( ClientGUINumberTest.NumberTestWidget ):
     def _GenerateValueWidget( self, max: int ):
         
         widget = TimeDeltaWidget( self, min = 0, days = False, hours = True, minutes = True, seconds = True, milliseconds = True )
+        
+        widget.timeDeltaChanged.connect( self.valueChanged )
+        
+        return widget
+        
+    
+    def _GetAbsoluteValue( self ):
+        
+        return HydrusTime.MillisecondiseS( self._absolute_plus_or_minus.GetValue() )
+        
+    
+    def _SetAbsoluteValue( self, value_ms ):
+        
+        return self._absolute_plus_or_minus.SetValue( HydrusTime.SecondiseMSFloat( value_ms ) )
+        
+    
+    def _GetSubValue( self ) -> int:
+        
+        return HydrusTime.MillisecondiseS( self._value.GetValue() )
+        
+    
+    def _SetSubValue( self, value_ms ):
+        
+        return self._value.SetValue( HydrusTime.SecondiseMSFloat( value_ms ) )
+        
+    
+
+class NumberTestWidgetTimestamp( ClientGUINumberTest.NumberTestWidget ):
+    
+    VERTICAL_CHOICE = True
+    
+    def __init__(
+        self,
+        parent,
+        allowed_operators = None,
+        max = 200000,
+        unit_string = None,
+        appropriate_absolute_plus_or_minus_default = 86400 * 1000,
+        appropriate_percentage_plus_or_minus_default = 15,
+        swap_in_string_for_value = None
+    ):
+        
+        super().__init__(
+            parent,
+            allowed_operators = allowed_operators,
+            max = max,
+            unit_string = unit_string,
+            appropriate_absolute_plus_or_minus_default = appropriate_absolute_plus_or_minus_default,
+            appropriate_percentage_plus_or_minus_default = appropriate_percentage_plus_or_minus_default,
+            swap_in_string_for_value = swap_in_string_for_value
+        )
+        
+    
+    def _GenerateAbsoluteValueWidget( self, max: int ):
+        
+        widget = TimeDeltaWidget( self, min = 0, days = True, hours = True, minutes = True, seconds = True, milliseconds = True )
+        
+        widget.timeDeltaChanged.connect( self.valueChanged )
+        
+        return widget
+        
+    
+    def _GenerateChoiceTuples( self, allowed_operators ):
+        
+        choice_tuples = []
+        
+        for possible_operator in [
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_LESS_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_ABSOLUTE,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_NOT_EQUAL,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN_OR_EQUAL_TO,
+            ClientNumberTest.NUMBER_TEST_OPERATOR_GREATER_THAN
+        ]:
+            
+            if possible_operator in allowed_operators:
+                
+                text = ClientNumberTest.number_test_operator_to_timestamp_str_lookup[ possible_operator ]
+                
+                if possible_operator == ClientNumberTest.NUMBER_TEST_OPERATOR_APPROXIMATE_PERCENT:
+                    
+                    text += '%'
+                    
+                
+                tooltip = ClientNumberTest.number_test_operator_to_timestamp_desc_lookup[ possible_operator ]
+                
+                choice_tuples.append( ( text, possible_operator, tooltip ) )
+                
+            
+        
+        return choice_tuples
+        
+    
+    def _GenerateValueWidget( self, max: int ):
+        
+        # this should actually be some calendar guy, but we'll do that when we actually use it m8
+        
+        widget = TimeDeltaWidget( self, min = 0, days = True, hours = True, minutes = True, seconds = True, milliseconds = True )
         
         widget.timeDeltaChanged.connect( self.valueChanged )
         

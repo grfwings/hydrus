@@ -13,40 +13,39 @@ A hydrus client consists of three components:
 
 1.  **the software installation**
     
-    This is the part that comes with the installer or extract release, with the executable and dlls and a handful of resource folders. It doesn't store any of your settings--it just knows how to present a database as a nice application. If you just run the hydrus_client executable straight, it looks in its 'db' subdirectory for a database, and if one is not found, it creates a new one. If it sees a database running at a lower version than itself, it will update the database before booting it.
+    This is the part that comes with the installer or extract release, with the main executable and, in subdirectories, library files (.dll/.pyd/.so) and other resources. None of your settings or files are buried in this mess--it just knows how to present a database folder as a nice application. If you just run the hydrus_client executable straight, it looks at the `install_dir/db` subdirectory to see if there is a database, and if one is not found, it creates a new one. If it discovers a database running at a lower version than itself, it will update the database before booting it.
     
-    It doesn't really matter where you put this. An SSD will load it marginally quicker the first time, but you probably won't notice. If you run it without command-line parameters, it will try to write to its own directory (to create the initial database), so if you mean to run it like that, it should not be in a protected place like _Program Files_.
+    It doesn't really matter where you put the software. An SSD will load it marginally quicker the first time, but you probably won't notice. If you run it without command-line parameters, it will try to write to its own directory (to create the initial database), so if you mean to run it like that, it should not be in a protected place like _Program Files_.
+    
+    If you run from source, things are basically the same, but you are building a virtual environment, probably in a `venv` folder, and launching hydrus_client.py from the venv instead. Note: a venv includes absolute path links, so you will have to rebuild your venv every time you move your install directory!
     
 2.  **the actual SQLite database**
     
-    The client stores all its preferences and current state and knowledge _about_ files--like file size and resolution, tags, ratings, inbox status, and so on and on--in a handful of SQLite database files, defaulting to _install_dir/db_. Depending on the size of your client, these might total 1MB in size or be as much as 10GB.
+    The client stores all of your settings and its current knowledge _about_ files--like file size and resolution, tags, ratings, inbox status, and so on and on--in a handful of SQLite database files, defaulting to `install_dir/db`. Everything you have ever set is in here. Depending on the amount of metadata your client is tracking, these files might total 1MB or upwards of 100GB.
     
     In order to perform a search or to fetch or process tags, the client has to interact with these files in many small bursts, which means it is best if these files are on a drive with low latency. An SSD is ideal, but a regularly-defragged HDD with a reasonable amount of free space also works well.
     
 3.  **your media files**
     
-    All of your jpegs and webms and so on (and their thumbnails) are stored in a single complicated directory that is by default at _install\_dir/db/client\_files_. All the files are named by their hash and stored in efficient hash-based subdirectories. In general, it is not navigable by humans, but it works very well for the fast access from a giant pool of files the client needs to do to manage your media.
+    All of your actual jpegs and webms and so on (and their thumbnails) are stored in a single complicated directory that is by default at _install\_dir/db/client\_files_. All the files are named by their hash and stored in efficient hash-based subdirectories. In general, it is not navigable by humans, but it works very well for the fast access from a giant pool of files the client needs to do to manage your media.
     
-    Thumbnails tend to be fetched dozens at a time, so it is, again, ideal if they are stored on an SSD. Your regular media files--which on many clients total hundreds of GB--are usually fetched one at a time for human consumption and do not benefit from the expensive low-latency of an SSD. They are best stored on a cheap HDD, and, if desired, also work well across a network file system.
+    Thumbnails tend to be fetched dozens at a time, and very randomly, so it is, again, ideal if they are stored on an SSD. Your regular media files--which on many clients total hundreds of GB--are usually fetched one at a time for human consumption and do not benefit from the expensive low-latency of an SSD. They are best stored on a cheap HDD, and, if desired, also work well across a network file system.
+    
+    There are 256 file folders, named using the hexadecimal prefix of the files they store, from f00 to fff, and 256 thumbnail folders, from t00 to tff. Thus you should expect to have 512 folders total. Depending on an advanced setting called _granularity_, you may have 16 further subfolders in each, named 0-f.
     
 
 ## these components can be put on different drives { id="different_drives" }
 
-Although an initial install will keep these parts together, it is possible to, say, run the SQLite database on a fast drive but keep your media in cheap slow storage. This is an excellent arrangement that works for many users. And if you have a very large collection, you can even spread your files across multiple drives. It is not very technically difficult, but I do not recommend it for new users.
+Although an initial install will keep these parts together, it is possible to, say, run the SQLite database on a fast drive but keep your media in cheap slow storage. This is an excellent arrangement that works for many users. If you have a very large collection, you can even spread your files across multiple drives. It is not very technically difficult, but I do not recommend it for new users.
 
-Backing such an arrangement up is obviously more complicated, and the internal client backup is not sophisticated enough to capture everything, so I recommend you figure out a broader solution with a third-party backup program like FreeFileSync.
+Backing such an arrangement up is obviously more complicated, and the internal client backup is not sophisticated enough to capture everything, nor restore it, so I recommend you figure out a broader solution with a third-party backup program like FreeFileSync.
 
 ## pulling your media apart { id="pulling_media_apart" }
 
 !!! danger
     **As always, I recommend creating a backup before you try any of this, just in case it goes wrong.**
 
-If you would like to move your files and thumbnails to new locations, I generally recommend you not move their folders around yourself--the database has an internal knowledge of where it thinks its file and thumbnail folders are, and if you move them while it is closed, it will become confused.
-
-??? note "Missing Locations"
-    If your folders are in the wrong locations on a client boot, a repair dialog appears, and you can manually update the client's internal understanding. This is not impossible to figure out, _and in some tricky storage situations doing this on purpose can be faster than letting the client migrate things itself_, but generally it is best and safest to do everything through the dialog.
-
-Go _database->move media files_, giving you this dialog:
+If you would like to move your files and thumbnails to new locations, hit _database->move media files_, giving you this dialog:
 
 ![](images/db_migration.png)
 
@@ -75,6 +74,49 @@ While the ideal usage has changed significantly, note that the current usage rem
 
 The current and ideal usages line up, and the defunct `C:\Hydrus Network\db\client_files` location, which no longer stores anything, is removed from the list.
 
+!!! note "Missing Locations"
+    If any of the file/thumbnail media subfolders are not where the client expects them to be on program boot, a repair dialog appears to let you update the record. This is not impossible to figure out, _and in some situations doing this on purpose can be faster than letting the client migrate things itself_. I generally do not recommend moving folders around while the client is not up, but if you are feeling confident, go for it. You made a backup, right? :^)
+    
+    Note that you cannot boot a client until it has located all the file subfolders.
+    
+    Also, if your folders are in the 'wrong' locations but all those locations are known to the client, you will not get the repair dialog--it'll just give you a popup and shuffle its internal knowledge around.
+    
+
+## granularity { id="granularity" }
+
+<span class="hydrus-warning">ADVANCED</span>
+
+When you first start, the hydrus database stores its files in a two-hex 'granularity'. This means that your files or thumbnails are split into two sets of 256 folders called 'fxx' or 'txx', where 'xx' is 00-ff in hexadecimal and corresponding to the prefix hex of a particular file hash. As the largest clients ran into the millions of files, each subfolder was getting pretty large, slowing access latency in certain cases (e.g. "open externally" causing an external video player to scan the origin folder to search for subtitle files). We realised we needed a finer granularity of storage.
+
+As of v660, we are experimenting with three-hex storage, which means that each 'fxx' or 'txx' folder now has 16 subfolders, 0-f, and thus each internal prefix would be 'fxxx' and 'txxx', for two sets of 4096 partitions. You can see your current granularity on the `database->move media files` dialog and open up a sub-panel just to handle this variable:
+
+![](images/db_migration_granularity_panel.png)
+
+Changing your granularity means moving every single file and thumbnail in your collection. There are two issues with this:
+
+### it can take a while
+
+For now, this has to be done in one step, and it can take a while. Even if we can move hundreds of files per second, if you have millions of files in total, it adds up.
+
+It works at about:
+
+- NVME/SSD: 3,000-5,000 files/s
+- SATA/USB HDD: 100-500 files/s
+- NAS/SMB: 50-250 files/s
+- Cloud storage: Assumed to be awful.
+
+Since this can mean an 8-hour job on very large clients--the very clients I want to improve latency for--I am planning to break this job into pieces.
+
+### you have to repeat the operation on your backups
+
+Once you have updated your client, you need to update your backups too. Since we have moved every single file, your backup comparison tool is probably going to think that everything has changed and want to do a 100% rewrite. We didn't actually change any files, though, and we don't want to waste this time and energy.
+
+Thus, use the other buttons on the panel to change your backup granularity too. If you have separate thumbnail and file storages, run it on each folder.
+
+### you do not have to do this
+
+If either of these issues is a dealbreaker, do not move to granularity 3. Simple as.
+
 ## informing the software that the SQLite database is not in the default location { id="launch_parameter" }
 
 A straight call to the hydrus_client executable will look for a SQLite database in _install_dir/db_. If one is not found, it will create one. If you move your database and then try to run the client again, it will try to create a new empty database in that old location!
@@ -92,9 +134,9 @@ To tell it about the new database location, pass it a `-d` or `--db_dir` command
 And it will instead use the given path. If no database is found, it will similarly create a new empty one at that location. You can use any path that is valid in your system.
 
 !!! danger "Bad Locations"
-    **Do not run a SQLite database on a network location!** The database relies on clever hardware-level exclusive file locks, which network interfaces often fake. While the program may work, I cannot guarantee the database will stay non-corrupt.
+    **Do not install to a network location!** (i.e. on a different computer's hard drive) The SQLite database is sensitive to interruption and requires good file locking, which network interfaces often fake. There are [ways of splitting your client up](database_migration.md) so the database is on a local SSD but the files are on a network--this is fine--but you really should not put the database on a remote machine unless you know what you are doing and have a backup in case things go wrong.
     
-    **Do not run a SQLite database on a location with filesystem-level compression enabled!** In the best case (BTRFS), the database can suddenly get extremely slow when it hits a certain size; in the worst (NTFS), a &gt;50GB database will encounter I/O errors and receive sporadic corruption!
+    **Be careful installing to a location with filesystem-level compression or versioning enabled!** It may work ok to start, but when the SQLite database grows to large size, this can cause extreme access latency. I have been told that BTRFS works well these days, and they have been working specifically to improve SQLite performance, but keep it in mind if you are using anything else. Using NTFS compression mode on the database files is not a good idea. Compressing a hydrus database backup is fine, but the live db is sensitive.
 
 Rather than typing the path out in a terminal every time you want to launch your external database, create a new shortcut with the argument in. Something like this:
 
@@ -104,7 +146,7 @@ Note that an install with an 'external' database no longer needs access to write
 
 ## backups { id="finally" }
 
-If your database now lives in one or more new locations, make sure to update your backup routine to follow them!
+If your database now lives in one or more new locations, make sure to update your backup routine! You should be maintaining a copy of everything. As your collection grows, you may want to similarly store your db + thumbs on a low-latency SSD USB stick (a nice 3.2 USB drive can sustain 350MB/s write of the db files and 4,000 thumbs/s) but the media files on a big cheap multi-TB regular USB drive.
 
 ## moving to an SSD { id="to_an_ssd" }
 
@@ -132,6 +174,44 @@ Specifically:
 You should now have _something_ like this (let's say the D drive is the fast SSD, and E is the high capacity HDD):
 
 ![](images/db_migration_example.png)
+
+## moving to a new machine { id="to_new_OS" }
+
+The hydrus database is completely portable. Everything that makes your client your client is stored within what I have described above--there are no settings stored in a conf file somewhere in your OS. As well as moving your hydrus client around the same system, you can move it to another computer quite easily. You are generally looking at creating a new install and then moving your "db" folder from the old location to the new. It all jumps between Windows/Linux/macOS with no big modifications needed. The one thing you do need to check is the paths the database uses to talk to other parts of the local hard drive--for instance the location of an Export Folder.
+
+If the OSes are the same (e.g. Windows to Windows), moving from one machine to another is usually pretty easy. Going from one OS type to another, however, introduces a couple of extra wrinkles.
+
+??? note "OS Paths"
+    Remember that Windows has paths that start with drive letters, like `D:\` and uses backslashes to split paths; but Linux and macOS all start with root `/` and use regular slashes. If your OS suddenly changes, your absolute `D:\hydrus_files` is going to be seen as a relative path by Linux and you'll end up with like `/home/you/hydrus/db/D:\hydrus_files`. There's no huge worry here--hydrus won't rush to break anything, and the worst case is generally it just freaking out that the thing doesn't exist. You just need to tell it the correct new path.
+
+Before any system migration, make sure you:
+
+- finish any hard drive import pages that were working
+- pause your import folders
+- pause your export folders
+- MAKE A BACKUP
+
+Install a fresh new hydrus on the new machine and then, using a network share or a USB drive, copy the database folder, files, and thumbnails from the old to the new. You can insert the db directly into your new `install_dir/db` folder, or if you want to set up a new `--db_dir`, put the db in that location and set up the new shortcut.
+
+??? note "source installs"
+    If the type of OS hasn't changed, you can sometimes get away with copying a built install folder around. If you run from source, however, you _must_ recreate a new source install folder with that OS's `git` and then build a new venv (then obviously migrate your original db dir as needed). Do not try to migrate an entire source installation folder!
+
+??? note "macOS App"
+    If you are moving to or from the macOS App, recall that the App cannot store the hydrus db inside it, so the correct 'default' location (i.e. without `--db_dir`), analogous to `install_dir/db` on other installs, is `~/Library/Hydrus`. You can always go `file->open->database directory` on any running client to find out where it is currently running from.
+
+Boot up your newly assembled client, and if your files or thumbnails are stored outside of `install_folder/db/client_files`, there's a good chance it will complain about them being missing. Don't panic! Just tell the repair dialog the correct new locations, and it'll stitch itself back together.
+
+Then:
+
+- check `options->external programs` and update anything as needed
+- check `options->exporting` and update the default export directory
+- check a file's `right-click->share->export files` window to see what the default export path there is
+- check `database->move media files` and remove any empty stubs from the old system
+- edit your import folders to point at the correct locations
+- edit your export folders to point at the correct locations
+- unpause import/export folders
+
+Then you should be good! If it all went wrong, revert to your backup and let me know, and I'll help you figure it out.
 
 ## p.s. running multiple clients { id="multiple_clients" }
 

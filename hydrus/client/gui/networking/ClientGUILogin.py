@@ -10,7 +10,6 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -269,7 +268,7 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOMAINS_TO_LOGIN_INFO.ID, self._ConvertDomainAndLoginInfoToDisplayTuple, self._ConvertDomainAndLoginInfoToSortTuple )
         
-        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, 16, model, use_simple_delete = True, activation_callback = self._EditCredentials )
+        self._domains_and_login_info = ClientGUIListCtrl.BetterListCtrlTreeView( self._domains_and_login_info_panel, 8, model, use_simple_delete = True, activation_callback = self._EditCredentials, max_height_num_chars = 12 )
         
         self._domains_and_login_info_panel.SetListCtrl( self._domains_and_login_info )
         
@@ -307,12 +306,14 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         vbox = QP.VBoxLayout()
         
-        warning = 'WARNING: Your credentials are stored in plaintext! For this and other reasons, I recommend you use throwaway accounts with hydrus!'
+        warning = 'WARNING: Never use important accounts with hydrus. Hydrus does not store credentials securely. You can also lose an account if the site suddenly changes their policies and bonks it. If you link an account to hydrus, always use a throwaway account you don\'t care much about.'
         warning += '\n' * 2
-        warning += 'If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! Pixiv now requires this! If you do set up HC for an external login, I recommend you set the respective domain(s) you are logging into to "not active" here (hit "flip active" on them), so hydrus knows it is not supposed to be taking responsibility.'
+        warning += 'This system is very old and only works for simple sites. If a login script does not work for you, or the site you want has a complicated captcha, check out the Hydrus Companion web browser add-on--it can copy login cookies to hydrus! If you do set up HC for an external login, delete any login scripts here that may apply to the same site.'
+        warning += '\n' * 2
+        warning += 'If you are looking for your login cookies, go to _network->data->review session cookies_.'
         
         warning_st = ClientGUICommon.BetterStaticText( self, warning )
-        warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignHCenter | QC.Qt.AlignmentFlag.AlignVCenter )
+        warning_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         warning_st.setWordWrap( True )
         warning_st.setObjectName( 'HydrusWarning' )
         
@@ -375,50 +376,45 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         if login_domain is None:
             
-            with ClientGUIDialogs.DialogTextEntry( self, 'enter the domain', placeholder = 'example.com', allow_blank = False ) as dlg:
+            try:
                 
-                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    login_domain = dlg.GetValue()
-                    
-                    if login_domain in domains_in_use:
-                        
-                        ClientGUIDialogsMessage.ShowWarning( self, 'That domain is already in use!' )
-                        
-                        return
-                        
-                    
-                    a_types = [ ClientNetworkingLogin.LOGIN_ACCESS_TYPE_EVERYTHING, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_NSFW, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_SPECIAL, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_USER_PREFS_ONLY ]
-                    
-                    choice_tuples = [ ( ClientNetworkingLogin.login_access_type_str_lookup[ a_type ], a_type ) for a_type in a_types ]
-                    
-                    try:
-                        
-                        login_access_type = ClientGUIDialogsQuick.SelectFromList( self, 'select what type of access the login gives to this domain', choice_tuples, sort_tuples = False )
-                        
-                    except HydrusExceptions.CancelledException:
-                        
-                        return
-                        
-                    
-                    login_access_text = ClientNetworkingLogin.login_access_type_default_description_lookup[ login_access_type ]
-                    
-                    with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = login_access_text, allow_blank = False ) as dlg_2:
-                        
-                        if dlg_2.exec() == QW.QDialog.DialogCode.Accepted:
-                            
-                            login_access_text = dlg_2.GetValue()
-                            
-                        else:
-                            
-                            return
-                            
-                        
-                    
-                else:
-                    
-                    return
-                    
+                login_domain = ClientGUIDialogsQuick.EnterText( self, 'Enter the domain.', placeholder = 'example.com' )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return
+                
+            
+            if login_domain in domains_in_use:
+                
+                ClientGUIDialogsMessage.ShowWarning( self, 'That domain is already in use!' )
+                
+                return
+                
+            
+            a_types = [ ClientNetworkingLogin.LOGIN_ACCESS_TYPE_EVERYTHING, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_NSFW, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_SPECIAL, ClientNetworkingLogin.LOGIN_ACCESS_TYPE_USER_PREFS_ONLY ]
+            
+            choice_tuples = [ ( ClientNetworkingLogin.login_access_type_str_lookup[ a_type ], a_type ) for a_type in a_types ]
+            
+            try:
+                
+                login_access_type = ClientGUIDialogsQuick.SelectFromList( self, 'select what type of access the login gives to this domain', choice_tuples, sort_tuples = False )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return
+                
+            
+            login_access_text = ClientNetworkingLogin.login_access_type_default_description_lookup[ login_access_type ]
+            
+            try:
+                
+                login_access_text = ClientGUIDialogsQuick.EnterText( self, 'Edit the access description, if needed.', default = login_access_text )
+                
+            except HydrusExceptions.CancelledException:
+                
+                # don't mind a cancel here
+                pass
                 
             
         
@@ -1032,16 +1028,14 @@ class EditLoginsPanel( ClientGUIScrolledPanels.EditPanel ):
             
             login_access_text = ClientNetworkingLogin.login_access_type_default_description_lookup[ login_access_type ]
             
-            with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = login_access_text, allow_blank = False ) as dlg:
+            try:
                 
-                if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    login_access_text = dlg.GetValue()
-                    
-                else:
-                    
-                    return
-                    
+                login_access_text = ClientGUIDialogsQuick.EnterText( self, 'Edit the access description, if needed.', default = login_access_text )
+                
+            except HydrusExceptions.CancelledException:
+                
+                # a cancel is fine
+                pass
                 
             
         
@@ -1218,11 +1212,6 @@ def GenerateTestNetworkJobPresentationContextFactory( window: QW.QWidget, networ
         
         def qt_set_it( nj ):
             
-            if not QP.isValid( window ):
-                
-                return
-                
-            
             if nj is None:
                 
                 network_job_control.ClearNetworkJob()
@@ -1235,12 +1224,12 @@ def GenerateTestNetworkJobPresentationContextFactory( window: QW.QWidget, networ
         
         def enter_call():
             
-            QP.CallAfter( qt_set_it, network_job )
+            CG.client_controller.CallAfterQtSafe( window, qt_set_it, network_job )
             
         
         def exit_call():
             
-            QP.CallAfter( qt_set_it, None )
+            CG.client_controller.CallAfterQtSafe( window, qt_set_it, None )
             
         
         return ClientImporting.NetworkJobPresentationContext( enter_call, exit_call )
@@ -1275,7 +1264,7 @@ class ReviewTestResultPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.SetMinClientSize( self._data_preview, min_size )
         
-        self._data_copy_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().copy, self._CopyData )
+        self._data_copy_button = ClientGUICommon.IconButton( self, CC.global_icons().copy, self._CopyData )
         self._data_copy_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy the current example data to the clipboard.' ) )
         
         self._temp_variables = QW.QPlainTextEdit( self )
@@ -1304,7 +1293,7 @@ class ReviewTestResultPanel( ClientGUIScrolledPanels.ReviewPanel ):
                 
                 self._body.setPlainText( body )
                 
-            except:
+            except Exception as e:
                 
                 self._body.setPlainText( str( body ) )
                 
@@ -1358,13 +1347,13 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_LOGIN )
         
-        menu_items.append( ( 'normal', 'open the login scripts help', 'Open the help page for login scripts in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the login scripts help', 'Open the help page for login scripts in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1380,7 +1369,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CREDENTIAL_DEFINITIONS.ID, self._ConvertCredentialDefinitionToDisplayTuple, self._ConvertCredentialDefinitionToSortTuple )
         
-        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions )
+        self._credential_definitions = ClientGUIListCtrl.BetterListCtrlTreeView( credential_definitions_panel, 4, model, use_simple_delete = True, activation_callback = self._EditCredentialDefinitions, max_height_num_chars = 8 )
         
         credential_definitions_panel.SetListCtrl( self._credential_definitions )
         
@@ -1408,7 +1397,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_EXAMPLE_DOMAINS_INFO.ID, self._ConvertExampleDomainInfoToDisplayTuple, self._ConvertExampleDomainInfoToSortTuple )
         
-        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, 6, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo )
+        self._example_domains_info = ClientGUIListCtrl.BetterListCtrlTreeView( example_domains_info_panel, 4, model, use_simple_delete = True, activation_callback = self._EditExampleDomainsInfo, max_height_num_chars = 12 )
         
         example_domains_info_panel.SetListCtrl( self._example_domains_info )
         
@@ -1428,7 +1417,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_LOGIN_SCRIPT_TEST_RESULTS.ID, self._ConvertTestResultToDisplayTuple, self._ConvertTestResultToSortTuple )
         
-        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, 6, model, activation_callback = self._ReviewTestResult )
+        self._test_listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( test_listctrl_panel, 4, model, activation_callback = self._ReviewTestResult, max_height_num_chars = 12 )
         
         test_listctrl_panel.SetListCtrl( self._test_listctrl )
         
@@ -1509,16 +1498,13 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ( domain, access_type, access_text ) = ( 'example.com', ClientNetworkingLogin.LOGIN_ACCESS_TYPE_NSFW, ClientNetworkingLogin.login_access_type_default_description_lookup[ ClientNetworkingLogin.LOGIN_ACCESS_TYPE_NSFW ] )
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = domain, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                domain = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            domain = ClientGUIDialogsQuick.EnterText( self, 'Edit the domain', default = domain )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
             
         
         existing_domains = self._GetExistingDomains()
@@ -1550,16 +1536,14 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             access_text = ClientNetworkingLogin.login_access_type_default_description_lookup[ access_type ]
             
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = access_text, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                access_text = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            access_text = ClientGUIDialogsQuick.EnterText( self, 'Edit the access description, if needed.', default = access_text )
+            
+        except HydrusExceptions.CancelledException:
+            
+            # a cancel is fine here
+            pass
             
         
         example_domain_info = ( domain, access_type, access_text )
@@ -1701,20 +1685,12 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         def qt_add_result( test_result ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._test_listctrl.AddData( test_result )
             
         
+        qt_add_result_callable = lambda s: CG.client_controller.CallAfterQtSafe( self, qt_add_result, s )
+        
         def clean_up( final_result ):
-            
-            if not self or not QP.isValid( self ):
-                
-                return
-                
             
             ClientGUIDialogsMessage.ShowInformation( self, final_result )
             
@@ -1745,7 +1721,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 network_context = ClientNetworkingContexts.NetworkContext.STATICGenerateForDomain( domain )
                 
-                login_result = login_script.Start( network_engine, network_context, credentials, network_job_presentation_context_factory = network_job_presentation_context_factory, test_result_callable = qt_add_result )
+                login_result = login_script.Start( network_engine, network_context, credentials, network_job_presentation_context_factory = network_job_presentation_context_factory, test_result_callable = qt_add_result_callable )
                 
             except Exception as e:
                 
@@ -1758,7 +1734,7 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
                 network_engine.Shutdown()
                 
-                QP.CallAfter( clean_up, login_result )
+                CG.client_controller.CallAfterQtSafe( self, clean_up, login_result )
                 
             
         
@@ -1788,16 +1764,13 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
                 
             
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = self._test_domain, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                self._test_domain = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            self._test_domain = ClientGUIDialogsQuick.EnterText( self, 'Edit the domain.', default = self._test_domain )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
             
         
         credential_definitions = login_script.GetCredentialDefinitions()
@@ -1849,16 +1822,13 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
         
         ( original_domain, access_type, access_text ) = example_domain_info
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'edit the domain', default = original_domain, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                domain = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            domain = ClientGUIDialogsQuick.EnterText( self, 'Edit the domain', default = original_domain )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
             
         
         existing_domains = self._GetExistingDomains()
@@ -1890,16 +1860,14 @@ class EditLoginScriptPanel( ClientGUIScrolledPanels.EditPanel ):
             access_text = ClientNetworkingLogin.login_access_type_default_description_lookup[ access_type ]
             
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'edit the access description, if needed', default = access_text, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                access_text = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            access_text = ClientGUIDialogsQuick.EnterText( self, 'Edit the access description, if needed.', default = access_text )
+            
+        except HydrusExceptions.CancelledException:
+            
+            # a cancel is fine here
+            pass
             
         
         edited_example_domain_info = ( domain, access_type, access_text )
@@ -2005,7 +1973,7 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_LOGIN_SCRIPTS.ID, self._ConvertLoginScriptToDisplayTuple, self._ConvertLoginScriptToSortTuple )
         
-        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, 20, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._login_scripts = ClientGUIListCtrl.BetterListCtrlTreeView( login_scripts_panel, 8, model, use_simple_delete = True, activation_callback = self._Edit )
         
         login_scripts_panel.SetListCtrl( self._login_scripts )
         
@@ -2014,8 +1982,6 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         login_scripts_panel.AddDeleteButton()
         login_scripts_panel.AddSeparator()
         login_scripts_panel.AddImportExportButtons( ( ClientNetworkingLogin.LoginScriptDomain, ), self._AddLoginScript )
-        login_scripts_panel.AddSeparator()
-        login_scripts_panel.AddDefaultsButton( ClientDefaults.GetDefaultLoginScripts, self._AddLoginScript )
         
         #
         
@@ -2027,6 +1993,11 @@ class EditLoginScriptsPanel( ClientGUIScrolledPanels.EditPanel ):
         
         vbox = QP.VBoxLayout()
         
+        warning_st = ClientGUICommon.BetterStaticText( self, 'This system is very old and does not work well! Better to use a program like Hydrus Companion to sync cookies these days!' )
+        warning_st.setObjectName( 'HydrusWarning' )
+        warning_st.setWordWrap( True )
+        
+        QP.AddToLayout( vbox, warning_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, login_scripts_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         self.widget().setLayout( vbox )

@@ -21,13 +21,13 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientServices
+from hydrus.client import ClientThreading
 from hydrus.client.files import ClientFilesMaintenance
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsManage
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIShortcuts
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvas
@@ -36,6 +36,7 @@ from hydrus.client.gui.duplicates import ClientGUIDuplicateActions
 from hydrus.client.gui.duplicates import ClientGUIDuplicatesContentMergeOptions
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.media import ClientGUIMediaModalActions
+from hydrus.client.gui.metadata import ClientGUIManageTags
 from hydrus.client.gui.networking import ClientGUIHydrusNetwork
 from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
@@ -53,7 +54,7 @@ if HC.PLATFORM_MACOS:
         
         from hydrus.client import ClientMacIntegration
         
-    except:
+    except Exception as e:
         
         MAC_QUARTZ_OK = False
         
@@ -163,7 +164,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                 
             
-            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, hashes ) ) )
+            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, hashes ) ) )
             
         
     
@@ -188,10 +189,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             canvas_frame.SetCanvas( canvas_window )
             
-            canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
-            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
-            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
-            
+            self._ConnectCanvasWindowSignals( canvas_window )
             
         
     
@@ -200,6 +198,23 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         media = self._GetSelectedFlatMedia()
         
         ClientGUIMediaModalActions.ClearDeleteRecord( self, media )
+        
+    
+    def _ConnectCanvasWindowSignals( self, canvas_window: ClientGUICanvas.Canvas ):
+        
+        if isinstance( canvas_window, ClientGUICanvas.CanvasMediaList ):
+            
+            canvas_window.exitFocusMedia.connect( self.NotifyFocusedMediaFromCanvasExiting )
+            
+            canvas_window.exitFocusMediaForced.connect( self.SetFocusedMedia )
+            
+            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
+            
+        
+        if isinstance( canvas_window, ClientGUICanvas.CanvasWithHovers ):
+            
+            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
+            
         
     
     def _Delete( self, file_service_key = None, only_those_in_file_service_key = None ):
@@ -246,10 +261,31 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         def do_it( content_update_packages ):
             
-            for content_update_package in content_update_packages:
+            display_time = HydrusTime.GetNow() + 3
+            message_pubbed = False
+            
+            job_status = ClientThreading.JobStatus() # not cancellable, this stuff isn't a nice mix
+            
+            job_status.SetStatusTitle( 'deleting files' )
+            # no text, the content update packages are not always a nice mix
+            
+            num_to_do = len( content_update_packages )
+            
+            for ( i, content_update_package ) in enumerate( content_update_packages ):
+                
+                job_status.SetGauge( i, num_to_do )
+                
+                if not message_pubbed and HydrusTime.TimeHasPassed( display_time ):
+                    
+                    CG.client_controller.pub( 'message', job_status )
+                    
+                    message_pubbed = True
+                    
                 
                 CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
                 
+            
+            job_status.FinishAndDismiss()
             
         
         CG.client_controller.CallToThread( do_it, content_update_packages )
@@ -797,7 +833,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     
     def _Inbox( self ):
         
-        hashes = self._GetSelectedHashes( discriminant = CC.DISCRIMINANT_ARCHIVE, is_in_file_service_key = CC.COMBINED_LOCAL_FILE_SERVICE_KEY  )
+        hashes = self._GetSelectedHashes( discriminant = CC.DISCRIMINANT_ARCHIVE, is_in_file_service_key = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY  )
         
         if len( hashes ) > 0:
             
@@ -816,7 +852,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                 
             
-            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, hashes ) ) )
+            CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_INBOX, hashes ) ) )
             
         
     
@@ -897,24 +933,21 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             #
             
-            canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
-            
-            canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
-            
-            canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
-            
-            canvas_frame.SetCanvas( canvas_window )
-            
-            canvas_window.userRemovedMedia.connect( self.RemoveMedia )
-
-            if CG.client_controller.new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ):
+            def do_it():
                 
-                canvas_window.exitFocusMedia.connect( self.SetFocusedMediaAndFocusTab )
+                canvas_frame = ClientGUICanvasFrame.CanvasFrame( self.window() )
                 
-            else:
+                canvas_window = ClientGUICanvas.CanvasMediaListBrowser( canvas_frame, self._page_key, self._location_context, media_results, first_hash )
                 
-                canvas_window.exitFocusMedia.connect( self.SetFocusedMedia )
+                canvas_window.canvasWithHoversExiting.connect( CG.client_controller.gui.NotifyMediaViewerExiting )
                 
+                canvas_frame.SetCanvas( canvas_window )
+                
+                self._ConnectCanvasWindowSignals( canvas_window )
+                
+            
+            # It is important for stability/deadlock purposes that we create a new canvas not in the same event as when we unwind preview viewer and such
+            CG.client_controller.CallAfterQtSafe( self, do_it )
             
         
     
@@ -961,7 +994,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
             with ClientGUITopLevelWindowsPanels.DialogManage( self, title, frame_key ) as dlg:
                 
-                panel = ClientGUITags.ManageTagsPanel( dlg, self._location_context, CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS, flat_media )
+                panel = ClientGUIManageTags.ManageTagsPanel( dlg, self._location_context, CC.TAG_PRESENTATION_SEARCH_PAGE_MANAGE_TAGS, flat_media )
                 
                 dlg.SetPanel( panel )
                 
@@ -1008,7 +1041,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     
                     if len( pending_content_updates ) > 0:
                         
-                        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, pending_content_updates )
+                        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, pending_content_updates )
                         
                         CG.client_controller.Write( 'content_updates', content_update_package )
                         
@@ -1122,19 +1155,20 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                     message = 'Enter a reason for these {} files to be removed from {}.'.format( HydrusNumbers.ToHumanInt( len( hashes ) ), remote_service.GetName() )
                     
                 
-                with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
+                try:
                     
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        reason = dlg.GetValue()
-                        
-                        content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_PETITION, hashes, reason = reason )
-                        
-                        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( remote_service_key, content_update )
-                        
-                        CG.client_controller.Write( 'content_updates', content_update_package )
-                        
+                    reason = ClientGUIDialogsQuick.EnterText( self, message )
                     
+                except HydrusExceptions.CancelledException:
+                    
+                    return
+                    
+                
+                content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_PETITION, hashes, reason = reason )
+                
+                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( remote_service_key, content_update )
+                
+                CG.client_controller.Write( 'content_updates', content_update_package )
                 
                 self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
                 
@@ -1309,6 +1343,15 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
             
         
     
+    def _RemoveMediaByHashes( self, hashes ):
+        
+        # even though this guy eventually calls _RemoveMediaDirectly and thus filesRemoved, this doesn't happen when a collection removes a file internally
+        
+        super()._RemoveMediaByHashes( hashes )
+        
+        self.filesRemoved.emit( list( hashes ) )
+        
+    
     def _RemoveMediaDirectly( self, singleton_media, collected_media ):
         
         super()._RemoveMediaDirectly( singleton_media, collected_media )
@@ -1324,7 +1367,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         hashes = self._GetSelectedHashes( discriminant = CC.DISCRIMINANT_NOT_LOCAL )
         
-        CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_RESCIND_PEND, hashes ) ) )
+        CG.client_controller.Write( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_RESCIND_PEND, hashes ) ) )
         
     
     def _RescindPetitionFiles( self, file_service_key ):
@@ -1766,6 +1809,11 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     
     def _SetFocusedMedia( self, media, focus_page = False ):
         
+        if media == self._focused_media:
+            
+            return
+            
+        
         self._next_best_media_if_focuses_removed = None
         
         for m in [ media, self._focused_media ]:
@@ -1812,7 +1860,8 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         if self._focused_media is not None:
             
             publish_media = self._focused_media.GetDisplayMedia()
-
+            
+        
         if publish_media is None:
             
             self.focusMediaCleared.emit()
@@ -1871,20 +1920,25 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         hashes = self._GetSelectedHashes()
         
-        if hashes is not None and len( hashes ) > 0:
+        if hashes is None or len( hashes ) == 0:
             
-            ipfs_service = CG.client_controller.services_manager.GetService( file_service_key )
+            return
             
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter a note to describe this directory.' ) as dlg:
+        ipfs_service = CG.client_controller.services_manager.GetService( file_service_key )
+        
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                note = dlg.GetValue()
-                
-                CG.client_controller.CallToThread( ipfs_service.PinDirectory, hashes, note )
-                
+            message = 'Enter a note to describe this directory.'
             
+            note = ClientGUIDialogsQuick.EnterText( self, message )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        CG.client_controller.CallToThread( ipfs_service.PinDirectory, hashes, note )
         
     
     def _UploadFiles( self, file_service_key ):
@@ -1962,6 +2016,33 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
     def LaunchMediaViewerOn( self, media ):
         
         self._LaunchMediaViewer( media )
+        
+    
+    def NotifyFocusedMediaFromCanvasExiting( self, media ):
+        
+        do_activate_window_test = False
+        
+        if CG.client_controller.new_options.GetBoolean( 'focus_media_tab_on_viewer_close_if_possible' ):
+            
+            if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
+                
+                CG.client_controller.gui.ShowPage( self._page_key )
+                
+            
+            do_activate_window_test = True
+            
+        
+        if CG.client_controller.new_options.GetBoolean( 'focus_media_thumb_on_viewer_close' ):
+            
+            self.SetFocusedMedia( media )
+            
+            do_activate_window_test = True
+            
+        
+        if do_activate_window_test and CG.client_controller.new_options.GetBoolean( 'activate_main_gui_on_focusing_viewer_close' ):
+            
+            self.activateWindow()
+            
         
     
     def PageHidden( self ):
@@ -2446,7 +2527,7 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
                 
                 if CG.client_controller.new_options.GetBoolean( 'open_files_to_duplicate_filter_uses_all_my_files' ):
                     
-                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                     
                 else:
                     
@@ -2610,18 +2691,6 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         pass
         
     
-    def SetFocusedMediaAndFocusTab( self, media ):
-        
-        if CG.client_controller.gui.GetPageFromPageKey( self._page_key ) is not None:
-            
-            CG.client_controller.gui.ShowPage( self._page_key )
-
-            self.SetFocusedMedia( media )
-            
-            self._PublishSelectionChange()
-            
-        
-    
     def get_hmrp_background( self ):
         
         return self._qss_colours[ CC.COLOUR_THUMBGRID_BACKGROUND ]
@@ -2733,23 +2802,30 @@ class MediaResultsPanel( CAC.ApplicationCommandProcessorMixin, ClientMedia.Liste
         
         def paintEvent( self, event ):
             
-            painter = QG.QPainter( self )
-            
-            bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
-            
-            painter.setBackground( QG.QBrush( bg_colour ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
-            
-            if background_pixmap is not None:
+            try:
                 
-                my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
+                painter = QG.QPainter( self )
                 
-                pixmap_size = background_pixmap.size()
+                bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
                 
-                painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
+                painter.setBackground( QG.QBrush( bg_colour ) )
+                
+                painter.eraseRect( painter.viewport() )
+                
+                background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
+                
+                if background_pixmap is not None:
+                    
+                    my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
+                    
+                    pixmap_size = background_pixmap.size()
+                    
+                    painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
+                    
+                
+            except Exception as e:
+                
+                ClientGUIExceptionHandling.HandlePaintEventException( self, e )
                 
             
         

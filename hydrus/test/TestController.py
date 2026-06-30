@@ -4,11 +4,11 @@ import os
 import threading
 import tempfile
 import time
+import typing
 import unittest
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
-from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -19,7 +19,8 @@ from hydrus.core import HydrusPaths
 from hydrus.core import HydrusPubSub
 from hydrus.core import HydrusSessions
 from hydrus.core import HydrusTemp
-from hydrus.core import HydrusThreading
+from hydrus.core.files import HydrusFilesPhysicalStorage
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientAPI
 from hydrus.client import ClientConstants as CC
@@ -28,21 +29,25 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientOptions
 from hydrus.client import ClientManagers
 from hydrus.client import ClientServices
+from hydrus.client import ClientStrings
 from hydrus.client import ClientThreading
 from hydrus.client.caches import ClientCaches
 from hydrus.client.duplicates import ClientDuplicatesAutoResolution
 from hydrus.client.files import ClientFilesManager
 from hydrus.client.files import ClientFilesPhysical
-from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui import ClientGUICallAfter
 from hydrus.client.gui import ClientGUISplash
+from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListManager
 from hydrus.client.importing import ClientImportFiles
+from hydrus.client.media import ClientMediaResultCache
 from hydrus.client.metadata import ClientTagsHandling
 from hydrus.client.networking import ClientNetworking
 from hydrus.client.networking import ClientNetworkingBandwidth
 from hydrus.client.networking import ClientNetworkingDomain
 from hydrus.client.networking import ClientNetworkingLogin
 from hydrus.client.networking import ClientNetworkingSessions
+from hydrus.client.networking import ClientNetworkingURLClass
 
 from hydrus.server import ServerGlobals as SG
 
@@ -64,6 +69,7 @@ from hydrus.test import TestClientMetadataConditional
 from hydrus.test import TestClientMetadataMigration
 from hydrus.test import TestClientMigration
 from hydrus.test import TestClientNetworking
+from hydrus.test import TestClientNetworkingSettings
 from hydrus.test import TestClientParsing
 from hydrus.test import TestClientSearch
 from hydrus.test import TestClientTags
@@ -88,6 +94,9 @@ tiniest_gif = b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\xFF\x00\x2C\x00\x00
 LOCAL_RATING_LIKE_SERVICE_KEY = HydrusData.GenerateKey()
 LOCAL_RATING_NUMERICAL_SERVICE_KEY = HydrusData.GenerateKey()
 LOCAL_RATING_INCDEC_SERVICE_KEY = HydrusData.GenerateKey()
+
+callable_P = typing.ParamSpec( 'callable_P' )
+callable_R = typing.TypeVar( 'callable_R' )
 
 class MockController( object ):
     
@@ -139,6 +148,7 @@ class MockServicesManager( object ):
         return service_key in self._service_keys_to_services
         
     
+
 class FakeWebSessionManager():
     
     def EnsureLoggedIn( self, name ):
@@ -151,6 +161,7 @@ class FakeWebSessionManager():
         return { 'session_cookie' : 'blah' }
         
     
+
 class TestFrame( QW.QWidget ):
     
     def __init__( self ):
@@ -168,6 +179,7 @@ class TestFrame( QW.QWidget ):
         
         self.show()
         
+    
 
 only_run = None
 
@@ -180,6 +192,10 @@ class Controller( object ):
         self.only_run = only_run
         self.run_finished = False
         self.was_successful = False
+        
+        self.main_qt_thread = self.app.thread()
+        
+        self.call_after_catcher = ClientGUICallAfter.CallAfterEventCatcher( QW.QApplication.instance() )
         
         self._test_db = None
         
@@ -245,8 +261,8 @@ class Controller( object ):
         services = []
         
         services.append( ClientServices.GenerateService( CC.CLIENT_API_SERVICE_KEY, HC.CLIENT_API_SERVICE, 'client api' ) )
-        services.append( ClientServices.GenerateService( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, HC.COMBINED_LOCAL_FILE, 'all local files' ) )
-        services.append( ClientServices.GenerateService( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, HC.COMBINED_LOCAL_MEDIA, 'all my files' ) )
+        services.append( ClientServices.GenerateService( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, HC.HYDRUS_LOCAL_FILE_STORAGE, 'hydrus local file storage' ) )
+        services.append( ClientServices.GenerateService( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, HC.COMBINED_LOCAL_FILE_DOMAINS, 'combined local file domains' ) )
         services.append( ClientServices.GenerateService( CC.LOCAL_FILE_SERVICE_KEY, HC.LOCAL_FILE_DOMAIN, 'my files' ) )
         services.append( ClientServices.GenerateService( CC.LOCAL_UPDATE_SERVICE_KEY, HC.LOCAL_FILE_UPDATE_DOMAIN, 'repository updates' ) )
         services.append( ClientServices.GenerateService( CC.TRASH_SERVICE_KEY, HC.LOCAL_FILE_TRASH_DOMAIN, 'trash' ) )
@@ -256,7 +272,12 @@ class Controller( object ):
         services.append( ClientServices.GenerateService( self.example_tag_repo_service_key, HC.TAG_REPOSITORY, 'example tag repo' ) )
         services.append( ClientServices.GenerateService( CC.COMBINED_TAG_SERVICE_KEY, HC.COMBINED_TAG, 'all known tags' ) )
         services.append( ClientServices.GenerateService( CC.COMBINED_FILE_SERVICE_KEY, HC.COMBINED_FILE, 'all known files' ) )
-        services.append( ClientServices.GenerateService( LOCAL_RATING_LIKE_SERVICE_KEY, HC.LOCAL_RATING_LIKE, 'example local rating like service' ) )
+        
+        service = typing.cast( ClientServices.ServiceLocalRatingLike, ClientServices.GenerateService( LOCAL_RATING_LIKE_SERVICE_KEY, HC.LOCAL_RATING_LIKE, 'example local rating like service' ) )
+        service._shape = None
+        service._rating_svg = 'star'
+        services.append( service )
+        
         services.append( ClientServices.GenerateService( LOCAL_RATING_NUMERICAL_SERVICE_KEY, HC.LOCAL_RATING_NUMERICAL, 'example local rating numerical service' ) )
         services.append( ClientServices.GenerateService( LOCAL_RATING_INCDEC_SERVICE_KEY, HC.LOCAL_RATING_INCDEC, 'example local rating inc/dec service' ) )
         services.append( ClientServices.GenerateService( self.example_ipfs_service_key, HC.IPFS, 'example ipfs service' ) )
@@ -268,15 +289,17 @@ class Controller( object ):
         
         base_location = ClientFilesPhysical.FilesStorageBaseLocation( client_files_default, 1 )
         
-        for prefix in HydrusData.IterateHexPrefixes():
+        for prefix in HydrusFilesPhysicalStorage.IteratePrefixes( 'f', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ):
             
-            for c in ( 'f', 't' ):
-                
-                client_files_subfolders.append( ClientFilesPhysical.FilesStorageSubfolder( c + prefix, base_location ) )
-                
+            client_files_subfolders.append( ClientFilesPhysical.FilesStorageSubfolder( prefix, base_location ) )
             
         
-        self._name_read_responses[ 'client_files_subfolders' ] = client_files_subfolders
+        for prefix in HydrusFilesPhysicalStorage.IteratePrefixes( 't', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ):
+            
+            client_files_subfolders.append( ClientFilesPhysical.FilesStorageSubfolder( prefix, base_location ) )
+            
+        
+        self._name_read_responses[ 'client_files_subfolders' ] = ( HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH, client_files_subfolders )
         
         self._name_read_responses[ 'sessions' ] = []
         self._name_read_responses[ 'tag_parents' ] = {}
@@ -300,6 +323,71 @@ class Controller( object ):
         domain_manager = ClientNetworkingDomain.NetworkDomainManager()
         
         ClientDefaults.SetDefaultDomainManagerData( domain_manager )
+        
+        post_default_param = ClientNetworkingURLClass.URLClassParameterFixedName( name = 'page', value_string_match = ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'post', example_string = 'post' ) )
+        post_default_param.SetDefaultValue( 'post' )
+        
+        domain_manager.SetURLClasses(
+            [
+                ClientNetworkingURLClass.URLClass(
+                    'somebooru file page',
+                    url_type = HC.URL_TYPE_POST,
+                    url_domain_mask = ClientNetworkingURLClass.URLDomainMask( raw_domains = [ 'somebooru.com' ] ),
+                    path_components = [
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'posts', example_string = 'posts' ), None ),
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FLEXIBLE, match_value = ClientStrings.FLEXIBLE_MATCH_NUMERIC, example_string = '123456' ), None )
+                    ],
+                    parameters = [],
+                    example_url = 'https://somebooru.com/posts/123456'
+                ),
+                ClientNetworkingURLClass.URLClass(
+                    'otherbooru file page',
+                    url_type = HC.URL_TYPE_POST,
+                    url_domain_mask = ClientNetworkingURLClass.URLDomainMask( raw_domains = [ 'otherbooru.org' ] ),
+                    path_components = [
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'index.php', example_string = 'index.php' ), None )
+                    ],
+                    parameters = [
+                        ClientNetworkingURLClass.URLClassParameterFixedName( name = 's', value_string_match = ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'view', example_string = 'view' ) ),
+                        ClientNetworkingURLClass.URLClassParameterFixedName( name = 'id', value_string_match = ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FLEXIBLE, match_value = ClientStrings.FLEXIBLE_MATCH_NUMERIC, example_string = '123456' ) ),
+                        post_default_param,
+                    ],
+                    example_url = 'http://otherbooru.org/index.php?s=view&page=post&id=123456'
+                ),
+                ClientNetworkingURLClass.URLClass(
+                    'some imageboard thread',
+                    url_type = HC.URL_TYPE_WATCHABLE,
+                    url_domain_mask = ClientNetworkingURLClass.URLDomainMask( raw_domains = [ 'boards.someimageboard.org' ] ),
+                    path_components = [
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_ANY, example_string = 'diy' ), None ),
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'res', example_string = 'res' ), None ),
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_REGEX, match_value = r'\d+\.html', example_string = '123456.html' ), None ),
+                    ],
+                    parameters = [],
+                    api_lookup_converter = ClientStrings.StringConverter(
+                        conversions = [
+                            ( ClientStrings.STRING_CONVERSION_REGEX_SUB, ( r'\.html$', '.json' ) ),
+                        ],
+                        example_string = 'https://boards.someimageboard.org/diy/res/123456.html'
+                    ),
+                    example_url = 'https://boards.someimageboard.org/diy/res/123456.html'
+                ),
+                ClientNetworkingURLClass.URLClass(
+                    'some imageboard thread api',
+                    url_type = HC.URL_TYPE_WATCHABLE,
+                    url_domain_mask = ClientNetworkingURLClass.URLDomainMask( raw_domains = [ 'boards.someimageboard.org' ] ),
+                    path_components = [
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_ANY, example_string = 'diy' ), None ),
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_FIXED, match_value = 'res', example_string = 'res' ), None ),
+                        ( ClientStrings.StringMatch( match_type = ClientStrings.STRING_MATCH_REGEX, match_value = r'\d+\.json', example_string = '123456.json' ), None ),
+                    ],
+                    parameters = [],
+                    example_url = 'https://boards.someimageboard.org/diy/res/123456.json'
+                ),
+            ]
+        )
+        
+        domain_manager.TryToLinkURLClassesAndParsers()
         
         login_manager = ClientNetworkingLogin.NetworkLoginManager()
         
@@ -359,8 +447,7 @@ class Controller( object ):
         self.locale = QC.QLocale() # Very important to init this here and keep it non garbage collected
         
         CC.GlobalPixmaps()
-        
-        self.frame_icon_pixmap = QG.QPixmap( os.path.join( HC.STATIC_DIR, 'hydrus_32_non-transparent.png' ) )
+        CC.GlobalIcons()
         
     
     def pub( self, topic, *args, **kwargs ):
@@ -383,24 +470,20 @@ class Controller( object ):
         return HydrusData.GenerateKey()
         
     
-    def CallBlockingToQt( self, win, func, *args, **kwargs ):
+    def AmInTheMainQtThread( self ) -> bool:
+        
+        return QC.QThread.currentThread() == self.main_qt_thread
+        
+    
+    def CallBlockingToQt( self, win, func: typing.Callable[ callable_P, callable_R ], *args: callable_P.args, **kwargs: callable_P.kwargs ) -> callable_R:
         
         def qt_code( win: QW.QWidget, job_status: ClientThreading.JobStatus ):
             
             try:
                 
-                if win is not None and not QP.isValid( win ):
-                    
-                    raise HydrusExceptions.QtDeadWindowException('Parent Window was destroyed before Qt command was called!')
-                    
-                
                 result = func( *args, **kwargs )
                 
                 job_status.SetVariable( 'result', result )
-                
-            except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.DBCredentialsException, HydrusExceptions.ShutdownException ) as e:
-                
-                job_status.SetErrorException( e )
                 
             except Exception as e:
                 
@@ -412,18 +495,30 @@ class Controller( object ):
                 
             
         
+        if self.AmInTheMainQtThread():
+            
+            return func( *args, **kwargs )
+            
+        
         job_status = ClientThreading.JobStatus( cancellable = True, cancel_on_shutdown = False )
         
-        QP.CallAfter( qt_code, win, job_status )
+        self.CallAfterQtSafe( win, qt_code, win, job_status )
+        
+        done_event = job_status.GetDoneEvent()
         
         while not job_status.IsDone():
+            
+            if not QP.isValid( win ):
+                
+                raise HydrusExceptions.QtDeadWindowException( 'Window died before job returned!' )
+                
             
             if HG.model_shutdown:
                 
                 raise HydrusExceptions.ShutdownException( 'Application is shutting down!' )
                 
             
-            time.sleep( 0.05 )
+            done_event.wait( 1.0 )
             
         
         if job_status.HasVariable( 'result' ):
@@ -445,6 +540,37 @@ class Controller( object ):
         raise HydrusExceptions.ShutdownException()
         
     
+    def CallBlockingToQtFireAndForgetNoResponse( self, win, func, *args, **kwargs ) -> None:
+        
+        try:
+            
+            self.CallBlockingToQt( win, func, *args, **kwargs )
+            
+        except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException, HydrusExceptions.CancelledException ):
+            
+            pass
+            
+        
+    
+    def CallBlockingToQtTLW( self, func: typing.Callable[ callable_P, callable_R ], *args: callable_P.args, **kwargs: callable_P.kwargs ) -> callable_R:
+        
+        main_tlw = self.GetMainTLW()
+        
+        if main_tlw is None:
+            
+            raise HydrusExceptions.ShutdownException( 'Could not find a TLW! I think the program is shutting down or never booted correct!' )
+            
+        
+        try:
+            
+            return self.CallBlockingToQt( main_tlw, func, *args, **kwargs )
+            
+        except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+            
+            raise HydrusExceptions.ShutdownException( 'Program is shutting down!' )
+            
+        
+    
     def CallToThread( self, callable, *args, **kwargs ):
         
         call_to_thread = self._GetCallToThread()
@@ -454,9 +580,9 @@ class Controller( object ):
     
     CallToThreadLongRunning = CallToThread
     
-    def CallAfterQtSafe( self, window, label, func, *args, **kwargs ):
+    def CallAfterQtSafe( self, qobject: QC.QObject, func, *args, **kwargs ):
         
-        self.CallLaterQtSafe( window, 0, label, func, *args, **kwargs )
+        ClientGUICallAfter.CallAfter( self.call_after_catcher, qobject, func, *args, **kwargs )
         
     
     def CallLater( self, initial_delay, func, *args, **kwargs ):
@@ -516,6 +642,8 @@ class Controller( object ):
     def ClearTestDB( self ):
         
         self._test_db = None
+        
+        ClientMediaResultCache.MediaResultCache.instance().Clear()
         
     
     def ClearWrites( self, name ):
@@ -590,9 +718,19 @@ class Controller( object ):
         return self._server_files_dir
         
     
+    def GetMainGUI( self ):
+        
+        return self.win
+        
+    
     def GetMainTLW( self ):
         
         return self.win
+        
+    
+    def GetMediaViewersAPIInfo( self ):
+        
+        raise NotImplementedError()
         
     
     def GetNewOptions( self ):
@@ -634,6 +772,10 @@ class Controller( object ):
         
     
     def ImportURLFromAPI( self, url, filterable_tags, additional_service_keys_to_tags, destination_page_name, destination_page_key, show_destination_page, destination_location_context ):
+        
+        from hydrus.client.networking import ClientNetworkingFunctions
+        
+        ClientNetworkingFunctions.CheckLooksLikeAFullURL( url )
         
         normalised_url = self.network_engine.domain_manager.NormaliseURL( url, for_server = True )
         
@@ -715,7 +857,7 @@ class Controller( object ):
                 return self._param_read_responses[ ( name, args ) ]
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -793,6 +935,7 @@ class Controller( object ):
         ]
         
         module_lookup[ 'data' ] = [
+            TestHydrusPaths,
             TestClientConstants,
             TestClientFileStorage,
             TestClientImportObjects,
@@ -802,7 +945,6 @@ class Controller( object ):
             TestClientTags,
             TestClientThreading,
             TestHydrusData,
-            TestHydrusPaths,
             TestHydrusTags,
             TestHydrusTime,
             TestHydrusSerialisable,
@@ -871,6 +1013,7 @@ class Controller( object ):
         
         module_lookup[ 'networking' ] = [
             TestClientNetworking,
+            TestClientNetworkingSettings,
             TestHydrusNetworking
         ]
         
@@ -921,7 +1064,7 @@ class Controller( object ):
                 
             finally:
                 
-                QP.CallAfter( self.win.deleteLater )
+                self.CallAfterQtSafe( self.win, self.win.deleteLater )
                 
             
         

@@ -1,0 +1,696 @@
+import traceback
+import typing
+
+from qtpy import QtCore as QC
+from qtpy import QtWidgets as QW
+from qtpy import QtGui as QG
+
+QT_MULTIMEDIA_IS_AVAILABLE = True
+QT_MULTIMEDIA_MODULE_NOT_FOUND = False
+QT_MULTIMEDIA_IMPORT_ERROR = 'QtMultimedia seems fine!'
+
+try:
+    
+    from qtpy import QtMultimediaWidgets as QMW
+    from qtpy import QtMultimedia as QM
+    
+except Exception as e_qt_m:
+    
+    QT_MULTIMEDIA_IS_AVAILABLE = False
+    QT_MULTIMEDIA_MODULE_NOT_FOUND = isinstance( e_qt_m, ModuleNotFoundError )
+    QT_MULTIMEDIA_IMPORT_ERROR = traceback.format_exc()
+    
+
+from hydrus.core import HydrusConstants as HC
+from hydrus.core import HydrusData
+
+from hydrus.client import ClientApplicationCommand as CAC
+from hydrus.client import ClientConstants as CC
+from hydrus.client import ClientGlobals as CG
+from hydrus.client.gui import ClientGUIMenus
+from hydrus.client.gui import ClientGUIShortcuts
+from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui.media import ClientGUIMediaVolume
+from hydrus.client.media import ClientMedia
+
+if typing.TYPE_CHECKING:
+    
+    from hydrus.client.gui.canvas import ClientGUICanvas
+    
+
+def GetAvailableAudioDevices() -> "list[ QM.QAudioDevice ]":
+    
+    if not QT_MULTIMEDIA_IS_AVAILABLE:
+        
+        return []
+        
+    
+    audio_output_devices = [ audio_output_device for audio_output_device in QM.QMediaDevices.audioOutputs() ]
+    
+    return sorted( audio_output_devices, key = lambda a_o: a_o.description().casefold() )
+    
+
+class GraphicsViewViewportMouseMoveCatcher( QC.QObject ):
+    
+    def __init__( self, parent: "ClientGUICanvas.Canvas" ):
+        
+        super().__init__( parent )
+        
+        self._parent = parent
+        
+    
+    def eventFilter( self, watched, event ):
+        
+        try:
+            
+            if event.type() == QC.QEvent.Type.MouseMove:
+                
+                event = typing.cast( QG.QMouseEvent, event )
+                
+                left_down = bool( event.buttons() & QC.Qt.MouseButton.LeftButton )
+                
+                self._parent.HandleMouseMoveWithoutEvent( left_down )
+                
+                return False
+                
+            
+        except Exception as e:
+            
+            HydrusData.ShowException( e )
+            
+            return True
+            
+        
+        return False
+        
+    
+
+class MyQGraphicsView( QW.QGraphicsView ):
+    
+    def __init__( self, parent: QW.QWidget ):
+        
+        super().__init__( parent )
+        
+        if CG.client_controller.new_options.GetBoolean( 'qt_media_player_opengl_test' ):
+            
+            self.setViewport( QW.QOpenGLWidget( self ) )
+            
+        
+        self.setDragMode( QW.QGraphicsView.DragMode.NoDrag )
+        self.setScene( QW.QGraphicsScene( self ) )
+        self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
+        self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAlwaysOff )
+        
+        self.setFrameShape( QW.QFrame.Shape.NoFrame )
+        
+        self.setBackgroundBrush( QC.Qt.GlobalColor.black )
+        
+    
+    # TODO: Revisit mouseMove handling here. seems like if I set setMouseTracking( True ) here, I can catch mouseMoveEvent natively. play with that as a nicer alternative to the MouseMoveCatcher hackery dackery doo
+    
+    def wheelEvent( self, event ):
+        
+        # weird Viewport gubbins means media will sometimes scroll inside the viewport, I guess because it is 1px taller/wider than the viewport or whatever
+        event.ignore()
+        
+    
+
+class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
+    
+    launchMediaViewer = QC.Signal()
+    
+    def __init__( self, parent: QW.QWidget, canvas_type, canvas, background_colour_generator ):
+        
+        super().__init__( parent )
+        
+        self._canvas_type = canvas_type
+        self._canvas = canvas
+        self._background_colour_generator = background_colour_generator
+        
+        self._my_audio_placeholder = QW.QWidget( self )
+        
+        # 2026-01: this is the first time hydev has done GraphicsView stuff, and thus all this was divined via haruspex
+        
+        self._my_graphics_view = MyQGraphicsView( self )
+        
+        self._my_video_output = QMW.QGraphicsVideoItem()
+        self._my_video_output.setZValue( 0 )
+        
+        self._my_graphics_view.scene().addItem( self._my_video_output )
+        
+        self._my_video_output.setPos( 0, 0 )
+        
+        self._my_video_output.nativeSizeChanged.connect( self._RefitVideo )
+        
+        QP.SetBackgroundColour( self._my_audio_placeholder, QG.QColor( 0, 0, 0 ) )
+        
+        self._media_player = QM.QMediaPlayer( self )
+        
+        self._my_audio_output: QM.QAudioOutput | None = None
+        
+        self._SetAudioDeviceFromOptions()
+        
+        self._media_player.setVideoOutput( self._my_video_output )
+        
+        self._media_player.setLoops( QM.QMediaPlayer.Loops.Infinite )
+        
+        self._we_are_initialised = True
+        
+        self._stop_for_slideshow = False
+        
+        vbox = QP.VBoxLayout( margin = 0 )
+        
+        QP.AddToLayout( vbox, self._my_graphics_view, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        QP.AddToLayout( vbox, self._my_audio_placeholder, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
+        
+        self.setLayout( vbox )
+        
+        self._media = None
+        
+        self._near_endpoint = False
+        self._playthrough_count = 0
+        
+        if self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
+            
+            shortcut_set = 'media_viewer_media_window'
+            
+        else:
+            
+            shortcut_set = 'preview_media_window'
+            
+        
+        self._my_audio_placeholder.setMouseTracking( True )
+        
+        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ shortcut_set ], catch_mouse = True )
+        
+        CG.client_controller.sub( self, 'UpdateAudioMute', 'new_audio_mute' )
+        CG.client_controller.sub( self, 'UpdateAudioVolume', 'new_audio_volume' )
+        CG.client_controller.sub( self, 'UpdateFromOptions', 'notify_new_options' )
+        
+    
+    def _EnsureAudioOutputIsGood( self ):
+        
+        if CG.client_controller.new_options.GetBoolean( 'qt_media_player_no_audio_device' ):
+            
+            self._my_audio_output = None
+            
+            return
+            
+        
+        if self._my_audio_output is not None:
+            
+            current_device = self._my_audio_output.device()
+            
+        else:
+            
+            current_device = None
+            
+        
+        qt_media_player_preferred_audio_device_id_hex = CG.client_controller.new_options.GetNoneableString( 'qt_media_player_preferred_audio_device_id_hex' )
+        
+        if qt_media_player_preferred_audio_device_id_hex is not None:
+            
+            qt_media_player_preferred_audio_device_id = bytes.fromhex( qt_media_player_preferred_audio_device_id_hex )
+            
+        else:
+            
+            qt_media_player_preferred_audio_device_id = None
+            
+        
+        qt_media_player_preferred_audio_device_name = CG.client_controller.new_options.GetNoneableString( 'qt_media_player_preferred_audio_device_name' )
+        
+        if qt_media_player_preferred_audio_device_id is not None and qt_media_player_preferred_audio_device_name is not None:
+            
+            if current_device is not None:
+                
+                if bytes( current_device.id() ) == qt_media_player_preferred_audio_device_id or current_device.description() == qt_media_player_preferred_audio_device_name:
+                    
+                    return
+                    
+                
+            
+            audio_devices = [ audio_device for audio_device in GetAvailableAudioDevices() if not audio_device.isNull() ]
+            
+            for audio_device in audio_devices:
+                
+                if bytes( audio_device.id() ) == qt_media_player_preferred_audio_device_id:
+                    
+                    self._my_audio_output = QM.QAudioOutput( audio_device )
+                    
+                    return
+                    
+                
+            
+            for audio_device in audio_devices:
+                
+                if audio_device.description() == qt_media_player_preferred_audio_device_name:
+                    
+                    self._my_audio_output = QM.QAudioOutput( audio_device )
+                    
+                    return
+                    
+                
+            
+        
+        if self._my_audio_output is None or not self._my_audio_output.device().isDefault():
+            
+            self._my_audio_output = QM.QAudioOutput( self )
+            
+        
+        if self._my_audio_output.device().isNull():
+            
+            self._my_audio_output = None
+            
+        
+    
+    def _RefitVideo( self ):
+        
+        # ok this is megaslop but it works
+        # had to edit a bit for KISS since it was going bananas
+        # doing fitInView( my_video.sceneBoundingRect ) gives some margin for some reason I don't know (viewport QSS?)
+        
+        self._my_graphics_view.scene().setSceneRect( self._my_video_output.mapRectToScene( self._my_video_output.boundingRect() ) )
+        
+        self._my_graphics_view.centerOn( self._my_video_output )
+        
+        rect = self._my_video_output.sceneBoundingRect()
+        
+        vp = self._my_graphics_view.viewport().rect()
+        
+        Vw, Vh = vp.width(), vp.height()
+        Rw, Rh = rect.width(), rect.height()
+        
+        if Vw <= 0 or Vh <= 0 or Rw <= 0 or Rh <= 0:
+            
+            return
+            
+        
+        s = min( Vw / Rw, Vh / Rh )
+        
+        Dw, Dh = Rw * s, Rh * s
+        
+        tx = (Vw - Dw) / 2.0 - rect.left() * s
+        ty = (Vh - Dh) / 2.0 - rect.top()  * s
+        
+        self._my_graphics_view.setTransform( QG.QTransform( s, 0, 0, s, tx, ty ), False)
+        
+        '''
+        rect = self._my_video_output.sceneBoundingRect()
+        
+        if rect.isValid() and rect.width() > 0 and rect.height() > 0:
+            
+            self._my_graphics_view.fitInView( rect, QC.Qt.AspectRatioMode.KeepAspectRatio )
+            
+        '''
+    
+    def _SetAudioDeviceFromOptions( self ):
+        
+        self._EnsureAudioOutputIsGood()
+        
+        if self._media_player.audioOutput() != self._my_audio_output:
+            
+            try:
+                
+                # qtpy doesn't like sending None here, but it is documented and works
+                self._media_player.setAudioOutput( self._my_audio_output )
+                
+            except Exception as e:
+                
+                HydrusData.Print( f'Qt was not happy about me setting the audio device "{self._my_audio_output}" to QMediaPlayer. Base error was "{str(e)}". Please tell hydev.' )
+                
+            
+        
+    
+    def _SetAudioTrack( self, i ):
+        
+        self._media_player.setActiveAudioTrack( i )
+        
+    
+    def _SetVideoTrack( self, i ):
+        
+        self._media_player.setActiveVideoTrack( i )
+        
+    
+    def AddPlayerMenus( self, menu: QW.QMenu ):
+        
+        audio_tracks = self._media_player.audioTracks()
+        
+        if len( audio_tracks ) == 0:
+            
+            ClientGUIMenus.AppendMenuLabel( menu, 'no audio tracks', 'There are no audio tracks in this media.' )
+            
+        else:
+            
+            active_audio_track = self._media_player.activeAudioTrack()
+            
+            audio_tracks_menu = QW.QMenu( menu )
+            
+            keys_in_nice_order = [ QM.QMediaMetaData.Key.Title, QM.QMediaMetaData.Key.Language, QM.QMediaMetaData.Key.AudioCodec ]
+            
+            for ( i, audio_track ) in enumerate( audio_tracks ):
+                
+                label_components = []
+                
+                for key in keys_in_nice_order:
+                    
+                    value = audio_track.stringValue( key )
+                    
+                    if value is not None and value != '':
+                        
+                        label_components.append( value )
+                        
+                    
+                
+                if len( label_components ) == 0:
+                    
+                    label_components = [ 'unknown' ]
+                    
+                
+                label = ' - ' .join( label_components )
+                
+                ClientGUIMenus.AppendMenuCheckItem( audio_tracks_menu, label, 'Set this audio track.', i == active_audio_track, self._SetAudioTrack, i )
+                
+            
+            menu_label = 'audio tracks' if len( audio_tracks ) > 1 else 'audio track'
+            
+            ClientGUIMenus.AppendMenu( menu, audio_tracks_menu, menu_label )
+            
+        
+        video_tracks = self._media_player.videoTracks()
+        
+        if len( video_tracks ) == 0:
+            
+            ClientGUIMenus.AppendMenuLabel( menu, 'no video tracks', 'There are no video tracks in this media.' )
+            
+        else:
+            
+            active_video_track = self._media_player.activeVideoTrack()
+            
+            video_tracks_menu = QW.QMenu( menu )
+            
+            keys_in_nice_order = [ QM.QMediaMetaData.Key.Title, QM.QMediaMetaData.Key.VideoCodec ]
+            
+            for ( i, video_track ) in enumerate( video_tracks ):
+                
+                label_components = []
+                
+                for key in keys_in_nice_order:
+                    
+                    value = video_track.stringValue( key )
+                    
+                    if value is not None and value != '':
+                        
+                        label_components.append( value )
+                        
+                    
+                
+                if len( label_components ) == 0:
+                    
+                    label_components = [ 'unknown' ]
+                    
+                
+                label = ' - ' .join( label_components )
+                
+                ClientGUIMenus.AppendMenuCheckItem( video_tracks_menu, label, 'Set this video track.', i == active_video_track, self._SetVideoTrack, i )
+                
+            
+            menu_label = 'video tracks' if len( video_tracks ) > 1 else 'video track'
+            
+            ClientGUIMenus.AppendMenu( menu, video_tracks_menu, menu_label )
+            
+        
+    
+    def ClearMedia( self ):
+        
+        if self._media is not None:
+            
+            self._media = None
+            
+            # it used to be really buggy to go media_player.setSource after a first load, but in Qt >=6.9 things seem fine
+            
+            self._media_player.stop()
+            
+        
+    
+    def GetAnimationBarStatus( self ):
+        
+        buffer_indices = None
+        
+        if self._media is None:
+            
+            current_frame_index = 0
+            current_timestamp_ms = 0
+            paused = True
+            
+        else:
+            
+            current_timestamp_ms = self._media_player.position()
+            
+            num_frames = self._media.GetNumFrames()
+            
+            if num_frames is None or num_frames == 1:
+                
+                current_frame_index = 0
+                
+            else:
+                
+                position_float = current_timestamp_ms / self._media.GetDurationMS()
+                
+                if not self._near_endpoint and position_float > 0.8: # bit of padding
+                    
+                    self._near_endpoint = True
+                    
+                elif self._near_endpoint and position_float < 0.2:
+                    
+                    self._near_endpoint = False
+                    self._playthrough_count += 1
+                    
+                
+                current_frame_index = int( round( position_float * num_frames ) )
+                
+                current_frame_index = min( current_frame_index, num_frames - 1 )
+                
+            
+            current_timestamp_ms = min( current_timestamp_ms, self._media.GetDurationMS() )
+            
+            paused = self.IsPaused()
+            
+        
+        return ( current_frame_index, current_timestamp_ms, paused, buffer_indices )
+        
+    
+    def HasPlayedOnceThrough( self ):
+        
+        return self._playthrough_count > 0
+        
+    
+    def InstallMouseMoveCatcher( self, event_filter: QC.QObject ):
+        
+        self._my_graphics_view.viewport().setMouseTracking( True )
+        self._my_graphics_view.viewport().installEventFilter( event_filter )
+        
+    
+    def IsCompletelyUnloaded( self ):
+        
+        return self._media_player.mediaStatus() == QM.QMediaPlayer.MediaStatus.NoMedia
+        
+    
+    def IsPaused( self ):
+        
+        # don't use isPlaying(), Qt 6.4.1 doesn't support it lol
+        return self._media_player.playbackState() != QM.QMediaPlayer.PlaybackState.PlayingState
+        
+    
+    def Pause( self ):
+        
+        self._media_player.pause()
+        
+    
+    def PausePlay( self ):
+        
+        if self.IsPaused():
+            
+            self.Play()
+            
+        else:
+            
+            self.Pause()
+            
+        
+    
+    def Play( self ):
+        
+        self._media_player.play()
+        
+    
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+        
+        command_processed = True
+        
+        if command.IsSimpleCommand():
+            
+            action = command.GetSimpleAction()
+            
+            if action == CAC.SIMPLE_PAUSE_MEDIA:
+                
+                self.Pause()
+                
+            elif action == CAC.SIMPLE_PAUSE_PLAY_MEDIA:
+                
+                self.PausePlay()
+                
+            elif action == CAC.SIMPLE_MEDIA_SEEK_DELTA:
+                
+                ( direction, duration_ms ) = command.GetSimpleData()
+                
+                self.SeekDelta( direction, duration_ms )
+                
+            elif action == CAC.SIMPLE_CLOSE_MEDIA_VIEWER and self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
+                
+                self.window().close()
+                
+            elif action == CAC.SIMPLE_LAUNCH_MEDIA_VIEWER and self._canvas_type == CC.CANVAS_PREVIEW:
+                
+                self.launchMediaViewer.emit()
+                
+            else:
+                
+                command_processed = False
+                
+            
+        else:
+            
+            command_processed = False
+            
+        
+        return command_processed
+        
+    
+    def resizeEvent( self, event ):
+        
+        super().resizeEvent( event )
+        
+        self._RefitVideo()
+        
+    
+    def Seek( self, position_ms, precise = True ):
+        
+        self._media_player.setPosition( position_ms )
+        
+    
+    def SeekDelta( self, direction, duration_ms ):
+        
+        if self._media is None:
+            
+            return
+            
+        
+        current_timestamp_ms = self._media_player.position()
+        
+        new_timestamp_ms = max( 0, current_timestamp_ms + ( direction * duration_ms ) )
+        
+        if new_timestamp_ms > self._media.GetDurationMS():
+            
+            new_timestamp_ms = 0
+            
+        
+        self.Seek( new_timestamp_ms )
+        
+    
+    def SetBackgroundColourGenerator( self, background_colour_generator ):
+        
+        self._background_colour_generator = background_colour_generator
+        
+    
+    def SetMedia( self, media: ClientMedia.MediaSingleton, start_paused = False ):
+        
+        if media == self._media:
+            
+            return
+            
+        
+        self.ClearMedia()
+        
+        self._media = media
+        
+        self._stop_for_slideshow = False
+        
+        if CG.client_controller.new_options.GetBoolean( 'qt_media_player_null_audio_on_silent_media' ):
+            
+            has_audio = self._media.HasAudio()
+            
+            if not has_audio:
+                
+                self._my_audio_output = None
+                
+                self._media_player.setAudioOutput( None )
+                
+            else:
+                
+                self._SetAudioDeviceFromOptions()
+                
+            
+        
+        is_audio = self._media.GetMime() in HC.AUDIO
+        
+        self._my_graphics_view.setVisible( not is_audio )
+        self._my_audio_placeholder.setVisible( is_audio )
+        
+        path = CG.client_controller.client_files_manager.GetFilePath( self._media.GetHash(), self._media.GetMime() )
+        
+        self._media_player.setSource( QC.QUrl.fromLocalFile( path ) )
+        
+        if not start_paused:
+            
+            self._media_player.play()
+            
+        
+        if self._my_audio_output is not None:
+            
+            self._my_audio_output.setVolume( ClientGUIMediaVolume.GetCorrectCurrentVolume( self._canvas_type ) / 100 )
+            self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
+            
+        
+    
+    def showEvent( self, event ):
+        
+        super().showEvent( event )
+        
+        self._RefitVideo()
+        
+    
+    def StopForSlideshow( self, value ):
+        
+        self._stop_for_slideshow = value
+        
+    
+    def TryToUnload( self ):
+        
+        # this call is crashtastic, so don't inject it while the player is buffering or whatever
+        if self._media_player.mediaStatus() in ( QM.QMediaPlayer.MediaStatus.LoadedMedia, QM.QMediaPlayer.MediaStatus.EndOfMedia, QM.QMediaPlayer.MediaStatus.InvalidMedia ):
+            
+            self._media_player.setSource( QC.QUrl() )
+            
+        
+    
+    def UpdateAudioMute( self ):
+        
+        if self._my_audio_output is not None:
+            
+            self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
+            
+        
+
+    def UpdateAudioVolume( self ):
+        
+        if self._my_audio_output is not None:
+            
+            self._my_audio_output.setVolume( ClientGUIMediaVolume.GetCorrectCurrentVolume( self._canvas_type ) / 100 )
+            
+        
+    
+    def UpdateFromOptions( self ):
+        
+        self._SetAudioDeviceFromOptions()
+        
+    

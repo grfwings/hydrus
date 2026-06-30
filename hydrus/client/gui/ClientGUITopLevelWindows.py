@@ -1,3 +1,5 @@
+import typing
+
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
@@ -5,6 +7,7 @@ from qtpy import QtGui as QG
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 
+from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIFunctions
@@ -13,6 +16,10 @@ from hydrus.client.gui import QtPorting as QP
 
 CHILD_POSITION_PADDING = 24
 FUZZY_PADDING = 10
+
+# saw a ( 24, -14 ) child position off a top-left corner, which means the frameGeometry topleft was ( 0, -38 )????
+# let's see what happens if we forgive such madness
+FORGIVE_FRAME_GUBBINS_FUZZY_PADDING = 40
 
 def GetSafePosition( position: QC.QPoint, frame_key ):
     
@@ -24,7 +31,7 @@ def GetSafePosition( position: QC.QPoint, frame_key ):
     # some window managers size the windows just off screen to cut off borders
     # so choose a test position that's a little more lenient
     
-    fuzzy_point = QC.QPoint( FUZZY_PADDING, FUZZY_PADDING )
+    fuzzy_point = QC.QPoint( FORGIVE_FRAME_GUBBINS_FUZZY_PADDING, FORGIVE_FRAME_GUBBINS_FUZZY_PADDING )
     
     test_position = position + fuzzy_point
     
@@ -66,6 +73,7 @@ def GetSafePosition( position: QC.QPoint, frame_key ):
         return ( position, None )
         
     
+
 def GetSafeSize( tlw: QW.QWidget, min_size: QC.QSize, gravity ) -> QC.QSize:
     
     min_width = min_size.width()
@@ -73,22 +81,38 @@ def GetSafeSize( tlw: QW.QWidget, min_size: QC.QSize, gravity ) -> QC.QSize:
     
     frame_padding = tlw.frameGeometry().size() - tlw.size()
     
-    parent = tlw.parentWidget()
+    parent_widget = tlw.parentWidget()
     
-    if parent is None:
+    if parent_widget is None:
+        
+        main_gui = CG.client_controller.GetMainGUI()
+        
+        if main_gui is not None and tlw != main_gui:
+            
+            parent_window = main_gui
+            
+        else:
+            
+            parent_window = None
+            
+        
+    else:
+        
+        parent_window = parent_widget.window()
+        
+    
+    if parent_window is None:
         
         width = min_width
         height = min_height
         
     else:
         
-        parent_window = parent.window()
-        
         # when we initialise, we might not have a frame yet because we haven't done show() yet
         # so borrow main gui's
         if frame_padding.isEmpty():
             
-            main_gui = CG.client_controller.gui
+            main_gui = CG.client_controller.GetMainGUI()
             
             if main_gui is not None and QP.isValid( main_gui ) and not main_gui.isFullScreen():
                 
@@ -191,7 +215,7 @@ def ExpandTLWIfPossible( tlw: QW.QWidget, frame_key, desired_size_delta: QC.QSiz
 
 def SaveTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
     
-    if tlw.isMinimized():
+    if tlw.isMinimized() or not tlw.isVisible():
         
         return
         
@@ -208,6 +232,9 @@ def SaveTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
     
     # I am informed that tlw.frameGeometry().topLeft() will account for a macOS system bar at the top
     # tlw.pos() grabs from the client area, not the screen area
+    
+    # Note this important information about frameGeometry in X11 from https://doc.qt.io/qt-6/application-windows.html#window-geometry
+    # "Basic rule: There's always one user who uses a window manager that breaks your assumption, and who will complain to you."
     
     ( safe_position, position_message ) = GetSafePosition( tlw.frameGeometry().topLeft(), frame_key )
     
@@ -273,6 +300,7 @@ def SaveTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
     
     new_options.SetFrameLocation( frame_key, remember_size, remember_position, last_size, last_position, default_gravity, default_position, maximised, fullscreen )
     
+
 def SetInitialTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
     
     new_options = CG.client_controller.new_options
@@ -283,7 +311,16 @@ def SetInitialTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
     
     if parent is None:
         
-        parent_window = None
+        main_gui = CG.client_controller.GetMainGUI()
+        
+        if main_gui is not None and tlw != main_gui:
+            
+            parent_window = main_gui
+            
+        else:
+            
+            parent_window = None
+            
         
     else:
         
@@ -408,6 +445,7 @@ def SetInitialTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
         tlw.showFullScreen()
         
     
+
 def SlideOffScreenTLWUpAndLeft( tlw ):
     
     tlw_frame_rect = tlw.frameGeometry()
@@ -455,7 +493,7 @@ class NewDialog( QP.Dialog ):
         
         self._new_options = CG.client_controller.new_options
         
-        self.setWindowIcon( QG.QIcon( CG.client_controller.frame_icon_pixmap ) )
+        self.setWindowIcon( CC.global_icons().hydrus_frame )
         
         CG.client_controller.ResetIdleTimer()
         
@@ -579,7 +617,7 @@ class NewDialog( QP.Dialog ):
                 
                 self.close()
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.ShowText( 'The dialog would not close on command.' )
                 
@@ -588,7 +626,7 @@ class NewDialog( QP.Dialog ):
                 
                 self.deleteLater()
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.ShowText( 'The dialog would not destroy on command.' )
                 
@@ -727,7 +765,7 @@ class Frame( QW.QWidget ):
         
         self._new_options = CG.client_controller.new_options
         
-        self.setWindowIcon( QG.QIcon( CG.client_controller.frame_icon_pixmap ) )
+        self.setWindowIcon( CC.global_icons().hydrus_frame )
         
         CG.client_controller.ResetIdleTimer()
         
@@ -744,6 +782,7 @@ class Frame( QW.QWidget ):
         self.CleanBeforeDestroy()
         
     
+
 class MainFrame( QW.QMainWindow ):
     
     def __init__( self, parent, title ):
@@ -754,7 +793,7 @@ class MainFrame( QW.QMainWindow ):
         
         self._new_options = CG.client_controller.new_options
         
-        self.setWindowIcon( QG.QIcon( CG.client_controller.frame_icon_pixmap ) )
+        self.setWindowIcon( CC.global_icons().hydrus_frame )
         
         self._widget_event_filter = QP.WidgetEventFilter( self )
         
@@ -769,6 +808,44 @@ class MainFrame( QW.QMainWindow ):
     def closeEvent( self, event ):
         
         self.CleanBeforeDestroy()
+        
+    
+
+class MaximiseRestoreCatcher( QC.QObject ):
+    
+    def __init__( self, parent: QW.QWidget, call ):
+        
+        self._call = call
+        
+        self._parent = parent
+        
+        super().__init__( parent )
+        
+        parent.installEventFilter( self )
+        
+    
+    def eventFilter( self, watched, event ):
+        
+        try:
+            
+            type = event.type()
+            
+            if type == QC.QEvent.Type.WindowStateChange:
+                
+                event = typing.cast( QG.QWindowStateChangeEvent, event )
+                
+                if self._parent.isMaximized() or ( event.oldState() & QC.Qt.WindowState.WindowMaximized):
+                    
+                    self._call()
+                    
+                
+            
+        except Exception as e:
+            
+            HydrusData.ShowException( e, do_wait = False )
+            
+        
+        return False
         
     
 
@@ -780,25 +857,53 @@ class FrameThatResizes( Frame ):
         
         super().__init__( parent, title )
         
-        self._widget_event_filter.EVT_SIZE( self.EventSizeAndPositionChanged )
-        self._widget_event_filter.EVT_MOVE_END( self.EventSizeAndPositionChanged )
-        self._widget_event_filter.EVT_MAXIMIZE( self.EventSizeAndPositionChanged )
+        self._maximise_restore_catcher = MaximiseRestoreCatcher( self, self._StartSaveTLWSizeAndPositionTimer )
+        
+        self._move_end_timer = QC.QTimer( self )
+        self._move_end_timer.setSingleShot( True )
+        self._move_end_timer.timeout.connect( self.moveEnded )
+        
+        self._save_size_and_position_timer = QC.QTimer( self )
+        self._save_size_and_position_timer.setSingleShot( True )
+        self._save_size_and_position_timer.timeout.connect( self._SaveTLWSizeAndPosition )
+        
+    
+    def _SaveTLWSizeAndPosition( self ):
+        
+        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
+        # and generally a good idea to wait here to handle some init states
+        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        
+    
+    def _StartSaveTLWSizeAndPositionTimer( self ):
+        
+        self._save_size_and_position_timer.start( 100 )
         
     
     def CleanBeforeDestroy( self ):
         
         Frame.CleanBeforeDestroy( self )
         
-        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
-        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        self._StartSaveTLWSizeAndPositionTimer()
         
     
-    def EventSizeAndPositionChanged( self, event ):
+    def moveEnded( self ):
         
-        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
-        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        self._StartSaveTLWSizeAndPositionTimer()
         
-        return True # was: event.ignore()
+    
+    def moveEvent( self, event ):
+        
+        self._move_end_timer.start( 200 )
+        
+        super().moveEvent( event )
+        
+    
+    def resizeEvent( self, event ):
+        
+        self._StartSaveTLWSizeAndPositionTimer()
+        
+        super().resizeEvent( event )
         
     
 
@@ -808,31 +913,74 @@ class FrameThatResizesWithHovers( FrameThatResizes ):
     
 
 class MainFrameThatResizes( MainFrame ):
-
+    
     def __init__( self, parent, title, frame_key ):
         
         self._frame_key = frame_key
-
-        super().__init__( parent, title )
-
-        self._widget_event_filter.EVT_SIZE( self.EventSizeAndPositionChanged )
-        self._widget_event_filter.EVT_MOVE_END( self.EventSizeAndPositionChanged )
-        self._widget_event_filter.EVT_MAXIMIZE( self.EventSizeAndPositionChanged )
         
-
+        super().__init__( parent, title )
+        
+        self._maximise_restore_catcher = MaximiseRestoreCatcher( self, self._StartSaveTLWSizeAndPositionTimer )
+        
+        self._move_end_timer = QC.QTimer( self )
+        self._move_end_timer.setSingleShot( True )
+        self._move_end_timer.timeout.connect( self.moveEnded )
+        
+        self._save_size_and_position_timer = QC.QTimer( self )
+        self._save_size_and_position_timer.setSingleShot( True )
+        self._save_size_and_position_timer.timeout.connect( self._SaveTLWSizeAndPosition )
+        
+    
+    def _SaveTLWSizeAndPosition( self ):
+        
+        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
+        # and generally a good idea to wait here to handle some init states
+        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        
+    
+    def _StartSaveTLWSizeAndPositionTimer( self ):
+        
+        self._save_size_and_position_timer.start( 100 )
+        
+    
     def CleanBeforeDestroy( self ):
         
         MainFrame.CleanBeforeDestroy( self )
         
-        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
-        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        self._StartSaveTLWSizeAndPositionTimer()
         
     
-    def EventSizeAndPositionChanged( self, event ):
+    def moveEnded( self ):
         
-        # maximise sends a pre-maximise size event that poisons last_size if this is immediate
-        CG.client_controller.CallLaterQtSafe( self, 0.1, 'save frame size and position: {}'.format( self._frame_key ), SaveTLWSizeAndPosition, self, self._frame_key )
+        self._StartSaveTLWSizeAndPositionTimer()
+        
+    
+    def moveEvent( self, event ):
+        
+        self._move_end_timer.start( 200 )
+        
+        super().moveEvent( event )
+        
+    
 
-        return True # was: event.ignore()
+def ResizableWindowIsOpenAndItIsMyWindowsChild( win: QW.QWidget ):
+    
+    window = win.window()
+    
+    tlws = QW.QApplication.topLevelWidgets()
+    
+    for tlw in tlws:
         
+        if tlw == window:
+            
+            continue
+            
+        
+        if isinstance( tlw, ( QP.Dialog, DialogThatResizes, FrameThatResizes ) ) and tlw.isVisible() and ClientGUIFunctions.IsQtAncestor( tlw, window, through_tlws = True ):
+            
+            return True
+            
+        
+    
+    return False
     

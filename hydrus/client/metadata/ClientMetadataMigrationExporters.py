@@ -1,7 +1,6 @@
 import collections.abc
 import json
 import os
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
@@ -121,7 +120,6 @@ class SingleFileMetadataExporterMediaNotes( SingleFileMetadataExporterMedia, Hyd
         
         note_import_options = NoteImportOptions.NoteImportOptions()
         
-        note_import_options.SetIsDefault( False )
         note_import_options.SetExtendExistingNoteIfPossible( True )
         note_import_options.SetConflictResolution( NoteImportOptions.NOTE_IMPORT_CONFLICT_RENAME )
         
@@ -143,12 +141,12 @@ class SingleFileMetadataExporterMediaNotes( SingleFileMetadataExporterMedia, Hyd
         return examples
         
     
-    def GetForcedName( self ) -> typing.Optional[ str ]:
+    def GetForcedName( self ) -> str | None:
         
         return self._forced_name
         
     
-    def SetForcedName( self, forced_name: typing.Optional[ str ] ):
+    def SetForcedName( self, forced_name: str | None ):
         
         self._forced_name = forced_name
         
@@ -249,7 +247,7 @@ class SingleFileMetadataExporterMediaTags( SingleFileMetadataExporterMedia, Hydr
             
             name = CG.client_controller.services_manager.GetName( self._service_key )
             
-        except:
+        except Exception as e:
             
             name = 'unknown service'
             
@@ -266,7 +264,7 @@ class SingleFileMetadataExporterMediaTimestamps( SingleFileMetadataExporterMedia
     SERIALISABLE_NAME = 'Metadata Single File Exporter Media Timestamps'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, timestamp_data_stub: typing.Optional[ ClientTime.TimestampData ] = None ):
+    def __init__( self, timestamp_data_stub: ClientTime.TimestampData | None = None ):
         
         super().__init__()
         
@@ -319,7 +317,7 @@ class SingleFileMetadataExporterMediaTimestamps( SingleFileMetadataExporterMedia
         
         content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TIMESTAMP, HC.CONTENT_UPDATE_SET, ( ( hash, ), new_timestamp_data ) ) ]
         
-        CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_updates ) )
+        CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_updates ) )
         
     
     def GetExampleStrings( self ):
@@ -393,7 +391,7 @@ class SingleFileMetadataExporterMediaURLs( SingleFileMetadataExporterMedia, Hydr
                 
                 continue
                 
-            except:
+            except Exception as e:
                 
                 continue
                 
@@ -403,7 +401,7 @@ class SingleFileMetadataExporterMediaURLs( SingleFileMetadataExporterMedia, Hydr
         
         content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( urls, hashes ) ) ]
         
-        CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_updates ) )
+        CG.client_controller.WriteSynchronous( 'content_updates', ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_updates ) )
         
     
     def GetExampleStrings( self ):

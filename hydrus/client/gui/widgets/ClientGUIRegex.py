@@ -17,11 +17,12 @@ from hydrus.client.gui.widgets import ClientGUICommon
 
 class RegexButton( ClientGUICommon.BetterButton ):
     
-    def __init__( self, parent, show_group_menu = False ):
+    def __init__( self, parent, show_group_menu = False, show_manage_favourites_menu = True ):
         
         super().__init__( parent, '.*', self._ShowMenu )
         
         self._show_group_menu = show_group_menu
+        self._show_manage_favourites_menu = show_manage_favourites_menu
         
         width = ClientGUIFunctions.ConvertTextToPixelWidth( self, 4 )
         
@@ -61,7 +62,7 @@ class RegexButton( ClientGUICommon.BetterButton ):
         ClientGUIMenus.AppendMenuItem( submenu, r'backslash character - \\', copy_desc, CG.client_controller.pub, 'clipboard', 'text', r'\\' )
         ClientGUIMenus.AppendMenuItem( submenu, r'beginning of line - ^', copy_desc, CG.client_controller.pub, 'clipboard', 'text', r'^' )
         ClientGUIMenus.AppendMenuItem( submenu, r'end of line - $', copy_desc, CG.client_controller.pub, 'clipboard', 'text', r'$' )
-        ClientGUIMenus.AppendMenuItem( submenu, f'any of these - [{HC.UNICODE_ELLIPSIS}]', copy_desc, CG.client_controller.pub, 'clipboard', f'text', '[{HC.UNICODE_ELLIPSIS}]' )
+        ClientGUIMenus.AppendMenuItem( submenu, f'any of these - [{HC.UNICODE_ELLIPSIS}]', copy_desc, CG.client_controller.pub, 'clipboard', f'text', f'[{HC.UNICODE_ELLIPSIS}]' )
         ClientGUIMenus.AppendMenuItem( submenu, f'anything other than these - [^{HC.UNICODE_ELLIPSIS}]', copy_desc, CG.client_controller.pub, 'clipboard', 'text', f'[^{HC.UNICODE_ELLIPSIS}]' )
         
         ClientGUIMenus.AppendSeparator( submenu )
@@ -84,7 +85,8 @@ class RegexButton( ClientGUICommon.BetterButton ):
         ClientGUIMenus.AppendMenuItem( submenu, f'the previous characters are not: (non-consuming) - (?<!{HC.UNICODE_ELLIPSIS})', copy_desc, CG.client_controller.pub, 'clipboard', 'text', f'(?<!{HC.UNICODE_ELLIPSIS})' )
         
         ClientGUIMenus.AppendSeparator( submenu )
-        
+        # `^(?!...$).+$` - is anything but this
+        ClientGUIMenus.AppendMenuItem( submenu, f'anything except this exact phrase - ^(?!{HC.UNICODE_ELLIPSIS}$).+$', copy_desc, CG.client_controller.pub, 'clipboard', 'text', f'^(?!{HC.UNICODE_ELLIPSIS}$).+$' )
         ClientGUIMenus.AppendMenuItem( submenu, r'0074 -> 74 - [1-9]+\d*', copy_desc, CG.client_controller.pub, 'clipboard', 'text', r'[1-9]+\d*' )
         ClientGUIMenus.AppendMenuItem( submenu, r'filename - (?<=' + re.escape( os.path.sep ) + r')[^' + re.escape( os.path.sep ) + r']*?(?=\..*$)', copy_desc, CG.client_controller.pub, 'clipboard', 'text', '(?<=' + re.escape( os.path.sep ) + r')[^' + re.escape( os.path.sep ) + r']*?(?=\..*$)' )
         
@@ -121,9 +123,12 @@ class RegexButton( ClientGUICommon.BetterButton ):
         
         submenu = ClientGUIMenus.GenerateMenu( menu )
         
-        ClientGUIMenus.AppendMenuItem( submenu, 'manage favourites', 'manage some custom favourite phrases', self._ManageFavourites )
-        
-        ClientGUIMenus.AppendSeparator( submenu )
+        if self._show_manage_favourites_menu:
+            
+            ClientGUIMenus.AppendMenuItem( submenu, 'manage favourites', 'manage some custom favourite phrases', self._ManageFavourites )
+            
+            ClientGUIMenus.AppendSeparator( submenu )
+            
         
         ClientGUIMenus.AppendMenuLabel( submenu, 'click below to copy to clipboard', no_copy = True, make_it_bold = True )
         
@@ -144,11 +149,11 @@ class RegexButton( ClientGUICommon.BetterButton ):
         regex_favourites = HC.options[ 'regex_favourites' ]
         
         from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-        from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
+        from hydrus.client.gui.panels import ClientGUIScrolledPanelsEditRegexFavourites
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'manage regex favourites' ) as dlg:
             
-            panel = ClientGUIScrolledPanelsEdit.EditRegexFavourites( dlg, regex_favourites )
+            panel = ClientGUIScrolledPanelsEditRegexFavourites.EditRegexFavourites( dlg, regex_favourites )
             
             dlg.SetPanel( panel )
             
@@ -168,16 +173,16 @@ class RegexInput( QW.QWidget ):
     
     textChanged = QC.Signal()
     
-    def __init__( self, parent: QW.QWidget, show_group_menu = False ):
+    def __init__( self, parent: QW.QWidget, show_group_menu = False, show_manage_favourites_menu = True ):
         
         super().__init__( parent )
         
         self._allow_enter_key_to_propagate_outside = True
         
         self._regex_text = QW.QLineEdit( self )
-        self._regex_text.setPlaceholderText( 'regex input' )
+        self._regex_text.setPlaceholderText( 'regex' )
         
-        self._regex_button = RegexButton( self, show_group_menu = show_group_menu )
+        self._regex_button = RegexButton( self, show_group_menu = show_group_menu, show_manage_favourites_menu = show_manage_favourites_menu )
         
         hbox = QP.HBoxLayout( margin = 0 )
         
@@ -185,6 +190,9 @@ class RegexInput( QW.QWidget ):
         QP.AddToLayout( hbox, self._regex_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         self.setLayout( hbox )
+        
+        self.setFocusProxy( self._regex_text )
+        self.setFocusPolicy( QC.Qt.FocusPolicy.StrongFocus )
         
         self._regex_text.textChanged.connect( self.textChanged )
         self._regex_text.textChanged.connect( self._UpdateValidityStyle )
@@ -200,7 +208,7 @@ class RegexInput( QW.QWidget ):
             
             self._regex_text.setObjectName( 'HydrusValid' )
             
-        except:
+        except Exception as e:
             
             self._regex_text.setObjectName( 'HydrusInvalid' )
             

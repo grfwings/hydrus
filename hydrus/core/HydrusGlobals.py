@@ -15,7 +15,7 @@ if typing.TYPE_CHECKING:
     from hydrus.core import HydrusController
     
 
-controller: typing.Optional[ "HydrusController.HydrusController" ] = None
+controller: "HydrusController.HydrusController | None" = None
 
 # TODO: move the client, server, and any test-specific garbage to the new module Globals mate, and/or the controller objects themselves
 
@@ -42,7 +42,6 @@ import_folders_running = False
 export_folders_running = False
 
 boot_with_network_traffic_paused_command_line = False
-profile_mode = False
 
 db_profile_min_job_time_ms = 16
 callto_profile_min_job_time_ms = 10
@@ -52,16 +51,6 @@ pubsub_profile_min_job_time_ms = 5
 ui_timer_profile_min_job_time_ms = 5
 
 macos_antiflicker_test = False
-
-query_planner_mode = False
-
-query_planner_start_time = 0
-query_planner_query_count = 0
-queries_planned = set()
-profile_start_time = 0
-profile_slow_count = 0
-profile_fast_count = 0
-profile_counter_lock = threading.Lock()
 
 canvas_tile_outline_mode = False
 
@@ -74,6 +63,7 @@ media_load_report_mode = False
 gui_report_mode = False
 shortcut_report_mode = False
 cache_report_mode = False
+idle_report_mode = False
 subprocess_report_mode = False
 subscription_report_mode = False
 hover_window_report_mode = False
@@ -84,6 +74,10 @@ network_report_mode_silent = False
 pubsub_report_mode = False
 daemon_report_mode = False
 mpv_report_mode = False
+potential_duplicates_report_mode = False
+
+mpv_allow_crashy_files = False
+mpv_allow_crashy_files_silently = False
 
 fake_petition_mode = False
 
@@ -99,8 +93,6 @@ restart = False
 
 twisted_is_broke = False
 twisted_is_broke_exception = None
-
-last_mouse_click_button = None
 
 dirty_object_lock = threading.Lock()
 client_busy = threading.Lock()

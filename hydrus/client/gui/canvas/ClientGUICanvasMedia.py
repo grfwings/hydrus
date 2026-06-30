@@ -5,18 +5,6 @@ from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
 
-try:
-    
-    # this appears to be Python 3.8+ and/or the equivalent Qt versions
-    
-    from qtpy import QtMultimediaWidgets as QMW
-    from qtpy import QtMultimedia as QM
-    
-except:
-    
-    pass
-    
-
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
@@ -31,14 +19,14 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientRendering
 from hydrus.client import ClientUgoiraHandling
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
+from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIShortcuts
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUIMPV
+from hydrus.client.gui.canvas import ClientGUIQtMediaPlayer
 from hydrus.client.gui.media import ClientGUIMediaControls
-from hydrus.client.gui.media import ClientGUIMediaVolume
-from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 
@@ -330,7 +318,7 @@ def ShouldHaveAnimationBar( media, show_action ):
         return False
         
     
-    if show_action not in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ):
+    if show_action not in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ):
         
         return False
         
@@ -344,7 +332,7 @@ def ShouldHaveAnimationBar( media, show_action ):
     is_audio = media.GetMime() in HC.AUDIO
     is_video = media.GetMime() in HC.VIDEO
     
-    if show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ):
+    if show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ):
         
         if is_animation or is_audio or is_video:
             
@@ -366,7 +354,7 @@ def WeAreExpectingToLoadThisMediaFile( media_result: ClientMediaResult.MediaResu
     
     ( media_show_action, media_start_paused, media_start_with_embed ) = ClientMedia.GetShowAction( media_result, canvas_type )
     
-    if media_show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ):
+    if media_show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_NATIVE, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ):
         
         return True
         
@@ -548,53 +536,64 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if self._background_colour_generator.CanDoTransparencyCheckerboard() and self._media is not None and self._media.GetFileInfoManager().has_transparency:
             
-            light_grey = QG.QColor( 237, 237, 237 )
-            dark_grey = QG.QColor( 222, 222, 222 )
-            
-            painter.setBackground( QG.QBrush( light_grey ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            # 16x16 boxes, light grey in top right
-            BOX_LENGTH = int( 16 * self.devicePixelRatio() )
-            
-            painter_width = painter.viewport().width()
-            painter_height = painter.viewport().height()
-            
-            num_cols = painter_width // BOX_LENGTH
-            
-            if painter_width % BOX_LENGTH > 0:
+            if CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_as_greenscreen' ):
                 
-                num_cols += 1
+                neon_greenscreen = QG.QColor( 34, 255, 0 )
                 
-            
-            num_rows = painter_height // BOX_LENGTH
-            
-            if painter_height % BOX_LENGTH > 0:
+                painter.setBackground( QG.QBrush( neon_greenscreen ) )
                 
-                num_rows += 1
+                painter.eraseRect( painter.viewport() )
                 
-            
-            painter.setBrush( QG.QBrush( dark_grey ) )
-            painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
-            
-            for y_index in range( num_rows ):
+            else:
                 
-                for x_index in range( num_cols ):
+                light_grey = QG.QColor( 237, 237, 237 )
+                dark_grey = QG.QColor( 222, 222, 222 )
+                
+                painter.setBackground( QG.QBrush( light_grey ) )
+                
+                painter.eraseRect( painter.viewport() )
+                
+                # 16x16 boxes, light grey in top right
+                BOX_LENGTH = int( 16 * self.devicePixelRatio() )
+                
+                painter_width = painter.viewport().width()
+                painter_height = painter.viewport().height()
+                
+                num_cols = painter_width // BOX_LENGTH
+                
+                if painter_width % BOX_LENGTH > 0:
                     
-                    if ( x_index + y_index ) % 2 == 1:
-                        
-                        rect = QC.QRect( x_index * BOX_LENGTH, y_index * BOX_LENGTH, BOX_LENGTH, BOX_LENGTH )
-                        
-                        if painter.viewport().intersects( rect ):
-                            
-                            painter.drawRect( rect )
-                            
-                        
+                    num_cols += 1
                     
                 
-            
-            self._have_drawn_background_once = True
+                num_rows = painter_height // BOX_LENGTH
+                
+                if painter_height % BOX_LENGTH > 0:
+                    
+                    num_rows += 1
+                    
+                
+                painter.setBrush( QG.QBrush( dark_grey ) )
+                painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
+                
+                for y_index in range( num_rows ):
+                    
+                    for x_index in range( num_cols ):
+                        
+                        if ( x_index + y_index ) % 2 == 1:
+                            
+                            rect = QC.QRect( x_index * BOX_LENGTH, y_index * BOX_LENGTH, BOX_LENGTH, BOX_LENGTH )
+                            
+                            if painter.viewport().intersects( rect ):
+                                
+                                painter.drawRect( rect )
+                                
+                            
+                        
+                    
+                
+                self._have_drawn_background_once = True
+                
             
             return
             
@@ -673,6 +672,8 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 frame_index += round_direction
                 
             
+            frame_index = max( 0, frame_index )
+            
             if frame_index > self._media.GetNumFrames() - 1:
                 
                 frame_index = 0
@@ -694,25 +695,32 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        if self.devicePixelRatio() != self._last_device_pixel_ratio:
+        try:
             
-            self._ReinitForResizeOrDPRChange()
+            if self.devicePixelRatio() != self._last_device_pixel_ratio:
+                
+                self._ReinitForResizeOrDPRChange()
+                
             
-        
-        if not self._current_frame_drawn:
+            if not self._current_frame_drawn:
+                
+                self._TryToDrawCanvasBitmap()
+                
             
-            self._TryToDrawCanvasBitmap()
+            painter = QG.QPainter( self )
             
-        
-        painter = QG.QPainter( self )
-        
-        if self._canvas_qt_pixmap is None:
+            if self._canvas_qt_pixmap is None:
+                
+                self._DrawABlankFrame( painter )
+                
+            else:
+                
+                painter.drawPixmap( self.rect(), self._canvas_qt_pixmap )
+                
             
-            self._DrawABlankFrame( painter )
+        except Exception as e:
             
-        else:
-            
-            painter.drawPixmap( self.rect(), self._canvas_qt_pixmap )
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -794,7 +802,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if self._current_timestamp_ms is not None and self._video_container is not None and self._video_container.IsInitialised():
             
-            new_ts = self._current_timestamp_ms + ( direction * duration_ms )
+            new_ts = max( 0, self._current_timestamp_ms + ( direction * duration_ms ) )
             
             self.GotoTimestamp( new_ts, direction, pause_afterwards = False )
             
@@ -810,7 +818,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._stop_for_slideshow = value
         
     
-    def SetMedia( self, media: typing.Optional[ ClientMedia.MediaSingleton ], start_paused = False ):
+    def SetMedia( self, media: ClientMedia.MediaSingleton | None, start_paused = False ):
         
         if media == self._media:
             
@@ -853,6 +861,11 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         else:
             
             self._num_frames = self._media.GetNumFrames()
+            
+            if self._num_frames == 0 or self._num_frames is None:
+                
+                self._num_frames = 1
+                
             
             self._duration_ms = self._media.GetDurationMS()
             
@@ -956,7 +969,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                 
             
-        except:
+        except Exception as e:
             
             CG.client_controller.gui.UnregisterAnimationUpdateWindow( self )
             
@@ -1177,7 +1190,7 @@ class AnimationBar( QW.QWidget ):
                     ( text_size, s ) = ClientGUIFunctions.GetTextSizeFromPainter( painter, s )
                     
                     x = my_width - text_size.width() - 3
-                    y = ( my_height - text_size.height() ) / 2
+                    y = round( ( my_height - text_size.height() ) / 2 )
                     
                     ClientGUIFunctions.DrawText( painter, x, y, s )
                     
@@ -1193,7 +1206,7 @@ class AnimationBar( QW.QWidget ):
         painter.drawRect( 0, 0, my_width - 1, my_height - 1 )
         
     
-    def _ScanToCurrentMousePos( self ):
+    def _ScanToCurrentMousePos( self, precise = True ):
         
         my_width = self.size().width()
         
@@ -1216,11 +1229,11 @@ class AnimationBar( QW.QWidget ):
             
             self._media_window.GotoFrame( current_frame_index )
             
-        elif isinstance( self._media_window, ( ClientGUIMPV.MPVWidget, QtMediaPlayer ) ):
+        elif isinstance( self._media_window, ( ClientGUIMPV.MPVWidget, ClientGUIQtMediaPlayer.QtMediaPlayer ) ):
             
             time_index_ms = int( proportion * self._duration_ms )
             
-            self._media_window.Seek( time_index_ms )
+            self._media_window.Seek( time_index_ms, precise = precise )
             
         
     
@@ -1257,7 +1270,7 @@ class AnimationBar( QW.QWidget ):
                 return
                 
             
-            self._ScanToCurrentMousePos()
+            self._ScanToCurrentMousePos( precise = False )
             
         
     
@@ -1279,7 +1292,7 @@ class AnimationBar( QW.QWidget ):
         
         self._currently_in_a_drag = True
         
-        self._ScanToCurrentMousePos()
+        self._ScanToCurrentMousePos( precise = True )
         
     
     def mouseReleaseEvent( self, event ):
@@ -1298,24 +1311,34 @@ class AnimationBar( QW.QWidget ):
             
             self._currently_in_a_drag = False
             
+            # have this if you want to play around with the 'non-precise on drag', but in the first test it didn't work out nice IRL
+            # self._ScanToCurrentMousePos( precise = True )
+            
         
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
-        if self._CurrentMediaWindowIsBad() or self._next_draw_info is None:
+        try:
             
-            self._DrawBlank( painter )
+            painter = QG.QPainter( self )
             
-            self._next_draw_info = None
+            if self._CurrentMediaWindowIsBad() or self._next_draw_info is None:
+                
+                self._DrawBlank( painter )
+                
+                self._next_draw_info = None
+                
+            else:
+                
+                self._Redraw( painter )
+                
             
-        else:
+            self._last_drawn_info = self._next_draw_info
             
-            self._Redraw( painter )
+        except Exception as e:
             
-        
-        self._last_drawn_info = self._next_draw_info
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
+            
         
     
     def setGubbinsVisible( self, show: bool ):
@@ -1343,7 +1366,7 @@ class AnimationBar( QW.QWidget ):
         
         duration_ms = media.GetDurationMS()
         
-        if duration_ms is None and isinstance(media_window, Animation):
+        if duration_ms is None and isinstance( media_window, Animation ):
             
             duration_ms = media_window.GetDurationMS()
             
@@ -1433,14 +1456,16 @@ class MediaContainer( QW.QWidget ):
     
     launchMediaViewer = QC.Signal()
     readyForNeighbourPrefetch = QC.Signal()
+    haveDestroyedAllMediaWindows = QC.Signal()
     
     zoomChanged = QC.Signal( int, float )
     
-    def __init__( self, parent, canvas_type, background_colour_generator, additional_event_filter: QC.QObject ):
+    def __init__( self, parent, canvas, canvas_type, background_colour_generator, additional_event_filter: QC.QObject ):
         
         super().__init__( parent )
         
         self._canvas_type = canvas_type
+        self._canvas = canvas
         
         if HC.PLATFORM_MACOS and not HG.macos_antiflicker_test:
             
@@ -1456,6 +1481,7 @@ class MediaContainer( QW.QWidget ):
         self.setSizePolicy( QW.QSizePolicy.Policy.Fixed, QW.QSizePolicy.Policy.Fixed )
         
         self._media = None
+        self._deferred_set_media_call = None
         self._show_action = CC.MEDIA_VIEWER_ACTION_DO_NOT_SHOW
         self._start_paused = False
         self._start_with_embed = False
@@ -1472,6 +1498,11 @@ class MediaContainer( QW.QWidget ):
         }
         
         self._current_zoom_type = self._GetDefaultZoomType()
+        
+        self._closing_mpv_widgets = []
+        self._closing_qt_media_players = []
+        self._close_check_timer = QC.QTimer()
+        self._close_check_timer.timeout.connect( self._CheckClosingWidgets )
         
         self._media_window = None
         
@@ -1492,6 +1523,9 @@ class MediaContainer( QW.QWidget ):
         
         self._controls_bar = QW.QWidget( self )
         self._controls_bar_show_full = True
+        
+        # we establish this guy here but the canvas owns it. not elegant but we want to ensure 'C++ already deleted' stuff works in correct order
+        self._qt_media_player_graphics_view_mouse_move_catcher = ClientGUIQtMediaPlayer.GraphicsViewViewportMouseMoveCatcher( self._canvas )
         
         # We need this to force-fill some blanks at times
         self.setAutoFillBackground( True )
@@ -1524,11 +1558,43 @@ class MediaContainer( QW.QWidget ):
         CG.client_controller.sub( self, 'Pause', 'pause_all_media' )
         
     
+    def _CheckClosingWidgets( self ):
+        
+        for mpv_widget in list( self._closing_mpv_widgets ):
+            
+            if mpv_widget.ReadyForDestruction():
+                
+                mpv_widget.deleteLater()
+                
+                self._closing_mpv_widgets.remove( mpv_widget )
+                
+            
+        
+        for qt_media_player in list( self._closing_qt_media_players ):
+            
+            qt_media_player.TryToUnload()
+            
+            if qt_media_player.IsCompletelyUnloaded():
+                
+                qt_media_player.deleteLater()
+                
+                self._closing_qt_media_players.remove( qt_media_player )
+                
+            
+        
+        if len( self._closing_mpv_widgets ) + len( self._closing_qt_media_players ) == 0:
+            
+            self.haveDestroyedAllMediaWindows.emit()
+            
+            self._close_check_timer.stop()
+            
+        
+    
     def _DestroyOrHideThisMediaWindow( self, media_window ):
         
         if media_window is not None:
             
-            launch_media_viewer_classes = ( Animation, ClientGUIMPV.MPVWidget, StaticImage, QtMediaPlayer )
+            launch_media_viewer_classes = ( Animation, ClientGUIMPV.MPVWidget, StaticImage, ClientGUIQtMediaPlayer.QtMediaPlayer )
             
             media_window.removeEventFilter( self._additional_event_filter )
             
@@ -1554,12 +1620,37 @@ class MediaContainer( QW.QWidget ):
                 
                 if isinstance( media_window, ClientGUIMPV.MPVWidget ):
                     
-                    CG.client_controller.gui.ReleaseMPVWidget( media_window )
+                    mpv_widget = media_window
+                    
+                    if CG.client_controller.new_options.GetBoolean( 'mpv_destruction_test' ):
+                        
+                        mpv_widget.StartCleanBeforeDestroy()
+                        
+                        self._closing_mpv_widgets.append( mpv_widget )
+                        
+                        mpv_widget.readyForDestruction.connect( self._CheckClosingWidgets )
+                        
+                    else:
+                        
+                        CG.client_controller.gui.ReleaseMPVWidget( mpv_widget )
+                        
                     
                 
-                if isinstance( media_window, QtMediaPlayer ):
+                if isinstance( media_window, ClientGUIQtMediaPlayer.QtMediaPlayer ):
                     
-                    CG.client_controller.gui.ReleaseQtMediaPlayer( media_window )
+                    qt_media_player = media_window
+                    
+                    if True:
+                        
+                        self._closing_qt_media_players.append( qt_media_player )
+                        
+                        self._close_check_timer.start( 500 )
+                        
+                    else:
+                        
+                        # TODO: Delete this when you are happy with the new media container deletion responsibility
+                        CG.client_controller.gui.ReleaseQtMediaPlayer( qt_media_player )
+                        
                     
                 
             else:
@@ -1583,7 +1674,7 @@ class MediaContainer( QW.QWidget ):
 
     def _GetMaxZoomDimension( self ):
         
-        if self._show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER ) or isinstance( self._media_window, Animation ):
+        if self._show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ) or isinstance( self._media_window, Animation ):
             
             return 8000
             
@@ -1605,12 +1696,11 @@ class MediaContainer( QW.QWidget ):
             
             HydrusData.ShowText( 'MPV is not available!' )
             
-        
-        if self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER and QtInit.WE_ARE_QT5:
+        elif self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER and not ClientGUIQtMediaPlayer.QT_MULTIMEDIA_IS_AVAILABLE:
             
             self._show_action = CC.MEDIA_VIEWER_ACTION_SHOW_OPEN_EXTERNALLY_BUTTON
             
-            HydrusData.ShowText( 'Qt Media Player is only available on Qt6!' )
+            HydrusData.ShowText( 'QtMediaPlayer is not available!' )
             
         
         if self._show_action in ( CC.MEDIA_VIEWER_ACTION_DO_NOT_SHOW_ON_ACTIVATION_OPEN_EXTERNALLY, CC.MEDIA_VIEWER_ACTION_DO_NOT_SHOW ):
@@ -1659,19 +1749,32 @@ class MediaContainer( QW.QWidget ):
                 self._media_window.lower()
                 
             
-        elif self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV:
+        else:
             
-            self._media_window = CG.client_controller.gui.GetMPVWidget( self )
+            # ok we are making a clever media player
             
-            self._media_window.SetCanvasType( self._canvas_type )
-            
-            self._media_window.SetMedia( self._media, start_paused = self._start_paused )
-            
-            self._media_window.lower()
-            
-        elif self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QMEDIAPLAYER:
-            
-            self._media_window = QtMediaPlayer( self, self._canvas_type, self._background_colour_generator )
+            if self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV:
+                
+                if not CG.client_controller.new_options.GetBoolean( 'persist_media_window_mpv' ) or not isinstance( old_media_window, ClientGUIMPV.MPVWidget ):
+                    
+                    self._media_window = CG.client_controller.gui.GetMPVWidget( self )
+                    
+                    self._media_window.amInitialised.connect( self._NotifyMPVInitialised )
+                    
+                    self._media_window.SetCanvasType( self._canvas_type )
+                    
+                    self._media_window.SetMedia( self._media, start_paused = self._start_paused )
+                    
+                
+            elif self._show_action == CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER:
+                
+                if not CG.client_controller.new_options.GetBoolean( 'persist_media_window_qt_media_player' ) or not isinstance( old_media_window, ClientGUIQtMediaPlayer.QtMediaPlayer ):
+                    
+                    self._media_window = ClientGUIQtMediaPlayer.QtMediaPlayer( self, self._canvas_type, self.parentWidget(), self._background_colour_generator )
+                    
+                    self._media_window.InstallMouseMoveCatcher( self._qt_media_player_graphics_view_mouse_move_catcher )
+                    
+                
             
             self._media_window.SetMedia( self._media, start_paused = self._start_paused )
             
@@ -1696,7 +1799,7 @@ class MediaContainer( QW.QWidget ):
             
             self._media_window.installEventFilter( self._additional_event_filter )
             
-            launch_media_viewer_classes = ( Animation, ClientGUIMPV.MPVWidget, StaticImage, QtMediaPlayer )
+            launch_media_viewer_classes = ( Animation, ClientGUIMPV.MPVWidget, StaticImage, ClientGUIQtMediaPlayer.QtMediaPlayer )
             
             if isinstance( self._media_window, launch_media_viewer_classes ):
                 
@@ -1723,6 +1826,19 @@ class MediaContainer( QW.QWidget ):
             
         
         self.move( self.pos() + delta )
+        
+    
+    def _NotifyMPVInitialised( self ):
+        
+        if self._deferred_set_media_call is not None:
+            
+            if self.isVisible():
+                
+                self._deferred_set_media_call()
+                
+            
+            self._deferred_set_media_call = None
+            
         
     
     def _SetZoom( self, zoom: float, move_delta = None ):
@@ -1781,6 +1897,17 @@ class MediaContainer( QW.QWidget ):
         else:
             
             is_near = self.MouseIsNearAnimationBar()
+            
+            if CG.client_controller.new_options.GetBoolean( 'animated_scanbar_pop_in_requires_focus' ):
+                
+                current_focus_tlw = QW.QApplication.activeWindow()
+                
+                if current_focus_tlw != self.window():
+                    
+                    is_near = False
+                    
+                
+            
             show_small_instead_of_hiding = CG.client_controller.new_options.GetNoneableInteger( 'animated_scanbar_hide_height' ) is not None
             force_show = self._volume_control.PopupIsVisible() or self._animation_bar.DoingADrag() or CG.client_controller.new_options.GetBoolean( 'force_animation_scanbar_show' )
             
@@ -1986,9 +2113,28 @@ class MediaContainer( QW.QWidget ):
             
         
     
+    def AddPlayerMenus( self, menu: QW.QMenu ):
+        
+        player_menu = ClientGUIMenus.GenerateMenu( menu )
+        
+        ClientGUIMenus.AppendMenuLabel( player_menu, f'This is a {self.GetCurrentMediaPlayerLabel()}.' )
+        
+        ClientGUIMenus.AppendMenu( menu, player_menu, 'player' )
+        
+        if isinstance( self._media_window, ClientGUIQtMediaPlayer.QtMediaPlayer ):
+            
+            self._media_window.AddPlayerMenus( menu )
+            
+        
+    
     def BeginDrag( self ):
         
         self.parentWidget().BeginDrag()
+        
+    
+    def CanConsiderAClose( self ):
+        
+        return self.ReadyToSwitchMedia()
         
     
     def ClearMedia( self ):
@@ -2010,7 +2156,7 @@ class MediaContainer( QW.QWidget ):
     
     def CurrentlyPresentingMediaWithDuration( self ):
         
-        return isinstance( self._media_window, ( Animation, ClientGUIMPV.MPVWidget, QtMediaPlayer ) )
+        return isinstance( self._media_window, ( Animation, ClientGUIMPV.MPVWidget, ClientGUIQtMediaPlayer.QtMediaPlayer ) )
         
     
     def DoEdgePan( self, pan_type: int ):
@@ -2045,11 +2191,11 @@ class MediaContainer( QW.QWidget ):
             
         elif pan_type == CAC.SIMPLE_PAN_VERTICAL_CENTER:
             
-            delta_y = int( canvas_size.height() / 2 ) - ( my_pos.y() + int( my_size.height() / 2 ) )
+            delta_y = round( canvas_size.height() / 2 ) - ( my_pos.y() + round( my_size.height() / 2 ) )
             
         elif pan_type == CAC.SIMPLE_PAN_HORIZONTAL_CENTER:
             
-            delta_x = int( canvas_size.width() / 2 ) - ( my_pos.x() + int( my_size.width() / 2 ) )
+            delta_x = round( canvas_size.width() / 2 ) - ( my_pos.x() + round( my_size.width() / 2 ) )
             
         
         delta = QC.QPoint( delta_x, delta_y )
@@ -2090,6 +2236,28 @@ class MediaContainer( QW.QWidget ):
             
             self._media_window.show()
             
+        
+    
+    def GetCurrentMediaPlayerLabel( self ) -> str:
+        
+        class_to_desc_dict = {
+            StaticImage : 'Hydrus Native Static Image',
+            Animation : 'Hydrus Native Animation Player',
+            ClientGUIQtMediaPlayer.QtMediaPlayer : 'QtMediaPlayer',
+            ClientGUIMPV.MPVWidget : 'MPV Embed Player',
+            EmbedButton : 'Embed Button',
+            OpenExternallyPanel : 'Open Externally Panel'
+        }
+        
+        for ( class_type, desc_str ) in class_to_desc_dict.items():
+            
+            if isinstance( self._media_window, class_type ):
+                
+                return desc_str
+                
+            
+        
+        return 'Unknown Media Player - let hydev know please'
         
     
     def GetCanvasZoom( self ) -> float:
@@ -2279,6 +2447,23 @@ class MediaContainer( QW.QWidget ):
             
         
     
+    def ReadyToDestroy( self ):
+        
+        return len( self._closing_mpv_widgets ) + len( self._closing_qt_media_players ) == 0
+        
+    
+    def ReadyToSwitchMedia( self ):
+        
+        if isinstance( self._media_window, ClientGUIMPV.MPVWidget ):
+            
+            return self._media_window.IsInitialised()
+            
+        else:
+            
+            return True
+            
+        
+    
     def RescueIfOffScreen( self ):
         
         my_ideal_size = self.sizeHint()
@@ -2375,6 +2560,13 @@ class MediaContainer( QW.QWidget ):
     
     def SetMedia( self, media: ClientMedia.MediaSingleton, maintain_zoom, maintain_zoom_type, maintain_pan, start_paused = None ):
         
+        if not self.ReadyToSwitchMedia():
+            
+            self._deferred_set_media_call = HydrusData.Call( self.SetMedia, media, maintain_zoom, maintain_zoom_type, maintain_pan, start_paused = start_paused )
+            
+            return
+            
+        
         previous_media = self._media
         
         self._media = media
@@ -2449,7 +2641,7 @@ class MediaContainer( QW.QWidget ):
             return False
             
         
-        return isinstance( self._media_window, ClientGUIMPV.MPVWidget ) and self._media.HasAudio()
+        return isinstance( self._media_window, ( ClientGUIMPV.MPVWidget, ClientGUIQtMediaPlayer.QtMediaPlayer ) ) and self._media.HasAudio()
         
     
     def sizeHint(self) -> QC.QSize:
@@ -3049,9 +3241,16 @@ class EmbedButton( QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        painter = QG.QPainter( self )
-        
-        self._Redraw( painter )
+        try:
+            
+            painter = QG.QPainter( self )
+            
+            self._Redraw( painter )
+            
+        except Exception as e:
+            
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
+            
         
     
     def SetBackgroundColourGenerator( self, background_colour_generator ):
@@ -3088,6 +3287,7 @@ class EmbedButton( QW.QWidget ):
             
         
     
+
 class OpenExternallyPanel( QW.QWidget ):
     
     def __init__( self, parent, media ):
@@ -3111,12 +3311,12 @@ class OpenExternallyPanel( QW.QWidget ):
                 qt_pixmap.setDevicePixelRatio( thumbnail_dpr_percent / 100 )
                 
             
-            thumbnail_window = ClientGUICommon.BufferedWindowIcon( self, qt_pixmap )
+            if qt_pixmap.width() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0] or qt_pixmap.height() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1]:
+                
+                qt_pixmap.scaled( OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0], OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1], QC.Qt.AspectRatioMode.KeepAspectRatio, QC.Qt.TransformationMode.SmoothTransformation )
+                
             
-            thumbnail_window_width = min( thumbnail_window.width(), OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0] )
-            thumbnail_window_height = min( thumbnail_window.height(), OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1] )
-            
-            thumbnail_window.setFixedSize( thumbnail_window_width, thumbnail_window_height )
+            thumbnail_window = QW.QLabel( self, pixmap = qt_pixmap )
             
             QP.AddToLayout( vbox, thumbnail_window, CC.FLAGS_CENTER )
             
@@ -3160,311 +3360,6 @@ class OpenExternallyPanel( QW.QWidget ):
         launch_path = self._new_options.GetMimeLaunch( mime )
         
         HydrusPaths.LaunchFile( path, launch_path )
-        
-    
-
-class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
-    
-    launchMediaViewer = QC.Signal()
-    
-    def __init__( self, parent: QW.QWidget, canvas_type, background_colour_generator ):
-        
-        super().__init__( parent )
-        
-        self._canvas_type = canvas_type
-        self._background_colour_generator = background_colour_generator
-        
-        self._my_audio_output = QM.QAudioOutput( self )
-        self._my_video_output = QMW.QVideoWidget( self )
-        self._my_audio_placeholder = QW.QWidget( self )
-        
-        QP.SetBackgroundColour( self._my_audio_placeholder, QG.QColor( 0, 0, 0 ) )
-        
-        # perhaps this stops the always on top behaviour, says several places, but it doesn't for me!
-        #self._my_video_output.setAttribute( QC.Qt.WA_TranslucentBackground, False )
-        
-        self._media_player = QM.QMediaPlayer( self )
-        
-        self._media_player.mediaStatusChanged.connect( self._MediaStatusChanged )
-        
-        self._we_are_initialised = True
-        
-        self._stop_for_slideshow = False
-        
-        vbox = QP.VBoxLayout( margin = 0 )
-        
-        QP.AddToLayout( vbox, self._my_video_output, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        QP.AddToLayout( vbox, self._my_audio_placeholder, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        
-        self.setLayout( vbox )
-        
-        self._media = None
-        
-        self._playthrough_count = 0
-        
-        if self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
-            
-            shortcut_set = 'media_viewer_media_window'
-            
-        else:
-            
-            shortcut_set = 'preview_media_window'
-            
-        
-        self._my_shortcut_handler = ClientGUIShortcuts.ShortcutsHandler( self, self, [ shortcut_set ], catch_mouse = True )
-        
-        CG.client_controller.sub( self, 'UpdateAudioMute', 'new_audio_mute' )
-        CG.client_controller.sub( self, 'UpdateAudioVolume', 'new_audio_volume' )
-        
-    
-    def _MediaStatusChanged( self, status ):
-        
-        if status == QM.QMediaPlayer.MediaStatus.EndOfMedia:
-            
-            self._playthrough_count += 1
-            
-            self._media_player.setPosition( 0 )
-            
-            if not self._stop_for_slideshow:
-                
-                self._media_player.play()
-                
-            
-        
-    
-    def GetAnimationBarStatus( self ):
-        
-        buffer_indices = None
-        
-        if self._media is None:
-            
-            current_frame_index = 0
-            current_timestamp_ms = 0
-            paused = True
-            
-        else:
-            
-            current_timestamp_ms = self._media_player.position()
-            
-            num_frames = self._media.GetNumFrames()
-            
-            if num_frames is None or num_frames == 1:
-                
-                current_frame_index = 0
-                
-            else:
-                
-                current_frame_index = int( round( ( current_timestamp_ms / self._media.GetDurationMS() ) * num_frames ) )
-                
-                current_frame_index = min( current_frame_index, num_frames - 1 )
-                
-            
-            current_timestamp_ms = min( current_timestamp_ms, self._media.GetDurationMS() )
-            
-            paused = self.IsPaused()
-            
-        
-        return ( current_frame_index, current_timestamp_ms, paused, buffer_indices )
-        
-    
-    def ClearMedia( self ):
-        
-        if self._media is not None:
-            
-            self._media = None
-            
-            # ok in my experience setting media_player.setSource to anything after a first load is pretty buggy!
-            # it can just straight up hang forever. either to a null QUrl or another file
-            # it seems to be it doesn't like unloading some files
-            # so, let's spawn a new one every time
-            # EDIT: ok going from one vid to another can cause crashes, so we are moving to a system where each QtMediaPlayer just gets one use. we'll make a new one every time
-            
-            self._media_player.stop()
-            
-            #self._media_player.setParent( None )
-            
-            #QP.CallAfter( self._media_player.deleteLater )
-            
-            #self._media_player = QM.QMediaPlayer( self )
-            
-            #self._media_player.mediaStatusChanged.connect( self._MediaStatusChanged )
-            
-        
-    
-    def HasPlayedOnceThrough( self ):
-        
-        return self._playthrough_count > 0
-        
-    
-    def IsCompletelyUnloaded( self ):
-        
-        return self._media_player.mediaStatus() == QM.QMediaPlayer.MediaStatus.NoMedia
-        
-    
-    def IsPaused( self ):
-        
-        # don't use isPlaying(), Qt 6.4.1 doesn't support it lol
-        return self._media_player.playbackState() != QM.QMediaPlayer.PlaybackState.PlayingState
-        
-    
-    def Pause( self ):
-        
-        self._media_player.pause()
-        
-    
-    def PausePlay( self ):
-        
-        if self.IsPaused():
-            
-            self.Play()
-            
-        else:
-            
-            self.Pause()
-            
-        
-    
-    def Play( self ):
-        
-        self._media_player.play()
-        
-    
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
-        
-        command_processed = True
-        
-        if command.IsSimpleCommand():
-            
-            action = command.GetSimpleAction()
-            
-            if action == CAC.SIMPLE_PAUSE_MEDIA:
-                
-                self.Pause()
-                
-            elif action == CAC.SIMPLE_PAUSE_PLAY_MEDIA:
-                
-                self.PausePlay()
-                
-            elif action == CAC.SIMPLE_MEDIA_SEEK_DELTA:
-                
-                ( direction, duration_ms ) = command.GetSimpleData()
-                
-                self.SeekDelta( direction, duration_ms )
-                
-            elif action == CAC.SIMPLE_CLOSE_MEDIA_VIEWER and self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES:
-                
-                self.window().close()
-                
-            elif action == CAC.SIMPLE_LAUNCH_MEDIA_VIEWER and self._canvas_type == CC.CANVAS_PREVIEW:
-                
-                self.launchMediaViewer.emit()
-                
-            else:
-                
-                command_processed = False
-                
-            
-        else:
-            
-            command_processed = False
-            
-        
-        return command_processed
-        
-    
-    def Seek( self, position_ms ):
-        
-        self._media_player.setPosition( position_ms )
-        
-    
-    def SeekDelta( self, direction, duration_ms ):
-        
-        if self._media is None:
-            
-            return
-            
-        
-        current_timestamp_ms = self._media_player.position()
-        
-        new_timestamp_ms = max( 0, current_timestamp_ms + ( direction * duration_ms ) )
-        
-        if new_timestamp_ms > self._media.GetDurationMS():
-            
-            new_timestamp_ms = 0
-            
-        
-        self.Seek( new_timestamp_ms )
-        
-    
-    def SetBackgroundColourGenerator( self, background_colour_generator ):
-        
-        self._background_colour_generator = background_colour_generator
-        
-    
-    def SetMedia( self, media: ClientMedia.MediaSingleton, start_paused = False ):
-        
-        if media == self._media:
-            
-            return
-            
-        
-        self.ClearMedia()
-        
-        self._media = media
-        
-        self._stop_for_slideshow = False
-        
-        has_audio = self._media.HasAudio()
-        is_audio = self._media.GetMime() in HC.AUDIO
-        
-        if has_audio:
-            
-            self._media_player.setAudioOutput( self._my_audio_output )
-            
-        
-        if not is_audio:
-            
-            self._media_player.setVideoOutput( self._my_video_output )
-            
-        
-        self._my_video_output.setVisible( not is_audio )
-        self._my_audio_placeholder.setVisible( is_audio )
-        
-        path = CG.client_controller.client_files_manager.GetFilePath( self._media.GetHash(), self._media.GetMime() )
-        
-        self._media_player.setSource( QC.QUrl.fromLocalFile( path ) )
-        
-        if not start_paused:
-            
-            self._media_player.play()
-            
-        
-        self._my_audio_output.setVolume( ClientGUIMediaVolume.GetCorrectCurrentVolume( self._canvas_type ) )
-        self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
-        
-    
-    def StopForSlideshow( self, value ):
-        
-        self._stop_for_slideshow = value
-        
-    
-    def TryToUnload( self ):
-        
-        # this call is crashtastic, so don't inject it while the player is buffering or whatever
-        if self._media_player.mediaStatus() in ( QM.QMediaPlayer.MediaStatus.LoadedMedia, QM.QMediaPlayer.MediaStatus.EndOfMedia, QM.QMediaPlayer.MediaStatus.InvalidMedia ):
-            
-            self._media_player.setSource( '' )
-            
-        
-    
-    def UpdateAudioMute( self ):
-        
-        self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
-        
-
-    def UpdateAudioVolume( self ):
-        
-        self._my_audio_output.setVolume( ClientGUIMediaVolume.GetCorrectCurrentVolume( self._canvas_type ) )
         
     
 
@@ -3583,65 +3478,76 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         if self._background_colour_generator.CanDoTransparencyCheckerboard() and self._media is not None and self._media.GetFileInfoManager().has_transparency:
             
-            light_grey = QG.QColor( 237, 237, 237 )
-            dark_grey = QG.QColor( 222, 222, 222 )
-            
-            painter.setBackground( QG.QBrush( light_grey ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            # 16x16 boxes, light grey in top right
-            BOX_LENGTH = int( 16 * self.devicePixelRatio() )
-            
-            # there's a way to do this with viewports or transforms or something, but I don't know mate
-            if topLeftOffset is None:
+            if CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_as_greenscreen' ):
                 
-                rectTopLeftAdjust = QC.QPoint( 0, 0 )
+                neon_greenscreen = QG.QColor( 34, 255, 0 )
+                
+                painter.setBackground( QG.QBrush( neon_greenscreen ) )
+                
+                painter.eraseRect( painter.viewport() )
                 
             else:
                 
-                x = topLeftOffset.x() % ( BOX_LENGTH * 2 )
-                y = topLeftOffset.y() % ( BOX_LENGTH * 2 )
+                light_grey = QG.QColor( 237, 237, 237 )
+                dark_grey = QG.QColor( 222, 222, 222 )
                 
-                x_adjust = - x if x > 0 else 0
-                y_adjust = - y if y > 0 else 0
+                painter.setBackground( QG.QBrush( light_grey ) )
                 
-                rectTopLeftAdjust = QC.QPoint( x_adjust, y_adjust )
+                painter.eraseRect( painter.viewport() )
                 
-            
-            painter_width = painter.viewport().width() + abs( rectTopLeftAdjust.x() )
-            painter_height = painter.viewport().height() + abs( rectTopLeftAdjust.y() )
-            
-            num_cols = painter_width // BOX_LENGTH
-            
-            if painter_width % BOX_LENGTH > 0:
+                # 16x16 boxes, light grey in top right
+                BOX_LENGTH = int( 16 * self.devicePixelRatio() )
                 
-                num_cols += 1
-                
-            
-            num_rows = painter_height // BOX_LENGTH
-            
-            if painter_height % BOX_LENGTH > 0:
-                
-                num_rows += 1
-                
-            
-            painter.setBrush( QG.QBrush( dark_grey ) )
-            painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
-            
-            for y_index in range( num_rows ):
-                
-                for x_index in range( num_cols ):
+                # there's a way to do this with viewports or transforms or something, but I don't know mate
+                if topLeftOffset is None:
                     
-                    if ( x_index + y_index ) % 2 == 1:
+                    rectTopLeftAdjust = QC.QPoint( 0, 0 )
+                    
+                else:
+                    
+                    x = topLeftOffset.x() % ( BOX_LENGTH * 2 )
+                    y = topLeftOffset.y() % ( BOX_LENGTH * 2 )
+                    
+                    x_adjust = - x if x > 0 else 0
+                    y_adjust = - y if y > 0 else 0
+                    
+                    rectTopLeftAdjust = QC.QPoint( x_adjust, y_adjust )
+                    
+                
+                painter_width = painter.viewport().width() + abs( rectTopLeftAdjust.x() )
+                painter_height = painter.viewport().height() + abs( rectTopLeftAdjust.y() )
+                
+                num_cols = painter_width // BOX_LENGTH
+                
+                if painter_width % BOX_LENGTH > 0:
+                    
+                    num_cols += 1
+                    
+                
+                num_rows = painter_height // BOX_LENGTH
+                
+                if painter_height % BOX_LENGTH > 0:
+                    
+                    num_rows += 1
+                    
+                
+                painter.setBrush( QG.QBrush( dark_grey ) )
+                painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
+                
+                for y_index in range( num_rows ):
+                    
+                    for x_index in range( num_cols ):
                         
-                        rect = QC.QRect( x_index * BOX_LENGTH, y_index * BOX_LENGTH, BOX_LENGTH, BOX_LENGTH )
-                        
-                        rect.moveTo( rect.topLeft() + rectTopLeftAdjust )
-                        
-                        if painter.viewport().intersects( rect ):
+                        if ( x_index + y_index ) % 2 == 1:
                             
-                            painter.drawRect( rect )
+                            rect = QC.QRect( x_index * BOX_LENGTH, y_index * BOX_LENGTH, BOX_LENGTH, BOX_LENGTH )
+                            
+                            rect.moveTo( rect.topLeft() + rectTopLeftAdjust )
+                            
+                            if painter.viewport().intersects( rect ):
+                                
+                                painter.drawRect( rect )
+                                
                             
                         
                     
@@ -3803,21 +3709,21 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     
     def paintEvent( self, event ):
         
-        if self.devicePixelRatio() != self._last_device_pixel_ratio:
-            
-            self._ClearCanvasTileCache()
-            
-        
-        painter = QG.QPainter( self )
-        
-        if self._image_renderer is None or not self._image_renderer.IsReady():
-            
-            self._DrawBackground( painter )
-            
-            return
-            
-        
         try:
+            
+            if self.devicePixelRatio() != self._last_device_pixel_ratio:
+                
+                self._ClearCanvasTileCache()
+                
+            
+            painter = QG.QPainter( self )
+            
+            if self._image_renderer is None or not self._image_renderer.IsReady():
+                
+                self._DrawBackground( painter )
+                
+                return
+                
             
             dirty_tile_coordinates = self._GetTileCoordinatesInView( event.rect() )
             
@@ -3898,9 +3804,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         except Exception as e:
             
-            HydrusData.PrintException( e, do_wait = False )
-            
-            return
+            ClientGUIExceptionHandling.HandlePaintEventException( self, e )
             
         
     
@@ -4016,7 +3920,7 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 CG.client_controller.gui.UnregisterAnimationUpdateWindow( self )
                 
             
-        except:
+        except Exception as e:
             
             CG.client_controller.gui.UnregisterAnimationUpdateWindow( self )
             

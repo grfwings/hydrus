@@ -111,7 +111,7 @@ def file_service_pred_generator( o, v, u ):
         
         service_key = CG.client_controller.services_manager.GetServiceKeyFromName( HC.REAL_FILE_SERVICES, service_name )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.BadRequestException( 'Could not find the service "{}"!'.format( service_name ) )
         
@@ -143,7 +143,7 @@ def rating_service_pred_generator( operator, value_and_service_name ):
         
         service = CG.client_controller.services_manager.GetService( service_key )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.BadRequestException( 'Could not find the service "{}"!'.format( service_name ) )
         
@@ -291,7 +291,7 @@ pred_generators = {
     SystemPredicateParser.Predicate.SIMILAR_TO_FILES : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_FILES, convert_hex_hashlist_and_other_to_bytes_and_other( v ) ),
     SystemPredicateParser.Predicate.SIMILAR_TO_DATA : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA, convert_double_hex_hashlist_and_other_to_double_bytes_and_other( v ) ),
     SystemPredicateParser.Predicate.HASH : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HASH, convert_hex_hashlist_and_other_to_bytes_and_other( v ), inclusive = o == '=' ),
-    SystemPredicateParser.Predicate.DURATION : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION, ClientNumberTest.NumberTest.STATICCreateFromCharacters( o, v[0] * 1000 + v[1] ) ),
+    SystemPredicateParser.Predicate.DURATION : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION, ClientNumberTest.NumberTest.STATICCreateFromCharacters( o, v ) ),
     SystemPredicateParser.Predicate.FRAMERATE : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FRAMERATE, ClientNumberTest.NumberTest.STATICCreateFromCharacters( o, v ) ),
     SystemPredicateParser.Predicate.NUM_OF_FRAMES : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_FRAMES, ClientNumberTest.NumberTest.STATICCreateFromCharacters( o, v ) ),
     SystemPredicateParser.Predicate.NUM_PIXELS : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_PIXELS, ( o, v, HydrusNumbers.PixelsToInt( u ) ) ),
@@ -317,7 +317,7 @@ pred_generators = {
     SystemPredicateParser.Predicate.MOD_DATE : lambda o, v, u: date_pred_generator( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, o, v ),
     SystemPredicateParser.Predicate.ARCHIVED_DATE : lambda o, v, u: date_pred_generator( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME, o, v ),
     SystemPredicateParser.Predicate.LAST_VIEWED_TIME : lambda o, v, u: date_pred_generator( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, o, v ),
-    SystemPredicateParser.Predicate.TIME_IMPORTED : lambda o, v, u: date_pred_generator( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, o, v ),
+    SystemPredicateParser.Predicate.TIME_IMPORTED : lambda o, v, u: date_pred_generator( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, o, v ),
     SystemPredicateParser.Predicate.FILE_SERVICE : file_service_pred_generator,
     SystemPredicateParser.Predicate.NUM_FILE_RELS : num_file_relationships_pred_generator,
     SystemPredicateParser.Predicate.NUM_NOTES : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_NOTES, ClientNumberTest.NumberTest.STATICCreateFromCharacters( o, v ) ),
@@ -330,6 +330,7 @@ pred_generators = {
     SystemPredicateParser.Predicate.RATING_SPECIFIC_INCDEC : lambda o, v, u: rating_service_pred_generator( o, v ),
     SystemPredicateParser.Predicate.TAG_ADVANCED_INCLUSIVE : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_ADVANCED, ( o[0], o[1], o[2], v ) ),
     SystemPredicateParser.Predicate.TAG_ADVANCED_EXCLUSIVE : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_TAG_ADVANCED, ( o[0], o[1], o[2], v ), inclusive = False ),
+    SystemPredicateParser.Predicate.RATING_ADVANCED : lambda o, v, u: ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED, v ),
 }
 
 def ParseSystemPredicateStringsToPredicates( system_predicate_strings: collections.abc.Collection[ str ], discard_failures = False ) -> list[ ClientSearchPredicate.Predicate ]:

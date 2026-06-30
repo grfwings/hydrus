@@ -1,5 +1,3 @@
-import typing
-
 from hydrus.core import HydrusExceptions
 
 from hydrus.client import ClientGlobals as CG
@@ -32,6 +30,10 @@ SMALL_HEXAGON = 61
 HEART = 101
 TEARDROP = 102
 MOON_CRESCENT = 103
+
+DRAW_NO = 0
+DRAW_ON_LEFT = 1
+DRAW_ON_RIGHT = 2
 
 # TODO: Ultimately, assuming svg works out and fill/border colours are all good, let's port all this to the default svg directory
 
@@ -229,7 +231,7 @@ def GetNumericalStateFromMedia( media, service_key ):
 
 class StarType( object ):
     
-    def __init__( self, shape: typing.Optional[ int ], rating_svg: typing.Optional[ str ] ):
+    def __init__( self, shape: int | None, rating_svg: str | None ):
         
         if shape is None and rating_svg is None:
             

@@ -6,14 +6,16 @@ import typing
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTags
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
+from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
 from hydrus.client.db import ClientDBDefinitionsCache
-from hydrus.client.db import ClientDBFilesDuplicates
+from hydrus.client.db import ClientDBFilesDuplicatesStorage
 from hydrus.client.db import ClientDBFilesInbox
 from hydrus.client.db import ClientDBFilesMetadataBasic
 from hydrus.client.db import ClientDBFilesStorage
@@ -36,7 +38,9 @@ from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
 from hydrus.client.search import ClientSearchTagContext
 
-def intersection_update_qhi( query_hash_ids: typing.Optional[ set[ int ] ], some_hash_ids: collections.abc.Collection[ int ], force_create_new_set = False ) -> set[ int ]:
+SHOWN_UNINITIALISED_SEARCH_ERROR = False
+
+def intersection_update_qhi( query_hash_ids: set[ int ] | None, some_hash_ids: collections.abc.Collection[ int ], force_create_new_set = False ) -> set[ int ]:
     
     if query_hash_ids is None:
         
@@ -52,6 +56,45 @@ def intersection_update_qhi( query_hash_ids: typing.Optional[ set[ int ] ], some
         query_hash_ids.intersection_update( some_hash_ids )
         
         return query_hash_ids
+        
+    
+
+class SearchState( object ):
+    
+    def __init__(
+        self,
+        done_or_predicates: bool,
+        done_files_info_predicates,
+        have_cross_referenced_file_locations: bool,
+        there_are_tags_to_search: bool,
+        there_are_simple_files_info_preds_to_search_for: bool,
+        done_tricky_incdec_ratings: bool
+    ):
+        
+        self.done_or_predicates = done_or_predicates
+        self.done_files_info_predicates = done_files_info_predicates
+        self.have_cross_referenced_file_locations = have_cross_referenced_file_locations
+        self.there_are_tags_to_search = there_are_tags_to_search
+        self.there_are_simple_files_info_preds_to_search_for = there_are_simple_files_info_preds_to_search_for
+        self.done_tricky_incdec_ratings = done_tricky_incdec_ratings
+        
+    
+    def DoOrPredsInFirstRound( self ):
+        
+        # OR round one--if nothing else will be fast, let's prep query_hash_ids now
+        return not self.done_or_predicates and not ( self.there_are_tags_to_search or self.there_are_simple_files_info_preds_to_search_for )
+        
+    
+    def DoOrPredsInSecondRound( self ):
+        
+        # OR round two--if file preds will not be fast, let's step in to reduce the file domain search space
+        return not self.done_or_predicates and not self.there_are_simple_files_info_preds_to_search_for
+        
+    
+    def NotifyDoneOrPreds( self ):
+        
+        self.done_or_predicates = True
+        self.have_cross_referenced_file_locations = True
         
     
 
@@ -93,7 +136,9 @@ def GetFilesInfoPredicates( system_predicates: ClientSearchFileSearchContext.Fil
             
         else:
             
-            files_info_predicates.append( f'( ( mime IN {HydrusData.SplayListForDB( mimes )} AND NOT EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND forced_mime NOT IN {HydrusData.SplayListForDB( mimes )} ) ) OR EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND mime IN {HydrusData.SplayListForDB( mimes )} ) )' )
+            mimes_splayed = HydrusLists.SplayListForDB( mimes )
+            
+            files_info_predicates.append( f'( ( mime IN {mimes_splayed} AND NOT EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND forced_mime NOT IN {mimes_splayed} ) ) OR EXISTS ( SELECT 1 FROM files_info_forced_filetypes WHERE hash_id = h1 AND mime IN {mimes_splayed} ) )' )
             
         
     
@@ -231,7 +276,7 @@ class ClientDBFilesSearchTags( ClientDBModule.ClientDBModule ):
         modules_services: ClientDBServices.ClientDBMasterServices,
         modules_tags: ClientDBMaster.ClientDBMasterTags,
         modules_tag_siblings: ClientDBTagSiblings.ClientDBTagSiblings,
-        modules_files_storage: ClientDBFilesStorage,
+        modules_files_storage: ClientDBFilesStorage.ClientDBFilesStorage,
         modules_mappings_counts: ClientDBMappingsCounts.ClientDBMappingsCounts,
         modules_tag_search: ClientDBTagSearch.ClientDBTagSearch
     ):
@@ -287,7 +332,7 @@ class ClientDBFilesSearchTags( ClientDBModule.ClientDBModule ):
                 cancelled_hook = job_status.IsCancelled
                 
             
-            for group_of_hash_ids in HydrusData.SplitIteratorIntoChunks( hash_ids, BLOCK_SIZE ):
+            for group_of_hash_ids in HydrusLists.SplitIteratorIntoChunks( hash_ids, BLOCK_SIZE ):
                 
                 with self._MakeTemporaryIntegerTable( group_of_hash_ids, 'hash_id' ) as hash_ids_table_name:
                     
@@ -402,7 +447,7 @@ class ClientDBFilesSearchTags( ClientDBModule.ClientDBModule ):
             
             for file_service_key in file_service_keys:
                 
-                # just as a legacy note, this is where we used to do the "'samus aran' gets 'character:samus aran'" code. now, that stuff works through wildcards if user explicitly enters '*:samus aran'
+                # just as a legacy note, this is where we used to do the "'dave' gets 'character:dave'" code. now, that stuff works through wildcards if user explicitly enters '*:dave'
                 
                 tag_ids = ( ideal_tag_id, )
                 
@@ -1026,13 +1071,13 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         modules_files_viewing_stats: ClientDBFilesViewingStats.ClientDBFilesViewingStats,
         modules_url_map: ClientDBURLMap.ClientDBURLMap,
         modules_notes_map: ClientDBNotesMap.ClientDBNotesMap,
-        modules_files_storage: ClientDBFilesStorage,
+        modules_files_storage: ClientDBFilesStorage.ClientDBFilesStorage,
         modules_files_inbox: ClientDBFilesInbox.ClientDBFilesInbox,
         modules_mappings_counts: ClientDBMappingsCounts.ClientDBMappingsCounts,
         modules_hashes_local_cache: ClientDBDefinitionsCache.ClientDBCacheLocalHashes,
         modules_tag_search: ClientDBTagSearch.ClientDBTagSearch,
         modules_similar_files: ClientDBSimilarFiles.ClientDBSimilarFiles,
-        modules_files_duplicates: ClientDBFilesDuplicates.ClientDBFilesDuplicates,
+        modules_files_duplicates_storage: ClientDBFilesDuplicatesStorage.ClientDBFilesDuplicatesStorage,
         modules_files_search_tags: ClientDBFilesSearchTags
     ):
         
@@ -1052,599 +1097,18 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         self.modules_hashes_local_cache = modules_hashes_local_cache
         self.modules_tag_search = modules_tag_search
         self.modules_similar_files = modules_similar_files
-        self.modules_files_duplicates = modules_files_duplicates
+        self.modules_files_duplicates_storage = modules_files_duplicates_storage
         self.modules_files_search_tags = modules_files_search_tags
         
         super().__init__( 'client file query', cursor )
         
     
-    def _DoAdvancedTagPredicate(
-        self,
-        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
-        job_status: ClientThreading.JobStatus,
-        pred: ClientSearchPredicate.Predicate,
-        query_hash_ids: typing.Optional[ set[ int ] ]
-    ):
+    def _Do1PreInclusiveTagPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, job_status: ClientThreading.JobStatus, query_hash_ids: set[ int ] | None, db_location_context: ClientDBFilesStorage.DBLocationContext, search_state: SearchState ) -> set[ int ] | None:
         
-        ( service_key_or_none, tag_display_type, statuses, tag ) = pred.GetValue()
+        # ok these should ideally all be nice and fast without query_hash_ids
         
-        if service_key_or_none is None:
-            
-            prime_search_tag_service_key = file_search_context.GetTagContext().service_key
-            
-        else:
-            
-            prime_search_tag_service_key = service_key_or_none
-            
-        
-        if prime_search_tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
-            
-            services = self.modules_services.GetServices( HC.REAL_TAG_SERVICES )
-            
-            search_tag_service_keys = [ service.GetServiceKey() for service in services ]
-            
-        else:
-            
-            search_tag_service_keys = ( prime_search_tag_service_key, )
-            
-        
-        location_context = file_search_context.GetLocationContext()
-        
-        if query_hash_ids is None:
-            
-            result = self.modules_files_search_tags.GetHashIdsFromTagAdvanced(
-                tag,
-                tag_display_type,
-                statuses,
-                search_tag_service_keys,
-                location_context,
-                job_status = job_status
-            )
-            
-        else:
-            
-            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                
-                self._AnalyzeTempTable( temp_table_name )
-                
-                result = self.modules_files_search_tags.GetHashIdsFromTagAdvanced(
-                    tag,
-                    tag_display_type,
-                    statuses,
-                    search_tag_service_keys,
-                    location_context,
-                    hash_ids = query_hash_ids,
-                    hash_ids_table_name = temp_table_name,
-                    job_status = job_status
-                )
-                
-            
-        
-        return result
-        
-    
-    def _DoNotePreds( self, system_predicates: ClientSearchFileSearchContext.FileSystemPredicates, query_hash_ids: typing.Optional[ set[ int ] ], job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> typing.Optional[ set[ int ] ]:
-        
+        system_predicates = file_search_context.GetSystemPredicates()
         simple_preds = system_predicates.GetSimpleInfo()
-        
-        number_tests = simple_preds.get( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_NOTES, [] )
-        
-        if len( number_tests ) > 0:
-            
-            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                
-                self._AnalyzeTempTable( temp_table_name )
-                
-                num_notes_hash_ids = self.modules_notes_map.GetHashIdsFromNumNotes( number_tests, query_hash_ids, temp_table_name, job_status = job_status )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, num_notes_hash_ids )
-                
-            
-        
-        if 'has_note_names' in simple_preds:
-            
-            inclusive_note_names = simple_preds[ 'has_note_names' ]
-            
-            for note_name in inclusive_note_names:
-                
-                with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                    
-                    self._AnalyzeTempTable( temp_table_name )
-                    
-                    notes_hash_ids = self.modules_notes_map.GetHashIdsFromNoteName( note_name, temp_table_name, job_status = job_status )
-                    
-                    query_hash_ids = intersection_update_qhi( query_hash_ids, notes_hash_ids )
-                    
-                
-            
-        
-        if 'not_has_note_names' in simple_preds:
-            
-            exclusive_note_names = simple_preds[ 'not_has_note_names' ]
-            
-            for note_name in exclusive_note_names:
-                
-                with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                    
-                    self._AnalyzeTempTable( temp_table_name )
-                    
-                    notes_hash_ids = self.modules_notes_map.GetHashIdsFromNoteName( note_name, temp_table_name, job_status = job_status )
-                    
-                    query_hash_ids.difference_update( notes_hash_ids )
-                    
-                
-            
-        
-        return query_hash_ids
-        
-    
-    def _DoOrPreds(
-        self,
-        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
-        job_status: typing.Optional[ ClientThreading.JobStatus ],
-        or_predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ],
-        query_hash_ids: typing.Optional[ set[ int ] ]
-    ) -> typing.Optional[ set[ int ] ]:
-            
-            # better typically to sort by fewest num of preds first, establishing query_hash_ids for longer chains
-            def or_sort_key( p ):
-                
-                return len( p.GetValue() )
-                
-            
-            or_predicates = sorted( or_predicates, key = or_sort_key )
-            
-            for or_predicate in or_predicates:
-                
-                # blue eyes OR green eyes
-                
-                or_query_hash_ids = set()
-                
-                or_subpredicates = or_predicate.GetValue()
-                
-                # [ blue eyes, green eyes ]
-                
-                for or_subpredicate in or_subpredicates:
-                    
-                    # blue eyes
-                    
-                    or_search_context = file_search_context.Duplicate()
-                    
-                    or_search_context.SetPredicates( [ or_subpredicate ] )
-                    
-                    # I pass query_hash_ids here to make these inefficient sub-searches (like -tag) potentially much faster
-                    or_query_hash_ids.update( self.GetHashIdsFromQuery( or_search_context, job_status, query_hash_ids = query_hash_ids, apply_implicit_limit = False, sort_by = None, limit_sort_by = None ) )
-                    
-                    if job_status.IsCancelled():
-                        
-                        return set()
-                        
-                    
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, or_query_hash_ids )
-                
-            
-            return query_hash_ids
-            
-        
-    
-    def _DoSimpleRatingPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: typing.Optional[ set[ int ] ], job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> typing.Optional[ set[ int ] ]:
-        
-        cancelled_hook = None
-        
-        if job_status is not None:
-            
-            cancelled_hook = job_status.IsCancelled
-            
-        
-        system_predicates = file_search_context.GetSystemPredicates()
-        
-        for ( operator, value, rating_service_key ) in system_predicates.GetRatingsPredicates():
-            
-            service_id = self.modules_services.GetServiceId( rating_service_key )
-            
-            if value == 'not rated':
-                
-                continue
-                
-            
-            if value == 'rated':
-                
-                rating_hash_ids = self._STI( self._ExecuteCancellable( 'SELECT hash_id FROM local_ratings WHERE service_id = ?;', ( service_id, ), cancelled_hook ) )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
-                
-            else:
-                
-                service = CG.client_controller.services_manager.GetService( rating_service_key )
-                
-                service_type = service.GetServiceType()
-                
-                if service_type in HC.STAR_RATINGS_SERVICES:
-                    
-                    if service.GetServiceType() == HC.LOCAL_RATING_LIKE:
-                        
-                        half_a_star_value = 0.5
-                        
-                    else:
-                        
-                        one_star_value = service.GetOneStarValue()
-                        
-                        half_a_star_value = one_star_value / 2
-                        
-                    
-                    if isinstance( value, str ):
-                        
-                        value = float( value )
-                        
-                    
-                    # floats are a pain! as is storing rating as 0.0-1.0 and then allowing number of stars to change!
-                    
-                    if operator == HC.UNICODE_APPROX_EQUAL:
-                        
-                        predicate = str( ( value - half_a_star_value ) * 0.8 ) + ' < rating AND rating < ' + str( ( value + half_a_star_value ) * 1.2 )
-                        
-                    elif operator == '<':
-                        
-                        predicate = 'rating <= ' + str( value - half_a_star_value )
-                        
-                    elif operator == '>':
-                        
-                        predicate = 'rating > ' + str( value + half_a_star_value )
-                        
-                    elif operator == '=':
-                        
-                        predicate = str( value - half_a_star_value ) + ' < rating AND rating <= ' + str( value + half_a_star_value )
-                        
-                    else:
-                        
-                        continue
-                        
-                    
-                    query = f'SELECT hash_id FROM local_ratings WHERE service_id = ? AND {predicate};'
-                    
-                    rating_hash_ids = self._STI( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
-                    
-                    query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
-                    
-                elif service_type == HC.LOCAL_RATING_INCDEC:
-                    
-                    if operator == '<' or ( operator == '=' and value == 0 ):
-                        
-                        continue
-                        
-                    else:
-                        
-                        if operator == HC.UNICODE_APPROX_EQUAL:
-                            
-                            min_value = max( value - 1, int( value * 0.8 ) )
-                            max_value = min( value + 1, int( value * 1.2 ) )
-                            
-                            predicate = '{} < rating AND rating < {}'.format( min_value, max_value )
-                            
-                        else:
-                            
-                            predicate = 'rating {} {}'.format( operator, value )
-                            
-                        
-                        query = f'SELECT hash_id FROM local_incdec_ratings WHERE service_id = ? AND {predicate};'
-                        
-                        rating_hash_ids = self._STI( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
-                        
-                        query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
-                        
-                    
-                
-            
-        
-        return query_hash_ids
-        
-    
-    def _DoSpecificKnownURLPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: typing.Optional[ set[ int ] ], allowed_rule_types: collections.abc.Collection[ str ] ) -> typing.Optional[ set[ int ] ]:
-        
-        system_predicates = file_search_context.GetSystemPredicates()
-        
-        is_inbox = system_predicates.MustBeInbox()
-        
-        simple_preds = system_predicates.GetSimpleInfo()
-        
-        if 'known_url_rules' in simple_preds:
-            
-            known_url_rules = list( simple_preds[ 'known_url_rules' ] )
-            
-            magic_sort_list = [
-                'exact_match',
-                'domain',
-                'url_class',
-                'url_match',
-                'regex'
-            ]
-            
-            def url_rules_key( row ):
-                
-                rule_type = row[1]
-                
-                if rule_type in magic_sort_list:
-                    
-                    return magic_sort_list.index( rule_type )
-                    
-                else:
-                    
-                    return 10
-                    
-                
-            
-            known_url_rules.sort( key = url_rules_key )
-            
-            for ( operator, rule_type, rule ) in known_url_rules:
-                
-                if rule_type not in allowed_rule_types:
-                    
-                    continue
-                    
-                
-                if rule_type == 'exact_match' or ( is_inbox and len( query_hash_ids ) == len( self.modules_files_inbox.inbox_hash_ids ) ):
-                    
-                    url_hash_ids = self.modules_url_map.GetHashIdsFromURLRule( rule_type, rule )
-                    
-                else:
-                    
-                    with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                        
-                        self._AnalyzeTempTable( temp_table_name )
-                        
-                        url_hash_ids = self.modules_url_map.GetHashIdsFromURLRule( rule_type, rule, hash_ids = query_hash_ids, hash_ids_table_name = temp_table_name )
-                        
-                    
-                
-                if operator: # inclusive
-                    
-                    query_hash_ids = intersection_update_qhi( query_hash_ids, url_hash_ids )
-                    
-                else:
-                    
-                    query_hash_ids.difference_update( url_hash_ids )
-                    
-                
-            
-        
-        return query_hash_ids
-        
-    
-    def _DoTimestampPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: typing.Optional[ set[ int ] ], have_cross_referenced_file_locations: bool, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> tuple[ typing.Optional[ set[ int ] ], bool ]:
-        
-        system_predicates = file_search_context.GetSystemPredicates()
-        
-        location_context = file_search_context.GetLocationContext()
-        not_all_known_files = not location_context.IsAllKnownFiles()
-        
-        system_pred_type_to_timestamp_ranges_ms = system_predicates.GetTimestampRangesMS()
-        
-        cancelled_hook = None
-        
-        if job_status is not None:
-            
-            cancelled_hook = job_status.IsCancelled
-            
-        
-        if not_all_known_files:
-            
-            # in future we will hang an explicit locationcontext off this predicate
-            # for now we'll check current domain
-            # if domain is deleted, we search deletion time
-            
-            if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE in system_pred_type_to_timestamp_ranges_ms:
-                
-                import_timestamp_predicates = []
-                
-                timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE ]
-                
-                if '>' in timestamp_ranges_ms:
-                    
-                    import_timestamp_predicates.append( 'timestamp_ms >= {}'.format( timestamp_ranges_ms[ '>' ] ) )
-                    
-                
-                if '<' in timestamp_ranges_ms:
-                    
-                    import_timestamp_predicates.append( 'timestamp_ms <= {}'.format( timestamp_ranges_ms[ '<' ] ) )
-                    
-                
-                if len( import_timestamp_predicates ) > 0:
-                    
-                    pred_string = ' AND '.join( import_timestamp_predicates )
-                    
-                    table_names = []
-                    
-                    table_names.extend( ( ClientDBFilesStorage.GenerateFilesTableName( self.modules_services.GetServiceId( service_key ), HC.CONTENT_STATUS_CURRENT ) for service_key in location_context.current_service_keys ) )
-                    table_names.extend( ( ClientDBFilesStorage.GenerateFilesTableName( self.modules_services.GetServiceId( service_key ), HC.CONTENT_STATUS_DELETED ) for service_key in location_context.deleted_service_keys ) )
-                    
-                    import_timestamp_hash_ids = set()
-                    
-                    for table_name in table_names:
-                        
-                        import_timestamp_hash_ids.update( self._STS( self._ExecuteCancellable( 'SELECT hash_id FROM {} WHERE {};'.format( table_name, pred_string ), (), cancelled_hook ) ) )
-                        
-                    
-                    query_hash_ids = intersection_update_qhi( query_hash_ids, import_timestamp_hash_ids )
-                    
-                    have_cross_referenced_file_locations = True
-                    
-                
-            
-        
-        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME in system_pred_type_to_timestamp_ranges_ms:
-            
-            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME ]
-            
-            if len( timestamp_ranges_ms ) > 0:
-                
-                modified_timestamp_hash_ids = self.modules_files_timestamps.GetHashIdsInRange( HC.TIMESTAMP_TYPE_MODIFIED_AGGREGATE, timestamp_ranges_ms, job_status = job_status )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, modified_timestamp_hash_ids )
-                
-            
-        
-        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME in system_pred_type_to_timestamp_ranges_ms:
-            
-            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ]
-            
-            if len( timestamp_ranges_ms ) > 0:
-                
-                archived_timestamp_hash_ids = self.modules_files_timestamps.GetHashIdsInRange( HC.TIMESTAMP_TYPE_ARCHIVED, timestamp_ranges_ms, job_status = job_status )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, archived_timestamp_hash_ids )
-                
-            
-        
-        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME in system_pred_type_to_timestamp_ranges_ms:
-            
-            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME ]
-            
-            min_last_viewed_timestamp_ms = timestamp_ranges_ms.get( '>', None )
-            max_last_viewed_timestamp_ms = timestamp_ranges_ms.get( '<', None )
-            
-            last_viewed_time_hash_ids = self.modules_files_viewing_stats.GetHashIdsFromLastViewed( min_last_viewed_timestamp_ms = min_last_viewed_timestamp_ms, max_last_viewed_timestamp_ms = max_last_viewed_timestamp_ms, job_status = job_status )
-            
-            query_hash_ids = intersection_update_qhi( query_hash_ids, last_viewed_time_hash_ids )
-            
-        
-        return ( query_hash_ids, have_cross_referenced_file_locations )
-        
-    
-    def GetHashIdsFromQuery(
-        self,
-        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
-        job_status: typing.Optional[ ClientThreading.JobStatus ] = None,
-        query_hash_ids: typing.Optional[ set ] = None,
-        apply_implicit_limit: bool = True,
-        sort_by: typing.Optional[ ClientMedia.MediaSort ] = None,
-        limit_sort_by: typing.Optional[ ClientMedia.MediaSort ] = None
-    ) -> list[ int ]:
-        
-        if job_status is None:
-            
-            job_status = ClientThreading.JobStatus( cancellable = True )
-            
-        
-        if query_hash_ids is not None:
-            
-            query_hash_ids = set( query_hash_ids )
-            
-        
-        have_cross_referenced_file_locations = False
-        
-        system_predicates = file_search_context.GetSystemPredicates()
-        
-        system_limit = system_predicates.GetLimit( apply_implicit_limit = apply_implicit_limit )
-        
-        if system_limit == 0:
-            
-            return []
-            
-        
-        location_context = file_search_context.GetLocationContext()
-        tag_context = file_search_context.GetTagContext()
-        
-        tag_service_key = tag_context.service_key
-        
-        if location_context.IsEmpty():
-            
-            return []
-            
-        
-        current_file_service_ids = set()
-        
-        for current_service_key in location_context.current_service_keys:
-            
-            try:
-                
-                current_file_service_id = self.modules_services.GetServiceId( current_service_key )
-                
-            except HydrusExceptions.DataMissing:
-                
-                HydrusData.ShowText( 'A file search query was run for a file service that does not exist! If you just removed a service, you might want to try checking the search and/or restarting the client.' )
-                
-                return []
-                
-            
-            current_file_service_ids.add( current_file_service_id )
-            
-        
-        deleted_file_service_ids = set()
-        
-        for deleted_service_key in location_context.deleted_service_keys:
-            
-            try:
-                
-                deleted_file_service_id = self.modules_services.GetServiceId( deleted_service_key )
-                
-            except HydrusExceptions.DataMissing:
-                
-                HydrusData.ShowText( 'A file search query was run for a file service that does not exist! If you just removed a service, you might want to try checking the search and/or restarting the client.' )
-                
-                return []
-                
-            
-            deleted_file_service_ids.add( deleted_file_service_id )
-            
-        
-        db_location_context = self.modules_files_storage.GetDBLocationContext( location_context )
-        
-        try:
-            
-            tag_service_id = self.modules_services.GetServiceId( tag_service_key )
-            
-        except HydrusExceptions.DataMissing:
-            
-            HydrusData.ShowText( 'A file search query was run for a tag service that does not exist! If you just removed a service, you might want to check the search and/or restart the client.' )
-            
-            return []
-            
-        
-        tags_to_include = file_search_context.GetTagsToInclude()
-        tags_to_exclude = file_search_context.GetTagsToExclude()
-        
-        namespaces_to_include = file_search_context.GetNamespacesToInclude()
-        namespaces_to_exclude = file_search_context.GetNamespacesToExclude()
-        
-        wildcards_to_include = file_search_context.GetWildcardsToInclude()
-        wildcards_to_exclude = file_search_context.GetWildcardsToExclude()
-        
-        simple_preds = system_predicates.GetSimpleInfo()
-        
-        king_filter = system_predicates.GetKingFilter()
-        
-        or_predicates = file_search_context.GetORPredicates()
-        
-        not_all_known_files = not location_context.IsAllKnownFiles()
-        there_are_tags_to_search = len( tags_to_include ) > 0 or len( namespaces_to_include ) > 0 or len( wildcards_to_include ) > 0
-        
-        # ok, let's set up the big list of simple search preds
-        
-        files_info_predicates = GetFilesInfoPredicates( system_predicates )
-        
-        there_are_simple_files_info_preds_to_search_for = len( files_info_predicates ) > 0
-        
-        #
-        
-        done_or_predicates = len( or_predicates ) == 0
-        
-        # OR round one--if nothing else will be fast, let's prep query_hash_ids now
-        if not done_or_predicates and not ( there_are_tags_to_search or there_are_simple_files_info_preds_to_search_for ):
-            
-            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
-            
-            have_cross_referenced_file_locations = True
-            
-            done_or_predicates = True
-            
-            if job_status.IsCancelled():
-                
-                return []
-                
-            
-        
-        #
         
         if 'hashes' in simple_preds:
             
@@ -1672,9 +1136,14 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         
         #
 
-        ( query_hash_ids, have_cross_referenced_file_locations ) = self._DoTimestampPreds( file_search_context, query_hash_ids, have_cross_referenced_file_locations, job_status = job_status )
+        query_hash_ids = self._DoTimestampPreds( file_search_context, query_hash_ids, search_state, job_status = job_status )
         
         query_hash_ids = self._DoSimpleRatingPreds( file_search_context, query_hash_ids, job_status = job_status )
+        
+        for predicate in system_predicates.GetAdvancedRatingsPredicates():
+            
+            query_hash_ids = self._DoAdvancedRatingPredicateInclusiveOnly( predicate, query_hash_ids, job_status = job_status )
+            
         
         #
         
@@ -1714,11 +1183,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
             else:
                 
-                dupe_hash_ids = self.modules_files_duplicates.GetHashIdsFromDuplicateCountPredicate( db_location_context, operator, num_relationships, dupe_type )
+                dupe_hash_ids = self.modules_files_duplicates_storage.GetHashIdsFromDuplicateCountPredicate( db_location_context, operator, num_relationships, dupe_type )
                 
                 query_hash_ids = intersection_update_qhi( query_hash_ids, dupe_hash_ids )
                 
-                have_cross_referenced_file_locations = True
+                search_state.have_cross_referenced_file_locations = True
                 
             
         
@@ -1791,11 +1260,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         #
         
         # last shot before tags and stuff to try to do these. we can only do them if query hash ids has stuff in
-        done_tricky_incdec_ratings = False
-        
-        if query_hash_ids is not None:
-            
-            done_tricky_incdec_ratings = True
+        if query_hash_ids is not None and not search_state.done_tricky_incdec_ratings:
             
             for ( operator, value, rating_service_key ) in system_predicates.GetRatingsPredicates():
                 
@@ -1832,10 +1297,28 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                 
             
+            search_state.done_tricky_incdec_ratings = True
+            
         
-        # first tags
+        return query_hash_ids
         
-        if there_are_tags_to_search:
+    
+    def _Do2InclusiveTagPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, job_status: ClientThreading.JobStatus, query_hash_ids: set[ int ] | None, search_state: SearchState ) -> set[ int ] | None:
+        
+        location_context = file_search_context.GetLocationContext()
+        tag_context = file_search_context.GetTagContext()
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        tags_to_include = file_search_context.GetTagsToInclude()
+        
+        namespaces_to_include = file_search_context.GetNamespacesToInclude()
+        
+        wildcards_to_include = file_search_context.GetWildcardsToInclude()
+        
+        is_inbox = system_predicates.MustBeInbox()
+        
+        if search_state.there_are_tags_to_search:
             
             def sort_longest_tag_first_key( s ):
                 
@@ -1866,11 +1349,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
                 query_hash_ids = intersection_update_qhi( query_hash_ids, tag_query_hash_ids )
                 
-                have_cross_referenced_file_locations = True
+                search_state.have_cross_referenced_file_locations = True
                 
                 if len( query_hash_ids ) == 0:
                     
-                    return []
+                    return set()
                     
                 
             
@@ -1896,11 +1379,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
                 query_hash_ids = intersection_update_qhi( query_hash_ids, namespace_query_hash_ids )
                 
-                have_cross_referenced_file_locations = True
+                search_state.have_cross_referenced_file_locations = True
                 
                 if len( query_hash_ids ) == 0:
                     
-                    return []
+                    return set()
                     
                 
             
@@ -1926,11 +1409,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
                 query_hash_ids = intersection_update_qhi( query_hash_ids, wildcard_query_hash_ids )
                 
-                have_cross_referenced_file_locations = True
+                search_state.have_cross_referenced_file_locations = True
                 
                 if len( query_hash_ids ) == 0:
                     
-                    return []
+                    return set()
                     
                 
             
@@ -1949,29 +1432,24 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
             
         
-        #
+        return query_hash_ids
         
-        # OR round two--if file preds will not be fast, let's step in to reduce the file domain search space
-        if not done_or_predicates and not there_are_simple_files_info_preds_to_search_for:
-            
-            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
-            
-            have_cross_referenced_file_locations = True
-            
-            done_or_predicates = True
-            
-            if job_status.IsCancelled():
-                
-                return []
-                
-            
+    
+    def _Do3FileInfoPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, job_status: ClientThreading.JobStatus, query_hash_ids: set[ int ] | None, db_location_context: ClientDBFilesStorage.DBLocationContext, search_state: SearchState ) -> set[ int ]:
         
-        # now the simple preds and desperate last shot to populate query_hash_ids
+        system_predicates = file_search_context.GetSystemPredicates()
         
-        done_files_info_predicates = False
+        is_inbox = system_predicates.MustBeInbox()
+        
+        location_context = file_search_context.GetLocationContext()
+        tag_context = file_search_context.GetTagContext()
+        
+        not_all_known_files = not location_context.IsAllKnownFiles()
         
         we_need_some_results = query_hash_ids is None
-        we_need_to_cross_reference = not_all_known_files and not have_cross_referenced_file_locations
+        we_need_to_cross_reference = not_all_known_files and not search_state.have_cross_referenced_file_locations
+        
+        files_info_predicates = GetFilesInfoPredicates( system_predicates )
         
         if we_need_some_results or we_need_to_cross_reference:
             
@@ -2022,29 +1500,112 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                             
                         
                     
-                    if len( file_info_query_hash_ids ) == 0:
-                        
-                        file_info_query_hash_ids = loop_query_hash_ids
-                        
-                    else:
-                        
-                        file_info_query_hash_ids.update( loop_query_hash_ids )
-                        
+                    file_info_query_hash_ids.update( loop_query_hash_ids )
                     
                 
                 query_hash_ids = intersection_update_qhi( query_hash_ids, file_info_query_hash_ids )
                 
-                have_cross_referenced_file_locations = True
-                done_files_info_predicates = True
+                search_state.have_cross_referenced_file_locations = True
+                search_state.done_files_info_predicates = True
                 
             
         
-        # at this point, query_hash_ids has something in it
+        # query_hash_ids now definitely has something in it
+        
+        # don't be hasty to ever remove this
+        if query_hash_ids is None:
+            
+            global SHOWN_UNINITIALISED_SEARCH_ERROR
+            
+            if not SHOWN_UNINITIALISED_SEARCH_ERROR:
+                
+                HydrusData.ShowText( 'Hey, the search you just performed came up with zero results in part because it failed to initialise properly. Please contact hydev with any details you have.\n\nTo stop spam, this message will only show one time per program boot. The error may happen again, silently.' )
+                
+                SHOWN_UNINITIALISED_SEARCH_ERROR = True
+                
+            
+            query_hash_ids = set()
+            
+        
+        query_hash_ids = typing.cast( set[ int ], query_hash_ids )
+        
+        # this was bodged in here during a rewrite; there is probably a nicer 'if cross-referenced already, do above, else this', but this is fine for now
+        if search_state.there_are_simple_files_info_preds_to_search_for and not search_state.done_files_info_predicates:
+            
+            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                
+                self._AnalyzeTempTable( temp_table_name )
+                
+                predicate_string = ' AND '.join( files_info_predicates )
+                
+                select = 'SELECT hash_id AS h1 FROM {} NATURAL JOIN files_info WHERE {};'.format( temp_table_name, predicate_string )
+                
+                files_info_hash_ids = self._STI( self._Execute( select ) )
+                
+                query_hash_ids.intersection_update( files_info_hash_ids )
+                
+            
+            search_state.done_files_info_predicates = True
+            
+        
+        return query_hash_ids
+        
+    
+    def _Do4InexpensivePostFileCrossReferencePreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, job_status: ClientThreading.JobStatus, query_hash_ids: set[ int ], search_state: SearchState ):
+        
+        # I have not rigorously tested that these are truly inexpensive, they just percolated like this in older code
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        simple_preds = system_predicates.GetSimpleInfo()
+        
+        king_filter = system_predicates.GetKingFilter()
+        
+        #
+        
+        # hide update files
+        
+        if file_search_context.GetLocationContext().IsHydrusLocalFileStorage():
+            
+            repo_update_hash_ids = set( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.local_update_service_id ) )
+            
+            query_hash_ids.difference_update( repo_update_hash_ids )
+            
+        
+        #
+        
+        ( required_file_service_statuses, excluded_file_service_statuses ) = system_predicates.GetFileServiceStatuses()
+        
+        for ( service_key, statuses ) in required_file_service_statuses.items():
+            
+            service_id = self.modules_services.GetServiceId( service_key )
+            
+            for status in statuses:
+                
+                required_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( service_id, query_hash_ids, status )
+                
+                query_hash_ids.intersection_update( required_hash_ids )
+                
+            
+        
+        for ( service_key, statuses ) in excluded_file_service_statuses.items():
+            
+            service_id = self.modules_services.GetServiceId( service_key )
+            
+            for status in statuses:
+                
+                excluded_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( service_id, query_hash_ids, status )
+                
+                query_hash_ids.difference_update( excluded_hash_ids )
+                
+            
+        
+        #
         
         # if we couldn't do them earlier, now we can
-        if not done_tricky_incdec_ratings:
+        if not search_state.done_tricky_incdec_ratings:
             
-            done_tricky_incdec_ratings = True
+            search_state.done_tricky_incdec_ratings = True
             
             for ( operator, value, rating_service_key ) in system_predicates.GetRatingsPredicates():
                 
@@ -2075,7 +1636,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                                 rating_hash_ids.update( less_than_rating_hash_ids )
                                 
                             
-                            query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
+                            query_hash_ids.intersection_update( rating_hash_ids )
                             
                         
                     
@@ -2199,59 +1760,34 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         
         if king_filter is not None and king_filter:
             
-            king_hash_ids = self.modules_files_duplicates.FilterKingHashIds( query_hash_ids )
+            king_hash_ids = self.modules_files_duplicates_storage.FilterKingHashIds( query_hash_ids )
             
-            query_hash_ids = intersection_update_qhi( query_hash_ids, king_hash_ids )
-            
-        
-        if there_are_simple_files_info_preds_to_search_for and not done_files_info_predicates:
-            
-            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
-                
-                self._AnalyzeTempTable( temp_table_name )
-                
-                predicate_string = ' AND '.join( files_info_predicates )
-                
-                select = 'SELECT hash_id AS h1 FROM {} NATURAL JOIN files_info WHERE {};'.format( temp_table_name, predicate_string )
-                
-                files_info_hash_ids = self._STI( self._Execute( select ) )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, files_info_hash_ids )
-                
-            
-            done_files_info_predicates = True
+            query_hash_ids.intersection_update( king_hash_ids )
             
         
-        if job_status.IsCancelled():
-            
-            return []
-            
+        return query_hash_ids
+        
+    
+    def _Do5ExpensivePostFileCrossReferencePreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, job_status: ClientThreading.JobStatus, query_hash_ids: set[ int ] | None, db_location_context: ClientDBFilesStorage.DBLocationContext, search_state: SearchState ) -> set[ int ]:
+        
+        # I have not rigorously tested that these are truly inexpensive, they just percolated like this in older code
+        
+        location_context = file_search_context.GetLocationContext()
+        tag_context = file_search_context.GetTagContext()
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        simple_preds = system_predicates.GetSimpleInfo()
+        
+        king_filter = system_predicates.GetKingFilter()
         
         #
         
-        # OR round three--final chance to kick in, and the preferred one. query_hash_ids is now set, so this shouldn't be super slow for most scenarios
-        if not done_or_predicates:
-            
-            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
-            
-            done_or_predicates = True
-            
-            if job_status.IsCancelled():
-                
-                return []
-                
-            
+        tags_to_exclude = file_search_context.GetTagsToExclude()
         
-        # hide update files
+        namespaces_to_exclude = file_search_context.GetNamespacesToExclude()
         
-        if location_context.IsAllLocalFiles():
-            
-            repo_update_hash_ids = set( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.local_update_service_id ) )
-            
-            query_hash_ids.difference_update( repo_update_hash_ids )
-            
-        
-        # now subtract bad results
+        wildcards_to_exclude = file_search_context.GetWildcardsToExclude()
         
         if len( tags_to_exclude ) + len( namespaces_to_exclude ) + len( wildcards_to_exclude ) > 0:
             
@@ -2267,7 +1803,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     if len( query_hash_ids ) == 0:
                         
-                        return []
+                        return set()
                         
                     
                     self._ExecuteMany( 'DELETE FROM {} WHERE hash_id = ?;'.format( temp_table_name ), ( ( hash_id, ) for hash_id in unwanted_hash_ids ) )
@@ -2281,7 +1817,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     if len( query_hash_ids ) == 0:
                         
-                        return []
+                        return set()
                         
                     
                     self._ExecuteMany( 'DELETE FROM {} WHERE hash_id = ?;'.format( temp_table_name ), ( ( hash_id, ) for hash_id in unwanted_hash_ids ) )
@@ -2295,7 +1831,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     if len( query_hash_ids ) == 0:
                         
-                        return []
+                        return set()
                         
                     
                     self._ExecuteMany( 'DELETE FROM {} WHERE hash_id = ?;'.format( temp_table_name ), ( ( hash_id, ) for hash_id in unwanted_hash_ids ) )
@@ -2303,42 +1839,17 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
             
         
-        if job_status.IsCancelled():
-            
-            return []
-            
-        
         #
         
-        ( required_file_service_statuses, excluded_file_service_statuses ) = system_predicates.GetFileServiceStatuses()
+        # ( query_exclude_ratings, query_args ) = self._BuildExcludeQueryRatings( file_search_context )
         
-        # needs query_hash_ids to have something in it!
-        for ( service_key, statuses ) in required_file_service_statuses.items():
+        # if query_exclude_ratings:
             
-            service_id = self.modules_services.GetServiceId( service_key )
-            
-            for status in statuses:
-                
-                required_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( service_id, query_hash_ids, status )
-                
-                query_hash_ids = intersection_update_qhi( query_hash_ids, required_hash_ids )
-                
+        #     query_hash_ids.difference_update( self._STI( self._Execute( query_exclude_ratings, query_args ) ) )
             
         
-        for ( service_key, statuses ) in excluded_file_service_statuses.items():
-            
-            service_id = self.modules_services.GetServiceId( service_key )
-            
-            for status in statuses:
-                
-                excluded_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( service_id, query_hash_ids, status )
-                
-                query_hash_ids.difference_update( excluded_hash_ids )
-                
-            
-        
-        #
-        
+        #original exclude way follows
+        #here is the original code for simpleratings
         for ( operator, value, service_key ) in system_predicates.GetRatingsPredicates():
             
             service_id = self.modules_services.GetServiceId( service_key )
@@ -2349,9 +1860,16 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
             
         
+        # note the new code for advancedratings. if this code executes, any simpleratings excludes are redundant, because all will be excluded
+        
+        for predicate in system_predicates.GetAdvancedRatingsPredicates():
+            
+            query_hash_ids = self._DoAdvancedRatingPredicateExclusiveOnly( predicate, query_hash_ids, job_status = job_status )
+            
+        
         if king_filter is not None and not king_filter:
             
-            king_hash_ids = self.modules_files_duplicates.FilterKingHashIds( query_hash_ids )
+            king_hash_ids = self.modules_files_duplicates_storage.FilterKingHashIds( query_hash_ids )
             
             query_hash_ids.difference_update( king_hash_ids )
             
@@ -2363,21 +1881,21 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
             
             if only_do_zero:
                 
-                nonzero_hash_ids = self.modules_files_duplicates.GetHashIdsFromDuplicateCountPredicate( db_location_context, '>', 0, dupe_type )
+                nonzero_hash_ids = self.modules_files_duplicates_storage.GetHashIdsFromDuplicateCountPredicate( db_location_context, '>', 0, dupe_type )
                 
                 query_hash_ids.difference_update( nonzero_hash_ids )
                 
             elif include_zero:
                 
-                nonzero_hash_ids = self.modules_files_duplicates.GetHashIdsFromDuplicateCountPredicate( db_location_context, '>', 0, dupe_type )
+                nonzero_hash_ids = self.modules_files_duplicates_storage.GetHashIdsFromDuplicateCountPredicate( db_location_context, '>', 0, dupe_type )
                 
                 zero_hash_ids = query_hash_ids.difference( nonzero_hash_ids )
                 
-                accurate_except_zero_hash_ids = self.modules_files_duplicates.GetHashIdsFromDuplicateCountPredicate( db_location_context, operator, num_relationships, dupe_type )
+                accurate_except_zero_hash_ids = self.modules_files_duplicates_storage.GetHashIdsFromDuplicateCountPredicate( db_location_context, operator, num_relationships, dupe_type )
                 
                 hash_ids = zero_hash_ids.union( accurate_except_zero_hash_ids )
                 
-                query_hash_ids = intersection_update_qhi( query_hash_ids, hash_ids )
+                query_hash_ids.intersection_update( hash_ids )
                 
             
         
@@ -2404,19 +1922,19 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 
                 hash_ids = zero_hash_ids.union( accurate_except_zero_hash_ids )
                 
-                query_hash_ids = intersection_update_qhi( query_hash_ids, hash_ids )
+                query_hash_ids.intersection_update( hash_ids )
                 
             
         
         if job_status.IsCancelled():
             
-            return []
+            return set()
             
         
         #
         
-        file_location_is_all_local = self.modules_services.LocationContextIsCoveredByCombinedLocalFiles( location_context )
-        file_location_is_all_combined_local_files_deleted = location_context.IsOneDomain() and CC.COMBINED_LOCAL_FILE_SERVICE_KEY in location_context.deleted_service_keys
+        file_location_is_all_local = self.modules_services.LocationContextIsCoveredByHydrusLocalFileStorage( location_context )
+        file_location_is_all_hydrus_local_file_storages_deleted = location_context.IsOneDomain() and CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in location_context.deleted_service_keys
         
         must_be_local = system_predicates.MustBeLocal() or system_predicates.MustBeArchive()
         must_not_be_local = system_predicates.MustNotBeLocal()
@@ -2430,7 +1948,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 query_hash_ids = set()
                 
             
-        elif file_location_is_all_combined_local_files_deleted:
+        elif file_location_is_all_hydrus_local_file_storages_deleted:
             
             if must_be_local:
                 
@@ -2441,11 +1959,11 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
             
             if must_be_local:
                 
-                query_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( self.modules_services.combined_local_file_service_id, query_hash_ids, HC.CONTENT_STATUS_CURRENT )
+                query_hash_ids = self.modules_files_storage.FilterHashIdsToStatus( self.modules_services.hydrus_local_file_storage_service_id, query_hash_ids, HC.CONTENT_STATUS_CURRENT )
                 
             elif must_not_be_local:
                 
-                local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.combined_local_file_service_id )
+                local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
                 
                 query_hash_ids.difference_update( local_hash_ids )
                 
@@ -2462,7 +1980,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 url_hash_ids = self.modules_url_map.GetHashIdsFromCountTests( num_urls_tests, query_hash_ids, temp_table_name )
                 
             
-            query_hash_ids = intersection_update_qhi( query_hash_ids, url_hash_ids )
+            query_hash_ids.intersection_update( url_hash_ids )
             
         
         allowed_job_types = [
@@ -2512,7 +2030,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     if is_anything_but_zero:
                         
-                        query_hash_ids = intersection_update_qhi( query_hash_ids, nonzero_tag_query_hash_ids )
+                        query_hash_ids.intersection_update( nonzero_tag_query_hash_ids )
                         
                     
                 
@@ -2530,13 +2048,13 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     good_tag_count_hash_ids.update( zero_hash_ids )
                     
                 
-                query_hash_ids = intersection_update_qhi( query_hash_ids, good_tag_count_hash_ids )
+                query_hash_ids.intersection_update( good_tag_count_hash_ids )
                 
             
         
         if job_status.IsCancelled():
             
-            return []
+            return set()
             
         
         #
@@ -2552,7 +2070,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 good_hash_ids = self.modules_files_search_tags.GetHashIdsThatHaveTagAsNumComplexLocation( ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, location_context, tag_context, namespace_wildcard, num, '>', hash_ids = query_hash_ids, hash_ids_table_name = temp_table_name, job_status = job_status )
                 
             
-            query_hash_ids = intersection_update_qhi( query_hash_ids, good_hash_ids )
+            query_hash_ids.intersection_update( good_hash_ids )
             
         
         if 'max_tag_as_number' in simple_preds:
@@ -2566,8 +2084,839 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                 good_hash_ids = self.modules_files_search_tags.GetHashIdsThatHaveTagAsNumComplexLocation( ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, location_context, tag_context, namespace_wildcard, num, '<', hash_ids = query_hash_ids, hash_ids_table_name = temp_table_name, job_status = job_status )
                 
             
-            query_hash_ids = intersection_update_qhi( query_hash_ids, good_hash_ids )
+            query_hash_ids.intersection_update( good_hash_ids )
             
+        
+        if job_status.IsCancelled():
+            
+            return set()
+            
+        
+        #
+        
+        allowed_job_types = [ 'regex' ]
+        
+        query_hash_ids = self._DoSpecificKnownURLPreds( file_search_context, query_hash_ids, allowed_job_types )
+        
+        #
+        
+        return query_hash_ids
+        
+    
+    def _DoAdvancedTagPredicate(
+        self,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        job_status: ClientThreading.JobStatus,
+        pred: ClientSearchPredicate.Predicate,
+        query_hash_ids: set[ int ] | None
+    ):
+        
+        ( service_key_or_none, tag_display_type, statuses, tag ) = pred.GetValue()
+        
+        if service_key_or_none is None:
+            
+            prime_search_tag_service_key = file_search_context.GetTagContext().service_key
+            
+        else:
+            
+            prime_search_tag_service_key = service_key_or_none
+            
+        
+        if prime_search_tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
+            
+            services = self.modules_services.GetServices( HC.REAL_TAG_SERVICES )
+            
+            search_tag_service_keys = [ service.GetServiceKey() for service in services ]
+            
+        else:
+            
+            search_tag_service_keys = ( prime_search_tag_service_key, )
+            
+        
+        location_context = file_search_context.GetLocationContext()
+        
+        if query_hash_ids is None:
+            
+            result = self.modules_files_search_tags.GetHashIdsFromTagAdvanced(
+                tag,
+                tag_display_type,
+                statuses,
+                search_tag_service_keys,
+                location_context,
+                job_status = job_status
+            )
+            
+        else:
+            
+            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                
+                self._AnalyzeTempTable( temp_table_name )
+                
+                result = self.modules_files_search_tags.GetHashIdsFromTagAdvanced(
+                    tag,
+                    tag_display_type,
+                    statuses,
+                    search_tag_service_keys,
+                    location_context,
+                    hash_ids = query_hash_ids,
+                    hash_ids_table_name = temp_table_name,
+                    job_status = job_status
+                )
+                
+            
+        
+        return result
+        
+    
+    def _DoAdvancedRatingPredicate( self, predicate: ClientSearchPredicate.Predicate, query_hash_ids: set[ int ] | None, job_status: ClientThreading.JobStatus | None = None ) -> set[ int ] | None:
+        
+        ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = predicate.GetValue()
+        
+        if logical_operator == HC.LOGICAL_OPERATOR_ONLY:
+            
+            service_keys_primary = service_specifier_primary.GetSpecificKeys()
+            
+            service_keys_secondary = service_specifier_secondary.GetSpecificKeys().difference( service_keys_primary )
+            
+            # if rated, we are saying: ALL of PRIMARY have, NONE of remainder SECONDARY have
+            # if not rated, we are saying: NONE of PRIMARY have, ALL of remainder SECONDARY have
+            
+            predicate_primary = ClientSearchPredicate.Predicate(
+                ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
+                (
+                    HC.LOGICAL_OPERATOR_ALL,
+                    ClientServices.ServiceSpecifier( service_keys = service_keys_primary ),
+                    ClientServices.ServiceSpecifier(),
+                    rated
+                )
+            )
+            
+            predicate_secondary = ClientSearchPredicate.Predicate(
+                ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
+                (
+                    HC.LOGICAL_OPERATOR_ALL,
+                    ClientServices.ServiceSpecifier( service_keys = service_keys_secondary ),
+                    ClientServices.ServiceSpecifier(),
+                    not rated
+                )
+            )
+            
+            # we have to do the 'rated' one first to establish query_hash_ids as a real thing (if it is currently None)
+            if rated:
+                
+                ( first_predicate, second_predicate ) = ( predicate_primary, predicate_secondary )
+                
+            else:
+                
+                ( first_predicate, second_predicate ) = ( predicate_secondary, predicate_primary )
+                
+            
+            query_hash_ids = self._DoAdvancedRatingPredicate( first_predicate, query_hash_ids, job_status = job_status )
+            
+            if job_status is not None and job_status.IsCancelled():
+                
+                return set()
+                
+            
+            query_hash_ids = self._DoAdvancedRatingPredicate( second_predicate, query_hash_ids, job_status = job_status )
+            
+        else:
+            
+            if not rated and query_hash_ids is None:
+                
+                return set()
+                
+            
+            cancelled_hook = None
+            
+            if job_status is not None:
+                
+                cancelled_hook = job_status.IsCancelled
+                
+            
+            # could mount the query_hash_ids to a temp table here if we want, but most of the time I think this'll be fast
+            
+            service_types_to_ids = self.modules_services.GetServiceTypesToServiceIds( service_specifier_primary )
+            
+            star_service_ids = []
+            star_service_ids.extend( service_types_to_ids.get( HC.LOCAL_RATING_LIKE, [] ) )
+            star_service_ids.extend( service_types_to_ids.get( HC.LOCAL_RATING_NUMERICAL, [] ) )
+            
+            incdec_service_ids = service_types_to_ids.get( HC.LOCAL_RATING_INCDEC, [] )
+            
+            if logical_operator == HC.LOGICAL_OPERATOR_ANY:
+                
+                if rated:
+                    
+                    # the files that are rated anywhere, simple union
+                    
+                    result_hash_ids = set()
+                    
+                    if len( star_service_ids ) > 0:
+                        
+                        query = f'SELECT DISTINCT hash_id FROM local_ratings WHERE service_id IN {HydrusLists.SplayListForDB( star_service_ids )};'
+                        
+                        result_hash_ids.update( self._STI( self._ExecuteCancellable( query, (), cancelled_hook ) ) )
+                        
+                    
+                    if len( incdec_service_ids ) > 0:
+                        
+                        query = f'SELECT DISTINCT hash_id FROM local_incdec_ratings WHERE service_id IN {HydrusLists.SplayListForDB( incdec_service_ids )} AND rating > 0;'
+                        
+                        result_hash_ids.update( self._STI( self._ExecuteCancellable( query, (), cancelled_hook ) ) )
+                        
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, result_hash_ids )
+                    
+                else:
+                    
+                    # the files that are not-rated anywhere, aka anything not rated everywhere
+                    
+                    predicate_exclusive = ClientSearchPredicate.Predicate(
+                        ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
+                        (
+                            HC.LOGICAL_OPERATOR_ALL,
+                            service_specifier_primary,
+                            service_specifier_secondary,
+                            True
+                        )
+                    )
+                    
+                    undesired_hash_ids = self._DoAdvancedRatingPredicate( predicate_exclusive, set( query_hash_ids ), job_status = job_status )
+                    
+                    query_hash_ids.difference_update( undesired_hash_ids )
+                    
+                
+            elif logical_operator == HC.LOGICAL_OPERATOR_ALL:
+                
+                if rated:
+                    
+                    # the files are rated everywhere, simple intersection
+                    
+                    result_hash_ids = None
+                    
+                    for service_id in star_service_ids:
+                        
+                        query = 'SELECT hash_id FROM local_ratings WHERE service_id = ?;'
+                        
+                        this_service_hash_ids = self._STS( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
+                        
+                        if result_hash_ids is None:
+                            
+                            result_hash_ids = this_service_hash_ids
+                            
+                        else:
+                            
+                            result_hash_ids.intersection_update( this_service_hash_ids )
+                            
+                        
+                    
+                    for service_id in incdec_service_ids:
+                        
+                        query = 'SELECT hash_id FROM local_incdec_ratings WHERE service_id = ? AND rating > 0;'
+                        
+                        this_service_hash_ids = self._STS( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
+                        
+                        if result_hash_ids is None:
+                            
+                            result_hash_ids = this_service_hash_ids
+                            
+                        else:
+                            
+                            result_hash_ids.intersection_update( this_service_hash_ids )
+                            
+                        
+                    
+                    if result_hash_ids is None:
+                        
+                        result_hash_ids = set()
+                        
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, result_hash_ids )
+                    
+                else:
+                    
+                    # the files are not-rated everywhere, i.e. anything not rated anywhere
+                    
+                    predicate_exclusive = ClientSearchPredicate.Predicate(
+                        ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED,
+                        (
+                            HC.LOGICAL_OPERATOR_ANY,
+                            service_specifier_primary,
+                            service_specifier_secondary,
+                            True
+                        )
+                    )
+                    
+                    undesired_hash_ids = self._DoAdvancedRatingPredicate( predicate_exclusive, set( query_hash_ids ), job_status = job_status )
+                    
+                    query_hash_ids.difference_update( undesired_hash_ids )
+                    
+                
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoAdvancedRatingPredicateExclusiveOnly( self, predicate: ClientSearchPredicate.Predicate, query_hash_ids: set[ int ], job_status: ClientThreading.JobStatus | None = None ) -> set[ int ]:
+        
+        ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = predicate.GetValue()
+        
+        if not rated and logical_operator != HC.LOGICAL_OPERATOR_ONLY:
+            
+            query_hash_ids = self._DoAdvancedRatingPredicate( predicate, query_hash_ids, job_status = job_status )
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoAdvancedRatingPredicateInclusiveOnly( self, predicate: ClientSearchPredicate.Predicate, query_hash_ids: set[ int ] | None, job_status: ClientThreading.JobStatus | None = None ) -> set[ int ] | None:
+        
+        ( logical_operator, service_specifier_primary, service_specifier_secondary, rated ) = predicate.GetValue()
+        
+        if rated or logical_operator == HC.LOGICAL_OPERATOR_ONLY:
+            
+            query_hash_ids = self._DoAdvancedRatingPredicate( predicate, query_hash_ids, job_status = job_status )
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoNotePreds( self, system_predicates: ClientSearchFileSearchContext.FileSystemPredicates, query_hash_ids: set[ int ] | None, job_status: ClientThreading.JobStatus | None = None ) -> set[ int ] | None:
+        
+        simple_preds = system_predicates.GetSimpleInfo()
+        
+        number_tests = simple_preds.get( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_NOTES, [] )
+        
+        if len( number_tests ) > 0:
+            
+            with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                
+                self._AnalyzeTempTable( temp_table_name )
+                
+                num_notes_hash_ids = self.modules_notes_map.GetHashIdsFromNumNotes( number_tests, query_hash_ids, temp_table_name, job_status = job_status )
+                
+                query_hash_ids = intersection_update_qhi( query_hash_ids, num_notes_hash_ids )
+                
+            
+        
+        if 'has_note_names' in simple_preds:
+            
+            inclusive_note_names = simple_preds[ 'has_note_names' ]
+            
+            for note_name in inclusive_note_names:
+                
+                with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                    
+                    self._AnalyzeTempTable( temp_table_name )
+                    
+                    notes_hash_ids = self.modules_notes_map.GetHashIdsFromNoteName( note_name, temp_table_name, job_status = job_status )
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, notes_hash_ids )
+                    
+                
+            
+        
+        if 'not_has_note_names' in simple_preds:
+            
+            exclusive_note_names = simple_preds[ 'not_has_note_names' ]
+            
+            for note_name in exclusive_note_names:
+                
+                with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                    
+                    self._AnalyzeTempTable( temp_table_name )
+                    
+                    notes_hash_ids = self.modules_notes_map.GetHashIdsFromNoteName( note_name, temp_table_name, job_status = job_status )
+                    
+                    query_hash_ids.difference_update( notes_hash_ids )
+                    
+                
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoOrPreds(
+        self,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        job_status: ClientThreading.JobStatus | None,
+        or_predicates: collections.abc.Collection[ ClientSearchPredicate.Predicate ],
+        query_hash_ids: set[ int ] | None
+    ) -> set[ int ] | None:
+            
+            # better typically to sort by fewest num of preds first, establishing query_hash_ids for longer chains
+            def or_sort_key( p ):
+                
+                return len( p.GetValue() )
+                
+            
+            or_predicates = sorted( or_predicates, key = or_sort_key )
+            
+            for or_predicate in or_predicates:
+                
+                # blue eyes OR green eyes
+                
+                or_query_hash_ids = set()
+                
+                or_subpredicates = or_predicate.GetValue()
+                
+                # [ blue eyes, green eyes ]
+                
+                for or_subpredicate in or_subpredicates:
+                    
+                    # blue eyes
+                    
+                    or_search_context = file_search_context.Duplicate()
+                    
+                    or_search_context.SetPredicates( [ or_subpredicate ] )
+                    
+                    # I pass query_hash_ids here to make these inefficient sub-searches (like -tag) potentially much faster
+                    or_query_hash_ids.update( self.GetHashIdsFromQuery( or_search_context, job_status, query_hash_ids = query_hash_ids, apply_implicit_limit = False, sort_by = None, limit_sort_by = None ) )
+                    
+                    if job_status.IsCancelled():
+                        
+                        return set()
+                        
+                    
+                
+                query_hash_ids = intersection_update_qhi( query_hash_ids, or_query_hash_ids )
+                
+            
+            return query_hash_ids
+            
+        
+    
+    def _DoSimpleRatingPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: set[ int ] | None, job_status: ClientThreading.JobStatus | None = None ) -> set[ int ] | None:
+        
+        cancelled_hook = None
+        
+        if job_status is not None:
+            
+            cancelled_hook = job_status.IsCancelled
+            
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        for ( operator, value, rating_service_key ) in system_predicates.GetRatingsPredicates():
+            
+            service_id = self.modules_services.GetServiceId( rating_service_key )
+            
+            if value == 'not rated':
+                
+                continue
+                
+            
+            if value == 'rated':
+                
+                rating_hash_ids = self._STI( self._ExecuteCancellable( 'SELECT hash_id FROM local_ratings WHERE service_id = ?;', ( service_id, ), cancelled_hook ) )
+                
+                query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
+                
+            else:
+                
+                service = CG.client_controller.services_manager.GetService( rating_service_key )
+                
+                service_type = service.GetServiceType()
+                
+                if service_type in HC.STAR_RATINGS_SERVICES:
+                    
+                    if service.GetServiceType() == HC.LOCAL_RATING_LIKE:
+                        
+                        half_a_star_value = 0.5
+                        
+                    else:
+                        
+                        one_star_value = service.GetOneStarValue()
+                        
+                        half_a_star_value = one_star_value / 2
+                        
+                    
+                    if isinstance( value, str ):
+                        
+                        value = float( value )
+                        
+                    
+                    # floats are a pain! as is storing rating as 0.0-1.0 and then allowing number of stars to change!
+                    
+                    if operator == HC.UNICODE_APPROX_EQUAL:
+                        
+                        predicate = str( ( value - half_a_star_value ) * 0.8 ) + ' < rating AND rating < ' + str( ( value + half_a_star_value ) * 1.2 )
+                        
+                    elif operator == '<':
+                        
+                        predicate = 'rating <= ' + str( value - half_a_star_value )
+                        
+                    elif operator == '>':
+                        
+                        predicate = 'rating > ' + str( value + half_a_star_value )
+                        
+                    elif operator == '=':
+                        
+                        predicate = str( value - half_a_star_value ) + ' < rating AND rating <= ' + str( value + half_a_star_value )
+                        
+                    else:
+                        
+                        continue
+                        
+                    
+                    query = f'SELECT hash_id FROM local_ratings WHERE service_id = ? AND {predicate};'
+                    
+                    rating_hash_ids = self._STI( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
+                    
+                elif service_type == HC.LOCAL_RATING_INCDEC:
+                    
+                    if operator == '<' or ( operator == '=' and value == 0 ):
+                        
+                        continue
+                        
+                    else:
+                        
+                        if operator == HC.UNICODE_APPROX_EQUAL:
+                            
+                            min_value = max( value - 1, int( value * 0.8 ) )
+                            max_value = min( value + 1, int( value * 1.2 ) )
+                            
+                            predicate = '{} < rating AND rating < {}'.format( min_value, max_value )
+                            
+                        else:
+                            
+                            predicate = 'rating {} {}'.format( operator, value )
+                            
+                        
+                        query = f'SELECT hash_id FROM local_incdec_ratings WHERE service_id = ? AND {predicate};'
+                        
+                        rating_hash_ids = self._STI( self._ExecuteCancellable( query, ( service_id, ), cancelled_hook ) )
+                        
+                        query_hash_ids = intersection_update_qhi( query_hash_ids, rating_hash_ids )
+                        
+                    
+                
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoSpecificKnownURLPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: set[ int ] | None, allowed_rule_types: collections.abc.Collection[ str ] ) -> set[ int ] | None:
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        is_inbox = system_predicates.MustBeInbox()
+        
+        simple_preds = system_predicates.GetSimpleInfo()
+        
+        if 'known_url_rules' in simple_preds:
+            
+            known_url_rules = list( simple_preds[ 'known_url_rules' ] )
+            
+            magic_sort_list = [
+                'exact_match',
+                'domain',
+                'url_class',
+                'url_match',
+                'regex'
+            ]
+            
+            def url_rules_key( row ):
+                
+                rule_type = row[1]
+                
+                if rule_type in magic_sort_list:
+                    
+                    return magic_sort_list.index( rule_type )
+                    
+                else:
+                    
+                    return 10
+                    
+                
+            
+            known_url_rules.sort( key = url_rules_key )
+            
+            for ( operator, rule_type, rule ) in known_url_rules:
+                
+                if rule_type not in allowed_rule_types:
+                    
+                    continue
+                    
+                
+                if rule_type == 'exact_match' or ( is_inbox and len( query_hash_ids ) == len( self.modules_files_inbox.inbox_hash_ids ) ):
+                    
+                    url_hash_ids = self.modules_url_map.GetHashIdsFromURLRule( rule_type, rule )
+                    
+                else:
+                    
+                    with self._MakeTemporaryIntegerTable( query_hash_ids, 'hash_id' ) as temp_table_name:
+                        
+                        self._AnalyzeTempTable( temp_table_name )
+                        
+                        url_hash_ids = self.modules_url_map.GetHashIdsFromURLRule( rule_type, rule, hash_ids = query_hash_ids, hash_ids_table_name = temp_table_name )
+                        
+                    
+                
+                if operator: # inclusive
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, url_hash_ids )
+                    
+                else:
+                    
+                    query_hash_ids.difference_update( url_hash_ids )
+                    
+                
+            
+        
+        return query_hash_ids
+        
+    
+    def _DoTimestampPreds( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext, query_hash_ids: set[ int ] | None, search_state: SearchState, job_status: ClientThreading.JobStatus | None = None ) -> set[ int ] | None:
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        location_context = file_search_context.GetLocationContext()
+        not_all_known_files = not location_context.IsAllKnownFiles()
+        
+        system_pred_type_to_timestamp_ranges_ms = system_predicates.GetTimestampRangesMS()
+        
+        cancelled_hook = None
+        
+        if job_status is not None:
+            
+            cancelled_hook = job_status.IsCancelled
+            
+        
+        if not_all_known_files:
+            
+            # in future we will hang an explicit locationcontext off this predicate
+            # for now we'll check current domain
+            # if domain is deleted, we search deletion time
+            
+            if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME in system_pred_type_to_timestamp_ranges_ms:
+                
+                import_timestamp_predicates = []
+                
+                timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME ]
+                
+                if '>' in timestamp_ranges_ms:
+                    
+                    import_timestamp_predicates.append( 'timestamp_ms >= {}'.format( timestamp_ranges_ms[ '>' ] ) )
+                    
+                
+                if '<' in timestamp_ranges_ms:
+                    
+                    import_timestamp_predicates.append( 'timestamp_ms <= {}'.format( timestamp_ranges_ms[ '<' ] ) )
+                    
+                
+                if len( import_timestamp_predicates ) > 0:
+                    
+                    pred_string = ' AND '.join( import_timestamp_predicates )
+                    
+                    table_names = []
+                    
+                    table_names.extend( ( ClientDBFilesStorage.GenerateFilesTableName( self.modules_services.GetServiceId( service_key ), HC.CONTENT_STATUS_CURRENT ) for service_key in location_context.current_service_keys ) )
+                    table_names.extend( ( ClientDBFilesStorage.GenerateFilesTableName( self.modules_services.GetServiceId( service_key ), HC.CONTENT_STATUS_DELETED ) for service_key in location_context.deleted_service_keys ) )
+                    
+                    import_timestamp_hash_ids = set()
+                    
+                    for table_name in table_names:
+                        
+                        import_timestamp_hash_ids.update( self._STS( self._ExecuteCancellable( 'SELECT hash_id FROM {} WHERE {};'.format( table_name, pred_string ), (), cancelled_hook ) ) )
+                        
+                    
+                    query_hash_ids = intersection_update_qhi( query_hash_ids, import_timestamp_hash_ids )
+                    
+                    search_state.have_cross_referenced_file_locations = True
+                    
+                
+            
+        
+        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME in system_pred_type_to_timestamp_ranges_ms:
+            
+            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME ]
+            
+            if len( timestamp_ranges_ms ) > 0:
+                
+                modified_timestamp_hash_ids = self.modules_files_timestamps.GetHashIdsInRange( HC.TIMESTAMP_TYPE_MODIFIED_AGGREGATE, timestamp_ranges_ms, job_status = job_status )
+                
+                query_hash_ids = intersection_update_qhi( query_hash_ids, modified_timestamp_hash_ids )
+                
+            
+        
+        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME in system_pred_type_to_timestamp_ranges_ms:
+            
+            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ]
+            
+            if len( timestamp_ranges_ms ) > 0:
+                
+                archived_timestamp_hash_ids = self.modules_files_timestamps.GetHashIdsInRange( HC.TIMESTAMP_TYPE_ARCHIVED, timestamp_ranges_ms, job_status = job_status )
+                
+                query_hash_ids = intersection_update_qhi( query_hash_ids, archived_timestamp_hash_ids )
+                
+            
+        
+        if ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME in system_pred_type_to_timestamp_ranges_ms:
+            
+            timestamp_ranges_ms = system_pred_type_to_timestamp_ranges_ms[ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME ]
+            
+            min_last_viewed_timestamp_ms = timestamp_ranges_ms.get( '>', None )
+            max_last_viewed_timestamp_ms = timestamp_ranges_ms.get( '<', None )
+            
+            last_viewed_time_hash_ids = self.modules_files_viewing_stats.GetHashIdsFromLastViewed( min_last_viewed_timestamp_ms = min_last_viewed_timestamp_ms, max_last_viewed_timestamp_ms = max_last_viewed_timestamp_ms, job_status = job_status )
+            
+            query_hash_ids = intersection_update_qhi( query_hash_ids, last_viewed_time_hash_ids )
+            
+        
+        return query_hash_ids
+        
+    
+    def GetHashIdsFromQuery(
+        self,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        job_status: ClientThreading.JobStatus | None = None,
+        query_hash_ids: set[ int ] | None = None,
+        apply_implicit_limit: bool = True,
+        sort_by: ClientMedia.MediaSort | None = None,
+        limit_sort_by: ClientMedia.MediaSort | None = None
+    ) -> list[ int ]:
+        
+        if job_status is None:
+            
+            job_status = ClientThreading.JobStatus( cancellable = True )
+            
+        
+        if query_hash_ids is not None:
+            
+            query_hash_ids = set( query_hash_ids )
+            
+        
+        system_predicates = file_search_context.GetSystemPredicates()
+        
+        system_limit = system_predicates.GetLimit( apply_implicit_limit = apply_implicit_limit )
+        
+        if system_limit == 0:
+            
+            return []
+            
+        
+        location_context = file_search_context.GetLocationContext()
+        tag_context = file_search_context.GetTagContext()
+        
+        tag_service_key = tag_context.service_key
+        
+        if location_context.IsEmpty():
+            
+            return []
+            
+        
+        current_file_service_ids = set()
+        
+        for current_service_key in location_context.current_service_keys:
+            
+            try:
+                
+                current_file_service_id = self.modules_services.GetServiceId( current_service_key )
+                
+            except HydrusExceptions.DataMissing:
+                
+                HydrusData.ShowText( 'A file search query was run for a file service that does not exist! If you just removed a service, you might want to try checking the search and/or restarting the client.' )
+                
+                return []
+                
+            
+            current_file_service_ids.add( current_file_service_id )
+            
+        
+        deleted_file_service_ids = set()
+        
+        for deleted_service_key in location_context.deleted_service_keys:
+            
+            try:
+                
+                deleted_file_service_id = self.modules_services.GetServiceId( deleted_service_key )
+                
+            except HydrusExceptions.DataMissing:
+                
+                HydrusData.ShowText( 'A file search query was run for a file service that does not exist! If you just removed a service, you might want to try checking the search and/or restarting the client.' )
+                
+                return []
+                
+            
+            deleted_file_service_ids.add( deleted_file_service_id )
+            
+        
+        db_location_context = self.modules_files_storage.GetDBLocationContext( location_context )
+        
+        try:
+            
+            tag_service_id = self.modules_services.GetServiceId( tag_service_key )
+            
+        except HydrusExceptions.DataMissing:
+            
+            HydrusData.ShowText( 'A file search query was run for a tag service that does not exist! If you just removed a service, you might want to check the search and/or restart the client.' )
+            
+            return []
+            
+        
+        tags_to_include = file_search_context.GetTagsToInclude()
+        
+        namespaces_to_include = file_search_context.GetNamespacesToInclude()
+        
+        wildcards_to_include = file_search_context.GetWildcardsToInclude()
+        
+        there_are_tags_to_search = len( tags_to_include ) > 0 or len( namespaces_to_include ) > 0 or len( wildcards_to_include ) > 0
+        
+        # ok, let's set up the big list of simple search preds
+        
+        or_predicates = file_search_context.GetORPredicates()
+        
+        done_or_predicates = len( or_predicates ) == 0
+        
+        done_files_info_predicates = False
+        
+        have_cross_referenced_file_locations = False
+        
+        files_info_predicates = GetFilesInfoPredicates( system_predicates )
+        
+        there_are_simple_files_info_preds_to_search_for = len( files_info_predicates ) > 0
+        
+        done_tricky_incdec_ratings = False
+        
+        search_state = SearchState(
+            done_or_predicates,
+            done_files_info_predicates,
+            have_cross_referenced_file_locations,
+            there_are_tags_to_search,
+            there_are_simple_files_info_preds_to_search_for,
+            done_tricky_incdec_ratings
+        )
+        
+        # And now the search proper
+        
+        if search_state.DoOrPredsInFirstRound():
+            
+            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
+            
+            search_state.NotifyDoneOrPreds()
+            
+            if job_status.IsCancelled():
+                
+                return []
+                
+            
+        
+        #
+        
+        query_hash_ids = self._Do1PreInclusiveTagPreds( file_search_context, job_status, query_hash_ids, db_location_context, search_state )
+        
+        if job_status.IsCancelled():
+            
+            return []
+            
+        
+        # 
+        
+        query_hash_ids = self._Do2InclusiveTagPreds( file_search_context, job_status, query_hash_ids, search_state )
         
         if job_status.IsCancelled():
             
@@ -2576,9 +2925,51 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
         
         #
         
-        allowed_job_types = [ 'regex' ]
+        if search_state.DoOrPredsInSecondRound():
+            
+            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
+            
+            search_state.NotifyDoneOrPreds()
+            
+            if job_status.IsCancelled():
+                
+                return []
+                
+            
         
-        query_hash_ids = self._DoSpecificKnownURLPreds( file_search_context, query_hash_ids, allowed_job_types )
+        # now the simple preds and desperate last shot to populate query_hash_ids
+        
+        query_hash_ids = self._Do3FileInfoPreds( file_search_context, job_status, query_hash_ids, db_location_context, search_state )
+        
+        # at this point, query_hash_ids has something in it
+        
+        query_hash_ids = self._Do4InexpensivePostFileCrossReferencePreds( file_search_context, job_status, query_hash_ids, search_state )
+        
+        #
+        
+        if job_status.IsCancelled():
+            
+            return []
+            
+        
+        #
+        
+        # OR round three--final chance to kick in, and the preferred one. query_hash_ids is now set, so this shouldn't be super slow for most scenarios
+        if not search_state.done_or_predicates:
+            
+            query_hash_ids = self._DoOrPreds( file_search_context, job_status, or_predicates, query_hash_ids )
+            
+            search_state.NotifyDoneOrPreds()
+            
+            if job_status.IsCancelled():
+                
+                return []
+                
+            
+        
+        #
+        
+        query_hash_ids = self._Do5ExpensivePostFileCrossReferencePreds( file_search_context, job_status, query_hash_ids, db_location_context, search_state )
         
         if job_status.IsCancelled():
             
@@ -2686,7 +3077,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                         
                     else:
                         
-                        file_service_key = CC.COMBINED_LOCAL_FILE_SERVICE_KEY
+                        file_service_key = CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY
                         
                     
                     file_service_id = self.modules_services.GetServiceId( file_service_key )
@@ -2731,7 +3122,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                     
                     desired_canvas_types = CG.client_controller.new_options.GetIntegerList( 'file_viewing_stats_interesting_canvas_types' )
                     
-                    desired_canvas_types_splayed = HydrusData.SplayListForDB( desired_canvas_types )
+                    desired_canvas_types_splayed = HydrusLists.SplayListForDB( desired_canvas_types )
                     
                     if sort_data == CC.SORT_FILES_BY_MEDIA_VIEWS:
                         
@@ -2804,7 +3195,7 @@ class ClientDBFilesQuery( ClientDBModule.ClientDBModule ):
                         num_frames = row[1]
                         duration_ms = row[2]
                         
-                        if num_frames is None or duration_ms is None or num_frames == 0 or duration_ms == 0:
+                        if num_frames is None or duration_ms is None or num_frames <= 0 or duration_ms <= 0:
                             
                             return -1
                             

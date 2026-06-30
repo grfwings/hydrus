@@ -11,6 +11,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTime
 
@@ -141,6 +142,10 @@ class PopupMessage( PopupWindow ):
         self._network_job_ctrl.hide()
         self._time_network_job_disappeared = 0
         
+        # this is kind of stupid, but whatever for now
+        width = ClientGUIFunctions.ConvertTextToPixelWidth( self._network_job_ctrl, 58 )
+        self._network_job_ctrl.setMinimumWidth( width )
+        
         self._copy_to_clipboard_button = ClientGUICommon.BetterButton( self, 'copy to clipboard', self.CopyToClipboard )
         self._copy_to_clipboard_button_ev = QP.WidgetEventFilter( self._copy_to_clipboard_button )
         self._copy_to_clipboard_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
@@ -173,12 +178,12 @@ class PopupMessage( PopupWindow ):
         self._copy_tb_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._copy_tb_button.hide()
         
-        self._pause_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().pause, self.PausePlay )
+        self._pause_button = ClientGUICommon.IconButton( self, CC.global_icons().pause, self.PausePlay )
         self._pause_button_ev = QP.WidgetEventFilter( self._pause_button )
         self._pause_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._pause_button.hide()
         
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, self.Cancel )
+        self._cancel_button = ClientGUICommon.IconButton( self, CC.global_icons().stop, self.Cancel )
         self._cancel_button_ev = QP.WidgetEventFilter( self._cancel_button )
         self._cancel_button_ev.EVT_RIGHT_DOWN( self.EventDismiss )
         self._cancel_button.hide()
@@ -296,11 +301,11 @@ class PopupMessage( PopupWindow ):
         
         if self._job_status.IsPaused():
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().play )
+            self._pause_button.SetIconSmart( CC.global_icons().play )
             
         else:
             
-            ClientGUIFunctions.SetBitmapButtonBitmap( self._pause_button, CC.global_pixmaps().pause )
+            self._pause_button.SetIconSmart( CC.global_icons().pause )
             
         
     
@@ -312,13 +317,18 @@ class PopupMessage( PopupWindow ):
             
             ( hashes, attached_files_label ) = result
             
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
             
             self._show_files_button.setEnabled( False )
             
             def work_callable():
                 
                 presented_hashes = CG.client_controller.Read( 'filter_hashes', location_context, hashes )
+                
+                if len( presented_hashes ) > 0:
+                    
+                    CG.client_controller.pub( 'new_page_query', location_context, initial_hashes = presented_hashes, page_name = attached_files_label )
+                    
                 
                 return presented_hashes
                 
@@ -335,23 +345,19 @@ class PopupMessage( PopupWindow ):
                         
                     
                 
-                if len( presented_hashes ) > 0:
-                    
-                    CG.client_controller.pub( 'new_page_query', location_context, initial_hashes = presented_hashes, page_name = attached_files_label )
-                    
-                
-                self._show_files_button.setEnabled( True )
-                
             
             def errback_callable( etype, value, tb ):
                 
                 HydrusData.ShowText( 'Sorry, unable to show those files:' )
                 HydrusData.ShowExceptionTuple( etype, value, tb, do_wait = False )
                 
+            
+            def ui_restoration_callable():
+                
                 self._show_files_button.setEnabled( True )
                 
             
-            job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
+            job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable, ui_restoration_callable = ui_restoration_callable )
             
             job.start()
             
@@ -440,7 +446,7 @@ class PopupMessage( PopupWindow ):
         
         #
         
-        popup_gauge_1 = self._job_status.GetIfHasVariable( 'popup_gauge_1' )
+        popup_gauge_1 = self._job_status.GetGauge()
         
         if popup_gauge_1 is not None and not paused:
             
@@ -703,7 +709,7 @@ class JobStatusPopupQueue( object ):
             
         
     
-    def GetJobStatus( self, job_status_key: bytes ) -> typing.Optional[ ClientThreading.JobStatus ]:
+    def GetJobStatus( self, job_status_key: bytes ) -> ClientThreading.JobStatus | None:
         
         with self._lock:
             
@@ -726,7 +732,7 @@ class JobStatusPopupQueue( object ):
             
         
     
-    def GetNextJobStatusToShow( self ) -> typing.Optional[ ClientThreading.JobStatus ]:
+    def GetNextJobStatusToShow( self ) -> ClientThreading.JobStatus | None:
         
         with self._lock:
             
@@ -788,7 +794,7 @@ class JobStatusPopupQueue( object ):
                             
                             new_hashes.extend( hashes )
                             
-                            new_hashes = HydrusData.DedupeList( new_hashes )
+                            new_hashes = HydrusLists.DedupeList( new_hashes )
                             
                             existing_job_status.SetFiles( new_hashes, existing_label )
                             
@@ -910,7 +916,7 @@ class PopupMessageManager( QW.QFrame ):
             # for whatever reason, self._message_vbox.activate does not cause the vbox.sizeHint to be recalculated at this point. it just sits at the last value unless original was (0,0)?!?
             # so we'll do it callafter. it works
             
-            QP.CallAfter( self.MakeSureEverythingFits )
+            CG.client_controller.CallAfterQtSafe( self, self.MakeSureEverythingFits )
             
         
     
@@ -924,7 +930,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
+            message_window: PopupMessage | None = sizer_item.widget()
             
             if not message_window:
                 
@@ -996,7 +1002,7 @@ class PopupMessageManager( QW.QFrame ):
                     
                 
             
-        except:
+        except Exception as e:
             
             text = 'The popup message manager experienced a fatal error and will now stop working! Please restart the client as soon as possible! If this keeps happening, please email the details and your client.log to the hydrus developer.'
             
@@ -1013,11 +1019,6 @@ class PopupMessageManager( QW.QFrame ):
         
     
     def _OKToAlterUI( self ):
-
-        if not QP.isValid( self ):
-            
-            return False
-            
         
         main_gui = self.window()
         
@@ -1062,7 +1063,7 @@ class PopupMessageManager( QW.QFrame ):
             
             sizer_item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = sizer_item.widget()
+            message_window: PopupMessage | None = sizer_item.widget()
             
             if message_window:
                 
@@ -1098,7 +1099,7 @@ class PopupMessageManager( QW.QFrame ):
                 self._CheckPending()
                 
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( traceback.format_exc() )
             
@@ -1116,7 +1117,7 @@ class PopupMessageManager( QW.QFrame ):
         
         for i in range( self._message_vbox.count() ):
             
-            message_window: typing.Optional[ PopupMessage ] = self._message_vbox.itemAt( i ).widget()
+            message_window: PopupMessage | None = self._message_vbox.itemAt( i ).widget()
             
             if not message_window:
                 
@@ -1182,7 +1183,7 @@ class PopupMessageManager( QW.QFrame ):
             
             item = self._message_vbox.itemAt( i )
             
-            message_window: typing.Optional[ PopupMessage ] = item.widget()
+            message_window: PopupMessage | None = item.widget()
             
             if not message_window:
                 
@@ -1261,7 +1262,7 @@ class PopupMessageManager( QW.QFrame ):
                 self._SizeAndPositionAndShow()
                 
             
-        except:
+        except Exception as e:
             
             self._update_job.Cancel()
             
@@ -1459,13 +1460,14 @@ class PopupMessageDialogPanel( QW.QWidget ):
                 self._Update()
                 
             
-        except:
+        except Exception as e:
             
             self._update_job.Cancel()
             
             raise
             
         
+    
 
 class PopupMessageSummaryBar( QW.QFrame ):
     
@@ -1483,7 +1485,9 @@ class PopupMessageSummaryBar( QW.QFrame ):
         self._text = ClientGUICommon.BetterStaticText( self )
         self._text.setAlignment( QC.Qt.AlignmentFlag.AlignLeft | QC.Qt.AlignmentFlag.AlignVCenter )
         
-        self._expand_collapse = ClientGUICommon.BetterButton( self, '\u25bc', self.ExpandCollapse )
+        self._expand_collapse = ClientGUICommon.ExpandCollapseArrowButton( self, False )
+        self._expand_collapse.Expand()
+        self._expand_collapse.expandCollapseFlipped.connect( self.expandCollapse )
         
         dismiss_all = ClientGUICommon.BetterButton( self, 'dismiss all', self.dismissAll.emit )
         
@@ -1492,24 +1496,6 @@ class PopupMessageSummaryBar( QW.QFrame ):
         QP.AddToLayout( hbox, self._expand_collapse, CC.FLAGS_CENTER_PERPENDICULAR )
         
         self.setLayout( hbox )
-        
-    
-    def ExpandCollapse( self ):
-        
-        self.expandCollapse.emit()
-        
-        current_text = self._expand_collapse.text()
-        
-        if current_text == '\u25bc':
-            
-            new_text = '\u25b2'
-            
-        else:
-            
-            new_text = '\u25bc'
-            
-        
-        self._expand_collapse.setText( new_text )
         
     
     def SetNumMessages( self, num_messages_pending ):

@@ -10,93 +10,10 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
 from hydrus.client import ClientThreading
 from hydrus.client.importing import ClientImportFiles
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileFilteringImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import PrefetchImportOptions
 
-def ConvertGalleryIdentifierToGUGKeyAndName( gallery_identifier ):
-    
-    gug_name = ConvertGalleryIdentifierToGUGName( gallery_identifier )
-    
-    from hydrus.client import ClientDefaults
-    
-    gugs = ClientDefaults.GetDefaultGUGs()
-    
-    for gug in gugs:
-        
-        if gug.GetName() == gug_name:
-            
-            return gug.GetGUGKeyAndName()
-            
-        
-    
-    return ( HydrusData.GenerateKey(), gug_name )
-    
-def ConvertGalleryIdentifierToGUGName( gallery_identifier ):
-    
-    site_type = gallery_identifier.GetSiteType()
-    
-    if site_type == HC.SITE_TYPE_DEVIANT_ART:
-        
-        return 'deviant art artist lookup'
-        
-    elif site_type == HC.SITE_TYPE_TUMBLR:
-        
-        return 'tumblr username lookup'
-        
-    elif site_type == HC.SITE_TYPE_NEWGROUNDS:
-        
-        return 'newgrounds artist lookup'
-        
-    elif site_type == HC.SITE_TYPE_HENTAI_FOUNDRY_ARTIST:
-        
-        return 'hentai foundry artist lookup'
-        
-    elif site_type == HC.SITE_TYPE_HENTAI_FOUNDRY_TAGS:
-        
-        return 'hentai foundry tag search'
-        
-    elif site_type == HC.SITE_TYPE_PIXIV_ARTIST_ID:
-        
-        return 'pixiv artist lookup'
-        
-    elif site_type == HC.SITE_TYPE_PIXIV_TAG:
-        
-        return 'pixiv tag search'
-        
-    elif site_type == HC.SITE_TYPE_BOORU:
-        
-        booru_name_converter = {}
-        
-        booru_name_converter[ 'gelbooru' ] = 'gelbooru tag search'
-        booru_name_converter[ 'safebooru' ] = 'safebooru tag search'
-        booru_name_converter[ 'e621' ] = 'e621 tag search'
-        booru_name_converter[ 'rule34@paheal' ] = 'rule34.paheal tag search'
-        booru_name_converter[ 'danbooru' ] = 'danbooru tag search'
-        booru_name_converter[ 'rule34@booru.org' ] = 'rule34.xxx tag search'
-        booru_name_converter[ 'furry@booru.org' ] = 'furry.booru.org tag search'
-        booru_name_converter[ 'xbooru' ] = 'xbooru tag search'
-        booru_name_converter[ 'konachan' ] = 'konachan tag search'
-        booru_name_converter[ 'yande.re' ] = 'yande.re tag search'
-        booru_name_converter[ 'tbib' ] = 'tbib tag search'
-        booru_name_converter[ 'sankaku chan' ] = 'sankaku channel tag search'
-        booru_name_converter[ 'sankaku idol' ] = 'sankaku idol tag search'
-        booru_name_converter[ 'rule34hentai' ] = 'rule34hentai tag search'
-        
-        booru_name = gallery_identifier.GetAdditionalInfo()
-        
-        if booru_name in booru_name_converter:
-            
-            return booru_name_converter[ booru_name ]
-            
-        else:
-            
-            return booru_name
-            
-        
-    else:
-        
-        return 'unknown site'
-        
-    
 class GalleryIdentifier( HydrusSerialisable.SerialisableBase ):
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_GALLERY_IDENTIFIER
@@ -133,12 +50,7 @@ class GalleryIdentifier( HydrusSerialisable.SerialisableBase ):
     
     def __repr__( self ):
         
-        text = 'Gallery Identifier: ' + HC.site_type_string_lookup[ self._site_type ]
-        
-        if self._site_type == HC.SITE_TYPE_BOORU:
-            
-            text += ': ' + str( self._additional_info )
-            
+        text = 'Gallery Identifier: Unknown'
         
         return text
         
@@ -165,18 +77,10 @@ class GalleryIdentifier( HydrusSerialisable.SerialisableBase ):
     
     def ToString( self ):
         
-        text = HC.site_type_string_lookup[ self._site_type ]
-        
-        if self._site_type == HC.SITE_TYPE_BOORU and self._additional_info is not None:
-            
-            booru_name = self._additional_info
-            
-            text = booru_name
-            
-        
-        return text
+        return 'unknown downloader'
         
     
+
 HydrusSerialisable.SERIALISABLE_TYPES_TO_OBJECT_TYPES[ HydrusSerialisable.SERIALISABLE_TYPE_GALLERY_IDENTIFIER ] = GalleryIdentifier
 
 class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
@@ -245,9 +149,10 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                 total_hashes_in_this_run = 0
                 total_successful_hashes_in_this_run = 0
                 
-                self._wake_event.wait( 5 )
+                self._wake_from_idle_sleep_event.wait( 5 )
                 
-                self._wake_event.clear()
+                self._wake_from_work_sleep_event.clear()
+                self._wake_from_idle_sleep_event.clear()
                 
                 continue
                 
@@ -265,8 +170,8 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
             
             total_done = total_hashes_in_this_run - len( hashes_still_to_download_in_this_run )
             
-            job_status.SetStatusText( 'downloading files from remote services: {}'.format( HydrusNumbers.ValueRangeToPrettyString( total_done, total_hashes_in_this_run ) ) )
-            job_status.SetVariable( 'popup_gauge_1', ( total_done, total_hashes_in_this_run ) )
+            job_status.SetStatusText( 'downloading files: {}'.format( HydrusNumbers.ValueRangeToPrettyString( total_done, total_hashes_in_this_run ) ) )
+            job_status.SetGauge( total_done, total_hashes_in_this_run )
             
             try:
                 
@@ -279,7 +184,7 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 random.shuffle( service_keys )
                 
-                if CC.COMBINED_LOCAL_FILE_SERVICE_KEY in service_keys:
+                if CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in service_keys:
                     
                     total_successful_hashes_in_this_run += 1
                     
@@ -292,7 +197,7 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                         
                         service = self._controller.services_manager.GetService( service_key )
                         
-                    except:
+                    except Exception as e:
                         
                         continue
                         
@@ -305,31 +210,27 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                             
                             if file_repository.IsFunctional():
                                 
-                                ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+                                ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'repo_file_import' )
                                 
                                 try:
                                     
                                     file_repository.Request( HC.GET, 'file', { 'hash' : hash }, temp_path = temp_path )
                                     
-                                    exclude_deleted = False # this is the important part here
-                                    preimport_hash_check_type = FileImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE
-                                    preimport_url_check_type = FileImportOptions.DO_CHECK
-                                    preimport_url_check_looks_for_neighbour_spam = True
-                                    allow_decompression_bombs = True
-                                    min_size = None
-                                    max_size = None
-                                    max_gif_size = None
-                                    min_resolution = None
-                                    max_resolution = None
-                                    automatic_archive = False
-                                    associate_primary_urls = True
-                                    associate_source_urls = True
+                                    prefetch_import_options = PrefetchImportOptions.PrefetchImportOptions()
                                     
-                                    file_import_options = FileImportOptions.FileImportOptions()
+                                    prefetch_import_options.SetPreImportHashCheckType( PrefetchImportOptions.DO_CHECK_AND_MATCHES_ARE_DISPOSITIVE )
+                                    prefetch_import_options.SetPreImportURLCheckType( PrefetchImportOptions.DO_CHECK )
+                                    prefetch_import_options.SetPreImportURLCheckLooksForNeighbourSpam( True )
                                     
-                                    file_import_options.SetPreImportOptions( exclude_deleted, preimport_hash_check_type, preimport_url_check_type, allow_decompression_bombs, min_size, max_size, max_gif_size, min_resolution, max_resolution )
-                                    file_import_options.SetPreImportURLCheckLooksForNeighbourSpam( preimport_url_check_looks_for_neighbour_spam )
-                                    file_import_options.SetPostImportOptions( automatic_archive, associate_primary_urls, associate_source_urls )
+                                    file_filtering_import_options = FileFilteringImportOptions.FileFilteringImportOptions()
+                                    
+                                    file_filtering_import_options.SetAllowsDecompressionBombs( True )
+                                    file_filtering_import_options.SetExcludesDeleted( False ) # important
+                                    
+                                    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
+                                    
+                                    file_import_options.SetPrefetchImportOptions( prefetch_import_options )
+                                    file_import_options.SetFileFilteringImportOptions( file_filtering_import_options )
                                     
                                     file_import_job = ClientImportFiles.FileImportJob( temp_path, file_import_options, human_file_description = f'Downloaded File - {hash.hex()}' )
                                     
@@ -376,7 +277,7 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                 if len( hashes_still_to_download_in_this_run ) == 0:
                     
                     job_status.DeleteStatusText()
-                    job_status.DeleteVariable( 'popup_gauge_1' )
+                    job_status.DeleteGauge()
                     
                     if total_successful_hashes_in_this_run > 0:
                         

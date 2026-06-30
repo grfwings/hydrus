@@ -1,7 +1,6 @@
 import collections.abc
 import hashlib
 import os
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -9,6 +8,7 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTemp
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
@@ -17,6 +17,7 @@ from hydrus.core.files import HydrusArchiveHandling
 from hydrus.core.files import HydrusClipHandling
 from hydrus.core.files import HydrusFlashHandling
 from hydrus.core.files import HydrusKritaHandling
+from hydrus.core.files import HydrusPaintNETHandling
 from hydrus.core.files import HydrusPDFHandling
 from hydrus.core.files import HydrusProcreateHandling
 from hydrus.core.files import HydrusPSDHandling
@@ -25,76 +26,62 @@ from hydrus.core.files import HydrusUgoiraHandling
 from hydrus.core.files import HydrusVideoHandling
 from hydrus.core.files import HydrusOfficeOpenXMLHandling
 from hydrus.core.files import HydrusOLEHandling
+from hydrus.core.files import HydrusORAHandling
 from hydrus.core.files.images import HydrusImageHandling
 from hydrus.core.networking import HydrusNetwork
 
-try:
+mimes_to_default_thumbnail_paths = collections.defaultdict( lambda: HydrusStaticDir.GetStaticPath( 'hydrus.png' ) )
+
+def InitialiseMimesToDefaultThumbnailPaths():
     
-    # noinspection PyUnresolvedReferences
-    import speedcopy
-    
-    speedcopy.patch_copyfile()
-    
-    SPEEDCOPY_OK = True
-    
-except Exception as speedcopy_e:
-    
-    if not isinstance( speedcopy_e, ImportError ):
+    for mime in HC.AUDIO:
         
-        HydrusData.Print( 'Failed to initialise speedcopy:' )
-        HydrusData.PrintException( speedcopy_e )
+        mimes_to_default_thumbnail_paths[ mime ] = HydrusStaticDir.GetStaticPath( 'audio.png' )
         
     
-    SPEEDCOPY_OK = False
+    for mime in HC.VIDEO:
+        
+        mimes_to_default_thumbnail_paths[ mime ] = HydrusStaticDir.GetStaticPath( 'video.png' )
+        
     
-
-mimes_to_default_thumbnail_paths = collections.defaultdict( lambda: os.path.join( HC.STATIC_DIR, 'hydrus.png' ) )
-
-for mime in HC.AUDIO:
+    for mime in HC.ANIMATIONS:
+        
+        mimes_to_default_thumbnail_paths[ mime ] = HydrusStaticDir.GetStaticPath( 'video.png' )
+        
     
-    mimes_to_default_thumbnail_paths[ mime ] = os.path.join( os.path.join( HC.STATIC_DIR, 'audio.png' ) )
+    for mime in HC.ARCHIVES:
+        
+        mimes_to_default_thumbnail_paths[ mime ] = HydrusStaticDir.GetStaticPath( 'zip.png' )
+        
     
-
-for mime in HC.VIDEO:
+    for mime in HC.IMAGES:
+        
+        mimes_to_default_thumbnail_paths[ mime ] = HydrusStaticDir.GetStaticPath( 'image.png' )
+        
     
-    mimes_to_default_thumbnail_paths[ mime ] = os.path.join( os.path.join( HC.STATIC_DIR, 'video.png' ) )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_UNKNOWN ] = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
     
-
-for mime in HC.ANIMATIONS:
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PDF ] = HydrusStaticDir.GetStaticPath( 'pdf.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_DOCX ] = HydrusStaticDir.GetStaticPath( 'docx.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_XLSX ] = HydrusStaticDir.GetStaticPath( 'xlsx.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PPTX ] = HydrusStaticDir.GetStaticPath( 'pptx.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_DOC ] = HydrusStaticDir.GetStaticPath( 'doc.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_XLS ] = HydrusStaticDir.GetStaticPath( 'xls.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PPT ] = HydrusStaticDir.GetStaticPath( 'ppt.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_EPUB ] = HydrusStaticDir.GetStaticPath( 'epub.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_DJVU ] = HydrusStaticDir.GetStaticPath( 'djvu.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PSD ] = HydrusStaticDir.GetStaticPath( 'psd.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_CLIP ] = HydrusStaticDir.GetStaticPath( 'clip.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_SAI2 ] = HydrusStaticDir.GetStaticPath( 'sai.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_KRITA ] = HydrusStaticDir.GetStaticPath( 'krita.png' )
+    mimes_to_default_thumbnail_paths[ HC.IMAGE_OPENRASTER ] = HydrusStaticDir.GetStaticPath( 'image.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PAINT_DOT_NET ] = HydrusStaticDir.GetStaticPath( 'paintnet.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_FLASH ] = HydrusStaticDir.GetStaticPath( 'flash.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_XCF ] = HydrusStaticDir.GetStaticPath( 'xcf.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_PROCREATE ] = HydrusStaticDir.GetStaticPath( 'procreate.png' )
+    mimes_to_default_thumbnail_paths[ HC.APPLICATION_RTF ] = HydrusStaticDir.GetStaticPath( 'rtf.png' )
+    mimes_to_default_thumbnail_paths[ HC.IMAGE_SVG ] = HydrusStaticDir.GetStaticPath( 'svg.png' )
     
-    mimes_to_default_thumbnail_paths[ mime ] = os.path.join( os.path.join( HC.STATIC_DIR, 'video.png' ) )
-    
-
-for mime in HC.ARCHIVES:
-    
-    mimes_to_default_thumbnail_paths[ mime ] = png_path = os.path.join( HC.STATIC_DIR, 'zip.png' )
-    
-
-for mime in HC.IMAGES:
-    
-    mimes_to_default_thumbnail_paths[ mime ] = png_path = os.path.join( HC.STATIC_DIR, 'image.png' )
-    
-
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_UNKNOWN ] = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
-
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_PDF ] = os.path.join( HC.STATIC_DIR, 'pdf.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_DOCX ] = os.path.join( HC.STATIC_DIR, 'docx.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_XLSX ] = os.path.join( HC.STATIC_DIR, 'xlsx.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_PPTX ] = os.path.join( HC.STATIC_DIR, 'pptx.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_DOC ] = os.path.join( HC.STATIC_DIR, 'doc.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_XLS ] = os.path.join( HC.STATIC_DIR, 'xls.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_PPT ] = os.path.join( HC.STATIC_DIR, 'ppt.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_EPUB ] = os.path.join( HC.STATIC_DIR, 'epub.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_DJVU ] = os.path.join( HC.STATIC_DIR, 'djvu.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_PSD ] = os.path.join( HC.STATIC_DIR, 'psd.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_CLIP ] = os.path.join( HC.STATIC_DIR, 'clip.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_SAI2 ] = os.path.join( HC.STATIC_DIR, 'sai.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_KRITA ] = os.path.join( HC.STATIC_DIR, 'krita.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_FLASH ] = os.path.join( HC.STATIC_DIR, 'flash.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_XCF ] = os.path.join( HC.STATIC_DIR, 'xcf.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_PROCREATE ] = os.path.join( HC.STATIC_DIR, 'procreate.png' )
-mimes_to_default_thumbnail_paths[ HC.APPLICATION_RTF ] = os.path.join( HC.STATIC_DIR, 'rtf.png' )
-mimes_to_default_thumbnail_paths[ HC.IMAGE_SVG ] = os.path.join( HC.STATIC_DIR, 'svg.png' )
 
 def GenerateDefaultThumbnail( mime: int, target_resolution: tuple[ int, int ] ):
     
@@ -110,7 +97,7 @@ def GenerateThumbnailBytes( path, target_resolution, mime, duration_ms, num_fram
     return HydrusImageHandling.GenerateThumbnailBytesFromNumPy( thumbnail_numpy )
     
 
-def PrintMoreThumbErrorInfo( e: Exception, message, extra_description: typing.Optional[ str ] = None ):
+def PrintMoreThumbErrorInfo( e: Exception, message, extra_description: str | None = None ):
     
     if not isinstance( e, HydrusExceptions.NoThumbnailFileException ):
         
@@ -127,23 +114,34 @@ def PrintMoreThumbErrorInfo( e: Exception, message, extra_description: typing.Op
 
 def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_frames, percentage_in = 35, extra_description = None ):
     
-    if mime == HC.APPLICATION_CBZ:
+    if mime == HC.APPLICATION_CBZ or mime == HC.APPLICATION_EPUB:
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'cover_page_thumb' )
         
         try:
             
-            HydrusArchiveHandling.ExtractCoverPage( path, temp_path )
+            HydrusArchiveHandling.ExtractCoverPage( path, temp_path, mime )
             
             cover_mime = GetMime( temp_path )
             
-            thumbnail_numpy = HydrusImageHandling.GenerateThumbnailNumPyFromStaticImagePath( temp_path, target_resolution, cover_mime )
+            if cover_mime == HC.TEXT_HTML:
+                
+                raise HydrusExceptions.NoThumbnailFileException( 'Do not support an HTML thumbnail for epubs yet!' )
+                
+            elif cover_mime == HC.IMAGE_SVG:
+                
+                thumbnail_numpy = HydrusSVGHandling.GenerateThumbnailNumPyFromSVGPath( temp_path, target_resolution )
+                
+            else:
+                
+                thumbnail_numpy = HydrusImageHandling.GenerateThumbnailNumPyFromStaticImagePath( temp_path, target_resolution, cover_mime )
+                
             
         except Exception as e:
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         finally:
             
@@ -152,7 +150,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
         
     elif mime == HC.APPLICATION_CLIP:
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'clip_thumb' )
         
         try:
             
@@ -164,7 +162,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         finally:
             
@@ -180,13 +178,39 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
         except Exception as e:
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
-                        
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
+            
+        
+    elif mime == HC.IMAGE_OPENRASTER:
+        
+        try:
+            
+            thumbnail_numpy = HydrusORAHandling.GenerateThumbnailNumPyFromOraPath( path, target_resolution )
+            
+        except Exception as e:
+            
+            PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
+            
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
+            
+        
+    elif mime == HC.APPLICATION_PAINT_DOT_NET:
+        
+        try:
+            
+            thumbnail_numpy = HydrusPaintNETHandling.GenerateThumbnailNumPyFromPaintNET( path, target_resolution )
+            
+        except Exception as e:
+            
+            PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
+            
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.APPLICATION_PROCREATE:
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'procreate_thumb' )
         
         try:
             
@@ -198,7 +222,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         finally:
             
@@ -228,7 +252,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.APPLICATION_PDF:
@@ -241,7 +265,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.APPLICATION_PPTX:
@@ -252,13 +276,13 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
         except HydrusExceptions.NoThumbnailFileException:
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         except Exception as e:
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.APPLICATION_FLASH:
@@ -276,7 +300,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     elif mime == HC.ANIMATION_UGOIRA:
@@ -291,7 +315,7 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             PrintMoreThumbErrorInfo( e, f'Problem generating thumbnail for "{path}".', extra_description = extra_description )
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         
     else: # animations and video
@@ -304,7 +328,14 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
             
             renderer = HydrusVideoHandling.VideoRendererFFMPEG( path, mime, duration_ms, num_frames, target_resolution, start_pos = desired_thumb_frame_index )
             
-            numpy_image = renderer.read_frame()
+            try:
+                
+                numpy_image = renderer.read_frame()
+                
+            finally:
+                
+                renderer.Stop()
+                
             
         except Exception as e:
             
@@ -317,18 +348,20 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
         
         if numpy_image is None and desired_thumb_frame_index != 0:
             
-            if renderer is not None:
-                
-                renderer.Stop()
-                
-            
             # try first frame instead
             
             try:
                 
                 renderer = HydrusVideoHandling.VideoRendererFFMPEG( path, mime, duration_ms, num_frames, target_resolution )
                 
-                numpy_image = renderer.read_frame()
+                try:
+                    
+                    numpy_image = renderer.read_frame()
+                    
+                finally:
+                    
+                    renderer.Stop()
+                    
                 
             except Exception as e:
                 
@@ -342,17 +375,17 @@ def GenerateThumbnailNumPy( path, target_resolution, mime, duration_ms, num_fram
         
         if numpy_image is None:
             
-            thumbnail_numpy = GenerateDefaultThumbnail(mime, target_resolution)
+            thumbnail_numpy = GenerateDefaultThumbnail( mime, target_resolution )
             
         else:
             
             thumbnail_numpy =  HydrusImageHandling.ResizeNumPyImage( numpy_image, target_resolution ) # just in case ffmpeg doesn't deliver right
             
         
-        if renderer is not None:
-            
-            renderer.Stop()
-            
+    
+    if thumbnail_numpy is None:
+        
+        return GenerateDefaultThumbnail( mime, target_resolution )
         
     
     return thumbnail_numpy
@@ -398,7 +431,11 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
         
         if mime == HC.TEXT_HTML:
             
-            raise HydrusExceptions.UnsupportedFileException( 'Looks like HTML -- maybe the client needs to be taught how to parse this?' )
+            raise HydrusExceptions.UnsupportedFileException( 'Looks like HTML -- maybe the client needs to be taught how to recognise this URL and then parse it?' )
+            
+        elif mime == HC.APPLICATION_JSON:
+            
+            raise HydrusExceptions.UnsupportedFileException( 'Looks like JSON -- maybe the client needs to be taught how to recognise this URL and then parse it?' )
             
         elif mime == HC.APPLICATION_UNKNOWN:
             
@@ -412,16 +449,17 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
     
     if mime in HC.PIL_HEIF_MIMES and not HydrusImageHandling.HEIF_OK:
         
-        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-heif library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
+        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you do not have HEIF support, which is needed to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
         
     
     if mime in HC.PIL_AVIF_MIMES and not HydrusImageHandling.AVIF_OK:
         
-        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-avif-plugin library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
+        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you do not have AVIF support! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
         
+    
     if mime == HC.IMAGE_JXL and not HydrusImageHandling.JXL_OK:
         
-        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you need the pillow-jxl-plugin library to support this filetype ({})! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
+        raise HydrusExceptions.UnsupportedFileException( 'Sorry, you do not have JpegXL support! Please rebuild your venv.'.format( HC.mime_string_lookup[ mime ] ) )
         
     
     width = None
@@ -440,19 +478,19 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
         
     
     # keep this in the specific-first, general-last test order
-    if mime == HC.APPLICATION_CBZ:
+    if mime == HC.APPLICATION_CBZ or mime == HC.APPLICATION_EPUB:
         
-        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+        ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'coverpage_file' )
         
         try:
             
-            HydrusArchiveHandling.ExtractCoverPage( path, temp_path )
+            HydrusArchiveHandling.ExtractCoverPage( path, temp_path, mime )
             
             cover_mime = GetMime( temp_path )
             
             ( width, height ) = HydrusImageHandling.GetImageResolution( temp_path, cover_mime )
             
-        except:
+        except Exception as e:
             
             ( width, height ) = ( None, None )
             
@@ -476,13 +514,35 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
             pass
             
         
+    elif mime == HC.IMAGE_OPENRASTER:
+        
+        try:
+            
+            ( width, height ) = HydrusORAHandling.GetOraProperties( path )
+            
+        except HydrusExceptions.NoResolutionFileException:
+            
+            pass
+            
+        
+    elif mime == HC.APPLICATION_PAINT_DOT_NET:
+        
+        try:
+            
+            ( width, height ) = HydrusPaintNETHandling.GetPaintNETResolution( path )
+            
+        except HydrusExceptions.NoResolutionFileException:
+            
+            pass
+            
+        
     elif mime == HC.APPLICATION_PROCREATE:
         
         try:
             
             ( width, height ) = HydrusProcreateHandling.GetProcreateResolution( path )
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -558,12 +618,11 @@ def GetFileInfo( path, mime = None, ok_to_look_for_hydrus_updates = False ):
             HydrusData.PrintException( e )
             
         
-    # must be before VIEWABLE_ANIMATIONS
-    elif mime == HC.ANIMATION_UGOIRA:
+    elif mime == HC.ANIMATION_UGOIRA: # must be before VIEWABLE_ANIMATIONS
         
         ( ( width, height ), duration_ms, num_frames ) = HydrusUgoiraHandling.GetUgoiraProperties( path )
         
-    elif mime in HC.VIDEO or mime in HC.HEIF_TYPE_SEQUENCES or mime == HC.IMAGE_AVIF_SEQUENCE:
+    elif mime in HC.VIDEO or mime in HC.HEIF_TYPE_SEQUENCES or mime in ( HC.IMAGE_AVIF_SEQUENCE, HC.ANIMATION_JXL ):
         
         ( ( width, height ), duration_ms, num_frames, has_audio ) = HydrusVideoHandling.GetFFMPEGVideoProperties( path )
         
@@ -648,7 +707,7 @@ headers_and_mime = [
     ( ( ( [0], [b'BM'] ), ), HC.IMAGE_BMP ),
     ( ( ( [0], [b'\x00\x00\x01\x00', b'\x00\x00\x02\x00'] ), ), HC.IMAGE_ICON ),
     ( ( ( [0], [b'qoif'] ), ), HC.IMAGE_QOI ),
-    ( ( ( [0], [b'\xFF\x0A', b'\0\0\0\x0CJXL \x0D\x0A\x87\x0A'] ), ), HC.IMAGE_JXL ),
+    ( ( ( [0], [b'\xFF\x0A', b'\0\0\0\x0CJXL \x0D\x0A\x87\x0A'] ), ), HC.UNDETERMINED_JXL ),
     ( ( ( [0], [b'CWS', b'FWS', b'ZWS'] ), ), HC.APPLICATION_FLASH ),
     ( ( ( [0], [b'FLV'] ), ), HC.VIDEO_FLV ),
     ( ( ( [0], [b'%PDF'] ), ), HC.APPLICATION_PDF ),
@@ -657,6 +716,8 @@ headers_and_mime = [
     ( ( ( [0], [b'SAI-CANVAS'] ), ), HC.APPLICATION_SAI2 ),
     ( ( ( [0], [b'gimp xcf '] ), ), HC.APPLICATION_XCF ),
     ( ( ( [38, 42, 58, 63],[ b'application/x-krita'] ), ), HC.APPLICATION_KRITA ), # important this comes before zip files because this is also a zip file
+    ( ( ( [38, 42, 58, 63],[ b'image/openraster'] ), ), HC.IMAGE_OPENRASTER ),
+    ( ( ( [0],[ b'PDN3'] ), ), HC.APPLICATION_PAINT_DOT_NET ), # Paint.NET 3.x, which is since 2006 and has xml data internally it seems
     ( ( ( [38, 43],[ b'application/epub+zip'] ), ), HC.APPLICATION_EPUB ),
     ( ( ( [4], [b'FORM'] ), ( [12], [b'DJVU', b'DJVM', b'PM44', b'BM44', b'SDJV'] ), ), HC.APPLICATION_DJVU ),
     ( ( ( [0], [b'{\\rtf'] ), ), HC.APPLICATION_RTF ),
@@ -745,7 +806,7 @@ def GetMime( path, ok_to_look_for_hydrus_updates = False ):
                 return HC.APPLICATION_HYDRUS_UPDATE_DEFINITIONS
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -829,6 +890,18 @@ def GetMime( path, ok_to_look_for_hydrus_updates = False ):
                 else:
                     
                     return HC.IMAGE_GIF
+                    
+                
+            elif mime == HC.UNDETERMINED_JXL:
+                
+                # disabled animated jxl for now--ffmpeg getting in an infinite loop!
+                if HydrusVideoHandling.FileIsAnimated( path ):
+                    
+                    return HC.ANIMATION_JXL
+                    
+                else:
+                    
+                    return HC.IMAGE_JXL
                     
                 
             elif mime == HC.UNDETERMINED_WEBP:

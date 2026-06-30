@@ -10,14 +10,14 @@ try:
     
     CBOR_AVAILABLE = True
     
-except:
+except Exception as e:
     
     pass
     
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusTemp
@@ -27,6 +27,7 @@ from hydrus.core.networking import HydrusServerRequest
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
+from hydrus.client import ClientServices
 from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.metadata import ClientRatings
@@ -37,6 +38,7 @@ from hydrus.client.search import ClientSearchTagContext
 
 # if a variable name isn't defined here, a GET with it won't work
 CLIENT_API_INT_PARAMS = {
+    'duplicate_pair_sort_type',
     'file_id',
     'file_sort_type',
     'potentials_search_type',
@@ -90,9 +92,11 @@ CLIENT_API_JSON_PARAMS = {
     'include_blurhash',
     'create_new_file_ids',
     'detailed_url_information',
+    'duplicate_pair_sort_asc',
     'hide_service_keys_tags',
     'simple',
     'file_sort_asc',
+    'group_mode',
     'return_hashes',
     'return_file_ids',
     'include_thumbnail_filetype',
@@ -199,7 +203,7 @@ def CheckFileService( file_service_key: bytes ):
         
         service = CG.client_controller.services_manager.GetService( file_service_key )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.BadRequestException( 'Could not find the file service "{}"!'.format( file_service_key.hex() ) )
         
@@ -218,7 +222,7 @@ def CheckTagService( tag_service_key: bytes ):
         
         service = CG.client_controller.services_manager.GetService( tag_service_key )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.BadRequestException( 'Could not find the tag service "{}"!'.format( tag_service_key.hex() ) )
         
@@ -257,7 +261,7 @@ def CheckUploadableService( service_key: bytes ):
         
         service = CG.client_controller.services_manager.GetService( service_key )
         
-    except:
+    except Exception as e:
         
         raise HydrusExceptions.BadRequestException( 'Could not find the service "{}"!'.format( service_key.hex() ) )
         
@@ -276,8 +280,8 @@ def GetServicesDict():
         HC.LOCAL_FILE_DOMAIN,
         HC.LOCAL_FILE_UPDATE_DOMAIN,
         HC.FILE_REPOSITORY,
-        HC.COMBINED_LOCAL_FILE,
-        HC.COMBINED_LOCAL_MEDIA,
+        HC.HYDRUS_LOCAL_FILE_STORAGE,
+        HC.COMBINED_LOCAL_FILE_DOMAINS,
         HC.COMBINED_FILE,
         HC.COMBINED_TAG,
         HC.LOCAL_RATING_LIKE,
@@ -298,29 +302,79 @@ def GetServicesDict():
             'type_pretty' : HC.service_string_lookup[ service.GetServiceType() ]
         }
         
-        if service.GetServiceType() in HC.STAR_RATINGS_SERVICES:
-            
-            star_type = service.GetStarType()
-            
-            if star_type.HasShape():
-                
-                shape_label = ClientRatings.shape_to_str_lookup_dict[ star_type.GetShape() ]
-                
-            else:
-                
-                shape_label = 'svg'
-                
-            
-            service_dict[ 'star_shape' ] =  shape_label
-            
+        rating_colour_jobs = []
         
-        if service.GetServiceType() == HC.LOCAL_RATING_NUMERICAL:
+        if service.GetServiceType() in HC.RATINGS_SERVICES:
             
-            allows_zero = service.AllowZero()
-            num_stars = service.GetNumStars()
+            service = typing.cast( ClientServices.ServiceLocalRating, service )
             
-            service_dict[ 'min_stars' ] = 0 if allows_zero else 1
-            service_dict[ 'max_stars' ] = num_stars
+            service_dict[ 'show_in_thumbnail' ] = service.GetShowInThumbnail()
+            service_dict[ 'show_in_thumbnail_even_when_null' ] = service.GetShowInThumbnailEvenWhenNull()
+            
+            if service.GetServiceType() in HC.STAR_RATINGS_SERVICES:
+                
+                service = typing.cast( ClientServices.ServiceLocalRatingStars, service )
+                
+                star_type = service.GetStarType()
+                
+                if star_type.HasShape():
+                    
+                    shape_label = ClientRatings.shape_to_str_lookup_dict[ star_type.GetShape() ]
+                    
+                else:
+                    
+                    shape_label = 'svg'
+                    
+                
+                service_dict[ 'star_shape' ] =  shape_label
+                
+                rating_colour_jobs = [
+                    ( 'like', ClientRatings.LIKE ),
+                    ( 'dislike', ClientRatings.DISLIKE ),
+                    ( 'null', ClientRatings.NULL ),
+                    ( 'mixed', ClientRatings.MIXED ),
+                ]
+                
+            
+            if service.GetServiceType() == HC.LOCAL_RATING_INCDEC:
+                
+                rating_colour_jobs = [
+                    ( 'like', ClientRatings.LIKE ),
+                    ( 'mixed', ClientRatings.MIXED ),
+                ]
+                
+            
+            if len( rating_colour_jobs ) > 0:
+                
+                colours_dict = {}
+                
+                for ( json_name, rating_state ) in rating_colour_jobs:
+                    
+                    ( pen_rgb, brush_rgb ) = service.GetColour( rating_state )
+                    
+                    pen_hex_value = '#' + bytes( pen_rgb ).hex().upper()
+                    brush_hex_value = '#' + bytes( brush_rgb ).hex().upper()
+                    
+                    colours_dict[ json_name ] = {
+                        'pen' : pen_hex_value,
+                        'brush' : brush_hex_value,
+                    }
+                    
+                
+                service_dict[ 'colours' ] = colours_dict
+                
+            
+            if service.GetServiceType() == HC.LOCAL_RATING_NUMERICAL:
+                
+                service = typing.cast( ClientServices.ServiceLocalRatingNumerical, service )
+                
+                allows_zero = service.AllowZero()
+                num_stars = service.GetNumStars()
+                
+                service_dict[ 'allows_zero' ] = allows_zero
+                service_dict[ 'min_stars' ] = 0 if allows_zero else 1
+                service_dict[ 'max_stars' ] = num_stars
+                
             
         
         services_dict[ service.GetServiceKey().hex() ] = service_dict
@@ -440,7 +494,7 @@ def ParseClientAPIPOSTByteArgs( args ):
                     parsed_request_args[ var_name ] = v
                     
                 
-            except:
+            except Exception as e:
                 
                 raise HydrusExceptions.BadRequestException( 'I was expecting to parse \'{}\' as a hex string, but it failed.'.format( var_name ) )
                 
@@ -476,7 +530,7 @@ def ParseClientAPIPOSTByteArgs( args ):
                     parsed_request_args[ var_name ] = v_list
                     
                 
-            except:
+            except Exception as e:
                 
                 raise HydrusExceptions.BadRequestException( 'I was expecting to parse \'{}\' as a list of hex strings, but it failed.'.format( var_name ) )
                 
@@ -522,7 +576,7 @@ def ParseClientAPIPOSTByteArgs( args ):
                     parsed_request_args[ var_name ] = bytes_dict
                     
                 
-            except:
+            except Exception as e:
                 
                 raise HydrusExceptions.BadRequestException( 'I was expecting to parse \'{}\' as a dictionary of hex strings to other data, but it failed.'.format( var_name ) )
                 
@@ -561,7 +615,7 @@ def ParseClientAPIPOSTArgs( request ):
             
             request_content_type_mime = HC.mime_enum_lookup[ content_type ]
             
-        except:
+        except Exception as e:
             
             raise HydrusExceptions.BadRequestException( 'Did not recognise Content-Type header!' )
             
@@ -606,7 +660,7 @@ def ParseClientAPIPOSTArgs( request ):
             
             parsed_request_args = HydrusNetworkVariableHandling.ParsedRequestArguments()
             
-            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath()
+            ( os_file_handle, temp_path ) = HydrusTemp.GetTempPath( 'client_api_upload' )
             
             request.temp_file_info = ( os_file_handle, temp_path )
             
@@ -666,7 +720,7 @@ def ParseClientAPISearchPredicates( request ) -> list[ ClientSearchPredicate.Pre
 
 def ParsePotentialDuplicatesSearchContext( request: HydrusServerRequest.HydrusRequest ) -> ClientPotentialDuplicatesSearchContext.PotentialDuplicatesSearchContext:
     
-    location_context = ParseLocationContext( request, ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) )
+    location_context = ParseLocationContext( request, ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ) )
     
     tag_service_key_1 = request.parsed_request_args.GetValue( 'tag_service_key_1', bytes, default_value = CC.COMBINED_TAG_SERVICE_KEY )
     tag_service_key_2 = request.parsed_request_args.GetValue( 'tag_service_key_2', bytes, default_value = CC.COMBINED_TAG_SERVICE_KEY )
@@ -772,7 +826,7 @@ def ParseLocationContext( request: HydrusServerRequest.HydrusRequest, default: C
         
     
 
-def ParseLocalFileDomainLocationContext( request: HydrusServerRequest.HydrusRequest ) -> typing.Optional[ ClientLocation.LocationContext ]:
+def ParseLocalFileDomainLocationContext( request: HydrusServerRequest.HydrusRequest ) -> ClientLocation.LocationContext | None:
     
     custom_location_context = ParseLocationContext( request, ClientLocation.LocationContext(), deleted_allowed = False )
     
@@ -878,7 +932,7 @@ def ParseHashes( request: HydrusServerRequest.HydrusRequest, optional = False ):
         raise HydrusExceptions.BadRequestException( 'Please include some files in your request--file_id or hash based!' )
         
     
-    hashes = HydrusData.DedupeList( hashes )
+    hashes = HydrusLists.DedupeList( hashes )
     
     if not optional or len( hashes ) > 0:
         

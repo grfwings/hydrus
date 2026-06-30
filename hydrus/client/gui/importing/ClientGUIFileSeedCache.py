@@ -15,6 +15,7 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
 from hydrus.client import ClientSerialisable
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -45,18 +46,20 @@ def ClearFileSeeds( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.File
         file_seed_cache.RemoveFileSeedsByStatus( statuses_to_remove )
         
     
+
 def GetRetryIgnoredParam( window ):
     
     choice_tuples = [
         ( 'retry all', None, 'retry all' ),
+        ( 'retry 403s', '^403', 'retry all 403s' ),
         ( 'retry 404s', '^404', 'retry all 404s' ),
-        ( 'retry blacklisted', 'blacklisted!$', 'retry all blacklisted' )
+        ( 'retry blacklisted', 'blacklisted!$', 'retry all blacklisted' ),
     ]
     
-    return ClientGUIDialogsQuick.SelectFromListButtons( window, 'select what to retry', choice_tuples )
+    result = ClientGUIDialogsQuick.SelectFromListButtons( window, 'select what to retry', choice_tuples )
     
-
-# TODO: I pulled this stuff out of the button to share it with the panel. TBH anything without Qt may be better as be FSC methods
+    return result
+    
 
 def GetExportableSourcesString( file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
     
@@ -66,6 +69,7 @@ def GetExportableSourcesString( file_seed_cache: ClientImportFileSeeds.FileSeedC
     
     return '\n'.join( sources )
     
+
 def GetSourcesFromSourcesString( sources_string ):
     
     sources = HydrusText.DeserialiseNewlinedTexts( sources_string )
@@ -130,7 +134,7 @@ def ImportFromClipboard( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds
 
 def ImportFromPNG( win: QW.QWidget, file_seed_cache: ClientImportFileSeeds.FileSeedCache ):
     
-    with QP.FileDialog( win, 'select the png with the sources', wildcard = 'PNG (*.png)' ) as dlg:
+    with ClientGUIDialogsFiles.FileDialog( win, 'select the png with the sources', wildcard = 'PNG (*.png)' ) as dlg:
         
         if dlg.exec() == QW.QDialog.DialogCode.Accepted:
             
@@ -222,7 +226,7 @@ def ReverseFileSeedCache( win: QW.QWidget, file_seed_cache: ClientImportFileSeed
         
     
 
-def ShowFilesInNewPage( file_seed_cache: ClientImportFileSeeds.FileSeedCache, show = 'all' ):
+def ShowFileSeedCacheFilesInNewPage( file_seed_cache: ClientImportFileSeeds.FileSeedCache, show = 'all' ):
     
     if show == 'all':
         
@@ -236,10 +240,14 @@ def ShowFilesInNewPage( file_seed_cache: ClientImportFileSeeds.FileSeedCache, sh
         
         hashes = file_seed_cache.GetPresentedHashes( presentation_import_options )
         
+    else:
+        
+        return
+        
     
     if len( hashes ) > 0:
         
-        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         CG.client_controller.pub( 'new_page_query', location_context, initial_hashes = hashes )
         
@@ -306,6 +314,13 @@ def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache:
         
         ClientGUIMenus.AppendSeparator( menu )
         
+        num_non_unknown = len( file_seed_cache ) - num_unknown
+        
+        if num_unknown > 0 and num_non_unknown > 0:
+            
+            ClientGUIMenus.AppendMenuItem( menu, f'delete everything except \'unknown\' (i.e. unstarted) ({HydrusNumbers.ToHumanInt( num_non_unknown )} items) from the queue', 'Tell this log to clear out everything, resetting the queue to empty.', ClearFileSeeds, win, file_seed_cache, ( CC.STATUS_SUCCESSFUL_AND_NEW, CC.STATUS_SUCCESSFUL_BUT_REDUNDANT, CC.STATUS_DELETED, CC.STATUS_ERROR, CC.STATUS_VETOED, CC.STATUS_SKIPPED, CC.STATUS_SUCCESSFUL_AND_CHILD_FILES ) )
+            
+        
         ClientGUIMenus.AppendMenuItem( menu, f'delete everything ({HydrusNumbers.ToHumanInt( len( file_seed_cache ) )} items) from the queue', 'Tell this log to clear out everything, resetting the queue to empty.', ClearFileSeeds, win, file_seed_cache, ( CC.STATUS_UNKNOWN, CC.STATUS_SUCCESSFUL_AND_NEW, CC.STATUS_SUCCESSFUL_BUT_REDUNDANT, CC.STATUS_DELETED, CC.STATUS_ERROR, CC.STATUS_VETOED, CC.STATUS_SKIPPED, CC.STATUS_SUCCESSFUL_AND_CHILD_FILES ) )
         
     
@@ -320,8 +335,8 @@ def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache:
     
     if num_successful > 0:
         
-        ClientGUIMenus.AppendMenuItem( menu, 'show new files in a new page', 'Gather the new files in this import list and show them in a new page.', ShowFilesInNewPage, file_seed_cache, show = 'new' )
-        ClientGUIMenus.AppendMenuItem( menu, 'show all files in a new page', 'Gather the files in this import list and show them in a new page.', ShowFilesInNewPage, file_seed_cache )
+        ClientGUIMenus.AppendMenuItem( menu, 'show new files in a new page', 'Gather the new files in this import list and show them in a new page.', ShowFileSeedCacheFilesInNewPage, file_seed_cache, show = 'new' )
+        ClientGUIMenus.AppendMenuItem( menu, 'show all files in a new page', 'Gather the files in this import list and show them in a new page.', ShowFileSeedCacheFilesInNewPage, file_seed_cache )
         
     
     ClientGUIMenus.AppendSeparator( menu )
@@ -345,7 +360,7 @@ def PopulateFileSeedCacheMenu( win: QW.QWidget, menu: QW.QMenu, file_seed_cache:
     ClientGUIMenus.AppendMenuItem( submenu, 'from clipboard', 'Import new urls or paths to this list from the clipboard.', ImportFromClipboard, win, file_seed_cache )
     ClientGUIMenus.AppendMenuItem( submenu, 'from png', 'Import new urls or paths to this list from a png file.', ImportFromPNG, win, file_seed_cache )
     
-    ClientGUIMenus.AppendMenu( menu, submenu, 'import new sources' )
+    ClientGUIMenus.AppendMenu( menu, submenu, 'ADVANCED: import new sources' )
     
     if len( selected_file_seeds ) > 0 or file_seed_cache.IsURLFileSeeds():
         
@@ -379,7 +394,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_FILE_SEED_CACHE.ID, self._ConvertFileSeedToDisplayTuple, self._ConvertFileSeedToSortTuple )
         
-        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 30, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
+        self._list_ctrl = ClientGUIListCtrl.BetterListCtrlTreeView( self, 12, model, activation_callback = self._ShowSelectionInNewPage, delete_key_callback = self._DeleteSelected )
         
         #
         
@@ -401,7 +416,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         CG.client_controller.sub( self, 'NotifyFileSeedsUpdated', 'file_seed_cache_file_seeds_updated' )
         
-        QP.CallAfter( self._UpdateText )
+        CG.client_controller.CallAfterQtSafe( self, self._UpdateText )
         
     
     def _ConvertFileSeedToDisplayTuple( self, file_seed: ClientImportFileSeeds.FileSeed ):
@@ -412,7 +427,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
             pretty_file_seed_index = HydrusNumbers.ToHumanInt( file_seed_index )
             
-        except:
+        except Exception as e:
             
             pretty_file_seed_index = '--'
             
@@ -457,7 +472,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
             
             file_seed_index = self._file_seed_cache.GetFileSeedIndex( file_seed )
             
-        except:
+        except Exception as e:
             
             file_seed_index = -1
             
@@ -572,6 +587,38 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         ClientGUIMenus.AppendMenuItem( menu, label, 'Copy all the selected sources to clipboard.', self._CopySelectedFileSeedData )
         ClientGUIMenus.AppendMenuItem( menu, 'copy notes', 'Copy all the selected notes to clipboard.', self._CopySelectedNotes )
         
+        ClientGUIMenus.AppendSeparator( menu )
+        
+        if we_are_looking_at_urls:
+            
+            open_sources_text = 'open URLs'
+            
+        else:
+            
+            open_sources_text = 'open files\' locations'
+            
+        
+        ClientGUIMenus.AppendMenuItem( menu, open_sources_text, 'Open all the selected sources in your file explorer or web browser.', self._OpenSelectedFileSeedData )
+        
+        if we_are_looking_at_urls:
+            
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
+            
+            file_seed_datas = [ file_seed.file_seed_data for file_seed in selected_file_seeds ]
+            urls = [ file_seed_data for file_seed_data in file_seed_datas if isinstance( file_seed_data, str ) and file_seed_data.startswith( 'http' ) ]
+            
+            url_preds = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS, value = ( True, 'exact_match', url, f'has url {url}' ) ) for url in urls ]
+            
+            predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_OR_CONTAINER, value = url_preds ) ]
+            
+            page_name = 'url search'
+            activate_window = False
+            
+            c = HydrusData.Call( CG.client_controller.pub, 'new_page_query', location_context, initial_predicates = predicates, page_name = page_name, activate_window = activate_window )
+            
+            ClientGUIMenus.AppendMenuItem( menu, 'search for URLs', 'Open a new page with the files that share any of these selected URLs.', c )
+            
+        
         if len( selected_file_seeds ) == 1:
             
             ClientGUIMenus.AppendSeparator( menu )
@@ -612,53 +659,68 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                 primary_urls = sorted( selected_file_seed.GetPrimaryURLs() )
                 source_urls = sorted( selected_file_seed.GetSourceURLs() )
                 
-                nothing_interesting_going_on = normalised_url == pretty_url and request_url == normalised_url and referral_url is None and len( primary_urls ) == 0 and len( source_urls ) == 0
+                url_submenu = ClientGUIMenus.GenerateMenu( menu )
                 
-                if nothing_interesting_going_on:
+                if normalised_url != pretty_url:
+                    
+                    ClientGUIMenus.AppendMenuLabel( url_submenu, f'normalised url: {normalised_url}', copy_text = normalised_url )
+                    
+                
+                if request_url != normalised_url:
+                    
+                    ClientGUIMenus.AppendMenuLabel( url_submenu, f'request url: {request_url}', copy_text = request_url )
+                    
+                
+                url_to_fetch = CG.client_controller.network_engine.domain_manager.GetURLToFetch( request_url )
+                
+                if url_to_fetch != request_url:
+                    
+                    ClientGUIMenus.AppendMenuLabel( url_submenu, f'(API/Redirect) actual url that will be fetched: {url_to_fetch}', copy_text = url_to_fetch )
+                    
+                
+                if referral_url is not None:
+                    
+                    ClientGUIMenus.AppendMenuLabel( url_submenu, f'referral url: {referral_url}', copy_text = referral_url )
+                    
+                
+                referral_url_to_use = CG.client_controller.network_engine.domain_manager.GetReferralURL( url_to_fetch, referral_url )
+                
+                if referral_url_to_use != referral_url:
+                    
+                    ClientGUIMenus.AppendMenuLabel( url_submenu, f'(URL Class transformation) actual expected referral url: {referral_url_to_use}', copy_text = referral_url_to_use )
+                    
+                
+                if len( primary_urls ) > 0:
+                    
+                    ClientGUIMenus.AppendSeparator( url_submenu )
+                    
+                    for url in primary_urls:
+                        
+                        ClientGUIMenus.AppendMenuLabel( url_submenu, f'primary url: {url}', copy_text = url )
+                        
+                    
+                
+                if len( source_urls ) > 0:
+                    
+                    ClientGUIMenus.AppendSeparator( url_submenu )
+                    
+                    for url in source_urls:
+                        
+                        ClientGUIMenus.AppendMenuLabel( url_submenu, f'source url: {url}', copy_text = url )
+                        
+                    
+                
+                if url_submenu.isEmpty():
+                    
+                    ClientGUIMenus.DestroyMenu( url_submenu )
                     
                     ClientGUIMenus.AppendMenuLabel( menu, 'no additional urls' )
                     
                 else:
                     
-                    url_submenu = ClientGUIMenus.GenerateMenu( menu )
-                    
-                    if normalised_url != pretty_url:
-                        
-                        ClientGUIMenus.AppendMenuLabel( url_submenu, f'normalised url: {normalised_url}', copy_text = normalised_url )
-                        
-                    
-                    if request_url != normalised_url:
-                        
-                        ClientGUIMenus.AppendMenuLabel( url_submenu, f'request url: {request_url}', copy_text = request_url )
-                        
-                    
-                    if referral_url is not None:
-                        
-                        ClientGUIMenus.AppendMenuLabel( url_submenu, f'referral url: {referral_url}', copy_text = referral_url )
-                        
-                    
-                    if len( primary_urls ) > 0:
-                        
-                        ClientGUIMenus.AppendSeparator( url_submenu )
-                        
-                        for url in primary_urls:
-                            
-                            ClientGUIMenus.AppendMenuLabel( url_submenu, f'primary url: {url}', copy_text = url )
-                            
-                        
-                    
-                    if len( source_urls ) > 0:
-                        
-                        ClientGUIMenus.AppendSeparator( url_submenu )
-                        
-                        for url in source_urls:
-                            
-                            ClientGUIMenus.AppendMenuLabel( url_submenu, f'source url: {url}', copy_text = url )
-                            
-                        
-                    
                     ClientGUIMenus.AppendMenu( menu, url_submenu, 'additional urls' )
                     
+                
                 #
                 
                 headers = selected_file_seed.GetHTTPHeaders()
@@ -677,6 +739,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                         
                     
                     ClientGUIMenus.AppendMenu( menu, header_submenu, 'additional headers' )
+                    
                 
                 #
                 
@@ -702,38 +765,6 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                     ClientGUIMenus.AppendMenu( menu, tag_submenu, 'parsed tags' )
                     
                 
-            
-        
-        ClientGUIMenus.AppendSeparator( menu )
-        
-        if we_are_looking_at_urls:
-            
-            open_sources_text = 'open URLs'
-            
-        else:
-            
-            open_sources_text = 'open files\' locations'
-            
-        
-        ClientGUIMenus.AppendMenuItem( menu, open_sources_text, 'Open all the selected sources in your file explorer or web browser.', self._OpenSelectedFileSeedData )
-        
-        if we_are_looking_at_urls:
-            
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
-            
-            file_seed_datas = [ file_seed.file_seed_data for file_seed in selected_file_seeds ]
-            urls = [ file_seed_data for file_seed_data in file_seed_datas if isinstance( file_seed_data, str ) and file_seed_data.startswith( 'http' ) ]
-            
-            url_preds = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS, value = ( True, 'exact_match', url, f'has url {url}' ) ) for url in urls ]
-            
-            predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_OR_CONTAINER, value = url_preds ) ]
-            
-            page_name = 'url search'
-            activate_window = False
-            
-            c = HydrusData.Call( CG.client_controller.pub, 'new_page_query', location_context, initial_predicates = predicates, page_name = page_name, activate_window = activate_window )
-            
-            ClientGUIMenus.AppendMenuItem( menu, 'search for URLs', 'Open a new page with the files that share any of these selected URLs.', c )
             
         
         ClientGUIMenus.AppendSeparator( menu )
@@ -799,6 +830,18 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         file_seeds = self._list_ctrl.GetData( only_selected = True )
         
+        def qt_once_done():
+            
+            self.setEnabled( True )
+            
+            for file_seed in file_seeds:
+                
+                file_seed.SetStatus( status_to_set )
+                
+            
+            self._file_seed_cache.NotifyFileSeedsUpdated( file_seeds )
+            
+        
         if status_to_set == CC.STATUS_UNKNOWN:
             
             deleted_and_clearable_file_seeds = [ file_seed for file_seed in file_seeds if file_seed.IsDeleted() and file_seed.HasHash() ]
@@ -817,19 +860,25 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_CLEAR_DELETE_RECORD, deletee_hashes )
                     
-                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
                     
-                    CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+                    self.setEnabled( False )
+                    
+                    def do_it():
+                        
+                        CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+                        
+                        CG.client_controller.CallAfterQtSafe( self, qt_once_done )
+                        
+                    
+                    CG.client_controller.CallToThread( do_it )
+                    
+                    return
                     
                 
             
         
-        for file_seed in file_seeds:
-            
-            file_seed.SetStatus( status_to_set )
-            
-        
-        self._file_seed_cache.NotifyFileSeedsUpdated( file_seeds )
+        qt_once_done()
         
     
     def _ShowSelectionInNewPage( self ):
@@ -846,7 +895,7 @@ class EditFileSeedCachePanel( ClientGUIScrolledPanels.EditPanel ):
         
         if len( hashes ) > 0:
             
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
             
             ClientGUIMediaSimpleActions.ShowFilesInNewPage( hashes, location_context )
             
@@ -1086,11 +1135,6 @@ class FileSeedCacheStatusControl( QW.QFrame ):
         
     
     def SetFileSeedCache( self, file_seed_cache ):
-        
-        if not self or not QP.isValid( self ):
-            
-            return
-            
         
         self._file_seed_cache = file_seed_cache
         

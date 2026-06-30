@@ -44,6 +44,7 @@ class FileSystemPredicates( object ):
         self._excluded_file_service_statuses = collections.defaultdict( set )
         
         self._ratings_predicates = []
+        self._advanced_ratings_predicates = []
         
         self._num_tags_predicates = []
         self._num_urls_predicates = []
@@ -55,8 +56,6 @@ class FileSystemPredicates( object ):
         self._king_filter = None
         
         self._file_viewing_stats_predicates = []
-        
-        new_options = CG.client_controller.new_options
         
         for predicate in system_predicates:
             
@@ -159,7 +158,7 @@ class FileSystemPredicates( object ):
                 self._common_info[ 'hashes' ].append( ( hashes, hash_type, predicate.IsInclusive() ) )
                 
             
-            if predicate_type in ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
+            if predicate_type in ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LAST_VIEWED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME, ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME ):
                 
                 ( operator, age_type, age_value ) = value
                 
@@ -268,6 +267,11 @@ class FileSystemPredicates( object ):
             if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_TAGS:
                 
                 self._num_tags_predicates.append( predicate )
+                
+            
+            if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING_ADVANCED:
+                
+                self._advanced_ratings_predicates.append( predicate )
                 
             
             if predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATING:
@@ -452,6 +456,11 @@ class FileSystemPredicates( object ):
         return self._advanced_tag_predicates
         
     
+    def GetAdvancedRatingsPredicates( self ):
+        
+        return self._advanced_ratings_predicates
+        
+    
     def GetAllowedFiletypes( self ):
         
         return self._allowed_filetypes
@@ -570,11 +579,11 @@ class FileSearchContext( HydrusSerialisable.SerialisableBase ):
     SERIALISABLE_NAME = 'File Search Context'
     SERIALISABLE_VERSION = 5
     
-    def __init__( self, location_context = None, tag_context = None, search_type = SEARCH_TYPE_AND, predicates = None ):
+    def __init__( self, location_context = None, tag_context = None, search_type = SEARCH_TYPE_AND, predicates: list[ ClientSearchPredicate.Predicate ] | None = None ):
         
         if location_context is None:
             
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
             
         
         if tag_context is None:

@@ -8,12 +8,12 @@ import typing
 import unittest
 
 from twisted.internet import reactor
-import twisted.internet.ssl
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusEncryption
 from hydrus.core import HydrusPaths
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetwork
 from hydrus.core.networking import HydrusNetworking
@@ -27,14 +27,16 @@ from hydrus.test import TestController
 from hydrus.test import TestGlobals as TG
 
 
-with open( os.path.join( HC.STATIC_DIR, 'hydrus.png' ), 'rb' ) as f_g:
+with open( HydrusStaticDir.GetStaticPath( 'hydrus.png' ), 'rb' ) as f_g:
     
     EXAMPLE_FILE = f_g.read()
     
-with open( os.path.join( HC.STATIC_DIR, 'hydrus_small.png' ), 'rb' ) as f_g:
+
+with open( HydrusStaticDir.GetStaticPath( 'hydrus_small.png' ), 'rb' ) as f_g:
     
     EXAMPLE_THUMBNAIL = f_g.read()
     
+
 class TestServer( unittest.TestCase ):
     
     _access_key: bytes = HydrusData.GenerateKey()
@@ -96,7 +98,9 @@ class TestServer( unittest.TestCase ):
                 HydrusEncryption.GenerateOpenSSLCertAndKeyFile( cls._ssl_cert_path, cls._ssl_key_path )
                 
             
-            context_factory = twisted.internet.ssl.DefaultOpenSSLContextFactory( cls._ssl_key_path, cls._ssl_cert_path )
+            from hydrus.core.networking import HydrusServerContextFactory
+            
+            context_factory = HydrusServerContextFactory.GenerateSSLContextFactory( cls._ssl_cert_path, cls._ssl_key_path )
             
             reactor.listenSSL( HC.DEFAULT_SERVER_ADMIN_PORT, ServerServer.HydrusServiceAdmin( cls._serverside_admin_service ), context_factory )
             reactor.listenSSL( HC.DEFAULT_SERVICE_PORT + 1, ServerServer.HydrusServiceRepositoryFile( cls._serverside_file_service ), context_factory )
@@ -113,7 +117,13 @@ class TestServer( unittest.TestCase ):
         
         for path in ( cls._ssl_cert_path, cls._ssl_key_path ):
             
-            HydrusPaths.TryToMakeFileWriteable( path )
+            if HC.PLATFORM_WINDOWS:
+                
+                path_stat = os.stat( path )
+                
+                # this can be needed on a Windows device
+                HydrusPaths.TryToMakeFileWriteable( path, path_stat )
+                
             
             os.unlink( path )
             
@@ -146,7 +156,7 @@ class TestServer( unittest.TestCase ):
         
         #
         
-        with open( os.path.join( HC.STATIC_DIR, 'hydrus.ico' ), 'rb' ) as f:
+        with open( HydrusStaticDir.GetStaticPath( 'hydrus.ico' ), 'rb' ) as f:
             
             favicon = f.read()
             
@@ -177,12 +187,18 @@ class TestServer( unittest.TestCase ):
         
         self.assertEqual( response, EXAMPLE_FILE )
         
-        try: os.remove( path )
-        except: pass
+        try:
+            
+            os.remove( path )
+            
+        except Exception as e:
+            
+            pass
+            
         
         #
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         TG.test_controller.ClearWrites( 'file' )
         
@@ -241,8 +257,14 @@ class TestServer( unittest.TestCase ):
         
         self.assertEqual( response, EXAMPLE_THUMBNAIL )
         
-        try: os.remove( path )
-        except: pass
+        try:
+            
+            os.remove( path )
+            
+        except Exception as e:
+            
+            pass
+            
         
     
     def _test_repo( self, service ):
@@ -311,8 +333,14 @@ class TestServer( unittest.TestCase ):
         
         response = service.Request( HC.GET, 'update', { 'update_hash' : definitions_update_hash } )
         
-        try: os.remove( path )
-        except: pass
+        try:
+            
+            os.remove( path )
+            
+        except Exception as e:
+            
+            pass
+            
         
         self.assertEqual( response, definitions_update_network_bytes )
         
@@ -340,8 +368,14 @@ class TestServer( unittest.TestCase ):
         
         response = service.Request( HC.GET, 'update', { 'update_hash' : content_update_hash } )
         
-        try: os.remove( path )
-        except: pass
+        try:
+            
+            os.remove( path )
+            
+        except Exception as e:
+            
+            pass
+            
         
         self.assertEqual( response, content_update_network_bytes )
         
@@ -505,7 +539,7 @@ class TestServer( unittest.TestCase ):
         
         # account from mapping
         
-        test_tag = 'character:samus aran'
+        test_tag = 'character:space bounty hunter'
         test_hash = HydrusData.GenerateKey()
         
         TG.test_controller.SetRead( 'account_key_from_content', self._account.GetAccountKey() )

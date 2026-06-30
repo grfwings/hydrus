@@ -96,7 +96,7 @@ class ThumbnailPairListModel( QC.QAbstractTableModel ):
                     raise Exception()
                     
                 
-            except:
+            except Exception as e:
                 
                 return
                 
@@ -123,6 +123,38 @@ class ThumbnailPairListModel( QC.QAbstractTableModel ):
         self._data_rows.extend( data_rows )
         
         self.endInsertRows()
+        
+    
+    def GetMediaResultPairsStartingAtIndex( self, row: int ):
+        
+        # wraparound list fetch
+        
+        we_hit_our_index = False
+        second_half = []
+        first_half = []
+        
+        for ( i, r ) in enumerate( self._data_rows ):
+            
+            if i == row:
+                
+                we_hit_our_index = True
+                
+            
+            media_result_pair = ( r[0], r[1] )
+            
+            if we_hit_our_index:
+                
+                first_half.append( media_result_pair )
+                
+            else:
+                
+                second_half.append( media_result_pair )
+                
+            
+        
+        result = first_half + second_half
+        
+        return result
         
     
     def GetMediaResultPair( self, row: int ):
@@ -263,9 +295,73 @@ class ThumbnailPairListModelPendingAutoResolutionAction( ThumbnailPairListModel 
             self._pairs_to_third_column_info = {}
             self._pairs_we_are_calculating = set()
             
-            top_left = self.index(0, 2 )
-            bottom_right = self.index(self.rowCount() - 1, 2 )
-            self.dataChanged.emit( top_left, bottom_right, [ QC.Qt.ItemDataRole.DisplayRole ] )
+            if self.rowCount() > 0:
+                
+                top_left = self.index( 0, 2 )
+                bottom_right = self.index( self.rowCount() - 1, 2 )
+                
+                self.dataChanged.emit( top_left, bottom_right, [ QC.Qt.ItemDataRole.DisplayRole ] )
+                
+            
+        
+    
+
+class ThumbnailPairListModelDeniedAutoResolutionAction( ThumbnailPairListModel ):
+    
+    def columnCount(self, parent = QC.QModelIndex() ):
+        
+        return 3
+        
+    
+    def data( self, index: QC.QModelIndex, role: QC.Qt.ItemDataRole.DisplayRole ):
+        
+        if not index.isValid():
+            
+            return None
+            
+        
+        row = index.row()
+        col = index.column()
+        
+        if role == QC.Qt.ItemDataRole.DisplayRole:
+            
+            if col == 2:
+                
+                timestamp_ms = self._data_rows[ row ][ col ]
+                
+                timestamp = HydrusTime.SecondiseMS( timestamp_ms )
+                
+                s = HydrusTime.TimestampToPrettyTime( timestamp )
+                s += '\n'
+                s += HydrusTime.TimestampToPrettyTimeDelta( timestamp, force_no_iso = True )
+                
+                return s
+                
+            
+        
+        return super().data( index, role )
+        
+    
+    def headerData( self, section: int, orientation: QC.Qt.Orientation, role = QC.Qt.ItemDataRole.DisplayRole ):
+        
+        if orientation == QC.Qt.Orientation.Horizontal and role == QC.Qt.ItemDataRole.DisplayRole:
+            
+            if section == 0:
+                
+                return '1'
+                
+            elif section == 1:
+                
+                return '2'
+                
+            else:
+                
+                return 'time'
+                
+            
+        else:
+            
+            return super().headerData( section, orientation, role = role )
             
         
     
@@ -427,6 +523,18 @@ class ThumbnailPairListReviewPendingPreviewAutoResolutionAction( ThumbnailPairLi
         
     
 
+class ThumbnailPairListDeniedAutoResolutionAction( ThumbnailPairList ):
+    
+    MIN_NUM_ROWS_HEIGHT = 4
+    
+    def __init__( self, parent ):
+        
+        super().__init__( parent, ThumbnailPairListModelDeniedAutoResolutionAction() )
+        
+        self.setSelectionMode( QW.QAbstractItemView.SelectionMode.ExtendedSelection )
+        
+    
+
 class ThumbnailPairListTakenAutoResolutionAction( ThumbnailPairList ):
     
     MIN_NUM_ROWS_HEIGHT = 4
@@ -475,3 +583,92 @@ class ListEnterCatcher( QC.QObject ):
         return False
         
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# if you are reading this, hydev was using a page of empty space for screenshot backing and forgot to delete this

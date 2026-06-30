@@ -41,7 +41,7 @@ We are experimenting with svg ratings:
 
 ![](images/ratings_svg_experiment.png)
 
-There are some already in `install_dir/static/star_shapes`--feel free to try your own. Go for something simple that mostly fills a squarish, transparent background.
+There are some already in `install_dir/static/star_shapes`--feel free to add your own to `db_dir/static/star_shapes`. Go for something simple that mostly fills a squarish, transparent background.
 
 The program will try to draw the sillhouette of the svg with the chosen colours:
 
@@ -80,3 +80,11 @@ Once you have some ratings set, you can search for them using system:rating, whi
 ![](images/ratings_system_pred.png)
 
 On my own client, I find it useful to have several like/dislike ratings set up as quick one-click pseudo-tags. Stuff like 'this would make a good post' or 'read this later' that I can hit while I am doing archive/delete filtering.
+
+
+## customizing ratings display { id="customizing_ratings" }
+
+There are now various granular settings for customizing ratings display, found in the relevant 'options' panels.
+- 'media viewer' - customize the size of ratings icons
+- 'thumbnails' - customize the size of ratings icons or collapse numerical ratings services, as shown below
+![thumbnail ratings are shown collapsed, as well as a different smaller inc/dec service size](images/thumbnail_ratings_collapsed.png)

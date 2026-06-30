@@ -5,12 +5,11 @@ import hashlib
 import html
 import random
 import re
-import typing
 import urllib.parse
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
@@ -60,13 +59,15 @@ ENCODING_TYPE_UNICODE_ESCAPE = 1
 ENCODING_TYPE_HTML_ENTITIES = 2
 ENCODING_TYPE_HEX_UTF8 = 3
 ENCODING_TYPE_BASE64_UTF8 = 4
+ENCODING_TYPE_BASE64URL_UTF8 = 5
 
 encoding_type_str_lookup = {
     ENCODING_TYPE_URL_PERCENT : 'url percent encoding',
-    ENCODING_TYPE_UNICODE_ESCAPE : ' unicode escape characters',
+    ENCODING_TYPE_UNICODE_ESCAPE : 'unicode escape characters',
     ENCODING_TYPE_HTML_ENTITIES : 'html entities',
     ENCODING_TYPE_HEX_UTF8 : 'hex (utf-8)',
-    ENCODING_TYPE_BASE64_UTF8 : 'base64 (utf-8)'
+    ENCODING_TYPE_BASE64_UTF8 : 'base64 (utf-8)',
+    ENCODING_TYPE_BASE64URL_UTF8 : 'base64url (utf-8)'
 }
 
 encoding_type_legacy_to_enum_lookup = {
@@ -148,7 +149,7 @@ class StringConverter( StringProcessingStep ):
                 self.conversions.append( ( conversion_type, data ) )
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -183,7 +184,7 @@ class StringConverter( StringProcessingStep ):
                     new_conversions.append( ( conversion_type, data ) )
                     
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -261,7 +262,9 @@ class StringConverter( StringProcessingStep ):
                         
                     elif encode_type == ENCODING_TYPE_UNICODE_ESCAPE:
                         
-                        s = s.encode( 'unicode-escape' ).decode( 'utf-8' )
+                        s_bytes = s.encode( 'unicode-escape' )
+                        
+                        s = str( s_bytes, 'utf-8' )
                         
                     elif encode_type == ENCODING_TYPE_HTML_ENTITIES:
                         
@@ -288,6 +291,14 @@ class StringConverter( StringProcessingStep ):
                         elif encode_type == ENCODING_TYPE_BASE64_UTF8:
                             
                             s_bytes = base64.b64encode( s_bytes )
+                            
+                            s = str( s_bytes, 'utf-8' )
+                            
+                        elif encode_type == ENCODING_TYPE_BASE64URL_UTF8:
+                            
+                            s_bytes = base64.urlsafe_b64encode( s_bytes )
+                            
+                            s_bytes = s_bytes.rstrip( b'=' )
                             
                             s = str( s_bytes, 'utf-8' )
                             
@@ -326,7 +337,15 @@ class StringConverter( StringProcessingStep ):
                             
                         elif decode_type == ENCODING_TYPE_BASE64_UTF8:
                             
-                            s_bytes = base64.b64decode( s )
+                            padding = '=' * ( -len( s ) % 4 )
+                            
+                            s_bytes = base64.b64decode( s + padding )
+                            
+                        elif decode_type == ENCODING_TYPE_BASE64URL_UTF8:
+                            
+                            padding = '=' * ( -len( s ) % 4 )
+                            
+                            s_bytes = base64.urlsafe_b64decode( s + padding )
                             
                         else:
                             
@@ -376,7 +395,7 @@ class StringConverter( StringProcessingStep ):
                     
                 elif conversion_type == STRING_CONVERSION_DATEPARSER_DECODE:
                     
-                    timestamp = ClientTime.ParseDate( s )
+                    timestamp = int( ClientTime.ParseDate( s ) )
                     
                     s = str( timestamp )
                     
@@ -388,7 +407,7 @@ class StringConverter( StringProcessingStep ):
                         
                         timestamp = int( s )
                         
-                    except:
+                    except Exception as e:
                         
                         raise Exception( '"{}" was not an integer!'.format( s ) )
                         
@@ -574,7 +593,7 @@ class StringJoiner( StringProcessingStep ):
     SERIALISABLE_NAME = 'String Concatenator'
     SERIALISABLE_VERSION = 2
     
-    def __init__( self, joiner: str = '', join_tuple_size: typing.Optional[ int ] = None ):
+    def __init__( self, joiner: str = '', join_tuple_size: int | None = None ):
         
         super().__init__()
         
@@ -651,7 +670,7 @@ class StringJoiner( StringProcessingStep ):
                 
             else:
                 
-                for chunk_of_texts in HydrusData.SplitIteratorIntoChunks( texts, self._join_tuple_size ):
+                for chunk_of_texts in HydrusLists.SplitIteratorIntoChunks( texts, self._join_tuple_size ):
                     
                     if len( chunk_of_texts ) == self._join_tuple_size:
                         
@@ -705,6 +724,8 @@ FLEXIBLE_MATCH_ALPHANUMERIC = 1
 FLEXIBLE_MATCH_NUMERIC = 2
 FLEXIBLE_MATCH_HEX = 3
 FLEXIBLE_MATCH_BASE64 = 4
+FLEXIBLE_MATCH_BASE64URL = 5
+FLEXIBLE_MATCH_BASE64_URL_ENCODED = 6
 
 DEFAULT_EXAMPLE_STRING = 'example string'
 
@@ -714,7 +735,7 @@ class StringMatch( StringProcessingStep ):
     SERIALISABLE_NAME = 'String Match'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, match_type = STRING_MATCH_ANY, match_value = '', min_chars = None, max_chars = None, example_string = DEFAULT_EXAMPLE_STRING ):
+    def __init__( self, match_type: int = STRING_MATCH_ANY, match_value: str | int = '', min_chars = None, max_chars = None, example_string = DEFAULT_EXAMPLE_STRING ):
         
         super().__init__()
         
@@ -811,37 +832,45 @@ class StringMatch( StringProcessingStep ):
             
         elif self._match_type in ( STRING_MATCH_FLEXIBLE, STRING_MATCH_REGEX ):
             
+            r = ''
+            fail_reason = ' (unknown error, this object is probably from a newer client)'
+            
             if self._match_type == STRING_MATCH_FLEXIBLE:
                 
                 if self._match_value == FLEXIBLE_MATCH_ALPHA:
                     
-                    r = '^[a-zA-Z]+$'
+                    r = r'^[a-zA-Z]+$'
                     fail_reason = ' had non-alpha characters'
                     
                 elif self._match_value == FLEXIBLE_MATCH_ALPHANUMERIC:
                     
-                    r = '^[a-zA-Z\\d]+$'
+                    r = r'^[a-zA-Z\d]+$'
                     fail_reason = ' had non-alphanumeric characters'
                     
                 elif self._match_value == FLEXIBLE_MATCH_NUMERIC:
                     
-                    r = '^\\d+$'
+                    r = r'^\d+$'
                     fail_reason = ' had non-numeric characters'
                     
                 elif self._match_value == FLEXIBLE_MATCH_HEX:
                     
-                    r = '^[\\da-fA-F]+$'
+                    r = r'^[\da-fA-F]+$'
                     fail_reason = ' had non-hex characters'
                     
                 elif self._match_value == FLEXIBLE_MATCH_BASE64:
                     
-                    r = '^[a-zA-Z\\d+/]+={0,2}$'
+                    r = r'^[a-zA-Z\d+/]+={0,2}$'
                     fail_reason = ' had non-base64 characters'
                     
-                else:
+                elif self._match_value == FLEXIBLE_MATCH_BASE64_URL_ENCODED:
                     
-                    r = ''
-                    fail_reason = ' (unknown error, this object is probably from a newer client)'
+                    r = r'^([a-zA-Z\d]|%2B|%2F)+(%3D){0,2}$'
+                    fail_reason = ' had non-base64 (url-encoded) characters'
+                    
+                elif self._match_value == FLEXIBLE_MATCH_BASE64URL:
+                    
+                    r = r'^[a-zA-Z\d\-_]+={0,2}$'
+                    fail_reason = ' had non-base64url characters'
                     
                 
             elif self._match_type == STRING_MATCH_REGEX:
@@ -942,7 +971,15 @@ class StringMatch( StringProcessingStep ):
                 
             elif self._match_value == FLEXIBLE_MATCH_BASE64:
                 
-                result += 'base-64 characters'
+                result += 'base64 characters'
+                
+            elif self._match_value == FLEXIBLE_MATCH_BASE64_URL_ENCODED:
+                
+                result += 'base64 (url-encoded) characters'
+                
+            elif self._match_value == FLEXIBLE_MATCH_BASE64URL:
+                
+                result += 'base64url characters'
                 
             else:
                 
@@ -978,7 +1015,7 @@ class StringSlicer( StringProcessingStep ):
     SERIALISABLE_NAME = 'String Selector/Slicer'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, index_start: typing.Optional[ int ] = None, index_end: typing.Optional[ int ] = None ):
+    def __init__( self, index_start: int | None = None, index_end: int | None = None ):
         
         super().__init__()
         
@@ -996,7 +1033,7 @@ class StringSlicer( StringProcessingStep ):
         ( self._index_start, self._index_end ) = serialisable_info
         
     
-    def GetIndexStartEnd( self ) -> tuple[ typing.Optional[ int ], typing.Optional[ int ] ]:
+    def GetIndexStartEnd( self ) -> tuple[ int | None, int | None ]:
         
         return ( self._index_start, self._index_end )
         
@@ -1149,7 +1186,7 @@ class StringSorter( StringProcessingStep ):
     SERIALISABLE_NAME = 'String Sorter'
     SERIALISABLE_VERSION = 1
     
-    def __init__( self, sort_type: int = CONTENT_PARSER_SORT_TYPE_HUMAN_SORT, asc: bool = False, regex: typing.Optional[ str ] = None ):
+    def __init__( self, sort_type: int = CONTENT_PARSER_SORT_TYPE_HUMAN_SORT, asc: bool = False, regex: str | None = None ):
         
         super().__init__()
         
@@ -1173,7 +1210,7 @@ class StringSorter( StringProcessingStep ):
         return self._asc
         
     
-    def GetRegex( self ) -> typing.Optional[ str ]:
+    def GetRegex( self ) -> str | None:
         
         return self._regex
         
@@ -1283,7 +1320,7 @@ class StringSplitter( StringProcessingStep ):
     SERIALISABLE_NAME = 'String Splitter'
     SERIALISABLE_VERSION = 2
     
-    def __init__( self, separator: str = ',', max_splits: typing.Optional[ int ] = None ):
+    def __init__( self, separator: str = ',', max_splits: int | None = None ):
         
         super().__init__()
         
@@ -1341,7 +1378,7 @@ class StringSplitter( StringProcessingStep ):
             
             separator = self._separator.encode( 'latin-1', 'backslashreplace' ).decode( 'unicode-escape' )
             
-        except:
+        except Exception as e:
             
             raise HydrusExceptions.StringSplitterException( 'Could not escape the splitter string. Wrong number of backslashes?' )
             
@@ -1488,7 +1525,7 @@ class StringTagFilter( StringProcessingStep ):
                 tag = list( tags )[0]
                 
             
-        except:
+        except Exception as e:
             
             raise HydrusExceptions.StringMatchException( '{} was not a valid tag!'.format( presentation_text ) )
             
@@ -1606,7 +1643,7 @@ class StringProcessor( StringProcessingStep ):
                         
                         next_strings = processing_step.Slice( current_strings )
                         
-                    except:
+                    except Exception as e:
                         
                         next_strings = current_strings
                         
@@ -1618,7 +1655,7 @@ class StringProcessor( StringProcessingStep ):
                     
                     next_strings = processing_step.ConvertAndFilter( current_strings )
                     
-                except:
+                except Exception as e:
                     
                     next_strings = current_strings
                     
@@ -1629,7 +1666,7 @@ class StringProcessor( StringProcessingStep ):
                     
                     next_strings = processing_step.Join( current_strings )
                     
-                except:
+                except Exception as e:
                     
                     next_strings = current_strings
                     

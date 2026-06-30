@@ -10,11 +10,12 @@ from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
-from hydrus.client.gui.importing import ClientGUIImportOptions
+from hydrus.client.gui.importing import ClientGUIImportOptionsPanels
 from hydrus.client.gui.lists import ClientGUIListConstants as CGLC
 from hydrus.client.gui.lists import ClientGUIListCtrl
+from hydrus.client.gui.metadata import ClientGUITagFilter
+from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 
 class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
@@ -37,7 +38,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_TAG_SERVICES.ID, self._ConvertTagDataToDisplayTuple, self._ConvertTagDataToSortTuple )
         
-        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteTag )
+        self._tag_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( tag_services_listctrl_panel, 4, model, delete_key_callback = self._DeleteTag, max_height_num_chars = 12 )
         
         tag_services_listctrl_panel.SetListCtrl( self._tag_service_actions )
         
@@ -54,7 +55,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DUPLICATE_CONTENT_MERGE_OPTIONS_RATING_SERVICES.ID, self._ConvertRatingDataToDisplayTuple, self._ConvertRatingDataToSortTuple )
         
-        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, 5, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating )
+        self._rating_service_actions = ClientGUIListCtrl.BetterListCtrlTreeView( rating_services_listctrl_panel, 4, model, delete_key_callback = self._DeleteRating, activation_callback = self._EditRating, max_height_num_chars = 12 )
         
         rating_services_listctrl_panel.SetListCtrl( self._rating_service_actions )
         
@@ -73,6 +74,8 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         self._sync_archive_action.setToolTip( ClientGUIFunctions.WrapToolTip( 'In the duplicates auto-resolution system, "always archive both" (which assumes human eyes) will be treated as "if one is archived, archive the other".' ) )
         
         self._sync_urls_action = ClientGUICommon.BetterChoice( self )
+        self._sync_urls_action.setToolTip( ClientGUIFunctions.WrapToolTip( 'This will also sync domain modified times for the respective URLs, assuming they are reasonable and older than any existing domain times.' ) )
+        
         self._sync_file_modified_date_action = ClientGUICommon.BetterChoice( self )
         self._sync_notes_action = ClientGUICommon.BetterChoice( self )
         
@@ -152,7 +155,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
                 return
                 
             
-            if self._duplicate_action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE ):
+            if self._duplicate_action == HC.DUPLICATE_BETTER:
                 
                 service = services_manager.GetService( service_key )
                 
@@ -228,7 +231,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
                 return
                 
             
-            if self._duplicate_action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE ):
+            if self._duplicate_action == HC.DUPLICATE_BETTER:
                 
                 service = services_manager.GetService( service_key )
                 
@@ -263,7 +266,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
                 
                 namespaces = CG.client_controller.network_engine.domain_manager.GetParserNamespaces()
                 
-                panel = ClientGUITags.EditTagFilterPanel( dlg_3, tag_filter, namespaces = namespaces )
+                panel = ClientGUITagFilter.EditTagFilterPanel( dlg_3, tag_filter, namespaces = namespaces )
                 
                 dlg_3.SetPanel( panel )
                 
@@ -329,7 +332,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
             
         
         pretty_action = HC.content_merge_string_lookup[ action ]
-        pretty_tag_filter = tag_filter.ToPermittedString()
+        pretty_tag_filter = tag_filter.ToFilterString()
         
         display_tuple = ( service_name, pretty_action, pretty_tag_filter )
         
@@ -370,17 +373,19 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
     
     def _EditNoteImportOptions( self ):
         
-        allow_default_selection = False
-        
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, 'edit note merge options' ) as dlg:
             
-            panel = ClientGUIImportOptions.EditNoteImportOptionsPanel( dlg, self._sync_note_import_options, allow_default_selection, simple_mode = True )
+            panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
+            
+            edit_notes_widget = ClientGUIImportOptionsPanels.EditNoteImportOptionsPanel( panel, self._sync_note_import_options, simple_mode = True )
+            
+            panel.SetControl( edit_notes_widget )
             
             dlg.SetPanel( panel )
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
-                self._sync_note_import_options = panel.GetValue()
+                self._sync_note_import_options = edit_notes_widget.GetValue()
                 
             
         
@@ -396,7 +401,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         action = self._service_keys_to_rating_options[ service_key ]
         
-        if self._duplicate_action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE ):
+        if self._duplicate_action == HC.DUPLICATE_BETTER:
             
             service = CG.client_controller.services_manager.GetService( service_key )
             
@@ -451,9 +456,18 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
         
         ( action, tag_filter ) = self._service_keys_to_tag_options[ service_key ]
         
-        if self._duplicate_action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE ):
+        if self._duplicate_action == HC.DUPLICATE_BETTER:
             
-            possible_actions = [ HC.CONTENT_MERGE_ACTION_COPY, HC.CONTENT_MERGE_ACTION_MOVE, HC.CONTENT_MERGE_ACTION_TWO_WAY_MERGE ]
+            service = CG.client_controller.services_manager.GetService( service_key )
+            
+            if service.GetServiceType() == HC.TAG_REPOSITORY:
+                
+                possible_actions = [ HC.CONTENT_MERGE_ACTION_COPY, HC.CONTENT_MERGE_ACTION_TWO_WAY_MERGE ]
+                
+            else:
+                
+                possible_actions = [ HC.CONTENT_MERGE_ACTION_COPY, HC.CONTENT_MERGE_ACTION_MOVE, HC.CONTENT_MERGE_ACTION_TWO_WAY_MERGE ]
+                
             
             choice_tuples = [ ( HC.content_merge_string_lookup[ action ], action ) for action in possible_actions ]
             
@@ -493,7 +507,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
             
             namespaces = CG.client_controller.network_engine.domain_manager.GetParserNamespaces()
             
-            panel = ClientGUITags.EditTagFilterPanel( dlg_3, tag_filter, namespaces = namespaces )
+            panel = ClientGUITagFilter.EditTagFilterPanel( dlg_3, tag_filter, namespaces = namespaces )
             
             dlg_3.SetPanel( panel )
             
@@ -562,7 +576,7 @@ class EditDuplicateContentMergeOptionsWidget( ClientGUICommon.StaticBox ):
     
     def _UpdateDuplicateTypeControls( self ):
         
-        we_better_dupe = self._duplicate_action in ( HC.DUPLICATE_BETTER, HC.DUPLICATE_WORSE )
+        we_better_dupe = self._duplicate_action == HC.DUPLICATE_BETTER
         
         note = 'Editing for "{}".'.format( HC.duplicate_type_string_lookup[ self._duplicate_action ] )
         

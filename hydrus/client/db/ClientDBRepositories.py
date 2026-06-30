@@ -283,7 +283,7 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
         self.modules_hashes_local_cache.SyncHashIds( update_hash_ids )
         
         # so we are also going to pull from here in case there are orphan records!!!
-        other_table_join = self.modules_files_storage.GetTableJoinLimitedByFileDomain( self.modules_services.combined_local_file_service_id, repository_updates_table_name, HC.CONTENT_STATUS_CURRENT )
+        other_table_join = self.modules_files_storage.GetTableJoinLimitedByFileDomain( self.modules_services.hydrus_local_file_storage_service_id, repository_updates_table_name, HC.CONTENT_STATUS_CURRENT )
         
         other_update_hash_ids = self._STL( self._Execute( 'SELECT hash_id FROM {};'.format( other_table_join ) ) )
         
@@ -411,7 +411,7 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
             ( min_unregistered_update_index, ) = result
             
         
-        predicate_phrase = 'processed = ? AND content_type IN {}'.format( HydrusData.SplayListForDB( content_types_to_process ) )
+        predicate_phrase = 'processed = ? AND content_type IN {}'.format( HydrusLists.SplayListForDB( content_types_to_process ) )
         
         if min_unregistered_update_index is not None:
             
@@ -485,13 +485,9 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
         
         ( repository_updates_table_name, repository_unregistered_updates_table_name, repository_updates_processed_table_name ) = GenerateRepositoryUpdatesTableNames( service_id )
         
-        all_hash_ids = self._STL( self._Execute( 'SELECT hash_id FROM {} ORDER BY update_index ASC;'.format( repository_updates_table_name ) ) )
+        local_files_table = ClientDBFilesStorage.GenerateFilesTableName( self.modules_services.local_update_service_id, HC.CONTENT_STATUS_CURRENT )
         
-        table_join = self.modules_files_storage.GetTableJoinLimitedByFileDomain( self.modules_services.local_update_service_id, repository_updates_table_name, HC.CONTENT_STATUS_CURRENT )
-        
-        existing_hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {};'.format( table_join ) ) )
-        
-        needed_hash_ids = [ hash_id for hash_id in all_hash_ids if hash_id not in existing_hash_ids ]
+        needed_hash_ids = self._STL( self._Execute( f'SELECT hash_id FROM {repository_updates_table_name} WHERE NOT EXISTS ( SELECT 1 FROM {local_files_table} WHERE {local_files_table}.hash_id = {repository_updates_table_name}.hash_id ) ORDER BY update_index ASC;' ) )
         
         needed_hashes = self.modules_hashes_local_cache.GetHashes( needed_hash_ids )
         
@@ -643,13 +639,13 @@ class ClientDBRepositories( ClientDBModule.ClientDBModule ):
             
         
     
-    def ProcessRepositoryDefinitions( self, service_key: bytes, definition_hash: bytes, definition_iterator_dict, content_types, job_status, work_time ):
+    def ProcessRepositoryDefinitions( self, service_key: bytes, definition_hash: bytes, definition_iterator_dict, content_types, job_status, work_period ):
         
         # ignore content_types for now
         
         service_id = self.modules_services.GetServiceId( service_key )
         
-        precise_time_to_stop = HydrusTime.GetNowPrecise() + work_time
+        precise_time_to_stop = HydrusTime.GetNowPrecise() + work_period
         
         ( hash_id_map_table_name, tag_id_map_table_name ) = GenerateRepositoryDefinitionTableNames( service_id )
         

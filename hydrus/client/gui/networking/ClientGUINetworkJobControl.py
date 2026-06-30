@@ -41,9 +41,12 @@ class NetworkJobControl( QW.QFrame ):
         
         self._gauge = ClientGUICommon.Gauge( self )
         
-        self._cog_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().cog, self._ShowCogMenu )
-        self._cancel_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().stop, self.Cancel )
-        self._error_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().dump_fail, self._ShowErrorMenu )
+        # the menu here is complicated and dynamic, so we have a 'show menu' call rather than menu_template_items
+        self._cog_button = ClientGUICommon.IconButton( self, CC.global_icons().cog, self._ShowCogMenu )
+        self._cog_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Advanced settings/commands.' ) )
+        
+        self._cancel_button = ClientGUICommon.IconButton( self, CC.global_icons().stop, self.Cancel )
+        self._error_button = ClientGUICommon.IconButton( self, CC.global_icons().dump_fail, self._ShowErrorMenu )
         
         self._error_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Click here to see the last job\'s error.' ) )
         
@@ -62,19 +65,19 @@ class NetworkJobControl( QW.QFrame ):
         QP.AddToLayout( st_hbox, self._left_text, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( st_hbox, self._right_text, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        left_vbox = QP.VBoxLayout()
+        gauge_hbox = QP.HBoxLayout()
         
-        QP.AddToLayout( left_vbox, st_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
-        QP.AddToLayout( left_vbox, self._gauge, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( gauge_hbox, self._gauge, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( gauge_hbox, self._cancel_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( gauge_hbox, self._error_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( gauge_hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
-        hbox = QP.HBoxLayout()
+        vbox = QP.VBoxLayout()
         
-        QP.AddToLayout( hbox, left_vbox, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        QP.AddToLayout( hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( hbox, self._cancel_button, CC.FLAGS_CENTER_PERPENDICULAR )
-        QP.AddToLayout( hbox, self._error_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( vbox, st_hbox, CC.FLAGS_EXPAND_SIZER_PERPENDICULAR )
+        QP.AddToLayout( vbox, gauge_hbox, CC.FLAGS_EXPAND_BOTH_WAYS )
         
-        self.setLayout( hbox )
+        self.setLayout( vbox )
         
     
     def _EditBandwidthRules( self, network_context: ClientNetworkingContexts.NetworkContext ):

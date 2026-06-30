@@ -4,7 +4,7 @@ import weakref
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusLists
-from hydrus.core import HydrusThreading
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientServices
@@ -25,8 +25,15 @@ class MediaResultCacheContainer( ClientCachesBase.CacheableObject ):
         return 1
         
     
+    def IsFinishedLoading( self ):
+        
+        return True
+        
+    
 
 class MediaResultCache( object ):
+    
+    my_instance = None
     
     def __init__( self ):
         
@@ -47,6 +54,17 @@ class MediaResultCache( object ):
         CG.client_controller.sub( self, 'NewTagDisplayRules', 'notify_new_tag_display_rules' )
         
     
+    @staticmethod
+    def instance() -> 'MediaResultCache':
+        
+        if MediaResultCache.my_instance is None:
+            
+            MediaResultCache.my_instance = MediaResultCache()
+            
+        
+        return MediaResultCache.my_instance
+        
+    
     def AddMediaResults( self, media_results: collections.abc.Iterable[ ClientMediaResult.MediaResult ] ):
         
         with self._lock:
@@ -62,6 +80,14 @@ class MediaResultCache( object ):
                 self._fifo_timeout_cache.AddData( hash_id, MediaResultCacheContainer( media_result ) )
                 
             
+        
+    
+    def Clear( self ):
+        
+        self._hash_ids_to_media_results = weakref.WeakValueDictionary()
+        self._hashes_to_media_results = weakref.WeakValueDictionary()
+        
+        self._fifo_timeout_cache = ClientCachesBase.DataCache( CG.client_controller, 'media result cache', 2048, 120 )
         
     
     def DropMediaResult( self, hash_id: int, hash: bytes ):
@@ -115,7 +141,7 @@ class MediaResultCache( object ):
         
         def do_it( hash_ids ):
             
-            for group_of_hash_ids in HydrusLists.SplitListIntoChunks( hash_ids, 256 ):
+            for ( num_done, num_to_do, group_of_hash_ids ) in HydrusLists.SplitListIntoChunksRich( hash_ids, 256 ):
                 
                 if HydrusThreading.IsThreadShuttingDown():
                     

@@ -1,6 +1,5 @@
 import collections.abc
 import sqlite3
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -111,7 +110,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             hash_ids = set( hash_ids )
             
         
-        location_context = ClientLocation.LocationContext( current_service_keys = ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ) )
+        location_context = ClientLocation.LocationContext( current_service_keys = ( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ) )
         
         hash_ids = self.modules_files_storage.FilterHashIds( location_context, hash_ids )
         
@@ -134,7 +133,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def FillInMissingImportArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ):
+    def FillInMissingImportArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ):
         
         if job_status is not None:
             
@@ -175,7 +174,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def FillInMissingLegacyArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ):
+    def FillInMissingLegacyArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ):
         
         if job_status is not None:
             
@@ -232,25 +231,21 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def _IterateMissingArchiveTimestampData( self, import_timestamp_lambda = None, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ):
+    def _IterateMissingArchiveTimestampData( self, import_timestamp_lambda = None, job_status: ClientThreading.JobStatus | None = None ):
         
         try:
             
             # are there any non-inbox local files or any deleted files for which we have an import time (actual or deletion memory) before the magic time for which there is no accompanying archive time? 
             
             # current media PLUS current trash
-            current_hash_ids = set( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.combined_local_media_service_id ) )
+            current_hash_ids = set( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.combined_local_file_domains_service_id ) )
             current_hash_ids.update( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.trash_service_id ) )
             
             current_archived_hash_ids = current_hash_ids.difference( self.inbox_hash_ids )
             
-            num_to_do = len( current_archived_hash_ids )
-            
             BLOCK_SIZE = 4096
             
-            for ( i, batch_of_hash_ids ) in enumerate( HydrusLists.SplitListIntoChunks( current_archived_hash_ids, 4096 ) ):
-                
-                num_done = i * BLOCK_SIZE
+            for ( num_done, num_to_do, batch_of_hash_ids ) in HydrusLists.SplitListIntoChunksRich( current_archived_hash_ids, BLOCK_SIZE ):
                 
                 message = f'Searching current files: {HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do )}'
                 
@@ -259,7 +254,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
                 if job_status is not None:
                     
                     job_status.SetStatusText( message, level = 2 )
-                    job_status.SetVariable( 'popup_gauge_2', ( num_done, num_to_do ) )
+                    job_status.SetGauge( num_done, num_to_do, level = 2 )
                     
                     if job_status.IsCancelled():
                         
@@ -267,7 +262,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
                         
                     
                 
-                batch_of_hash_ids_to_current_timestamps_ms = self.modules_files_storage.GetCurrentHashIdsToTimestampsMS( self.modules_services.combined_local_file_service_id, batch_of_hash_ids )
+                batch_of_hash_ids_to_current_timestamps_ms = self.modules_files_storage.GetCurrentHashIdsToTimestampsMS( self.modules_services.hydrus_local_file_storage_service_id, batch_of_hash_ids )
                 
                 batch_of_hash_ids_to_current_timestamps_ms = { hash_id : timestamp for ( hash_id, timestamp ) in batch_of_hash_ids_to_current_timestamps_ms.items() if timestamp is not None }
                 
@@ -292,16 +287,12 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             #
             
             # deleted from my media EX current trash. these are all archived
-            deleted_hash_ids = set( self.modules_files_storage.GetDeletedHashIdsList( self.modules_services.combined_local_media_service_id ) )
+            deleted_hash_ids = set( self.modules_files_storage.GetDeletedHashIdsList( self.modules_services.combined_local_file_domains_service_id ) )
             deleted_hash_ids.difference_update( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.trash_service_id ) )
-            
-            num_to_do = len( deleted_hash_ids )
             
             BLOCK_SIZE = 4096
             
-            for ( i, batch_of_hash_ids ) in enumerate( HydrusLists.SplitListIntoChunks( deleted_hash_ids, BLOCK_SIZE ) ):
-                
-                num_done = i * BLOCK_SIZE
+            for ( num_done, num_to_do, batch_of_hash_ids ) in HydrusLists.SplitListIntoChunksRich( deleted_hash_ids, BLOCK_SIZE ):
                 
                 message = f'Searching deleted files: {HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do )}'
                 
@@ -310,7 +301,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
                 if job_status is not None:
                     
                     job_status.SetStatusText( message, level = 2 )
-                    job_status.SetVariable( 'popup_gauge_2', ( num_done, num_to_do ) )
+                    job_status.SetGauge( num_done, num_to_do, level = 2 )
                     
                     if job_status.IsCancelled():
                         
@@ -318,7 +309,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
                         
                     
                 
-                batch_of_hash_ids_to_deleted_timestamps_ms = self.modules_files_storage.GetDeletedHashIdsToTimestampsMS( self.modules_services.combined_local_media_service_id, batch_of_hash_ids )
+                batch_of_hash_ids_to_deleted_timestamps_ms = self.modules_files_storage.GetDeletedHashIdsToTimestampsMS( self.modules_services.combined_local_file_domains_service_id, batch_of_hash_ids )
                 
                 batch_of_hash_ids_to_deleted_timestamps_ms = { hash_id : ( deleted_timestamp_ms, original_import_timestamp_ms ) for ( hash_id, ( deleted_timestamp_ms, original_import_timestamp_ms ) ) in batch_of_hash_ids_to_deleted_timestamps_ms.items() if original_import_timestamp_ms is not None }
                 
@@ -347,12 +338,12 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             if job_status is not None:
                 
                 job_status.DeleteStatusText( level = 2 )
-                job_status.DeleteVariable( 'popup_gauge_2' )
+                job_status.DeleteGauge( level = 2 )
                 
             
         
     
-    def NumMissingImportArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> int:
+    def NumMissingImportArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ) -> int:
         
         if job_status is not None:
             
@@ -381,7 +372,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def NumMissingLegacyArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> int:
+    def NumMissingLegacyArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ) -> int:
         
         if job_status is not None:
             
@@ -410,7 +401,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def WeHaveMissingImportArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> bool:
+    def WeHaveMissingImportArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ) -> bool:
         
         if job_status is not None:
             
@@ -437,7 +428,7 @@ class ClientDBFilesInbox( ClientDBModule.ClientDBModule ):
             
         
     
-    def WeHaveMissingLegacyArchiveTimestamps( self, job_status: typing.Optional[ ClientThreading.JobStatus ] = None ) -> bool:
+    def WeHaveMissingLegacyArchiveTimestamps( self, job_status: ClientThreading.JobStatus | None = None ) -> bool:
         
         if job_status is not None:
             

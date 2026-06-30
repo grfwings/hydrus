@@ -1,17 +1,23 @@
 import os
+import platform
 import sqlite3
 import sys
-import typing
 
+# if you ever remove this, don't forget it is in HydrusBoot as the third party library check
 import yaml
-
-# old method of getting frozen dir, doesn't work for symlinks looks like:
-# BASE_DIR = getattr( sys, '_MEIPASS', None )
 
 RUNNING_CLIENT = False
 RUNNING_SERVER = False
 
 RUNNING_FROM_FROZEN_BUILD = getattr( sys, 'frozen', False )
+
+# since pyinstaller 4.3, __file__ is corrected and will work in frozen as it does in source
+# __file__ paths are virtual--the actual .pyc files are bundled into a PYZ-00.pyz archive inside the exe or whatever
+
+# this file is stored in hydrus/core
+HYDRUS_MODULE_BASE_DIR = os.path.dirname( os.path.dirname( os.path.realpath( __file__ ) ) )
+
+CONTENT_BASE_DIR = os.path.dirname( HYDRUS_MODULE_BASE_DIR )
 
 if RUNNING_FROM_FROZEN_BUILD:
     
@@ -19,26 +25,40 @@ if RUNNING_FROM_FROZEN_BUILD:
     
     BASE_DIR = os.path.dirname( real_exe_path )
     
+    if os.path.exists( os.path.join( CONTENT_BASE_DIR, 'static' ) ):
+        
+        # ok everything is fine. in the new spec, this location is base_dir/lib
+        pass
+        
+    elif os.path.exists( os.path.join( BASE_DIR, 'static' ) ):
+        
+        # something crazy is going on, but let's try and recover
+        CONTENT_BASE_DIR = BASE_DIR
+        
+    else:
+        
+        raise Exception( 'Could not determine the content base directory! Please tell hydev!' )
+        
+    
 else:
     
-    try:
-        
-        hc_realpath_dir = os.path.dirname( os.path.realpath( __file__ ) )
-        
-        HYDRUS_MODULE_DIR = os.path.split( hc_realpath_dir )[0]
-        
-        BASE_DIR = os.path.split( HYDRUS_MODULE_DIR )[0]
-        
-    except NameError: # if __file__ is not defined due to some weird OS
-        
-        BASE_DIR = os.path.realpath( sys.path[0] )
-        
+    BASE_DIR = CONTENT_BASE_DIR
     
-    if BASE_DIR == '':
-        
-        BASE_DIR = os.getcwd()
-        
+
+if BASE_DIR == '':
     
+    raise Exception( 'Could not determine the base directory! Please tell hydev!' )
+    
+
+BIN_DIR = os.path.join( CONTENT_BASE_DIR, 'bin' )
+HELP_DIR = os.path.join( CONTENT_BASE_DIR, 'help' )
+
+LICENSE_PATH = os.path.join( CONTENT_BASE_DIR, 'license.txt' )
+
+DEFAULT_DB_DIR = os.path.join( BASE_DIR, 'db' )
+CONTENT_DB_DIR = os.path.join( CONTENT_BASE_DIR, 'db' )
+
+#
 
 muh_platform = sys.platform.lower()
 
@@ -55,11 +75,19 @@ elif PLATFORM_LINUX:
     NICE_PLATFORM_STRING = 'Linux'
 elif PLATFORM_HAIKU:
     NICE_PLATFORM_STRING = 'Haiku'
+else:
+    NICE_PLATFORM_STRING = 'Unknown?!'
 
+NICE_ARCHITECTURE_STRING = platform.machine()
+
+if NICE_ARCHITECTURE_STRING == 'AMD64':
+    
+    NICE_ARCHITECTURE_STRING = 'x86_64'
+    
+
+# this is obviously old, but we'll leave it in for any future attempts
 RUNNING_FROM_MACOS_APP = os.path.exists( os.path.join( BASE_DIR, 'running_from_app' ) )
 
-# I used to check argv[0], but it is unreliable
-# sys.argv[0].endswith( '.py' ) or sys.argv[0].endswith( '.pyw' )
 RUNNING_FROM_SOURCE = not ( RUNNING_FROM_FROZEN_BUILD or RUNNING_FROM_MACOS_APP )
 
 if RUNNING_FROM_SOURCE:
@@ -68,13 +96,8 @@ elif RUNNING_FROM_FROZEN_BUILD:
     NICE_RUNNING_AS_STRING = 'from frozen build'
 elif RUNNING_FROM_MACOS_APP:
     NICE_RUNNING_AS_STRING = 'from App'
-
-BIN_DIR = os.path.join( BASE_DIR, 'bin' )
-HELP_DIR = os.path.join( BASE_DIR, 'help' )
-INCLUDE_DIR = os.path.join( BASE_DIR, 'include' )
-STATIC_DIR = os.path.join( BASE_DIR, 'static' )
-
-DEFAULT_DB_DIR = os.path.join( BASE_DIR, 'db' )
+else:
+    NICE_RUNNING_AS_STRING = 'from unknown?!'
 
 if PLATFORM_MACOS:
     
@@ -96,8 +119,6 @@ if USERPATH_DB_DIR == desired_userpath_db_dir:
 
 WE_SWITCHED_TO_USERPATH = False
 
-LICENSE_PATH = os.path.join( BASE_DIR, 'license.txt' )
-
 #
 
 options = {}
@@ -105,8 +126,8 @@ options = {}
 # Misc
 
 NETWORK_VERSION = 20
-SOFTWARE_VERSION = 625
-CLIENT_API_VERSION = 80
+SOFTWARE_VERSION = 666
+CLIENT_API_VERSION = 88
 
 SERVER_THUMBNAIL_DIMENSIONS = ( 200, 200 )
 
@@ -116,10 +137,7 @@ READ_BLOCK_SIZE = 256 * 1024
 
 lifetimes = [ ( 'one month', 30 * 86400 ), ( 'three months', 3 * 30 * 86400 ), ( 'six months', 6 * 30 * 86400 ), ( 'one year', 365 * 86400 ), ( 'two years', 2 * 365 * 86400 ), ( 'five years', 5 * 365 * 86400 ), ( 'does not expire', None ) ]
 
-# some typing stuff
-
-noneable_int = typing.Optional[ int ]
-noneable_str = typing.Optional[ str ]
+USERPATH_SVG_ICON = 'star_shapes'
 
 # Enums
 
@@ -240,6 +258,7 @@ CONTENT_UPDATE_INCREMENT = 18
 CONTENT_UPDATE_DECREMENT = 19
 CONTENT_UPDATE_MOVE = 20
 CONTENT_UPDATE_DELETE_FROM_SOURCE_AFTER_MIGRATE = 21
+CONTENT_UPDATE_MOVE_MERGE = 22
 
 content_update_string_lookup = {
     CONTENT_UPDATE_ADD : 'add',
@@ -260,7 +279,8 @@ content_update_string_lookup = {
     CONTENT_UPDATE_CLEAR_DELETE_RECORD : 'clear deletion record',
     CONTENT_UPDATE_INCREMENT : 'increment',
     CONTENT_UPDATE_DECREMENT : 'decrement',
-    CONTENT_UPDATE_MOVE : 'move',
+    CONTENT_UPDATE_MOVE : 'move (if not already in destination)',
+    CONTENT_UPDATE_MOVE_MERGE : 'move (even if already in destination)'
 }
 
 DEFINITIONS_TYPE_HASHES = 0
@@ -271,10 +291,10 @@ DUPLICATE_POTENTIAL = 0
 DUPLICATE_FALSE_POSITIVE = 1
 DUPLICATE_SAME_QUALITY = 2
 DUPLICATE_ALTERNATE = 3
-DUPLICATE_BETTER = 4 # TODO: as part of this, rename BETTER/WORSE to A IS BETTER and B IS BETTER
+DUPLICATE_BETTER = 4
 DUPLICATE_SMALLER_BETTER = 5
 DUPLICATE_LARGER_BETTER = 6
-DUPLICATE_WORSE = 7
+DUPLICATE_WORSE = 7 # aieeeeeeee
 DUPLICATE_MEMBER = 8
 DUPLICATE_KING = 9
 DUPLICATE_CONFIRMED_ALTERNATE = 10
@@ -328,6 +348,10 @@ filter_black_white_str_lookup = {
 HYDRUS_CLIENT = 0
 HYDRUS_SERVER = 1
 HYDRUS_TEST = 2
+
+LOGICAL_OPERATOR_ALL = 0
+LOGICAL_OPERATOR_ANY = 1
+LOGICAL_OPERATOR_ONLY = 2
 
 MAINTENANCE_IDLE = 0
 MAINTENANCE_SHUTDOWN = 1
@@ -425,13 +449,13 @@ COMBINED_FILE = 11
 LOCAL_BOORU = 12
 IPFS = 13
 LOCAL_FILE_TRASH_DOMAIN = 14
-COMBINED_LOCAL_FILE = 15
+HYDRUS_LOCAL_FILE_STORAGE = 15
 TEST_SERVICE = 16
 LOCAL_NOTES = 17
 CLIENT_API_SERVICE = 18
 COMBINED_DELETED_FILE = 19
 LOCAL_FILE_UPDATE_DOMAIN = 20
-COMBINED_LOCAL_MEDIA = 21
+COMBINED_LOCAL_FILE_DOMAINS = 21
 LOCAL_RATING_INCDEC = 22
 SERVER_ADMIN = 99
 NULL_SERVICE = 100
@@ -442,17 +466,17 @@ service_string_lookup = {
     LOCAL_FILE_DOMAIN : 'local file domain',
     LOCAL_FILE_TRASH_DOMAIN : 'local trash file domain',
     LOCAL_FILE_UPDATE_DOMAIN : 'local update file domain',
-    COMBINED_LOCAL_FILE : 'virtual combined local file service',
-    COMBINED_LOCAL_MEDIA : 'virtual combined local media service',
+    HYDRUS_LOCAL_FILE_STORAGE : 'virtual combined local file domain',
+    COMBINED_LOCAL_FILE_DOMAINS : 'virtual combined local media domain',
     MESSAGE_DEPOT : 'hydrus message depot',
-    LOCAL_TAG : 'local tag service',
+    LOCAL_TAG : 'local tag domain',
     LOCAL_RATING_INCDEC : 'local inc/dec rating service',
     LOCAL_RATING_NUMERICAL : 'local numerical rating service',
     LOCAL_RATING_LIKE : 'local like/dislike rating service',
     RATING_NUMERICAL_REPOSITORY : 'hydrus numerical rating repository',
     RATING_LIKE_REPOSITORY : 'hydrus like/dislike rating repository',
-    COMBINED_TAG : 'virtual combined tag service',
-    COMBINED_FILE : 'virtual combined file service',
+    COMBINED_TAG : 'virtual combined tag domain',
+    COMBINED_FILE : 'virtual combined file domain',
     LOCAL_BOORU : 'client local booru',
     CLIENT_API_SERVICE : 'client api',
     IPFS : 'ipfs daemon',
@@ -463,14 +487,69 @@ service_string_lookup = {
     NULL_SERVICE : 'null service'
 }
 
+service_string_lookup_short = {
+    TAG_REPOSITORY : 'tag repository',
+    FILE_REPOSITORY : 'file repository',
+    LOCAL_FILE_DOMAIN : 'local file domain',
+    LOCAL_FILE_TRASH_DOMAIN : 'trash',
+    LOCAL_FILE_UPDATE_DOMAIN : 'local update file domain',
+    HYDRUS_LOCAL_FILE_STORAGE : 'hydrus local file storage',
+    COMBINED_LOCAL_FILE_DOMAINS : 'combined local file domains',
+    MESSAGE_DEPOT : 'hydrus message depot',
+    LOCAL_TAG : 'local tag domain',
+    LOCAL_RATING_INCDEC : 'inc/dec ratings',
+    LOCAL_RATING_NUMERICAL : 'numerical ratings',
+    LOCAL_RATING_LIKE : 'like/dislike ratings',
+    RATING_NUMERICAL_REPOSITORY : 'hydrus numerical rating repository',
+    RATING_LIKE_REPOSITORY : 'hydrus like/dislike rating repository',
+    COMBINED_TAG : 'all known tags',
+    COMBINED_FILE : 'all known files',
+    LOCAL_BOORU : 'local booru',
+    CLIENT_API_SERVICE : 'client api',
+    IPFS : 'ipfs',
+    TEST_SERVICE : 'test service',
+    LOCAL_NOTES : 'notes',
+    SERVER_ADMIN : 'hydrus server administration',
+    COMBINED_DELETED_FILE : 'virtual deleted file service',
+    NULL_SERVICE : 'null service'
+}
+
+service_description_lookup = {
+    TAG_REPOSITORY : 'A repository of tag mapping data (tag-file pairs) stored on a remote server. Clients can sync with it, which means to download all the file hashes, tags, and mappings it knows of and synchronise that to local metadata storage. Clients can also upload new mapping data, which will in turn be shared to all users.\n\nThe "all known tags" service is a union of all local tag domains and remote tag repositories.',
+    FILE_REPOSITORY : 'A repository of files stored on a remote server. Clients can sync with it, which means to regularly download all the file hashes and thumbnails. You can search it like any other file domain, viewing the thumbnails, and download files. Clients can also upload new files, which will in turn be shared to all users.',
+    LOCAL_FILE_DOMAIN : 'This stores media files you have imported. You can have multiple local file domains, and files may be in multiple local file domains at once. Each domain is completely isolated from one another when you perform a file or tag search (if your search page is pointed at A, you will not get any file search results or tag autocomplete suggestions from B).',
+    LOCAL_FILE_TRASH_DOMAIN : 'This is where your files go when they have been removed from all your local file domains. It is a waiting area to allow for undeletes of mistakes. When files are deleted from this place, they are physically deleted.',
+    LOCAL_FILE_UPDATE_DOMAIN : 'This holds repository update files if you decide to sync with a file or tag repository. It is full of zipped up JSON and is not covered by "combined local file domains" like the normal local file domains. You can generally ignore it.',
+    HYDRUS_LOCAL_FILE_STORAGE : 'This represents all files currently tracked and stored in your database. If a file is in here, it is either in "repository updates", "combined local file domains", or "trash", and it should be loadable from disk.\n\nWhen a file is deleted from the trash, it also leaves this domain and is scheduled to be physically deleted--which usually happens within a few seconds.',
+    COMBINED_LOCAL_FILE_DOMAINS : 'This represents all files currently in any of your local file domains. You start with only "my files", but if you add more, this is a convenient umbrella that unions all of them with efficient search tech. When a file is deleted from all of its local file domains, it leaves this service and enters the trash.',
+    MESSAGE_DEPOT : 'You should not see this text',
+    LOCAL_TAG : 'This stores tag mappings (tag-file pairs) that you have added/imported. You can have multiple local tag domains, and the exact same mappings map appear in multiple domains.\n\nTags are not removed when files are deleted, and if you later re-import the file, you will see it still has its tags.\n\nThe "all known tags" service is a union of all local tag services and tag repositories.',
+    LOCAL_RATING_INCDEC : 'This stores inc/dec ratings.\n\nRatings are not removed when files are deleted, and if you later re-import the file, you will see it still has its ratings.',
+    LOCAL_RATING_NUMERICAL : 'This stores numerical ratings.\n\nRatings are not removed when files are deleted, and if you later re-import the file, you will see it still has its ratings.',
+    LOCAL_RATING_LIKE : 'This stores like/dislike ratings.\n\nRatings are not removed when files are deleted, and if you later re-import the file, you will see it still has its ratings.',
+    RATING_NUMERICAL_REPOSITORY : 'You should not see this text',
+    RATING_LIKE_REPOSITORY : 'You should not see this text',
+    COMBINED_TAG : 'This is a union of all your local tag domains and remote tag repositories.',
+    COMBINED_FILE : 'This is a special view on a tag service. It will deliver results without any cross-reference with a known file service, and thus if the file is tagged on a service, you will see it whether you have it, had it, or have never had it.',
+    LOCAL_BOORU : 'You should not see this text',
+    CLIENT_API_SERVICE : 'The Client API.',
+    IPFS : 'A remote listing of files stored/pinned on an IPFS daemon. You can search it like any other file domain.',
+    TEST_SERVICE : 'You should not see this text',
+    LOCAL_NOTES : 'This stores your file notes.\n\nNotes are not removed when files are deleted, and if you later re-import the file, you will see it still has its notes.',
+    SERVER_ADMIN : 'This is an interface to a server that allows editing of admin accounts and which remote services are running.',
+    COMBINED_DELETED_FILE : 'This represents all the files that have ever been deleted from any location. It is for advanced technical jobs, and you can generally ignore it.',
+    NULL_SERVICE : 'You should not see this text'
+}
+
 SPECIFIC_LOCAL_FILE_SERVICES = ( LOCAL_FILE_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, LOCAL_FILE_TRASH_DOMAIN )
-LOCAL_FILE_SERVICES = SPECIFIC_LOCAL_FILE_SERVICES + ( COMBINED_LOCAL_FILE, COMBINED_LOCAL_MEDIA )
-LOCAL_FILE_SERVICES_IN_NICE_ORDER = ( LOCAL_FILE_DOMAIN, COMBINED_LOCAL_MEDIA, LOCAL_FILE_TRASH_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, COMBINED_LOCAL_FILE )
+LOCAL_FILE_SERVICES = SPECIFIC_LOCAL_FILE_SERVICES + ( HYDRUS_LOCAL_FILE_STORAGE, COMBINED_LOCAL_FILE_DOMAINS )
+LOCAL_FILE_SERVICES_IN_NICE_ORDER = ( LOCAL_FILE_DOMAIN, COMBINED_LOCAL_FILE_DOMAINS, LOCAL_FILE_TRASH_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, HYDRUS_LOCAL_FILE_STORAGE )
 LOCAL_TAG_SERVICES = ( LOCAL_TAG, )
 
 LOCAL_SERVICES = LOCAL_FILE_SERVICES + LOCAL_TAG_SERVICES + ( LOCAL_RATING_LIKE, LOCAL_RATING_NUMERICAL, LOCAL_RATING_INCDEC, LOCAL_NOTES, CLIENT_API_SERVICE )
 
 STAR_RATINGS_SERVICES = ( LOCAL_RATING_LIKE, LOCAL_RATING_NUMERICAL, RATING_LIKE_REPOSITORY, RATING_NUMERICAL_REPOSITORY )
+LOCAL_RATINGS_SERVICES = ( LOCAL_RATING_LIKE, LOCAL_RATING_NUMERICAL, LOCAL_RATING_INCDEC )
 RATINGS_SERVICES = ( LOCAL_RATING_LIKE, LOCAL_RATING_NUMERICAL, LOCAL_RATING_INCDEC, RATING_LIKE_REPOSITORY, RATING_NUMERICAL_REPOSITORY )
 REPOSITORIES = ( TAG_REPOSITORY, FILE_REPOSITORY, RATING_LIKE_REPOSITORY, RATING_NUMERICAL_REPOSITORY )
 RESTRICTED_SERVICES = REPOSITORIES + ( SERVER_ADMIN, MESSAGE_DEPOT )
@@ -483,11 +562,11 @@ MUST_HAVE_AT_LEAST_ONE_SERVICES = ( LOCAL_TAG, LOCAL_FILE_DOMAIN )
 MUST_BE_EMPTY_OF_FILES_SERVICES = ( LOCAL_FILE_DOMAIN, )
 
 FILE_SERVICES_WITH_SPECIFIC_MAPPING_CACHES = REAL_FILE_SERVICES
-FILE_SERVICES_WITH_SPECIFIC_TAG_LOOKUP_CACHES = ( COMBINED_LOCAL_FILE, COMBINED_DELETED_FILE, FILE_REPOSITORY, IPFS )
+FILE_SERVICES_WITH_SPECIFIC_TAG_LOOKUP_CACHES = ( HYDRUS_LOCAL_FILE_STORAGE, COMBINED_DELETED_FILE, FILE_REPOSITORY, IPFS )
 
-FILE_SERVICES_COVERED_BY_COMBINED_LOCAL_MEDIA = ( LOCAL_FILE_DOMAIN, )
-FILE_SERVICES_COVERED_BY_COMBINED_LOCAL_FILE = ( COMBINED_LOCAL_MEDIA, LOCAL_FILE_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, LOCAL_FILE_TRASH_DOMAIN )
-FILE_SERVICES_COVERED_BY_COMBINED_DELETED_FILE = ( COMBINED_LOCAL_MEDIA, LOCAL_FILE_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, FILE_REPOSITORY, IPFS )
+FILE_SERVICES_COVERED_BY_COMBINED_LOCAL_FILE_DOMAINS = ( LOCAL_FILE_DOMAIN, )
+FILE_SERVICES_COVERED_BY_HYDRUS_LOCAL_FILE_STORAGE = ( COMBINED_LOCAL_FILE_DOMAINS, LOCAL_FILE_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, LOCAL_FILE_TRASH_DOMAIN )
+FILE_SERVICES_COVERED_BY_COMBINED_DELETED_FILE = ( COMBINED_LOCAL_FILE_DOMAINS, LOCAL_FILE_DOMAIN, LOCAL_FILE_UPDATE_DOMAIN, FILE_REPOSITORY, IPFS )
 
 ALL_SERVICES = REMOTE_SERVICES + LOCAL_SERVICES + ( COMBINED_FILE, COMBINED_TAG, COMBINED_DELETED_FILE )
 ALL_TAG_SERVICES = REAL_TAG_SERVICES + ( COMBINED_TAG, )
@@ -503,8 +582,8 @@ SERVICE_TYPES_TO_CONTENT_TYPES = {
     LOCAL_FILE_DOMAIN : ( CONTENT_TYPE_FILES, ),
     LOCAL_FILE_UPDATE_DOMAIN : ( CONTENT_TYPE_FILES, ),
     LOCAL_FILE_TRASH_DOMAIN : ( CONTENT_TYPE_FILES, ),
-    COMBINED_LOCAL_MEDIA : ( CONTENT_TYPE_FILES, ),
-    COMBINED_LOCAL_FILE : ( CONTENT_TYPE_FILES, ),
+    COMBINED_LOCAL_FILE_DOMAINS : ( CONTENT_TYPE_FILES, ),
+    HYDRUS_LOCAL_FILE_STORAGE : ( CONTENT_TYPE_FILES, ),
     IPFS : ( CONTENT_TYPE_FILES, ),
     TAG_REPOSITORY : ( CONTENT_TYPE_MAPPINGS, CONTENT_TYPE_TAG_PARENTS, CONTENT_TYPE_TAG_SIBLINGS ),
     LOCAL_TAG : ( CONTENT_TYPE_MAPPINGS, CONTENT_TYPE_TAG_PARENTS, CONTENT_TYPE_TAG_SIBLINGS ),
@@ -761,6 +840,10 @@ APPLICATION_PPT = 82
 ANIMATION_WEBP = 83
 UNDETERMINED_WEBP = 84
 IMAGE_JXL = 85
+APPLICATION_PAINT_DOT_NET = 86
+UNDETERMINED_JXL = 87
+ANIMATION_JXL = 88
+IMAGE_OPENRASTER = 89
 APPLICATION_OCTET_STREAM = 100
 APPLICATION_UNKNOWN = 101
 
@@ -794,6 +877,7 @@ SEARCHABLE_MIMES = {
     IMAGE_AVIF_SEQUENCE,
     IMAGE_BMP,
     IMAGE_JXL,
+    ANIMATION_JXL,
     ANIMATION_UGOIRA,
     APPLICATION_FLASH,
     VIDEO_AVI,
@@ -810,6 +894,7 @@ SEARCHABLE_MIMES = {
     APPLICATION_PSD,
     APPLICATION_SAI2,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
     APPLICATION_XCF,
     APPLICATION_PROCREATE,
     APPLICATION_PDF,
@@ -821,6 +906,7 @@ SEARCHABLE_MIMES = {
     APPLICATION_PPT,
     APPLICATION_EPUB,
     APPLICATION_DJVU,
+    APPLICATION_PAINT_DOT_NET,
     APPLICATION_RTF,
     APPLICATION_ZIP,
     APPLICATION_RAR,
@@ -853,8 +939,8 @@ IMAGES = [
     IMAGE_PNG,
     IMAGE_GIF,
     IMAGE_WEBP,
-    IMAGE_AVIF,
     IMAGE_JXL,
+    IMAGE_AVIF,
     IMAGE_BMP,
     IMAGE_HEIC,
     IMAGE_HEIF,
@@ -867,6 +953,7 @@ ANIMATIONS = [
     ANIMATION_GIF,
     ANIMATION_APNG,
     ANIMATION_WEBP,
+    ANIMATION_JXL,
     IMAGE_AVIF_SEQUENCE,
     IMAGE_HEIC_SEQUENCE,
     IMAGE_HEIF_SEQUENCE,
@@ -877,6 +964,7 @@ VIEWABLE_ANIMATIONS = [
     ANIMATION_GIF,
     ANIMATION_APNG,
     ANIMATION_WEBP,
+    ANIMATION_JXL,
     IMAGE_AVIF_SEQUENCE,
     IMAGE_HEIC_SEQUENCE,
     IMAGE_HEIF_SEQUENCE,
@@ -932,6 +1020,8 @@ APPLICATIONS = [
 IMAGE_PROJECT_FILES = [
     APPLICATION_CLIP,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
+    APPLICATION_PAINT_DOT_NET,
     APPLICATION_PROCREATE,
     APPLICATION_PSD,
     APPLICATION_SAI2,
@@ -947,10 +1037,10 @@ ARCHIVES = [
     APPLICATION_ZIP
 ]
 
-VIEWABLE_IMAGE_PROJECT_FILES = { APPLICATION_PSD, APPLICATION_KRITA }
+VIEWABLE_IMAGE_PROJECT_FILES = { APPLICATION_PSD, APPLICATION_KRITA, IMAGE_OPENRASTER }
 
 # zip files that have a `mimetype` file inside
-OPEN_DOCUMENT_ZIPS = { APPLICATION_KRITA, APPLICATION_EPUB }
+OPEN_DOCUMENT_ZIPS = { APPLICATION_KRITA, APPLICATION_EPUB, IMAGE_OPENRASTER }
 
 # zip files that have a `[Content_Types].xml` file inside
 MICROSOFT_OPEN_XML_DOCUMENT_ZIPS = { APPLICATION_DOCX, APPLICATION_XLSX, APPLICATION_PPTX }
@@ -1007,6 +1097,7 @@ MIMES_THAT_WE_CAN_CHECK_FOR_TRANSPARENCY = {
     ANIMATION_GIF,
     ANIMATION_APNG,
     ANIMATION_WEBP,
+    ANIMATION_JXL,
     IMAGE_AVIF_SEQUENCE,
     IMAGE_HEIF_SEQUENCE,
     IMAGE_HEIC_SEQUENCE
@@ -1016,13 +1107,14 @@ MIMES_THAT_MAY_THEORETICALLY_HAVE_TRANSPARENCY = MIMES_THAT_WE_CAN_CHECK_FOR_TRA
     APPLICATION_PSD,
     APPLICATION_SAI2,
     APPLICATION_KRITA,
+    IMAGE_OPENRASTER,
     APPLICATION_XCF,
     APPLICATION_PROCREATE,
     APPLICATION_CLIP,
     IMAGE_SVG
 } )
 
-APPLICATIONS_WITH_THUMBNAILS = { IMAGE_SVG, APPLICATION_PDF, APPLICATION_FLASH, APPLICATION_CLIP, APPLICATION_PROCREATE, APPLICATION_CBZ, APPLICATION_PPTX }.union( VIEWABLE_IMAGE_PROJECT_FILES )
+APPLICATIONS_WITH_THUMBNAILS = { IMAGE_SVG, APPLICATION_PDF, APPLICATION_FLASH, APPLICATION_CLIP, APPLICATION_PROCREATE, APPLICATION_CBZ, APPLICATION_PPTX, APPLICATION_PAINT_DOT_NET, APPLICATION_EPUB }.union( VIEWABLE_IMAGE_PROJECT_FILES )
 
 MIMES_WITH_THUMBNAILS = set( IMAGES ).union( ANIMATIONS ).union( VIDEO ).union( APPLICATIONS_WITH_THUMBNAILS )
 
@@ -1030,10 +1122,10 @@ MIMES_WITH_THUMBNAILS = set( IMAGES ).union( ANIMATIONS ).union( VIDEO ).union( 
 MIMES_THAT_ALWAYS_HAVE_GOOD_RESOLUTION = set( IMAGES ).union( ANIMATIONS ).union( VIDEO )
 
 FILES_THAT_CAN_HAVE_ICC_PROFILE = { IMAGE_BMP, IMAGE_JPEG, IMAGE_JXL, IMAGE_TIFF, IMAGE_PNG, IMAGE_GIF, APPLICATION_PSD, IMAGE_AVIF }.union( PIL_HEIF_MIMES )
-FILES_THAT_CAN_HAVE_EXIF = { IMAGE_JPEG, IMAGE_JXL, IMAGE_TIFF, IMAGE_PNG, IMAGE_WEBP, ANIMATION_APNG, ANIMATION_WEBP, IMAGE_AVIF }.union( PIL_HEIF_MIMES )
+FILES_THAT_CAN_HAVE_EXIF = { IMAGE_JPEG, IMAGE_JXL, IMAGE_TIFF, IMAGE_PNG, IMAGE_WEBP, ANIMATION_JXL, ANIMATION_APNG, ANIMATION_WEBP, IMAGE_AVIF }.union( PIL_HEIF_MIMES )
 
 # images and animations that PIL can handle
-FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA = { IMAGE_JPEG, IMAGE_JXL, IMAGE_PNG, IMAGE_BMP, IMAGE_WEBP, IMAGE_TIFF, IMAGE_ICON, IMAGE_GIF, IMAGE_AVIF, ANIMATION_GIF, ANIMATION_APNG, ANIMATION_WEBP }
+FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA = { IMAGE_JPEG, IMAGE_JXL, IMAGE_PNG, IMAGE_BMP, IMAGE_WEBP, IMAGE_TIFF, IMAGE_ICON, IMAGE_GIF, IMAGE_AVIF, ANIMATION_JXL, ANIMATION_GIF, ANIMATION_APNG, ANIMATION_WEBP }
 FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA.update( PIL_HEIF_MIMES )
 FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA.add( APPLICATION_PDF )
 
@@ -1063,7 +1155,7 @@ mime_enum_lookup = {
     'image/heic-sequence' : IMAGE_HEIC_SEQUENCE,
     'image/avif' : IMAGE_AVIF,
     'image/avif-sequence' : IMAGE_AVIF_SEQUENCE,
-    'image/jxl' : IMAGE_JXL,
+    'image/jxl' : IMAGE_JXL, # could also be animated jxl
     'image/vnd.microsoft.icon' : IMAGE_ICON,
     'image' : IMAGES,
     'application/x-shockwave-flash' : APPLICATION_FLASH,
@@ -1073,6 +1165,9 @@ mime_enum_lookup = {
     'application/clip' : APPLICATION_CLIP, # made up
     'application/sai2': APPLICATION_SAI2, # made up
     'application/x-krita': APPLICATION_KRITA,
+    'image/openraster': IMAGE_OPENRASTER,
+    'image/vnd.paint.net' : APPLICATION_PAINT_DOT_NET, # not official
+    'application/x-paintnet' : APPLICATION_PAINT_DOT_NET, # not official
     'application/x-procreate': APPLICATION_PROCREATE, # made up
     'image/x-xcf' : APPLICATION_XCF,
     'application/octet-stream' : APPLICATION_OCTET_STREAM,
@@ -1156,6 +1251,7 @@ mime_string_lookup = {
     IMAGE_AVIF : 'avif',
     IMAGE_AVIF_SEQUENCE : 'avif sequence',
     IMAGE_JXL : 'jxl',
+    ANIMATION_JXL : 'animated jxl',
     ANIMATION_UGOIRA : 'ugoira',
     APPLICATION_CBZ : 'cbz',
     APPLICATION_FLASH : 'flash',
@@ -1177,6 +1273,8 @@ mime_string_lookup = {
     APPLICATION_CLIP : 'clip',
     APPLICATION_SAI2 : 'sai2',
     APPLICATION_KRITA : 'krita',
+    IMAGE_OPENRASTER : 'ora',
+    APPLICATION_PAINT_DOT_NET : 'paint.net',
     APPLICATION_XCF : 'xcf',
     APPLICATION_PROCREATE : 'procreate',
     APPLICATION_ZIP : 'zip',
@@ -1215,6 +1313,7 @@ mime_string_lookup = {
     UNDETERMINED_PNG : 'png or apng',
     UNDETERMINED_OLE : 'ole file',
     UNDETERMINED_WEBP : 'webp with or without animation',
+    UNDETERMINED_JXL : 'jxl with or without animation',
     APPLICATION_UNKNOWN : 'unknown filetype',
     GENERAL_APPLICATION : 'application',
     GENERAL_APPLICATION_ARCHIVE : 'archive',
@@ -1248,6 +1347,7 @@ mime_mimetype_string_lookup = {
     IMAGE_AVIF: 'image/avif',
     IMAGE_AVIF_SEQUENCE: 'image/avif-sequence',
     IMAGE_JXL: 'image/jxl',
+    ANIMATION_JXL : 'image/jxl',
     ANIMATION_UGOIRA : 'application/zip',
     APPLICATION_FLASH : 'application/x-shockwave-flash',
     APPLICATION_OCTET_STREAM : 'application/octet-stream',
@@ -1269,6 +1369,8 @@ mime_mimetype_string_lookup = {
     APPLICATION_CLIP : 'application/clip', # made up
     APPLICATION_SAI2: 'application/sai2', # made up
     APPLICATION_KRITA: 'application/x-krita',
+    IMAGE_OPENRASTER: 'image/openraster',
+    APPLICATION_PAINT_DOT_NET : 'application/x-paintnet', # no official
     APPLICATION_XCF : 'image/x-xcf',
     APPLICATION_PROCREATE : 'application/x-procreate', # made up
     APPLICATION_ZIP : 'application/zip',
@@ -1317,6 +1419,7 @@ mime_mimetype_string_lookup[ UNDETERMINED_WM ] = '{} or {}'.format( mime_mimetyp
 mime_mimetype_string_lookup[ UNDETERMINED_MP4 ] = '{} or {}'.format( mime_mimetype_string_lookup[ AUDIO_MP4 ], mime_mimetype_string_lookup[ VIDEO_MP4 ] )
 mime_mimetype_string_lookup[ UNDETERMINED_PNG ] = '{} or {}'.format( mime_mimetype_string_lookup[ IMAGE_PNG ], mime_mimetype_string_lookup[ ANIMATION_APNG ] )
 mime_mimetype_string_lookup[ UNDETERMINED_WEBP ] = 'image/webp, static or animated'
+mime_mimetype_string_lookup[ UNDETERMINED_JXL ] = 'image/jxl, static or animated'
 
 mime_ext_lookup = {
     APPLICATION_HYDRUS_CLIENT_COLLECTION : '.collection',
@@ -1339,6 +1442,7 @@ mime_ext_lookup = {
     IMAGE_AVIF: '.avif',
     IMAGE_AVIF_SEQUENCE: '.avifs',
     IMAGE_JXL : '.jxl',
+    ANIMATION_JXL : '.jxl',
     ANIMATION_UGOIRA : '.zip',
     APPLICATION_CBZ : '.cbz',   
     APPLICATION_FLASH : '.swf',
@@ -1357,8 +1461,10 @@ mime_ext_lookup = {
     APPLICATION_RTF : '.rtf',
     APPLICATION_PSD : '.psd',
     APPLICATION_CLIP : '.clip',
-    APPLICATION_SAI2: '.sai2',
-    APPLICATION_KRITA: '.kra',
+    APPLICATION_SAI2 : '.sai2',
+    APPLICATION_KRITA : '.kra',
+    IMAGE_OPENRASTER : '.ora',
+    APPLICATION_PAINT_DOT_NET : '.pdn',
     APPLICATION_XCF : '.xcf',
     APPLICATION_PROCREATE : '.procreate',
     APPLICATION_ZIP : '.zip',
@@ -1400,44 +1506,6 @@ IMAGE_FILE_EXTS.update( ( '.jpe', '.jpeg' ) )
 VIDEO_FILE_EXTS = { mime_ext_lookup[ mime ] for mime in VIDEO }
 
 ALLOWED_MIME_EXTENSIONS = [ mime_ext_lookup[ mime ] for mime in ALLOWED_MIMES ]
-
-SITE_TYPE_DEVIANT_ART = 0
-SITE_TYPE_GIPHY = 1
-SITE_TYPE_PIXIV = 2
-SITE_TYPE_BOORU = 3
-SITE_TYPE_TUMBLR = 4
-SITE_TYPE_HENTAI_FOUNDRY = 5
-SITE_TYPE_NEWGROUNDS = 6
-SITE_TYPE_NEWGROUNDS_MOVIES = 7
-SITE_TYPE_NEWGROUNDS_GAMES = 8
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST = 9
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST_PICTURES = 10
-SITE_TYPE_HENTAI_FOUNDRY_ARTIST_SCRAPS = 11
-SITE_TYPE_HENTAI_FOUNDRY_TAGS = 12
-SITE_TYPE_PIXIV_ARTIST_ID = 13
-SITE_TYPE_PIXIV_TAG = 14
-SITE_TYPE_DEFAULT = 15
-SITE_TYPE_WATCHER = 16
-
-site_type_string_lookup = {
-    SITE_TYPE_DEFAULT : 'default',
-    SITE_TYPE_BOORU : 'booru',
-    SITE_TYPE_DEVIANT_ART : 'deviant art',
-    SITE_TYPE_GIPHY : 'giphy',
-    SITE_TYPE_HENTAI_FOUNDRY : 'hentai foundry',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST : 'hentai foundry artist',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST_PICTURES : 'hentai foundry artist pictures',
-    SITE_TYPE_HENTAI_FOUNDRY_ARTIST_SCRAPS : 'hentai foundry artist scraps',
-    SITE_TYPE_HENTAI_FOUNDRY_TAGS : 'hentai foundry tags',
-    SITE_TYPE_NEWGROUNDS : 'newgrounds',
-    SITE_TYPE_NEWGROUNDS_GAMES : 'newgrounds games',
-    SITE_TYPE_NEWGROUNDS_MOVIES : 'newgrounds movies',
-    SITE_TYPE_PIXIV : 'pixiv',
-    SITE_TYPE_PIXIV_ARTIST_ID : 'pixiv artist id',
-    SITE_TYPE_PIXIV_TAG : 'pixiv tag',
-    SITE_TYPE_TUMBLR : 'tumblr',
-    SITE_TYPE_WATCHER : 'watcher'
-}
 
 TIMEZONE_UTC = 0
 TIMEZONE_LOCAL = 1
@@ -1485,6 +1553,7 @@ DOCUMENTATION_ADDING_NEW_DOWNLOADERS = 'adding_new_downloaders.html'
 DOCUMENTATION_DOWNLOADER_URL_CLASSES = 'downloader_url_classes.html'
 DOCUMENTATION_GETTING_STARTED_SUBSCRIPTIONS = 'getting_started_subscriptions.html'
 DOCUMENTATION_DATABASE_MIGRATION = 'database_migration.html'
+DOCUMENTATION_DATABASE_MIGRATION_GRANULARITY = 'database_migration.html#granularity'
 DOCUMENTATION_DUPLICATES = 'duplicates.html'
 DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION = 'advanced_duplicates_auto_resolution.html'
 DOCUMENTATION_DOWNLOADER_SHARING = 'downloader_sharing.html'

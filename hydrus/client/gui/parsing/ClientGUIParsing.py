@@ -12,10 +12,8 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientStrings
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -50,13 +48,13 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._network_engine = network_engine
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_SHARING )
         
-        menu_items.append( ( 'normal', 'open the downloader sharing help', 'Open the help page for sharing downloaders in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the downloader sharing help', 'Open the help page for sharing downloaders in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -64,7 +62,7 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_DOWNLOADER_EXPORT.ID, self._ConvertContentToDisplayTuple, self._ConvertContentToSortTuple )
         
-        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 14, model, use_simple_delete = True )
+        self._listctrl = ClientGUIListCtrl.BetterListCtrlTreeView( listctrl_panel, 12, model, use_simple_delete = True )
         
         self._listctrl.Sort()
         
@@ -91,18 +89,15 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
     
     def _AddDomainMetadata( self ):
         
-        message = 'Enter domain:'
+        message = 'Enter domain.'
         
-        with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                domain = dlg.GetValue()
-                
-            else:
-                
-                return
-                
+            domain = ClientGUIDialogsQuick.EnterText( self, message )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
             
         
         domain_metadatas = self._GetDomainMetadatasToInclude( { domain } )
@@ -420,7 +415,7 @@ class DownloaderExportPanel( ClientGUIScrolledPanels.ReviewPanel ):
                     
                     parsers_to_include.add( parser )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -494,13 +489,13 @@ class EditContentParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_CONTENT_PARSERS_CONTENT_PARSERS )
         
-        menu_items.append( ( 'normal', 'open the content parsers help', 'Open the help page for content parsers in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the content parsers help', 'Open the help page for content parsers in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1032,7 +1027,7 @@ class EditContentParsersPanel( ClientGUICommon.StaticBox ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_CONTENT_PARSERS.ID, self._ConvertContentParserToDisplayTuple, self._ConvertContentParserToSortTuple )
         
-        self._content_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( content_parsers_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._content_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( content_parsers_panel, 6, model, use_simple_delete = True, activation_callback = self._Edit, max_height_num_chars = 12 )
         
         content_parsers_panel.SetListCtrl( self._content_parsers )
         
@@ -1169,13 +1164,13 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         #
         
-        menu_items = []
+        menu_template_items = []
         
         page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DOWNLOADER_PARSERS_PAGE_PARSERS_PAGE_PARSERS )
         
-        menu_items.append( ( 'normal', 'open the page parser help', 'Open the help page for page parsers in your web browser.', page_func ) )
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the page parser help', 'Open the help page for page parsers in your web browser.', page_func ) )
         
-        help_button = ClientGUIMenuButton.MenuBitmapButton( self, CC.global_pixmaps().help, menu_items )
+        help_button = ClientGUIMenuButton.MenuIconButton( self, CC.global_icons().help, menu_template_items )
         
         help_hbox = ClientGUICommon.WrapInText( help_button, self, 'help for this panel -->', object_name = 'HydrusIndeterminate' )
         
@@ -1231,6 +1226,8 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._example_urls = ClientGUIListBoxes.AddEditDeleteListBox( example_urls_panel, 6, str, self._AddExampleURL, self._EditExampleURL )
         
+        self._example_urls.AddSimpleCopyPasteTextButtons()
+        
         #
         
         formula_panel = QW.QWidget( edit_notebook )
@@ -1249,7 +1246,7 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_SUBSIDIARY_PAGE_PARSERS.ID, self._ConvertSubPageParserToDisplayTuple, self._ConvertSubPageParserToSortTuple )
         
-        self._subsidiary_page_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( subsidiary_page_parsers_panel, 4, model, use_simple_delete = True, activation_callback = self._EditSubPageParser )
+        self._subsidiary_page_parsers = ClientGUIListCtrl.BetterListCtrlTreeView( subsidiary_page_parsers_panel, 4, model, use_simple_delete = True, activation_callback = self._EditSubPageParser, max_height_num_chars = 12 )
         
         subsidiary_page_parsers_panel.SetListCtrl( self._subsidiary_page_parsers )
         
@@ -1464,17 +1461,16 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         
         message = 'Enter example URL.'
         
-        with ClientGUIDialogs.DialogTextEntry( self, message, default = example_url ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                return dlg.GetValue()
-                
-            else:
-                
-                raise HydrusExceptions.VetoException()
-                
+            url = ClientGUIDialogsQuick.EnterText( self, message, default = example_url )
             
+        except HydrusExceptions.CancelledException:
+            
+            raise
+            
+        
+        return url
         
     
     def _EditSubPageParser( self ):
@@ -1506,11 +1502,6 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
         def wait_and_do_it( network_job ):
             
             def qt_tidy_up( example_data, example_bytes, error ):
-                
-                if not self or not QP.isValid( self ):
-                    
-                    return
-                    
                 
                 example_parsing_context = self._test_panel.GetExampleParsingContext()
                 
@@ -1552,7 +1543,7 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
                     
                     stuff_read = network_job.GetContentText()
                     
-                except:
+                except Exception as e:
                     
                     stuff_read = 'no response'
                     
@@ -1560,10 +1551,24 @@ class EditPageParserPanel( ClientGUIScrolledPanels.EditPanel ):
                 example_data = 'fetch failed: {}'.format( e ) + '\n' * 2 + stuff_read
                 
             
-            QP.CallAfter( qt_tidy_up, example_data, example_bytes, error )
+            CG.client_controller.CallAfterQtSafe( self, qt_tidy_up, example_data, example_bytes, error )
             
         
-        url = ClientNetworkingFunctions.EnsureURLIsEncoded( self._test_url.text() )
+        raw_url = self._test_url.text().strip()
+        
+        if raw_url == '':
+            
+            example_urls = self._example_urls.GetData()
+            
+            if len( example_urls ) > 0:
+                
+                self._test_url.setText( example_urls[0] )
+                
+            
+            return
+            
+        
+        url = ClientNetworkingFunctions.EnsureURLIsEncoded( raw_url )
         referral_url = self._test_referral_url.text()
         
         if referral_url == '':
@@ -1696,7 +1701,7 @@ class EditParsersPanel( ClientGUIScrolledPanels.EditPanel ):
         
         model = ClientGUIListCtrl.HydrusListItemModel( self, CGLC.COLUMN_LIST_PARSERS.ID, self._ConvertParserToDisplayTuple, self._ConvertParserToSortTuple )
         
-        self._parsers = ClientGUIListCtrl.BetterListCtrlTreeView( parsers_panel, 20, model, use_simple_delete = True, activation_callback = self._Edit )
+        self._parsers = ClientGUIListCtrl.BetterListCtrlTreeView( parsers_panel, 24, model, use_simple_delete = True, activation_callback = self._Edit )
         
         parsers_panel.SetListCtrl( self._parsers )
         
@@ -1705,8 +1710,6 @@ class EditParsersPanel( ClientGUIScrolledPanels.EditPanel ):
         parsers_panel.AddDeleteButton()
         parsers_panel.AddSeparator()
         parsers_panel.AddImportExportButtons( ( ClientParsing.PageParser, ), self._AddParser )
-        parsers_panel.AddSeparator()
-        parsers_panel.AddDefaultsButton( ClientDefaults.GetDefaultParsers, self._AddParser )
         
         #
         

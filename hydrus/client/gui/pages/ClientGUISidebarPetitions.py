@@ -13,6 +13,7 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusTime
@@ -107,7 +108,7 @@ def MakeSomeFakePetitions( service_key: bytes ):
                         ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_LIMIT, 256 ),
                     ]
                     
-                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                     
                     search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, predicates = predicates )
                     
@@ -232,7 +233,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
         
         #
         
-        self._petition_numbers_panel = ClientGUICommon.StaticBox( self, 'counts' )
+        self._petition_numbers_panel = ClientGUICommon.StaticBox( self, 'counts', start_expanded = True, can_expand = True )
         
         self._petition_account_key = QW.QLineEdit( self._petition_numbers_panel )
         self._petition_account_key.setPlaceholderText( 'account id filter' )
@@ -285,7 +286,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
         
         #
         
-        self._petitions_panel = ClientGUICommon.StaticBox( self, 'petitions' )
+        self._petitions_panel = ClientGUICommon.StaticBox( self, 'petitions', start_expanded = True, can_expand = True )
         
         self._petitions_summary_list_panel = ClientGUIListCtrl.BetterListCtrlPanel( self._petitions_panel )
         
@@ -300,7 +301,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
         
         #
         
-        self._petition_panel = ClientGUICommon.StaticBox( self, 'highlighted petition' )
+        self._petition_panel = ClientGUICommon.StaticBox( self, 'highlighted petition', start_expanded = True, can_expand = True )
         
         self._num_files_to_show = ClientGUICommon.NoneableSpinCtrl( self._petition_panel, 256, message = 'number of files to show', min = 1 )
         
@@ -934,7 +935,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                         
                     
                 
-                CG.client_controller.CallBlockingToQt( self, qt_set_petitions_summary, response[ 'petitions_summary' ] )
+                CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_set_petitions_summary, response[ 'petitions_summary' ] )
                 
             except HydrusExceptions.NotFoundException:
                 
@@ -948,7 +949,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
             finally:
                 
-                CG.client_controller.CallBlockingToQt( self, qt_done )
+                CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_done )
                 
             
         
@@ -1161,7 +1162,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
         else:
             
             ideal_height_in_rows = 1
-            pixels_per_row = 16
+            ( width_gumpf, pixels_per_row ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 20, 1 ) )
             
         
         ideal_height_in_pixels = ( ideal_height_in_rows * pixels_per_row ) + ( contents.frameWidth() * 2 )
@@ -1244,11 +1245,6 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
             
             def qt_draw( petition_count_rows ):
                 
-                if not self or not QP.isValid( self ):
-                    
-                    return
-                    
-                
                 num_petitions_currently_listed = len( self._petitions_summary_list.GetData() )
                 
                 old_petition_types_to_count = self._petition_types_to_count
@@ -1275,11 +1271,6 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
             
             def qt_reset():
-                
-                if not self or not QP.isValid( self ):
-                    
-                    return
-                    
                 
                 self._refresh_num_petitions_button.setText( 'refresh counts' )
                 
@@ -1332,7 +1323,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                             
                             HydrusData.ShowText( 'That account id was not found!' )
                             
-                            QP.CallAfter( qt_draw, [] )
+                            CG.client_controller.CallAfterQtSafe( self, qt_draw, [] )
                             
                             return
                             
@@ -1341,11 +1332,11 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
                 num_petition_info = response[ 'num_petitions' ]
                 
-                QP.CallAfter( qt_draw, num_petition_info )
+                CG.client_controller.CallAfterQtSafe( self, qt_draw, num_petition_info )
                 
             finally:
                 
-                QP.CallAfter( qt_reset )
+                CG.client_controller.CallAfterQtSafe( self, qt_reset )
                 
             
         
@@ -1549,8 +1540,8 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                 
             
         
-        copyable_items_a = HydrusData.DedupeList( copyable_items_a )
-        copyable_items_b = HydrusData.DedupeList( copyable_items_b )
+        copyable_items_a = HydrusLists.DedupeList( copyable_items_a )
+        copyable_items_b = HydrusLists.DedupeList( copyable_items_b )
         
         if len( copyable_items_a ) + len( copyable_items_b ) > 0:
             
@@ -1625,7 +1616,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
     
     def Start( self ):
         
-        QP.CallAfter( self._StartFetchNumPetitions )
+        CG.client_controller.CallAfterQtSafe( self, self._StartFetchNumPetitions )
         
     
     def THREADPetitionFetcherAndUploader( self, work_lock: threading.Lock, service: ClientServices.ServiceRepository ):
@@ -1757,7 +1748,14 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
             
             while True:
                 
-                ( fetch_petition_header, outgoing_petition ) = CG.client_controller.CallBlockingToQt( self, qt_get_work )
+                try:
+                    
+                    ( fetch_petition_header, outgoing_petition ) = CG.client_controller.CallBlockingToQt( self, qt_get_work )
+                    
+                except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                    
+                    return
+                    
                 
                 if fetch_petition_header is None and outgoing_petition is None:
                     
@@ -1792,14 +1790,18 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                         
                     except HydrusExceptions.NotFoundException:
                         
-                        CG.client_controller.CallBlockingToQt( self, qt_petition_fetch_404, fetch_petition_header )
+                        CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_petition_fetch_404, fetch_petition_header )
+                        
+                    except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                        
+                        return
                         
                     except Exception as e:
                         
                         HydrusData.ShowText( 'Failed to fetch a petition!' )
                         HydrusData.ShowException( e )
                         
-                        CG.client_controller.CallBlockingToQt( self, qt_petition_fetch_failed, fetch_petition_header )
+                        CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_petition_fetch_failed, fetch_petition_header )
                         
                     
                 
@@ -1852,7 +1854,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                                     
                                 
                                 job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
-                                job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
+                                job_status.SetGauge( num_done, num_to_do )
                                 
                             
                             if outgoing_petition.GetPetitionHeader() in cached_fake_petition_headers_to_petitions:
@@ -1867,12 +1869,16 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
                         
                         CG.client_controller.CallBlockingToQt( self, qt_petition_cleared, outgoing_petition )
                         
+                    except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                        
+                        return
+                        
                     except Exception as e:
                         
                         HydrusData.ShowText( 'Failed to upload a petition!' )
                         HydrusData.ShowException( e )
                         
-                        CG.client_controller.CallBlockingToQt( self, qt_petition_clear_failed, outgoing_petition )
+                        CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_petition_clear_failed, outgoing_petition )
                         
                     
                 

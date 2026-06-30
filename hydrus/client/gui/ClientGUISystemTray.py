@@ -1,11 +1,9 @@
-import os
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
-from qtpy import QtGui as QG
 
 from hydrus.core import HydrusConstants as HC
 
+from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
@@ -26,6 +24,8 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         super().__init__( parent )
         
+        self._parent_widget = parent
+        
         self._ui_is_currently_shown = True
         self._ui_is_currently_minimised = False
         self._should_always_show = False
@@ -38,9 +38,9 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         self._just_clicked_to_show = False
         
-        png_path = os.path.join( HC.STATIC_DIR, 'hydrus_non-transparent.png' )
+        icon = CC.global_icons().hydrus_system_tray
         
-        self.setIcon( QG.QIcon( png_path ) )
+        self.setIcon( icon )
         
         self.activated.connect( self._ClickActivated )
         
@@ -51,15 +51,13 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         # if we click immediately, some users get frozen ui, I assume a mix-up with the icon being destroyed during the same click event or similar
         
-        QP.CallAfter( self._WasActivated, activation_reason )
+        CG.client_controller.CallAfterQtSafe( self, self._WasActivated, activation_reason )
         
     
     def _RegenerateMenu( self ):
         
         # I'm not a qwidget, but a qobject, so use my parent for this
-        parent_widget = self.parent()
-        
-        new_menu = ClientGUIMenus.GenerateMenu( parent_widget )
+        new_menu = ClientGUIMenus.GenerateMenu( self._parent_widget )
         
         self._show_hide_menu_item = ClientGUIMenus.AppendMenuItem( new_menu, 'show/hide', 'Hide or show the hydrus client', self.flip_show_ui.emit )
         
@@ -69,13 +67,13 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         
         ClientGUIMenus.AppendSeparator( new_menu )
         
-        self._network_traffic_menu_item = ClientGUIMenus.AppendMenuItem( new_menu, 'network traffic', 'Pause/resume network traffic', self.flip_pause_network_jobs.emit )
+        self._network_traffic_menu_item = ClientGUIMenus.AppendMenuCheckItem( new_menu, 'pause network traffic', 'Pause/resume network traffic', False, self.flip_pause_network_jobs.emit )
         
-        self._UpdateNetworkTrafficMenuItemLabel()
+        self._UpdateNetworkTrafficMenuItemCheck()
         
-        self._subscriptions_paused_menu_item = ClientGUIMenus.AppendMenuItem( new_menu, 'subscriptions', 'Pause/resume subscriptions', self.flip_pause_subscription_jobs.emit )
+        self._subscriptions_paused_menu_item = ClientGUIMenus.AppendMenuCheckItem( new_menu, 'pause subscriptions', 'Pause/resume subscriptions', False, self.flip_pause_subscription_jobs.emit )
         
-        self._UpdateSubscriptionsMenuItemLabel()
+        self._UpdateSubscriptionsMenuItemCheck()
         
         ClientGUIMenus.AppendSeparator( new_menu )
         
@@ -95,11 +93,12 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         self._UpdateTooltip()
         
     
-    def _UpdateNetworkTrafficMenuItemLabel( self ):
+    def _UpdateNetworkTrafficMenuItemCheck( self ):
         
-        label = 'unpause network traffic' if self._network_traffic_paused else 'pause network traffic'
-        
-        self._network_traffic_menu_item.setText( label )
+        if self._network_traffic_menu_item is not None:
+            
+            self._network_traffic_menu_item.setChecked( self._network_traffic_paused )
+            
         
     
     def _UpdateRestoreMinimiseMenuItemLabel( self ):
@@ -145,13 +144,11 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
         return menu_regenerated
         
     
-    def _UpdateSubscriptionsMenuItemLabel( self ):
+    def _UpdateSubscriptionsMenuItemCheck( self ):
         
         if self._subscriptions_paused_menu_item is not None:
             
-            label = 'unpause subscriptions' if self._subscriptions_paused else 'pause subscriptions'
-            
-            self._subscriptions_paused_menu_item.setText( label )
+            self._subscriptions_paused_menu_item.setChecked( self._subscriptions_paused )
             
         
     
@@ -219,7 +216,7 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
             
             self._network_traffic_paused = network_traffic_paused
             
-            self._UpdateNetworkTrafficMenuItemLabel()
+            self._UpdateNetworkTrafficMenuItemCheck()
             
             self._UpdateTooltip()
             
@@ -231,7 +228,7 @@ class ClientSystemTrayIcon( QW.QSystemTrayIcon ):
             
             self._subscriptions_paused = subscriptions_paused
             
-            self._UpdateSubscriptionsMenuItemLabel()
+            self._UpdateSubscriptionsMenuItemCheck()
             
             self._UpdateTooltip()
             

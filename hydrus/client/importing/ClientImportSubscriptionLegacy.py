@@ -5,11 +5,10 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientDownloading
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.importing import ClientImporting
 from hydrus.client.importing import ClientImportFileSeeds
@@ -17,8 +16,8 @@ from hydrus.client.importing import ClientImportGallerySeeds
 from hydrus.client.importing import ClientImportSubscriptions
 from hydrus.client.importing import ClientImportSubscriptionQuery
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingJobs
 
@@ -42,7 +41,7 @@ class SubscriptionQueryLegacy( HydrusSerialisable.SerialisableBase ):
         self._status = ClientImporting.CHECKER_STATUS_OK
         self._gallery_seed_log = ClientImportGallerySeeds.GallerySeedLog()
         self._file_seed_cache = ClientImportFileSeeds.FileSeedCache()
-        self._tag_import_options = TagImportOptions.TagImportOptions()
+        self._tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
         
     
     def _GetExampleNetworkContexts( self, subscription_name ):
@@ -63,7 +62,7 @@ class SubscriptionQueryLegacy( HydrusSerialisable.SerialisableBase ):
             example_nj = ClientNetworkingJobs.NetworkJobSubscription( subscription_key, 'GET', url )
             example_network_contexts = example_nj.GetNetworkContexts()
             
-        except:
+        except Exception as e:
             
             return [ ClientNetworkingContexts.NetworkContext( CC.NETWORK_CONTEXT_SUBSCRIPTION, subscription_key ), ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT ]
             
@@ -109,7 +108,7 @@ class SubscriptionQueryLegacy( HydrusSerialisable.SerialisableBase ):
             ( query, check_now, last_check_time, next_check_time, paused, status, serialisable_gallery_seed_log, serialisable_file_seed_cache ) = old_serialisable_info
             
             display_name = None
-            tag_import_options = TagImportOptions.TagImportOptions()
+            tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy()
             
             serialisable_tag_import_options = tag_import_options.GetSerialisableTuple()
             
@@ -271,7 +270,7 @@ class SubscriptionQueryLegacy( HydrusSerialisable.SerialisableBase ):
                 
                 file_bandwidth_estimate = self.GetBandwidthWaitingEstimate( subscription_name )
                 
-            except:
+            except Exception as e:
                 
                 # this is tricky, but if there is a borked url in here causing trouble, we should let it run and error out immediately tbh
                 
@@ -476,7 +475,7 @@ class SubscriptionLegacy( HydrusSerialisable.SerialisableBaseNamed ):
         
         if gug_key_and_name is None:
             
-            gug_key_and_name = ( HydrusData.GenerateKey(), 'unknown source' )
+            gug_key_and_name = ( HydrusData.GenerateKey(), '' )
             
         
         self._gug_key_and_name = gug_key_and_name
@@ -499,10 +498,10 @@ class SubscriptionLegacy( HydrusSerialisable.SerialisableBaseNamed ):
         self._periodic_file_limit = 100
         self._paused = False
         
-        self._file_import_options = FileImportOptions.FileImportOptions()
+        self._file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         self._file_import_options.SetIsDefault( True )
         
-        self._tag_import_options = TagImportOptions.TagImportOptions( is_default = True )
+        self._tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( is_default = True )
         
         self._no_work_until = 0
         self._no_work_until_reason = ''
@@ -849,11 +848,9 @@ class SubscriptionLegacy( HydrusSerialisable.SerialisableBaseNamed ):
             
             ( serialisable_gallery_identifier, serialisable_gallery_stream_identifiers, serialisable_queries, serialisable_checker_options, initial_file_limit, periodic_file_limit, paused, serialisable_file_import_options, serialisable_tag_import_options, no_work_until, no_work_until_reason, publish_files_to_popup_button, publish_files_to_page, merge_query_publish_events ) = old_serialisable_info
             
-            gallery_identifier = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_gallery_identifier )
+            serialisable_gug_key_and_name = ( HydrusData.GenerateKey().hex(), 'unknown downloader' )
             
-            ( gug_key, gug_name ) = ClientDownloading.ConvertGalleryIdentifierToGUGKeyAndName( gallery_identifier )
-            
-            serialisable_gug_key_and_name = ( gug_key.hex(), gug_name )
+            paused = True
             
             new_serialisable_info = ( serialisable_gug_key_and_name, serialisable_queries, serialisable_checker_options, initial_file_limit, periodic_file_limit, paused, serialisable_file_import_options, serialisable_tag_import_options, no_work_until, no_work_until_reason, publish_files_to_popup_button, publish_files_to_page, merge_query_publish_events )
             
@@ -1181,7 +1178,7 @@ class SubscriptionLegacy( HydrusSerialisable.SerialisableBaseNamed ):
         self._tag_import_options = tag_import_options.Duplicate()
         
     
-    def SetTuple( self, gug_key_and_name, checker_options: ClientImportOptions.CheckerOptions, initial_file_limit, periodic_file_limit, paused, file_import_options: FileImportOptions.FileImportOptions, tag_import_options: TagImportOptions.TagImportOptions, no_work_until ):
+    def SetTuple( self, gug_key_and_name, checker_options: ClientImportOptions.CheckerOptions, initial_file_limit, periodic_file_limit, paused, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy, tag_import_options: TagImportOptionsLegacy.TagImportOptionsLegacy, no_work_until ):
         
         self._gug_key_and_name = gug_key_and_name
         self._checker_options = checker_options
@@ -1226,16 +1223,17 @@ def ConvertLegacySubscriptionToNew( legacy_subscription: SubscriptionLegacy ):
     
     subscription = ClientImportSubscriptions.Subscription( name )
     
-    subscription.SetTuple(
-        gug_key_and_name,
-        checker_options,
-        initial_file_limit,
-        periodic_file_limit,
-        paused,
-        file_import_options,
-        tag_import_options,
-        no_work_until
-        )
+    subscription.SetGUGKeyAndName( gug_key_and_name )
+    subscription.SetCheckerOptions( checker_options )
+    
+    subscription.SetFileLimits( initial_file_limit, periodic_file_limit )
+    
+    subscription.SetPaused( paused )
+    
+    subscription.SetFileImportOptions( file_import_options )
+    subscription.SetTagImportOptions( tag_import_options )
+    
+    subscription.SetNoWorkUntil( no_work_until )
     
     (
         show_a_popup_while_working,

@@ -34,7 +34,7 @@ class PresentationImportOptions( HydrusSerialisable.SerialisableBase ):
         
         super().__init__()
         
-        self._location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        self._location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         self._presentation_status = PRESENTATION_STATUS_ANY_GOOD
         self._presentation_inbox = PRESENTATION_INBOX_AGNOSTIC
         
@@ -170,11 +170,11 @@ class PresentationImportOptions( HydrusSerialisable.SerialisableBase ):
             
             if presentation_location == 1:
                 
-                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
                 
             else:
                 
-                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                 
             
             serialisable_location_context = location_context.GetSerialisableTuple()
@@ -199,7 +199,7 @@ class PresentationImportOptions( HydrusSerialisable.SerialisableBase ):
         return self._presentation_status
         
     
-    def GetSummary( self ):
+    def GetSummary( self, show_downloader_options: bool = True ):
         
         if self._presentation_status == PRESENTATION_STATUS_NONE:
             
@@ -238,9 +238,9 @@ class PresentationImportOptions( HydrusSerialisable.SerialisableBase ):
                 
             
         
-        if not self._location_context.IsAllMediaFiles():
+        if not self._location_context.IsCombinedLocalFileDomains():
             
-            if self._location_context.IsAllLocalFiles():
+            if self._location_context.IsHydrusLocalFileStorage():
                 
                 s = 'including if trashed'
                 

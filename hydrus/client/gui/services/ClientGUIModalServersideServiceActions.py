@@ -1,5 +1,4 @@
 import collections.abc
-import typing
 
 from qtpy import QtWidgets as QW
 
@@ -8,14 +7,14 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
 from hydrus.client.gui import ClientGUIAsync
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
+from hydrus.client.gui.metadata import ClientGUITagFilter
 
 def ManageServiceOptionsTagFilter(
     win: QW.QWidget,
     service_key: bytes,
-    new_tags_to_block: typing.Optional[ collections.abc.Collection[ str ] ] = None,
-    new_tags_to_allow: typing.Optional[ collections.abc.Collection[ str ] ] = None
+    new_tags_to_block: collections.abc.Collection[ str ] | None = None,
+    new_tags_to_allow: collections.abc.Collection[ str ] | None = None
 ):
     
     service: ClientServices.ServiceRepository = CG.client_controller.services_manager.GetService( service_key )
@@ -38,7 +37,7 @@ def ManageServiceOptionsTagFilter(
         
         message = 'The repository will apply this to all new pending tags that are uploaded to it. Anything that does not pass is silently discarded.'
         
-        panel = ClientGUITags.EditTagFilterPanel( dlg, tag_filter, message = message, namespaces = namespaces )
+        panel = ClientGUITagFilter.EditTagFilterPanel( dlg, tag_filter, message = message, namespaces = namespaces )
         
         dlg.SetPanel( panel )
         
@@ -69,14 +68,14 @@ def ManageServiceOptionsTagFilter(
                 service.SetAccountRefreshDueNow()
                 
             
-            def errback_ui_cleanup_callable():
+            def errback_callable( etype, value, tb ):
                 
-                job_status.SetStatusText( 'error!' )
+                job_status.SetExceptionTuple( etype, value, tb )
                 
                 job_status.Finish()
                 
             
-            job = ClientGUIAsync.AsyncQtJob( win, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+            job = ClientGUIAsync.AsyncQtJob( win, work_callable, publish_callable, errback_callable = errback_callable )
             
             job.start()
             

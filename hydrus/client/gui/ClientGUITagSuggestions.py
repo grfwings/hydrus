@@ -4,6 +4,7 @@ from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
+from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
@@ -13,7 +14,7 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
-from hydrus.client.gui import ClientGUIDialogs
+from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListBoxes
@@ -254,28 +255,23 @@ class RecentTagsPanel( QW.QWidget ):
     
     def _RefreshRecentTags( self ):
         
-        def do_it( service_key ):
+        def qt_code( recent_tags ):
             
-            def qt_code( recent_tags ):
+            self._last_fetched_tags = recent_tags
+            
+            self._UpdateTagDisplay()
+            
+            if len( self._recent_tags.GetTags() ) > 0:
                 
-                if not self or not QP.isValid( self ):
-                    
-                    return
-                    
+                self._recent_tags.SelectTopItem()
                 
-                self._last_fetched_tags = recent_tags
-                
-                self._UpdateTagDisplay()
-                
-                if len( self._recent_tags.GetTags() ) > 0:
-                    
-                    self._recent_tags.SelectTopItem()
-                    
-                
+            
+        
+        def do_it( service_key ):
             
             recent_tags = CG.client_controller.Read( 'recent_tags', service_key )
             
-            QP.CallAfter( qt_code, recent_tags )
+            CG.client_controller.CallAfterQtSafe( self, qt_code, recent_tags )
             
         
         CG.client_controller.CallToThread( do_it, self._service_key )
@@ -400,11 +396,6 @@ class RelatedTagsPanel( QW.QWidget ):
             
             def qt_code( predicates, num_done, num_to_do, num_skipped, total_time_took ):
                 
-                if not self or not QP.isValid( self ):
-                    
-                    return
-                    
-                
                 if num_skipped == 0:
                     
                     tags_s = 'tags'
@@ -478,7 +469,7 @@ class RelatedTagsPanel( QW.QWidget ):
             
             predicates = ClientSearchPredicate.SortPredicates( predicates )
             
-            QP.CallAfter( qt_code, predicates, num_done, num_to_do, num_skipped, total_time_took )
+            CG.client_controller.CallAfterQtSafe( self, qt_code, predicates, num_done, num_to_do, num_skipped, total_time_took )
             
         
         self._related_tags.SetPredicates( [] )
@@ -507,7 +498,7 @@ class RelatedTagsPanel( QW.QWidget ):
         
         if self._just_do_local_files.IsOn():
             
-            file_service_key = CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY
+            file_service_key = CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY
             
         else:
             
@@ -632,39 +623,44 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
             
             def qt_code():
                 
-                if not self or not QP.isValid( self ):
+                if len( scripts ) == 0:
                     
-                    return
-                    
-                
-                script_names_to_scripts = { script.GetName() : script for script in scripts }
-                
-                for ( name, script ) in list(script_names_to_scripts.items()):
-                    
-                    self._script_choice.addItem( script.GetName(), script )
-                    
-                
-                new_options = CG.client_controller.new_options
-                
-                favourite_file_lookup_script = new_options.GetNoneableString( 'favourite_file_lookup_script' )
-                
-                if favourite_file_lookup_script in script_names_to_scripts:
-                    
-                    self._script_choice.SetValue( script_names_to_scripts[ favourite_file_lookup_script ] )
+                    self._script_choice.addItem( 'no lookup scripts in this client', None )
                     
                 else:
                     
-                    self._script_choice.setCurrentIndex( 0 )
+                    script_names_to_scripts = { script.GetName() : script for script in scripts }
                     
-                
-                self._script_choice.setEnabled( True )
-                self._fetch_button.setEnabled( True )
+                    for ( name, script ) in list(script_names_to_scripts.items()):
+                        
+                        self._script_choice.addItem( script.GetName(), script )
+                        
+                    
+                    new_options = CG.client_controller.new_options
+                    
+                    favourite_file_lookup_script = new_options.GetNoneableString( 'favourite_file_lookup_script' )
+                    
+                    if favourite_file_lookup_script in script_names_to_scripts:
+                        
+                        self._script_choice.SetValue( script_names_to_scripts[ favourite_file_lookup_script ] )
+                        
+                    elif len( script_names_to_scripts ) > 0:
+                        
+                        self._script_choice.setCurrentIndex( 0 )
+                        
+                    
+                    self._script_choice.setEnabled( True )
+                    self._fetch_button.setEnabled( True )
+                    
                 
             
             scripts = CG.client_controller.Read( 'serialisable_named', HydrusSerialisable.SERIALISABLE_TYPE_PARSE_ROOT_FILE_LOOKUP )
             
-            QP.CallAfter( qt_code )
+            CG.client_controller.CallAfterQtSafe( self, qt_code )
             
+        
+        self._script_choice.setEnabled( False )
+        self._fetch_button.setEnabled( False )
         
         CG.client_controller.CallToThread( do_it )
         
@@ -696,18 +692,22 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
         
         script = self._script_choice.GetValue()
         
+        if script is None:
+            
+            return
+            
+        
         if script.UsesUserInput():
             
             message = 'Enter the custom input for the file lookup script.'
             
-            with ClientGUIDialogs.DialogTextEntry( self, message ) as dlg:
+            try:
                 
-                if dlg.exec() != QW.QDialog.DialogCode.Accepted:
-                    
-                    return
-                    
+                file_identifier = ClientGUIDialogsQuick.EnterText( self, message )
                 
-                file_identifier = dlg.GetValue()
+            except HydrusExceptions.CancelledException:
+                
+                return
                 
             
         else:
@@ -756,11 +756,6 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
         
         def qt_code( tags ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             self._SetTags( tags )
             
             self._have_fetched = True
@@ -774,7 +769,7 @@ class FileLookupScriptTagsPanel( QW.QWidget ):
         
         ClientTagSorting.SortTags( tag_sort, tags )
         
-        QP.CallAfter( qt_code, tags )
+        CG.client_controller.CallAfterQtSafe( self, qt_code, tags )
         
     
 class SuggestedTagsPanel( QW.QWidget ):

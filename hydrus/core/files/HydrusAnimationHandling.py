@@ -1,5 +1,4 @@
 import io
-import typing
 
 import struct
 
@@ -14,7 +13,14 @@ def GetAnimationProperties( path, mime ):
     
     pil_image = HydrusImageHandling.GeneratePILImage( path )
     
-    ( width, height ) = pil_image.size
+    try:
+        
+        ( width, height ) = pil_image.size
+        
+    finally:
+        
+        pil_image.close()
+        
     
     width = max( width, 1 )
     height = max( height, 1 )
@@ -109,7 +115,7 @@ def GetAPNGChunks( file_header_bytes: bytes ) ->list:
     return chunks
     
 
-def GetAPNGACTLChunkData( file_header_bytes: bytes ) -> typing.Optional[ bytes ]:
+def GetAPNGACTLChunkData( file_header_bytes: bytes ) -> bytes | None:
     
     # the acTL chunk can be in different places, but it has to be near the top
     # although it is almost always in fixed position (I think byte 29), we have seen both pHYs and sRGB chunks appear before it
@@ -138,7 +144,7 @@ def GetAPNGDurationMS( apng_bytes: bytes ) -> float:
     
     total_duration_s = 0
     
-    CRAZY_FALLBCAK_FRAME_DURATION_S = 0.1
+    CRAZY_FALLBACK_FRAME_DURATION_S = 0.1
     MIN_FRAME_DURATION_S = 0.001
     
     for ( chunk_name, chunk_data ) in chunks:
@@ -150,7 +156,7 @@ def GetAPNGDurationMS( apng_bytes: bytes ) -> float:
             
             if delay_denominator == 0:
                 
-                duration_s = CRAZY_FALLBCAK_FRAME_DURATION_S
+                duration_s = CRAZY_FALLBACK_FRAME_DURATION_S
                 
             else:
                 
@@ -210,80 +216,87 @@ def GetFrameDurationsMSPILAnimation( path, human_file_description = None ):
     
     pil_image = HydrusImageOpening.RawOpenPILImage( path, human_file_description = human_file_description )
     
-    times_to_play = GetTimesToPlayPILAnimationFromPIL( pil_image )
-    
-    assumed_num_frames = -1
-    
-    if hasattr( pil_image, 'n_frames' ):
+    try:
         
-        assumed_num_frames = pil_image.n_frames
+        times_to_play = GetTimesToPlayPILAnimationFromPIL( pil_image )
         
-    
-    assumed_num_frames_is_sensible = assumed_num_frames > 0
-    
-    fallback_frame_duration_ms = 83 # (83ms -- 1000 / 12) Set a 12 fps default when duration is missing or too funky to extract. most stuff looks ok at this.
-    
-    frame_durations_ms = []
-    
-    i = 0
-    
-    while True:
+        assumed_num_frames = -1
         
-        if assumed_num_frames_is_sensible and i >= assumed_num_frames:
+        if hasattr( pil_image, 'n_frames' ):
             
-            break
+            assumed_num_frames = pil_image.n_frames
             
         
-        try:
-            
-            pil_image.seek( i )
-            
-        except EOFError:
-            
-            break
-            
-        except:
-            
-            # seek and fellows can raise OSError on a truncated file lmao
-            # trying to keep walking through such a gif using PIL is rife with trouble (although mpv may be ok at a later stage), so let's fudge a solution
-            
-            if len( frame_durations_ms ) > 0:
-                
-                fill_in_duration = int( sum( frame_durations_ms ) / len( frame_durations_ms ) )
-                
-            else:
-                
-                fill_in_duration = fallback_frame_duration_ms
-                
-            
-            if assumed_num_frames_is_sensible:
-                
-                num_frames_remaining = assumed_num_frames - len( frame_durations_ms )
-                
-                frame_durations_ms.extend( [ fill_in_duration for j in range( num_frames_remaining ) ] )
-                
-            
-            return ( frame_durations_ms, times_to_play )
-            
+        assumed_num_frames_is_sensible = assumed_num_frames > 0
         
-        if 'duration' not in pil_image.info:
+        fallback_frame_duration_ms = 83 # (83ms -- 1000 / 12) Set a 12 fps default when duration is missing or too funky to extract. most stuff looks ok at this.
+        
+        frame_durations_ms = []
+        
+        i = 0
+        
+        while True:
             
-            duration_ms = fallback_frame_duration_ms
+            if assumed_num_frames_is_sensible and i >= assumed_num_frames:
+                
+                break
+                
             
-        else:
+            try:
+                
+                pil_image.seek( i )
+                
+            except EOFError:
+                
+                break
+                
+            except Exception as e:
+                
+                # seek and fellows can raise OSError on a truncated file lmao
+                # trying to keep walking through such a gif using PIL is rife with trouble (although mpv may be ok at a later stage), so let's fudge a solution
+                
+                if len( frame_durations_ms ) > 0:
+                    
+                    fill_in_duration = int( sum( frame_durations_ms ) / len( frame_durations_ms ) )
+                    
+                else:
+                    
+                    fill_in_duration = fallback_frame_duration_ms
+                    
+                
+                if assumed_num_frames_is_sensible:
+                    
+                    num_frames_remaining = assumed_num_frames - len( frame_durations_ms )
+                    
+                    frame_durations_ms.extend( [ fill_in_duration for j in range( num_frames_remaining ) ] )
+                    
+                
+                return ( frame_durations_ms, times_to_play )
+                
             
-            duration_ms = pil_image.info[ 'duration' ]
-            
-            # In the gif frame header, 10 is stored as 1ms. This 1 is commonly as utterly wrong as 0.
-            if duration_ms in ( 0, 10 ):
+            if 'duration' not in pil_image.info:
                 
                 duration_ms = fallback_frame_duration_ms
                 
+            else:
+                
+                duration_ms = pil_image.info[ 'duration' ]
+                
+                # In the gif frame header, 10 is stored as 1ms. This 1 is commonly as utterly wrong as 0.
+                if duration_ms in ( 0, 10 ):
+                    
+                    duration_ms = fallback_frame_duration_ms
+                    
+                
+            
+            frame_durations_ms.append( duration_ms )
+            
+            i += 1
             
         
-        frame_durations_ms.append( duration_ms )
+    finally:
         
-        i += 1
+        pil_image.close()
         
     
     return ( frame_durations_ms, times_to_play )
@@ -319,7 +332,14 @@ def GetTimesToPlayPILAnimation( path, human_file_description = None ) -> int:
         return 1
         
     
-    return GetTimesToPlayPILAnimationFromPIL( pil_image )
+    try:
+        
+        return GetTimesToPlayPILAnimationFromPIL( pil_image )
+        
+    finally:
+        
+        pil_image.close()
+        
     
 
 def GetTimesToPlayPILAnimationFromPIL( pil_image: PILImage.Image ) -> int:
@@ -401,7 +421,7 @@ def GetWebPFrameDurationsMS( path ):
                 
                 times_to_play = int.from_bytes( loop_bytes, byteorder = 'little' )
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -426,7 +446,7 @@ def GetWebPFrameDurationsMS( path ):
                     raise Exception( 'Zero-duration frame!' )
                     
                 
-            except:
+            except Exception as e:
                 
                 duration_ms = fallback_frame_duration_ms
                 
@@ -440,20 +460,27 @@ def GetWebPFrameDurationsMS( path ):
 
 def PILAnimationHasDuration( path ):
     
-    pil_image = HydrusImageOpening.RawOpenPILImage( path )
-    
     try:
         
-        if hasattr( pil_image, 'is_animated' ):
+        pil_image = HydrusImageOpening.RawOpenPILImage( path )
+        
+        try:
             
-            return pil_image.is_animated
+            if hasattr( pil_image, 'is_animated' ):
+                
+                return pil_image.is_animated
+                
+            else:
+                
+                return False
+                
             
-        else:
+        finally:
             
-            return False
+            pil_image.close()
             
         
-    except:
+    except Exception as e:
         
         return False
         

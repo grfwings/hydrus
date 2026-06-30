@@ -9,6 +9,7 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 
 from hydrus.client import ClientGlobals as CG
+from hydrus.client.networking import ClientNetworkingDomainTLDExtract
 
 percent_encoding_re = re.compile( r'%[0-9A-Fa-f]{2}' )
 double_hex_re = re.compile( r'[0-9A-Fa-f]{2}' )
@@ -105,30 +106,111 @@ def ConvertDomainIntoAllApplicableDomains( domain, discard_www = True ):
         domain = RemoveWWWFromDomain( domain )
         
     
+    second_level_domain = ConvertDomainIntoSecondLevelDomain( domain )
+    
+    # we want the second level domain, but no smaller
     while domain.count( '.' ) > 0:
         
         domains.append( domain )
+        
+        if domain == second_level_domain:
+            
+            break
+            
         
         domain = ConvertDomainIntoNextLevelDomain( domain )
         
     
     return domains
     
+
 def ConvertDomainIntoNextLevelDomain( domain ):
+    
+    # do not 'fix' this to error at anything above the second level domain
     
     return '.'.join( domain.split( '.' )[1:] ) # i.e. strip off the leftmost subdomain maps.google.com -> google.com
     
+
+TLDEXTRACT_ERROR_SHOWN = False
+
 def ConvertDomainIntoSecondLevelDomain( domain ):
     
-    domains = ConvertDomainIntoAllApplicableDomains( domain )
-    
-    if len( domains ) == 0:
+    if ClientNetworkingDomainTLDExtract.TLDEXTRACT_OK:
         
-        raise HydrusExceptions.URLClassException( 'That url or domain did not seem to be valid!' )
+        try:
+            
+            return ClientNetworkingDomainTLDExtract.ConvertDomainIntoSecondLevelDomain( domain )
+            
+        except Exception as e:
+            
+            global TLDEXTRACT_ERROR_SHOWN
+            
+            if not TLDEXTRACT_ERROR_SHOWN:
+                
+                TLDEXTRACT_ERROR_SHOWN = True
+                
+                HydrusData.Print( 'Hey, some domain stuff went wrong. Hydev would be interested in seeing this:' )
+                HydrusData.PrintException( e, do_wait = False )
+                
+            
         
     
-    return domains[-1]
+    # produces the 'co.uk' "second level domain" issue
+    while domain.count( '.' ) > 1:
+        
+        domain = ConvertDomainIntoNextLevelDomain( domain )
+        
     
+    return domain
+    
+
+def ConvertDomainIntoSortable( domain: str ):
+    
+    second_level_domain = ConvertDomainIntoSecondLevelDomain( domain )
+    
+    if domain == second_level_domain:
+        
+        subdomains_in_power_order = tuple()
+        
+    else:
+        
+        prefix_component = domain.replace( '.' + second_level_domain, '' )
+        
+        subdomains_in_power_order = tuple( reversed( prefix_component.split( '.' ) ) )
+        
+    
+    # ( mysite.com, tuple() )
+    # ( mysite.com, ( 'artistname', ) )
+    return ( second_level_domain, subdomains_in_power_order )
+    
+
+def ConvertDomainIntoTopLevelDomain( domain ):
+    
+    if ClientNetworkingDomainTLDExtract.TLDEXTRACT_OK:
+        
+        try:
+            
+            return ClientNetworkingDomainTLDExtract.ConvertDomainIntoTopLevelDomain( domain )
+            
+        except Exception as e:
+            
+            global TLDEXTRACT_ERROR_SHOWN
+            
+            if not TLDEXTRACT_ERROR_SHOWN:
+                
+                TLDEXTRACT_ERROR_SHOWN = True
+                
+                HydrusData.Print( 'Hey, some domain stuff went wrong. Hydev would be interested in seeing this:' )
+                HydrusData.PrintException( e, do_wait = False )
+                
+            
+        
+    
+    second_level_domain = ConvertDomainIntoSecondLevelDomain( domain )
+    
+    return ConvertDomainIntoNextLevelDomain( second_level_domain )
+    
+
 def ConvertHTTPSToHTTP( url ):
     
     if url.startswith( 'http://' ):
@@ -146,6 +228,7 @@ def ConvertHTTPSToHTTP( url ):
         raise Exception( 'Given a url that did not have a scheme!' )
         
     
+
 def ConvertHTTPToHTTPS( url ):
     
     if url.startswith( 'https://' ):
@@ -166,16 +249,27 @@ def ConvertHTTPToHTTPS( url ):
 
 def ConvertPathTextToList( path: str ) -> list[ str ]:
     
-    # yo sometimes you see a URL with double slashes in a weird place. maybe we should just split( '/' ) and then remove empty '' results?
+    # /post/show/123456/akunim-anthro-armband-armwear-clothed-clothing-fem
     
-    # /post/show/1326143/akunim-anthro-armband-armwear-clothed-clothing-fem
+    # you can get URLs like this, with double //:
+    # https://somebooru.com//images/ab/cd/abcdblahblahblah.jpg
+    # We have a bunch of legacy URLs where I collapsed starting // down to /. Oh well!
     
-    # for a while we've had URLs like this:
-    # https://img2.gelbooru.com//images/80/c8/80c8646b4a49395fb36c805f316c49a9.jpg
-    # I was going to be careful as I unified all this to preserve the double-slash to help legacy known url storage matching, but it seems we've been nuking the extra slash for ages in actual db storage, so w/e!
-    while path.startswith( '/' ):
+    if CG.client_controller.new_options.GetBoolean( 'remove_leading_url_double_slashes' ):
         
-        path = path[ 1 : ]
+        # old legacy way
+        while path.startswith( '/' ):
+            
+            path = path[ 1 : ]
+            
+        
+    else:
+        
+        # new test that supports urls properly, but may break some url classes but fingers-crossed it isn't a big deal
+        if path.startswith( '/' ):
+            
+            path = path[ 1 : ]
+            
         
     
     # post/show/1326143/akunim-anthro-armband-armwear-clothed-clothing-fem
@@ -286,17 +380,9 @@ def ConvertQueryTextToDict( query_text ):
 
 def ConvertURLIntoDomain( url ):
     
+    CheckLooksLikeAFullURL( url )
+    
     parser_result = ParseURL( url )
-    
-    if parser_result.scheme == '':
-        
-        raise HydrusExceptions.URLClassException( 'URL "' + url + '" was not recognised--did you forget the http:// or https://?' )
-        
-    
-    if parser_result.netloc == '':
-        
-        raise HydrusExceptions.URLClassException( 'URL "' + url + '" was not recognised--is it missing a domain?' )
-        
     
     domain = parser_result.netloc
     
@@ -336,13 +422,7 @@ def CookieDomainMatches( cookie, search_domain ):
     
     return matches_exactly or matches_dot or valid_subdomain
     
-def DomainEqualsAnotherForgivingWWW( test_domain, wwwable_domain ):
-    
-    # domain is either the same or starts with www. or www2. or something
-    rule = r'^(www[^\.]*\.)?' + re.escape( wwwable_domain ) + '$'
-    
-    return re.search( rule, test_domain ) is not None
-    
+
 def GetCookie( cookies, search_domain, cookie_name_string_match ):
     
     for cookie in cookies:
@@ -400,25 +480,46 @@ def GetSearchURLs( url ):
         query = p.query
         fragment = p.fragment
         
+        # legacy issue, dealing with URLs we previously collapsed this way
+        # not amazing, but the idea that two urls that differ this way are _actually_ different rather than a storage/parsing discrepancy is not real
+        if path.startswith( '//' ):
+            
+            collapsed_path = path
+            
+            while collapsed_path.startswith( '//' ):
+                
+                collapsed_path = collapsed_path[ 1 : ]
+                
+            
+            collapsed_adjusted_url = urllib.parse.urlunparse( ( scheme, netloc, collapsed_path, params, query, fragment ) )
+            
+            search_urls.add( collapsed_adjusted_url )
+            
+        
+        alt_netloc = None
+        
         if netloc.startswith( 'www' ):
             
             try:
                 
-                netloc = ConvertDomainIntoSecondLevelDomain( netloc )
+                alt_netloc = RemoveWWWFromDomain( netloc )
                 
             except HydrusExceptions.URLClassException:
                 
-                continue
+                pass
                 
             
         else:
             
-            netloc = 'www.' + netloc
+            alt_netloc = 'www.' + netloc
             
         
-        adjusted_url = urllib.parse.urlunparse( ( scheme, netloc, path, params, query, fragment ) )
-        
-        search_urls.add( adjusted_url )
+        if alt_netloc is not None:
+            
+            adjusted_url = urllib.parse.urlunparse( ( scheme, alt_netloc, path, params, query, fragment ) )
+            
+            search_urls.add( adjusted_url )
+            
         
     
     for url in list( search_urls ):
@@ -436,7 +537,7 @@ def GetSearchURLs( url ):
     return search_urls
     
 
-def LooksLikeAFullURL( text: str ) -> bool:
+def CheckLooksLikeAFullURL( text: str ):
     
     try:
         
@@ -444,17 +545,29 @@ def LooksLikeAFullURL( text: str ) -> bool:
         
         if p.scheme == '':
             
-            return False
+            raise HydrusExceptions.URLClassException( 'No scheme--did you forgot http/https?--in "{text}"!' )
             
         
         if p.netloc == '':
             
-            return False
+            raise HydrusExceptions.URLClassException( 'No domain in "{text}"!' )
             
+        
+    except Exception as e:
+        
+        raise HydrusExceptions.URLClassException( f'Could not parse "{text}" at all!' )
+        
+    
+
+def LooksLikeAFullURL( text: str ) -> bool:
+    
+    try:
+        
+        CheckLooksLikeAFullURL( text )
         
         return True
         
-    except:
+    except HydrusExceptions.URLClassException:
         
         return False
         
@@ -483,6 +596,8 @@ def NormaliseAndFilterAssociableURLs( urls ):
         
         try:
             
+            CheckLooksLikeAFullURL( url )
+            
             url = CG.client_controller.network_engine.domain_manager.NormaliseURL( url )
             
         except HydrusExceptions.URLClassException:
@@ -510,7 +625,7 @@ def ParseURL( url: str ) -> urllib.parse.ParseResult:
         
     except Exception as e:
         
-        raise HydrusExceptions.URLClassException( str( e ) )
+        raise HydrusExceptions.URLClassException( f'Problem with URL ({e})! URL text was "{url}"' )
         
     
 
@@ -551,7 +666,7 @@ def EnsureURLIsEncoded( url: str, keep_fragment = True ) -> str:
         
         return clean_url
         
-    except:
+    except Exception as e:
         
         return url
         
@@ -562,7 +677,9 @@ OH_NO_NO_NETLOC_CHARACTERS_UNICODE_TRANSLATE = { ord( char ) : '_' for char in O
 
 def RemoveWWWFromDomain( domain ):
     
-    if domain.count( '.' ) > 1 and domain.startswith( 'www' ):
+    second_level_domain = ConvertDomainIntoSecondLevelDomain( domain )
+    
+    if domain != second_level_domain and domain.count( '.' ) > 1 and domain.startswith( 'www' ):
         
         domain = ConvertDomainIntoNextLevelDomain( domain )
         

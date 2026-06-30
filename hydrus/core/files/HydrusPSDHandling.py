@@ -1,14 +1,13 @@
 from io import BytesIO
 import re
-import subprocess
+
+import numpy
 
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusProcess
-from hydrus.core import HydrusThreading
-from hydrus.core import HydrusText
 from hydrus.core.files import HydrusFFMPEG
 from hydrus.core.files.images import HydrusImageHandling
+from hydrus.core.processes import HydrusSubprocess
 
 def read_uint16(f):
     
@@ -82,35 +81,29 @@ def GetFFMPEGPSDLines( path ):
     
     # open the file in a pipe, provoke an error, read output
     
-    cmd = [ HydrusFFMPEG.FFMPEG_PATH, "-i", path ]
-    
-    sbp_kwargs = HydrusProcess.GetSubprocessKWArgs()
+    cmd = [ HydrusFFMPEG.FFMPEG_PATH, "-xerror", "-i", path ]
     
     HydrusData.CheckProgramIsNotShuttingDown()
     
     try:
         
-        process = subprocess.Popen( cmd, bufsize = 10**5, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, **sbp_kwargs )
+        ( stdout, stderr ) = HydrusSubprocess.RunSubprocess( cmd, bufsize = 1024 * 512 )
+        
+    except HydrusExceptions.SubprocessTimedOut:
+        
+        raise HydrusExceptions.DamagedOrUnusualFileException( 'ffmpeg could not get PSD data quick enough!' )
         
     except FileNotFoundError as e:
         
-        HydrusFFMPEG.HandleFFMPEGFileNotFound( e, path )
+        raise HydrusFFMPEG.HandleFFMPEGFileNotFoundAndGenerateException( e, path )
         
     
-    ( stdout, stderr ) = HydrusThreading.SubprocessCommunicate( process )
-    
-    data_bytes = stderr
-    
-    if len( data_bytes ) == 0:
+    if stderr is None or len( stderr ) == 0:
         
-        HydrusFFMPEG.HandleFFMPEGNoContent( path, sbp_kwargs, stdout, stderr )
+        raise HydrusFFMPEG.HandleFFMPEGNoContentAndGenerateException( path, stdout, stderr )
         
     
-    del process
-    
-    ( text, encoding ) = HydrusText.NonFailingUnicodeDecode( data_bytes, 'utf-8' )
-    
-    lines = text.splitlines()
+    lines = stderr.splitlines()
     
     HydrusFFMPEG.CheckFFMPEGError( lines )
     
@@ -152,9 +145,9 @@ def ParseFFMPEGPSDResolution( lines ) -> tuple[ int, int ]:
         
         return ( width, height )
         
-    except:
+    except Exception as e:
         
-        raise HydrusExceptions.DamagedOrUnusualFileException( 'Error parsing resolution!' )
+        raise HydrusExceptions.NoResolutionFileException( 'Error parsing resolution!' )
         
     
 
@@ -174,13 +167,13 @@ def GeneratePILImageFromPSD( path ):
     
     if len( png_bytes ) == 0:
         
-        raise HydrusExceptions.LimitedSupportFileException( 'This PSD has no embedded Preview file that FFMPEG can read!' )
+        raise HydrusExceptions.NoRenderFileException( 'This PSD has no embedded Preview file that FFMPEG can read!' )
         
     
     return HydrusImageHandling.GeneratePILImage( BytesIO( png_bytes ), human_file_description = f'Preview image inside PSD "{path}"' )
     
 
-def GenerateThumbnailNumPyFromPSDPath( path: str, target_resolution: tuple[int, int] ) -> bytes:
+def GenerateThumbnailNumPyFromPSDPath( path: str, target_resolution: tuple[int, int] ) -> numpy.ndarray:
     
     try:
         
@@ -191,8 +184,15 @@ def GenerateThumbnailNumPyFromPSDPath( path: str, target_resolution: tuple[int, 
         raise HydrusExceptions.NoThumbnailFileException( str( e ) )
         
     
-    # convert to numpy rather than doing pil_image.resize because psd previews sometimes have 100% alpha and the resize applies that
-    numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( pil_image )
+    try:
+        
+        # convert to numpy rather than doing pil_image.resize because psd previews sometimes have 100% alpha and the resize applies that
+        numpy_image = HydrusImageHandling.GenerateNumPyImageFromPILImage( pil_image )
+        
+    finally:
+        
+        pil_image.close()
+        
     
     thumbnail_numpy_image = HydrusImageHandling.ResizeNumPyImage( numpy_image, target_resolution )
     

@@ -26,12 +26,12 @@ class TestSingleFileMetadataRouter( unittest.TestCase ):
     
     def test_router( self ):
         
-        my_current_storage_tags = { 'samus aran', 'blonde hair' }
-        my_current_display_tags = { 'character:samus aran', 'blonde hair' }
-        repo_current_storage_tags = { 'lara croft' }
-        repo_current_display_tags = { 'character:lara croft' }
-        repo_pending_storage_tags = { 'tomb raider' }
-        repo_pending_display_tags = { 'series:tomb raider' }
+        my_current_storage_tags = { 'space bounty hunter', 'blonde hair' }
+        my_current_display_tags = { 'character:space bounty hunter', 'blonde hair' }
+        repo_current_storage_tags = { 'jane raider' }
+        repo_current_display_tags = { 'character:jane raider' }
+        repo_pending_storage_tags = { 'tomb charted' }
+        repo_pending_display_tags = { 'series:tomb charted' }
         
         service_keys_to_statuses_to_storage_tags = {
             CC.DEFAULT_LOCAL_TAG_SERVICE_KEY : {
@@ -75,11 +75,11 @@ class TestSingleFileMetadataRouter( unittest.TestCase ):
         times_manager = ClientMediaManagers.TimesManager()
         
         times_manager.SetImportedTimestampMS( CC.LOCAL_FILE_SERVICE_KEY, 123000 )
-        times_manager.SetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, 123000 )
+        times_manager.SetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, 123000 )
         
         inbox = True
         
-        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox )
+        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox )
         
         ratings_manager = ClientMediaManagers.RatingsManager( {} )
         
@@ -109,8 +109,8 @@ class TestSingleFileMetadataRouter( unittest.TestCase ):
         
         # doing everything
         
-        rows_1 = [ 'character:samus aran', 'blonde hair' ]
-        rows_2 = [ 'character:lara croft', 'brown hair' ]
+        rows_1 = [ 'character:space bounty hunter', 'blonde hair' ]
+        rows_2 = [ 'character:jane raider', 'brown hair' ]
         
         expected_input_path_1 = actual_file_path + '.1.txt'
         
@@ -163,12 +163,12 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
     
     def test_media_tags( self ):
         
-        my_current_storage_tags = { 'samus aran', 'blonde hair' }
-        my_current_display_tags = { 'character:samus aran', 'blonde hair' }
-        repo_current_storage_tags = { 'lara croft' }
-        repo_current_display_tags = { 'character:lara croft' }
-        repo_pending_storage_tags = { 'tomb raider' }
-        repo_pending_display_tags = { 'series:tomb raider' }
+        my_current_storage_tags = { 'space bounty hunter', 'blonde hair' }
+        my_current_display_tags = { 'character:space bounty hunter', 'blonde hair' }
+        repo_current_storage_tags = { 'jane raider' }
+        repo_current_display_tags = { 'character:jane raider' }
+        repo_pending_storage_tags = { 'tomb charted' }
+        repo_pending_display_tags = { 'series:tomb charted' }
         
         service_keys_to_statuses_to_storage_tags = {
             CC.DEFAULT_LOCAL_TAG_SERVICE_KEY : {
@@ -212,11 +212,11 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
         times_manager = ClientMediaManagers.TimesManager()
         
         times_manager.SetImportedTimestampMS( CC.LOCAL_FILE_SERVICE_KEY, 123000 )
-        times_manager.SetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, 123000 )
+        times_manager.SetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, 123000 )
         
         inbox = True
         
-        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox )
+        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox )
         
         ratings_manager = ClientMediaManagers.RatingsManager( {} )
         
@@ -340,11 +340,11 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
         times_manager = ClientMediaManagers.TimesManager()
         
         times_manager.SetImportedTimestampMS( CC.LOCAL_FILE_SERVICE_KEY, 123000 )
-        times_manager.SetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, 123000 )
+        times_manager.SetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, 123000 )
         
         inbox = True
         
-        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox, urls )
+        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox, urls )
         
         # duplicate to generate proper dicts
         
@@ -390,6 +390,8 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
     def test_media_timestamps( self ):
         
         archived_timestamp_ms = HydrusTime.GetNowMS() - 3600000
+        file_modified_timestamp_ms = HydrusTime.GetNowMS() - 2400000
+        site_dot_com_modified_timestamp_ms = HydrusTime.GetNowMS() - 2500000
         timestamp_data_stub = ClientTime.TimestampData.STATICSimpleStub( HC.TIMESTAMP_TYPE_ARCHIVED )
         
         # simple
@@ -407,12 +409,14 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
         times_manager = ClientMediaManagers.TimesManager()
         
         times_manager.SetImportedTimestampMS( CC.LOCAL_FILE_SERVICE_KEY, 123000 )
-        times_manager.SetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, 123000 )
+        times_manager.SetImportedTimestampMS( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, 123000 )
         times_manager.SetArchivedTimestampMS( archived_timestamp_ms )
+        times_manager.SetFileModifiedTimestampMS( file_modified_timestamp_ms )
+        times_manager.SetDomainModifiedTimestampMS( 'site.com', site_dot_com_modified_timestamp_ms )
         
         inbox = True
         
-        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox, set() )
+        local_locations_manager = ClientMediaManagers.LocationsManager( { CC.LOCAL_FILE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY }, set(), set(), set(), times_manager, inbox, set() )
         
         # duplicate to generate proper dicts
         
@@ -456,11 +460,44 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
         self.assertNotEqual( set( result ), { str( HydrusTime.SecondiseMS( archived_timestamp_ms ) ) } )
         self.assertEqual( set( result ), set( string_processor.ProcessStrings( { str( HydrusTime.SecondiseMS( archived_timestamp_ms ) ) } ) ) )
         
+        # test modified date/aggregate
+        
+        timestamp_data_stub = ClientTime.TimestampData.STATICSimpleStub( HC.TIMESTAMP_TYPE_MODIFIED_FILE )
+        
+        importer = ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaTimestamps()
+        importer.SetTimestampDataStub( timestamp_data_stub )
+        
+        result = importer.Import( media_result )
+        
+        self.assertEqual( set( result ), { str( HydrusTime.SecondiseMS( file_modified_timestamp_ms ) ) } )
+        
+        #
+        
+        timestamp_data_stub = ClientTime.TimestampData( timestamp_type = HC.TIMESTAMP_TYPE_MODIFIED_DOMAIN, location = 'site.com' )
+        
+        importer = ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaTimestamps()
+        importer.SetTimestampDataStub( timestamp_data_stub )
+        
+        result = importer.Import( media_result )
+        
+        self.assertEqual( set( result ), { str( HydrusTime.SecondiseMS( site_dot_com_modified_timestamp_ms ) ) } )
+        
+        #
+        
+        timestamp_data_stub = ClientTime.TimestampData.STATICSimpleStub( HC.TIMESTAMP_TYPE_MODIFIED_AGGREGATE )
+        
+        importer = ClientMetadataMigrationImporters.SingleFileMetadataImporterMediaTimestamps()
+        importer.SetTimestampDataStub( timestamp_data_stub )
+        
+        result = importer.Import( media_result )
+        
+        self.assertEqual( set( result ), { str( HydrusTime.SecondiseMS( min( site_dot_com_modified_timestamp_ms, file_modified_timestamp_ms ) ) ) } )
+        
     
     def test_media_txt( self ):
         
         actual_file_path = os.path.join( TG.test_controller.db_dir, 'file.jpg' )
-        rows = [ 'character:samus aran', 'blonde hair' ]
+        rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         # simple
         
@@ -588,7 +625,7 @@ class TestSingleFileMetadataImporters( unittest.TestCase ):
     def test_media_json( self ):
         
         actual_file_path = os.path.join( TG.test_controller.db_dir, 'file.jpg' )
-        rows = [ 'character:samus aran', 'blonde hair' ]
+        rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         # no file means no rows
         
@@ -680,7 +717,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
     def test_media_tags( self ):
         
         hash = os.urandom( 32 )
-        rows = [ 'character:samus aran', 'blonde hair' ]
+        rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         # no tags makes no write
         
@@ -818,7 +855,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
         
         exporter.Export( hash, urls )
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( urls, { hash } ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_URLS, HC.CONTENT_UPDATE_ADD, ( urls, { hash } ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -861,7 +898,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
         
         expected_timestamp_data_result = ClientTime.TimestampData.STATICArchivedTime( timestamp * 1000 ) # no precise milliseconds because we do not read millisecond precision from metadata migration yet!
         
-        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TIMESTAMP, HC.CONTENT_UPDATE_SET, ( ( hash, ), expected_timestamp_data_result ) ) ] )
+        expected_content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdates( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TIMESTAMP, HC.CONTENT_UPDATE_SET, ( ( hash, ), expected_timestamp_data_result ) ) ] )
         
         [ ( ( content_update_package, ), kwargs ) ] = TG.test_controller.GetWrite( 'content_updates' )
         
@@ -871,7 +908,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
     def test_media_txt( self ):
         
         actual_file_path = os.path.join( TG.test_controller.db_dir, 'file.jpg' )
-        rows = [ 'character:samus aran', 'blonde hair' ]
+        rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         # no rows makes no write
         
@@ -963,7 +1000,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
     def test_media_json( self ):
         
         actual_file_path = os.path.join( TG.test_controller.db_dir, 'file.jpg' )
-        rows = [ 'character:samus aran', 'blonde hair' ]
+        rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         # no rows makes no write
         
@@ -1039,7 +1076,7 @@ class TestSingleFileMetadataExporters( unittest.TestCase ):
         
         #
         
-        tag_rows = [ 'character:samus aran', 'blonde hair' ]
+        tag_rows = [ 'character:space bounty hunter', 'blonde hair' ]
         
         exporter = ClientMetadataMigrationExporters.SingleFileMetadataExporterJSON( nested_object_names = [ 'file_data', 'tags' ] )
         

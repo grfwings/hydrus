@@ -3,7 +3,6 @@ import requests
 import time
 import traceback
 
-import twisted.internet.ssl
 from twisted.internet import threads, reactor, defer
 
 from hydrus.core import HydrusConstants as HC
@@ -13,12 +12,12 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
-from hydrus.core import HydrusProcess
 from hydrus.core import HydrusSessions
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNetwork
 from hydrus.core.networking import HydrusNetworking
+from hydrus.core.processes import HydrusProcess
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.server import ServerDB
 from hydrus.server import ServerFiles
@@ -83,6 +82,7 @@ def ProcessStartingAction( db_dir, action ):
             
         
     
+
 def ShutdownSiblingInstance( db_dir ):
     
     port_found = False
@@ -115,7 +115,7 @@ def ShutdownSiblingInstance( db_dir ):
             
             server_name = r.headers[ 'Server' ]
             
-        except:
+        except Exception as e:
             
             text = 'Could not contact existing server\'s port ' + str( port ) + '!'
             text += '\n'
@@ -169,9 +169,9 @@ def ShutdownSiblingInstance( db_dir ):
 
 class Controller( HydrusController.HydrusController ):
     
-    def __init__( self, db_dir ):
+    def __init__( self, db_dir, logger ):
         
-        super().__init__( db_dir )
+        super().__init__( db_dir, logger )
         
         self._name = 'server'
         
@@ -468,11 +468,11 @@ class Controller( HydrusController.HydrusController ):
                             return
                             
                         
+                        from hydrus.core.networking import HydrusServerContextFactory
+                        
                         ( ssl_cert_path, ssl_key_path ) = self.db.GetSSLPaths()
                         
-                        sslmethod = twisted.internet.ssl.SSL.TLSv1_2_METHOD
-                        
-                        context_factory = twisted.internet.ssl.DefaultOpenSSLContextFactory( ssl_key_path, ssl_cert_path, sslmethod )
+                        context_factory = HydrusServerContextFactory.GenerateSSLContextFactory( ssl_cert_path, ssl_key_path )
                         
                         ipv6_port = None
                         
@@ -493,7 +493,7 @@ class Controller( HydrusController.HydrusController ):
                             
                             ipv4_port = reactor.listenSSL( port, http_factory, context_factory )
                             
-                        except:
+                        except Exception as e:
                             
                             if ipv6_port is None:
                                 
@@ -597,7 +597,7 @@ class Controller( HydrusController.HydrusController ):
             
             self.SetRunningTwistedServices( [] )
             
-        except:
+        except Exception as e:
             
             pass # sometimes this throws a wobbler, screw it
             

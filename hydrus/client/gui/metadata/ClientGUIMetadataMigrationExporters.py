@@ -7,7 +7,6 @@ from hydrus.core import HydrusText
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
@@ -98,7 +97,7 @@ class EditSingleFileMetadataExporterWidget( QW.QWidget ):
         
         #
         
-        self._sidecar_help_button = ClientGUICommon.BetterBitmapButton( self, CC.global_pixmaps().help, self._ShowSidecarHelp )
+        self._sidecar_help_button = ClientGUICommon.IconButton( self, CC.global_icons().help, self._ShowSidecarHelp )
         
         self._nested_object_names_panel = QW.QWidget( self )
         
@@ -222,19 +221,16 @@ class EditSingleFileMetadataExporterWidget( QW.QWidget ):
     
     def _EditObjectName( self, object_name ):
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'enter the JSON Object name', default = object_name, allow_blank = False ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                object_name = dlg.GetValue()
-                
-                return object_name
-                
-            else:
-                
-                raise HydrusExceptions.VetoException()
-                
+            object_name = ClientGUIDialogsQuick.EnterText( self, 'Enter the JSON Object name.', default = object_name )
             
+        except HydrusExceptions.CancelledException:
+            
+            raise
+            
+        
+        return object_name
         
     
     def _GetExampleTestData( self ):

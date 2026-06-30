@@ -9,9 +9,9 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
@@ -21,9 +21,9 @@ from hydrus.client.importing import ClientImporting
 from hydrus.client.importing import ClientImportGallerySeeds
 from hydrus.client.importing import ClientImportSubscriptionQuery
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import FileImportOptions
-from hydrus.client.importing.options import NoteImportOptions
-from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import NoteImportOptionsLegacy
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.networking import ClientNetworkingBandwidth
 from hydrus.client.networking import ClientNetworkingGUG
 
@@ -39,7 +39,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         if gug_key_and_name is None:
             
-            gug_key_and_name = ( HydrusData.GenerateKey(), 'unknown source' )
+            gug_key_and_name = ( HydrusData.GenerateKey(), '' )
             
         
         self._gug_key_and_name = gug_key_and_name
@@ -65,12 +65,12 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         self._paused = False
         
-        self._file_import_options = FileImportOptions.FileImportOptions()
+        self._file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         self._file_import_options.SetIsDefault( True )
         
-        self._tag_import_options = TagImportOptions.TagImportOptions( is_default = True )
+        self._tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( is_default = True )
         
-        self._note_import_options = NoteImportOptions.NoteImportOptions()
+        self._note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
         self._note_import_options.SetIsDefault( True )
         
         self._no_work_until = 0
@@ -256,7 +256,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         CG.client_controller.pub( 'message', job_status )
         
     
-    def _SyncQueries( self, job_status ):
+    def _SyncQueries( self, job_status: ClientThreading.JobStatus ):
         
         self._have_made_an_initial_sync_bandwidth_notification = False
         
@@ -298,7 +298,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         for ( i, query_header ) in enumerate( query_headers ):
             
-            status_prefix = 'synchronising'
+            status_prefix = f'synchronising ({HydrusNumbers.ValueRangeToPrettyString( i, num_queries )})'
             
             query_name = query_header.GetHumanName()
             
@@ -307,7 +307,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                 status_prefix += ' "' + query_name + '"'
                 
             
-            status_prefix += ' (' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_queries ) + ')'
+            job_status.SetGauge( i, num_queries )
             
             try:
                 
@@ -343,6 +343,11 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
     
     def _SyncQueriesCanDoWork( self ):
+        
+        if self._gug_key_and_name is None or self._gug_key_and_name[1] == '':
+            
+            return False
+            
         
         result = True in ( query_header.IsSyncDue() for query_header in self._query_headers )
         
@@ -622,13 +627,16 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             # if 'X' is new and get, 'A' is already in, and '-' is new and don't get, the page should be:
                             # XXXAAAAA----------------------------------
                             
-                            # EXAMPLE 2: the pixiv situation, where a single gallery page may have hundreds of results (and/or multi-file results that will pad out the file cache with more items)
+                            # EXAMPLE 2: where a single gallery page may have hundreds of results (and/or multi-file results that will pad out the file cache with more items)
                             
                             # XXXXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                             # AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                             # AAAAAAAAAAAAAAAAAAAA-----------------------------------
                             # -------------------------------------------------------
                             # ----------------------
+                            
+                            # Note there's another thing to consider, with multi-file-per-post sites, where the AAAAA 'already in db' are separated in the file log by child posts
+                            # I'm solving this with better culling tech that reaps those child posts with the parents and counts cleverly
                             
                             num_already_in_urls_we_have_seen_so_far = total_already_in_urls_for_this_sync + num_urls_already_in_file_seed_cache_in_this_call
                             most_of_our_stuff = num_master_file_seeds_at_start * 0.95
@@ -892,7 +900,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                 merge_query_publish_events
             ) = old_serialisable_info
             
-            note_import_options = NoteImportOptions.NoteImportOptions()
+            note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
             note_import_options.SetIsDefault( True )
             
             serialisable_note_import_options = note_import_options.GetSerialisableTuple()
@@ -921,7 +929,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
             
         
     
-    def _WorkOnQueriesFiles( self, job_status ):
+    def _WorkOnQueriesFiles( self, job_status: ClientThreading.JobStatus ):
         
         self._file_error_count = 0
         
@@ -935,18 +943,17 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
             
             query_name = query_header.GetHumanName()
             
-            text_1 = 'downloading files'
+            text_1 = f'syncing files ({HydrusNumbers.ValueRangeToPrettyString( i, num_queries )})'
             query_summary_name = self._name
             
             if query_name != self._name:
                 
-                text_1 += ' for "' + query_name + '"'
+                text_1 += ' "' + query_name + '"'
                 query_summary_name += ': ' + query_name
                 
             
-            text_1 += ' (' + HydrusNumbers.ValueRangeToPrettyString( i + 1, num_queries ) + ')'
-            
             job_status.SetStatusText( text_1 )
+            job_status.SetGauge( i, num_queries )
             
             try:
                 
@@ -982,8 +989,9 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         
         job_status.DeleteFiles()
         job_status.DeleteStatusText()
-        job_status.DeleteStatusText( 2 )
-        job_status.DeleteVariable( 'popup_gauge_2' )
+        job_status.DeleteStatusText( level = 2 )
+        job_status.DeleteGauge()
+        job_status.DeleteGauge( level = 2 )
         
     
     def _WorkOnQueriesFilesCanDoWork( self ):
@@ -1045,6 +1053,8 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         starting_num_unknown = file_seed_cache.GetFileSeedCount( CC.STATUS_UNKNOWN )
         starting_num_done = starting_num_urls - starting_num_unknown
         
+        x_out_of_y = 'initialising: '
+        
         try:
             
             while True:
@@ -1058,14 +1068,14 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                         HydrusData.ShowText( 'Query "' + query_name + '" can do no more file work due to running out of unknown urls.' )
                         
                     
-                    break
+                    break # not a cancel, a simple break to stop
                     
                 
                 if job_status.IsCancelled():
                     
                     self._DelayWork( 300, 'recently cancelled' )
                     
-                    break
+                    raise HydrusExceptions.CancelledException( 'User Cancelled!' )
                     
                 
                 p1 = not self._CanDoWorkNow()
@@ -1109,7 +1119,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             
                         
                     
-                    break
+                    raise HydrusExceptions.CancelledException( 'Stopping work early!' )
                     
                 
                 try:
@@ -1123,18 +1133,20 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     human_num_urls = num_urls - starting_num_done
                     human_num_done = num_done - starting_num_done
                     
-                    x_out_of_y = 'file ' + HydrusNumbers.ValueRangeToPrettyString( human_num_done + 1, human_num_urls ) + ': '
+                    x_out_of_y = 'files ' + HydrusNumbers.ValueRangeToPrettyString( human_num_done, human_num_urls ) + ': '
                     
-                    job_status.SetVariable( 'popup_gauge_2', ( human_num_done, human_num_urls ) )
+                    job_status.SetGauge( human_num_done, human_num_urls, level = 2 )
                     
                     def status_hook( text ):
                         
                         job_status.SetStatusText( x_out_of_y + HydrusText.GetFirstLine( text ), 2 )
                         
                     
-                    file_seed.WorkOnURL( file_seed_cache, status_hook, query_header.GenerateNetworkJobFactory( self._name ), ClientImporting.GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ), self._file_import_options, FileImportOptions.IMPORT_TYPE_QUIET, self._tag_import_options, self._note_import_options )
+                    file_seed.WorkOnURL( file_seed_cache, status_hook, query_header.GenerateNetworkJobFactory( self._name ), ClientImporting.GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ), self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_QUIET, self._tag_import_options, self._note_import_options )
                     
-                    query_tag_import_options = query_header.GetTagImportOptions()
+                    query_tag_import_options_legacy = query_header.GetTagImportOptions()
+                    
+                    query_tag_import_options = query_tag_import_options_legacy.GetTagImportOptions()
                     
                     if query_tag_import_options.HasAdditionalTags() and file_seed.status in CC.SUCCESSFUL_IMPORT_STATES:
                         
@@ -1155,7 +1167,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                             
                         
                     
-                    real_presentation_import_options = FileImportOptions.GetRealPresentationImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_LOUD )
+                    real_presentation_import_options = FileImportOptionsLegacy.GetRealPresentationImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD )
                     
                     if file_seed.ShouldPresent( real_presentation_import_options ):
                         
@@ -1201,7 +1213,7 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     
                     if isinstance( e, HydrusExceptions.DataMissing ):
                         
-                        # DataMissing is a quick thing to avoid subscription abandons when lots of deleted files in e621 (or any other booru)
+                        # DataMissing is a quick thing to avoid subscription abandons when lots of deleted files
                         # this should be richer in any case in the new system
                         
                         pass
@@ -1611,6 +1623,22 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         self._file_import_options = file_import_options.Duplicate()
         
     
+    def SetFileLimits( self, initial_file_limit, periodic_file_limit ):
+        
+        self._initial_file_limit = initial_file_limit
+        self._periodic_file_limit = periodic_file_limit
+        
+    
+    def SetGUGKeyAndName( self, gug_key_and_name: tuple[ bytes, str ] | None ):
+        
+        if gug_key_and_name is None:
+            
+            gug_key_and_name = ( HydrusData.GenerateKey(), '' )
+            
+        
+        self._gug_key_and_name = gug_key_and_name
+        
+    
     def SetPaused( self, value ):
         
         self._paused = value
@@ -1630,6 +1658,11 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
         self._query_headers = list( query_headers )
         
     
+    def SetNoWorkUntil( self, no_work_until ):
+        
+        self._no_work_until = no_work_until
+        
+    
     def SetNoteImportOptions( self, note_import_options ):
         
         self._note_import_options = note_import_options.Duplicate()
@@ -1643,20 +1676,6 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
     def SetThisIsARandomSampleSubscription( self, value: bool ):
         
         self._this_is_a_random_sample_sub = value
-        
-    
-    def SetTuple( self, gug_key_and_name, checker_options: ClientImportOptions.CheckerOptions, initial_file_limit, periodic_file_limit, paused, file_import_options: FileImportOptions.FileImportOptions, tag_import_options: TagImportOptions.TagImportOptions, no_work_until ):
-        
-        self._gug_key_and_name = gug_key_and_name
-        self._checker_options = checker_options
-        self._initial_file_limit = initial_file_limit
-        self._periodic_file_limit = periodic_file_limit
-        self._paused = paused
-        
-        self._file_import_options = file_import_options
-        self._tag_import_options = tag_import_options
-        
-        self._no_work_until = no_work_until
         
     
     def ScrubDelay( self ):
@@ -1721,9 +1740,9 @@ class Subscription( HydrusSerialisable.SerialisableBaseNamed ):
                     self._SyncQueries( job_status )
                     
                 
-                real_file_import_options = FileImportOptions.GetRealFileImportOptions( self._file_import_options, FileImportOptions.IMPORT_TYPE_QUIET )
+                real_file_import_options = FileImportOptionsLegacy.GetRealFileImportOptions( self._file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_QUIET )
                 
-                real_file_import_options.CheckReadyToImport()
+                real_file_import_options.GetLocationImportOptions().CheckReadyToImport()
                 
                 self._WorkOnQueriesFiles( job_status )
                 
@@ -1957,7 +1976,7 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
             
         else:
             
-            possible_names.sort()
+            HydrusText.HumanTextSort( possible_names )
             
             subscription_name = possible_names.pop( 0 )
             
@@ -2058,9 +2077,10 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
                 
                 self._big_pauser.Pause()
                 
-                self._wake_event.wait( wait_time )
+                self._wake_from_work_sleep_event.wait( wait_time )
                 
-                self._wake_event.clear()
+                self._wake_from_work_sleep_event.clear()
+                self._wake_from_idle_sleep_event.clear()
                 
             
         finally:
@@ -2122,8 +2142,8 @@ class SubscriptionsManager( ClientDaemons.ManagerWithMainLoop ):
                 self._UpdateSubscriptionInfo( subscription )
                 
             
-            self._wake_event.set()
-            
+        
+        self.Wake()
         
     
     def ShowSnapshot( self ):

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 
 pushd "$(dirname "$0")" || exit 1
 
@@ -14,7 +14,7 @@ if ! source venv/bin/activate; then
     exit 1
 fi
 
-# You can copy this file to 'hydrus_client-user.command' and add in your own launch parameters here if you like, and a git pull won't overwrite the file.
+# You can copy this file to 'hydrus_client-user.command' and add in your own launch parameters here if you like. A git pull won't overwrite that filename.
 # Just tack new params on like this:
 # python hydrus_client.py -d="/path/to/hydrus/db"
 

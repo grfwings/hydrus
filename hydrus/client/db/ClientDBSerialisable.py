@@ -255,7 +255,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 serialisable_info = json.loads( dump )
                 
-            except:
+            except Exception as e:
                 
                 self._Execute( 'DELETE FROM json_dumps_hashed WHERE hash = ?;', ( sqlite3.Binary( hash ), ) )
                 
@@ -328,7 +328,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 serialisable_info = json.loads( dump )
                 
-            except:
+            except Exception as e:
                 
                 self._Execute( 'DELETE FROM json_dumps WHERE dump_type = ?;', ( dump_type, ) )
                 
@@ -377,7 +377,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                     
                     objs.append( HydrusSerialisable.CreateFromSerialisableTuple( ( dump_type, dump_name, version, serialisable_info ) ) )
                     
-                except:
+                except Exception as e:
                     
                     self._Execute( 'DELETE FROM json_dumps_named WHERE dump_type = ? AND dump_name = ? AND timestamp_ms = ?;', ( dump_type, dump_name, object_timestamp_ms ) )
                     
@@ -416,7 +416,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 serialisable_info = json.loads( dump )
                 
-            except:
+            except Exception as e:
                 
                 self._Execute( 'DELETE FROM json_dumps_named WHERE dump_type = ? AND dump_name = ? AND timestamp_ms = ?;', ( dump_type, dump_name, object_timestamp_ms ) )
                 
@@ -574,7 +574,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 self._Execute( 'INSERT INTO json_dumps_hashed ( hash, dump_type, version, dump ) VALUES ( ?, ?, ?, ? );', ( sqlite3.Binary( hash ), dump_type, version, dump_buffer ) )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.DebugPrint( dump )
                 HydrusData.ShowText( 'Had a problem saving a hashed JSON object. The dump has been printed to the log.' )
@@ -583,7 +583,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                     
                     HydrusData.Print( 'Dump had length {}!'.format( HydrusData.ToHumanBytes( len( dump_buffer ) ) ) )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -677,7 +677,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 self._Execute( 'INSERT INTO json_dumps_named ( dump_type, dump_name, version, timestamp_ms, dump ) VALUES ( ?, ?, ?, ?, ? );', ( dump_type, dump_name, version, object_timestamp_ms, dump_buffer ) )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.DebugPrint( dump )
                 HydrusData.ShowText( 'Had a problem saving a JSON object. The dump has been printed to the log.' )
@@ -686,7 +686,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                     
                     HydrusData.Print( 'Dump had length {}!'.format( HydrusData.ToHumanBytes( len( dump_buffer ) ) ) )
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -772,7 +772,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 self._Execute( 'INSERT INTO json_dumps ( dump_type, version, dump ) VALUES ( ?, ?, ? );', ( dump_type, version, dump_buffer ) )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.DebugPrint( dump )
                 HydrusData.ShowText( 'Had a problem saving a JSON object. The dump has been printed to the log.' )
@@ -783,9 +783,9 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
         
     
     def SetJSONComplex( self,
-        overwrite_types_and_objs: typing.Optional[ tuple[ collections.abc.Iterable[ int ], collections.abc.Iterable[ HydrusSerialisable.SerialisableBase ] ] ] = None,
-        set_objs: typing.Optional[ list[ HydrusSerialisable.SerialisableBase ] ] = None,
-        deletee_types_to_names: typing.Optional[ dict[ int, collections.abc.Iterable[ str ] ] ] = None
+        overwrite_types_and_objs: tuple[ collections.abc.Iterable[ int ], collections.abc.Iterable[ HydrusSerialisable.SerialisableBase ] ] | None = None,
+        set_objs: list[ HydrusSerialisable.SerialisableBase ] | None = None,
+        deletee_types_to_names: dict[ int, collections.abc.Iterable[ str ] ] | None = None
     ):
         
         if overwrite_types_and_objs is not None:
@@ -831,7 +831,7 @@ class ClientDBSerialisable( ClientDBModule.ClientDBModule ):
                 
                 self._Execute( 'REPLACE INTO json_dict ( name, dump ) VALUES ( ?, ? );', ( name, dump_buffer ) )
                 
-            except:
+            except Exception as e:
                 
                 HydrusData.DebugPrint( dump )
                 HydrusData.ShowText( 'Had a problem saving a JSON object. The dump has been printed to the log.' )

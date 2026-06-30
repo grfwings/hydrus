@@ -2,24 +2,17 @@ import hashlib
 import os
 import random
 import re
-import ssl
-import sys
 import threading
 import time
 import typing
-
-import cv2
-import PIL
-import sqlite3
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
 
-from hydrus.core import HydrusCompression
+from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
-from hydrus.core import HydrusEncryption
 from hydrus.core import HydrusEnvironment
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
@@ -27,15 +20,10 @@ from hydrus.core import HydrusMemory
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusProfiling
-from hydrus.core import HydrusPSUtil
 from hydrus.core import HydrusSerialisable
-from hydrus.core import HydrusTemp
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusText
 from hydrus.core import HydrusTime
-from hydrus.core.files import HydrusFileHandling
-from hydrus.core.files import HydrusOLEHandling
-from hydrus.core.files import HydrusFFMPEG
-from hydrus.core.files.images import HydrusImageHandling
 from hydrus.core.networking import HydrusNetwork
 
 from hydrus.client import ClientApplicationCommand as CAC
@@ -43,15 +31,14 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
-from hydrus.client import ClientPDFHandling
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
-from hydrus.client import ClientTime
 from hydrus.client.exporting import ClientExportingFiles
+from hydrus.client.gui import ClientGUIAboutWindow
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICharts
 from hydrus.client.gui import ClientGUIDialogs
-from hydrus.client.gui import ClientGUIDialogsManage
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIDownloaders
@@ -65,19 +52,24 @@ from hydrus.client.gui import ClientGUISplash
 from hydrus.client.gui import ClientGUIStyle
 from hydrus.client.gui import ClientGUISubscriptions
 from hydrus.client.gui import ClientGUISystemTray
-from hydrus.client.gui import ClientGUITags
 from hydrus.client.gui import ClientGUITopLevelWindows
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QLocator
 from hydrus.client.gui import ClientGUILocatorSearchProviders
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
-from hydrus.client.gui.canvas import ClientGUICanvasMedia
+from hydrus.client.gui.canvas import ClientGUICanvasFrame
 from hydrus.client.gui.canvas import ClientGUIMPV
+from hydrus.client.gui.canvas import ClientGUIQtMediaPlayer
 from hydrus.client.gui.exporting import ClientGUIExport
 from hydrus.client.gui.importing import ClientGUIImportFolders
 from hydrus.client.gui.media import ClientGUIMediaControls
+from hydrus.client.gui.metadata import ClientGUITagDisplayMaintenanceEdit
+from hydrus.client.gui.metadata import ClientGUIManageTagParents
+from hydrus.client.gui.metadata import ClientGUIManageTagSiblings
 from hydrus.client.gui.metadata import ClientGUIMigrateTags
+from hydrus.client.gui.metadata import ClientGUITagFilter
+from hydrus.client.gui.metadata import ClientGUITagDisplayOptions
+from hydrus.client.gui.metadata import ClientGUITagDisplayMaintenanceReview
 from hydrus.client.gui.metadata import ClientGUITime
 from hydrus.client.gui.networking import ClientGUIHydrusNetwork
 from hydrus.client.gui.networking import ClientGUILogin
@@ -86,10 +78,13 @@ from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.pages import ClientGUIPages
 from hydrus.client.gui.pages import ClientGUIPagesCore
 from hydrus.client.gui.pages import ClientGUISession
-from hydrus.client.gui.panels import ClientGUIManageOptionsPanel
+from hydrus.client.gui.panels import ClientGUIFilesPhysicalStoragePanels
+from hydrus.client.gui.panels import ClientGUILocalFileImports
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsReview
+from hydrus.client.gui.panels import ClientGUIURLClass
+from hydrus.client.gui.panels.options import ClientGUIManageOptionsPanel
 from hydrus.client.gui.parsing import ClientGUIParsing
 from hydrus.client.gui.parsing import ClientGUIParsingLegacy
 from hydrus.client.gui.services import ClientGUIClientsideServices
@@ -98,12 +93,56 @@ from hydrus.client.gui.services import ClientGUIModalServersideServiceActions
 from hydrus.client.gui.services import ClientGUIServersideServices
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.media import ClientMediaResult
+from hydrus.client.media import ClientMediaResultAPI
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.networking import ClientNetworkingFunctions
 from hydrus.client.parsing import ClientParsing
 
 MENU_ORDER = [ 'file', 'undo', 'pages', 'database', 'network', 'services', 'tags', 'pending', 'help' ]
+
+def CrashTheProgram( win: QW.QWidget ):
+    
+    def crashtime_nice():
+        
+        os.abort()
+        
+    
+    def crashtime_not_nice():
+        
+        for i in range( 100 ):
+            
+            CG.client_controller.gui.repaint()
+            
+            time.sleep( 0.1 )
+            
+        
+    
+    message = 'u wot mate I\'ll hook u in the gabber'
+    
+    yes_tuples = []
+    
+    yes_tuples.append( ( 'nice crash', True ) )
+    yes_tuples.append( ( 'not a nice crash', False ) )
+    
+    try:
+        
+        result = ClientGUIDialogsQuick.GetYesYesNo( win, message, yes_tuples = yes_tuples, no_label = 'forget it' )
+        
+    except HydrusExceptions.CancelledException:
+        
+        return
+        
+    
+    if result:
+        
+        crashtime_nice()
+        
+    else:
+        
+        CG.client_controller.CallToThread( crashtime_not_nice )
+        
+    
 
 def GetTagServiceKeyForMaintenance( win: QW.QWidget ):
     
@@ -276,7 +315,7 @@ def THREADUploadPending( service_key ):
             num_done = num_to_do - remaining_num_pending
             
             job_status.SetStatusText( 'uploading to ' + service_name + ': ' + HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
-            job_status.SetVariable( 'popup_gauge_1', ( num_done, num_to_do ) )
+            job_status.SetGauge( num_done, num_to_do )
             
             while job_status.IsPaused() or job_status.IsCancelled():
                 
@@ -284,7 +323,7 @@ def THREADUploadPending( service_key ):
                 
                 if job_status.IsCancelled():
                     
-                    job_status.DeleteVariable( 'popup_gauge_1' )
+                    job_status.DeleteGauge()
                     job_status.SetStatusText( 'cancelled' )
                     
                     HydrusData.Print( job_status.ToString() )
@@ -402,7 +441,7 @@ def THREADUploadPending( service_key ):
             HydrusData.ShowText( 'Hey, your pending menu may have a miscount! It seems like you have pending count, but nothing was found in the database. Please run _database->regenerate->tag storage mappings cache (just pending, instant calculation) when convenient. Make sure it is the "instant, just pending" regeneration!' )
             
         
-        job_status.DeleteVariable( 'popup_gauge_1' )
+        job_status.DeleteGauge()
         job_status.SetStatusText( 'upload done!' )
         
     except Exception as e:
@@ -488,7 +527,10 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._statusbar_thread_updater = ClientGUIAsync.FastThreadToGUIUpdater( self._statusbar, self.RefreshStatusBar )
         self._statusbar_db_thread_updater = ClientGUIAsync.FastThreadToGUIUpdater( self._statusbar, self.RefreshStatusBarDB )
         
-        self._canvas_frames = [] # Keep references to canvas frames so they won't get garbage collected (canvas frames don't have a parent)
+        self._pages_count_dirty = True
+        self._pages_history_dirty = True
+        
+        self._canvas_frames: list[ ClientGUICanvasFrame.CanvasFrame ] = [] # Keep references to canvas frames so they won't get garbage collected (canvas frames don't have a parent)
         
         self._persistent_mpv_widgets = []
         self._isolated_mpv_widgets = []
@@ -496,6 +538,9 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._have_shown_session_size_warning = False
         
         self._closed_pages = []
+        
+        self._predicate_history_added_to_search = []
+        self._predicate_history_removed_from_search = []
         
         self._lock = threading.Lock()
         
@@ -508,6 +553,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._did_a_backup_this_session = False
         
         self._notebook = ClientGUIPages.PagesNotebook( self, 'top page notebook' )
+        
+        self._page_nav_history = ClientGUIPages.PagesHistory()
         
         self._currently_uploading_pending = set()
         
@@ -621,13 +668,16 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         self._locator = QLocator.QLocator( self )
         
-        self._locator.setIconBasePath( HC.STATIC_DIR + os.path.sep )
+        # TODO: Rework this to StacicIconPath and change the fetch to name not name.png
+        self._locator.setIconPathFactory( HydrusStaticDir.GetStaticPath )
         
-        # TODO: make configurable which providers + order
-        self._locator.addProvider( ClientGUILocatorSearchProviders.CalculatorSearchProvider() )
-        self._locator.addProvider( ClientGUILocatorSearchProviders.MainMenuSearchProvider() )
-        self._locator.addProvider( ClientGUILocatorSearchProviders.MediaMenuSearchProvider() )
-        self._locator.addProvider( ClientGUILocatorSearchProviders.PagesSearchProvider() )
+        for provider in CC.command_palette_provider_str_lookup.keys():
+            
+            self._locator.addProvider( ClientGUILocatorSearchProviders.GetSearchProvider( provider ) )
+            
+        
+        command_palette_num_chars_for_results_threshold = CG.client_controller.new_options.GetInteger( 'command_palette_num_chars_for_results_threshold' )
+        
         self._locator_widget = QLocator.QLocatorWidget( self,
             width = 800,
             resultHeight = 36,
@@ -640,6 +690,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._locator_widget.setLocator( self._locator )
         self._locator_widget.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._locator_widget.setEscapeShortcuts( [ QG.QKeySequence( QC.Qt.Key.Key_Escape ) ] )
+        self._locator_widget.updateOptions() #apply order of providers from user setting
         # self._locator_widget.setQueryTimeout( 100 ) # how much to wait before starting a search after user edit. default 0
         
         #
@@ -704,220 +755,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
     
     def _AboutWindow( self ):
         
-        name = 'hydrus client'
-        version = 'v{}, using network version {}'.format( HC.SOFTWARE_VERSION, HC.NETWORK_VERSION )
-        
-        library_version_lines = []
-        
-        library_version_lines.append( 'running on {} {}'.format( HC.NICE_PLATFORM_STRING, HC.NICE_RUNNING_AS_STRING ) )
-        
-        # 2.7.12 (v2.7.12:d33e0cf91556, Jun 27 2016, 15:24:40) [MSC v.1500 64 bit (AMD64)]
-        v = sys.version
-        
-        if ' ' in v:
-            
-            v = v.split( ' ' )[0]
-            
-        
-        library_version_lines.append( 'python: {}'.format( v ) )
-        library_version_lines.append( 'FFMPEG: {}'.format( HydrusFFMPEG.GetFFMPEGVersion() ) )
-        
-        if ClientGUIMPV.MPV_IS_AVAILABLE:
-            
-            library_version_lines.append( 'mpv api version: {}'.format( ClientGUIMPV.GetClientAPIVersionString() ) )
-            
-        else:
-            
-            library_version_lines.append( 'mpv not available!' )
-            
-            if HC.RUNNING_FROM_FROZEN_BUILD and HC.PLATFORM_MACOS:
-                
-                HydrusData.ShowText( 'The macOS App does not come with MPV support on its own, but if your system has the dev library, libmpv1 or libmpv2, it will try to import it. It seems your system does not have this, or it failed to import. The specific error follows:' )
-                
-            else:
-                
-                HydrusData.ShowText( 'If this information helps, MPV failed to import because:' )
-                
-            
-            HydrusData.ShowText( ClientGUIMPV.mpv_failed_reason )
-            
-        
-        library_version_lines.append( 'OpenCV: {}'.format( cv2.__version__ ) )
-        library_version_lines.append( 'openssl: {}'.format( ssl.OPENSSL_VERSION ) )
-        library_version_lines.append( 'Pillow: {}'.format( PIL.__version__ ) )
-        
-        qt_string = 'Qt: Unknown'
-        
-        if QtInit.WE_ARE_QT5:
-            
-            if QtInit.WE_ARE_PYSIDE:
-                
-                # noinspection PyUnresolvedReferences
-                import PySide2
-                
-                qt_string = 'Qt: PySide2 {}'.format( PySide2.__version__ )
-                
-            elif QtInit.WE_ARE_PYQT:
-                
-                # noinspection PyUnresolvedReferences
-                from PyQt5.Qt import PYQT_VERSION_STR # pylint: disable=E0401,E0611
-                
-                qt_string = 'Qt: PyQt5 {}'.format( PYQT_VERSION_STR )
-                
-            
-        elif QtInit.WE_ARE_QT6:
-            
-            if QtInit.WE_ARE_PYSIDE:
-                
-                import PySide6
-                
-                qt_string = 'Qt: PySide6 {}'.format( PySide6.__version__ )
-                
-            elif QtInit.WE_ARE_PYQT:
-                
-                # noinspection PyUnresolvedReferences
-                from PyQt6.QtCore import PYQT_VERSION_STR
-                
-                qt_string = 'Qt: PyQt6 {}'.format( PYQT_VERSION_STR )
-                
-            
-        
-        try:
-            
-            actual_platform_name = QG.QGuiApplication.platformName()
-            running_platform_name = typing.cast( QW.QApplication, QW.QApplication.instance() ).platformName()
-            
-            if actual_platform_name != running_platform_name:
-                
-                qt_string += f' (actual {actual_platform_name}, set-to {running_platform_name})'
-                
-            else:
-                
-                qt_string += f' ({actual_platform_name})'
-                
-            
-        except:
-            
-            qt_string += f' (unknown platform)'
-            
-        
-        library_version_lines.append( qt_string )
-        
-        library_version_lines.append( 'sqlite: {}'.format( sqlite3.sqlite_version ) )
-        
-        library_version_lines.append( '' )
-        
-        library_version_lines.append( 'install dir: {}'.format( HC.BASE_DIR ) )
-        library_version_lines.append( 'db dir: {}'.format( CG.client_controller.db_dir ) )
-        library_version_lines.append( 'temp dir: {}'.format( HydrusTemp.GetCurrentTempDir() ) )
-        
-        import locale
-        
-        l_string = locale.getlocale()[0]
-        qtl_string = QC.QLocale().name()
-        
-        library_version_lines.append( 'locale: {}/{}'.format( l_string, qtl_string ) )
-        
-        library_version_lines.append( '' )
-        
-        library_version_lines.append( 'db cache size per file: {}MB'.format( HG.db_cache_size ) )
-        library_version_lines.append( 'db journal mode: {}'.format( HG.db_journal_mode ) )
-        library_version_lines.append( 'db synchronous mode: {}'.format( HG.db_synchronous ) )
-        library_version_lines.append( 'db transaction commit period: {}'.format( HydrusTime.TimeDeltaToPrettyTimeDelta( HG.db_cache_size ) ) )
-        library_version_lines.append( 'db using memory for temp?: {}'.format( HG.no_db_temp_files ) )
-        
-        description_versions = 'This is the media management application of the hydrus software suite.' + '\n' * 2 + '\n'.join( library_version_lines )
-        
-        #
-        
-        if not HydrusImageHandling.JXL_OK:
-            
-            message = 'Hey, you do not seem to have Jpeg-XL support for our image library Pillow. The error follows:'
-            
-            if HC.PLATFORM_MACOS:
-                
-                message += '\n\nAlso, since you are on macOS, you should know that a common reason for Jpeg-XL not loading is that it is not bundled with their python package on macOS. Your error below probably talks about a missing .dylib or .so file. If you run from source or run the App on an intel machine, you can resolve this by opening a terminal and running "brew install jpeg-xl", and then restarting hydrus. If you run the App from a Silicon machine, I understand this will not fix you, and you should consider running from source anyway.'
-                
-            
-            HydrusData.ShowText( message )
-            HydrusData.ShowText( HydrusImageHandling.JXL_ERROR_TEXT )
-            
-        
-        availability_lines = []
-        
-        availability_lines.append( 'QtCharts: {}'.format( ClientGUICharts.QT_CHARTS_OK ) )
-        
-        if QtInit.WE_ARE_QT5:
-            
-            availability_lines.append( 'QtPdf not available on Qt5' )
-            
-        else:
-            
-            availability_lines.append( 'QtPdf: {}'.format( ClientPDFHandling.PDF_OK ) )
-            
-            if not ClientPDFHandling.PDF_OK:
-                
-                HydrusData.ShowText( 'If this information helps, QtPdf failed to import because:' )
-                
-                HydrusData.ShowText( ClientPDFHandling.pdf_failed_reason )
-                
-            
-        
-        CBOR_AVAILABLE = False
-        
-        try:
-            
-            import cbor2
-            CBOR_AVAILABLE = True
-            
-        except:
-            
-            pass
-            
-        
-        availability_lines.append( 'cbor2 present: {}'.format( str( CBOR_AVAILABLE ) ) )
-        availability_lines.append( 'chardet present: {}'.format( str( HydrusText.CHARDET_OK ) ) )
-        availability_lines.append( 'cryptography present: {}'.format( HydrusEncryption.CRYPTO_OK ) )
-        availability_lines.append( 'dateparser present: {}'.format( ClientTime.DATEPARSER_OK ) )
-        availability_lines.append( 'dateutil present: {}'.format( ClientTime.DATEUTIL_OK ) )
-        availability_lines.append( 'html5lib present: {}'.format( ClientParsing.HTML5LIB_IS_OK ) )
-        availability_lines.append( 'lxml present: {}'.format( ClientParsing.LXML_IS_OK ) )
-        availability_lines.append( 'lz4 present: {}'.format( HydrusCompression.LZ4_OK ) )
-        availability_lines.append( 'olefile present: {}'.format( HydrusOLEHandling.OLEFILE_OK ) )
-        availability_lines.append( 'Pillow HEIF: {}'.format( HydrusImageHandling.HEIF_OK ) )
-        availability_lines.append( 'Pillow AVIF: {}'.format( HydrusImageHandling.AVIF_OK ) )
-        availability_lines.append( 'Pillow JXL: {}'.format( HydrusImageHandling.JXL_OK ) )
-        availability_lines.append( 'psutil present: {}'.format( HydrusPSUtil.PSUTIL_OK ) )
-        availability_lines.append( 'pympler present: {}'.format( HydrusMemory.PYMPLER_OK ) )
-        availability_lines.append( 'pyopenssl present: {}'.format( HydrusEncryption.OPENSSL_OK ) )
-        availability_lines.append( 'show-in-file-manager present: {}'.format( ClientPaths.SHOW_IN_FILE_MANAGER_OK ) )
-        availability_lines.append( 'speedcopy (experimental test) present: {}'.format( HydrusFileHandling.SPEEDCOPY_OK ) )
-        
-        description_availability = '\n'.join( availability_lines )
-        
-        #
-        
-        if os.path.exists( HC.LICENSE_PATH ):
-            
-            with open( HC.LICENSE_PATH, 'r', encoding = 'utf-8' ) as f:
-                
-                license = f.read()
-                
-            
-        else:
-            
-            license = 'no licence file found!'
-            
-        
-        developers = [ 'Anonymous' ]
-        
-        site = 'https://hydrusnetwork.github.io/hydrus/'
-        
-        frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, 'about hydrus' )
-        
-        panel = ClientGUIScrolledPanelsReview.AboutPanel( frame, name, version, description_versions, description_availability, license, developers, site )
-        
-        frame.SetPanel( panel )
+        ClientGUIAboutWindow.ShowAboutWindow( self )
         
     
     def _AnalyzeDatabase( self ):
@@ -975,7 +813,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             all_names = [ s.GetName() for s in all_services ]
             
-            name = HydrusData.GetNonDupeName( 'public tag repository', all_names )
+            name = HydrusData.GetNonDupeName( 'public tag repository', all_names, do_casefold = True )
             
             service_key = HydrusData.GenerateKey()
             service_type = HC.TAG_REPOSITORY
@@ -1000,6 +838,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         services = self._controller.services_manager.GetServices( ( HC.TAG_REPOSITORY, ) )
         
         for service in services:
+            
+            service = typing.cast( ClientServices.ServiceRepository, service )
             
             credentials = service.GetCredentials()
             
@@ -1159,20 +999,6 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
         
     
-    def _CheckDBIntegrity( self ):
-        
-        message = 'This will check the SQLite database files for corruption. It may take several minutes to complete.'
-        message += '\n' * 2
-        message += 'In general, this routine is quite laggy, especially as it checks always checks your entire database, and is better done from the command line where you have more control. If you are worried your database is malformed, check [install_dir/db/help my db is broke.txt].'
-        
-        result = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Run integrity check?', yes_label = 'do it', no_label = 'forget it' )
-        
-        if result == QW.QDialog.DialogCode.Accepted:
-            
-            self._controller.Write( 'db_integrity' )
-            
-        
-    
     def _CheckImportFolder( self, name = None ):
         
         if self._controller.new_options.GetBoolean( 'pause_import_folders_sync' ):
@@ -1211,7 +1037,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILE_VIEWING_STATS, HC.CONTENT_UPDATE_ADVANCED, 'clear' )
             
-            content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+            content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
             
             self._controller.WriteSynchronous( 'content_updates', content_update_package )
             
@@ -1245,15 +1071,16 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         if result == 'move':
             
-            with QP.DirDialog( self, 'Select location.' ) as dlg_3:
+            try:
                 
-                if dlg_3.exec() == QW.QDialog.DialogCode.Accepted:
-                    
-                    path = dlg_3.GetPath()
-                    
-                    self._controller.CallToThread( client_files_manager.ClearOrphans, path )
-                    
+                path = ClientGUIDialogsQuick.PickDirectory( self, 'Select location.' )
                 
+            except HydrusExceptions.CancelledException:
+                
+                return
+                
+            
+            self._controller.CallToThread( client_files_manager.ClearOrphans, path )
             
         elif result == 'delete':
             
@@ -1265,7 +1092,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         text = 'DO NOT RUN THIS UNLESS YOU KNOW YOU NEED TO'
         text += '\n' * 2
-        text += 'This will instruct the database to review its file records\' integrity. If anything appears to be in a specific domain (e.g. my files) but not an umbrella domain (e.g. all my files), and the actual file also exists on disk, it will try to recover the record. If the file does not actually exist on disk, or the record is in the umbrella domain and not in the specific domain, or if recovery data cannot be found, the record will be deleted.'
+        text += 'This will instruct the database to review its file records\' integrity. If anything appears to be in a specific domain like "my files" but not an associated umbrella domain "combined local file domains", and the actual file also exists on disk, it will try to recover the record and fix the umbrella domain. If the file does not actually exist on disk, or the record is in the umbrella domain and not in the specific, or if recovery data cannot be found, the orphaned record will be deleted.'
         text += '\n' * 2
         text += 'You typically do not ever see these files and they are basically harmless, but they can offset some file counts confusingly and may break other maintenance routines. You probably only need to run this if you can\'t process the apparent last handful of duplicate filter pairs or hydrus dev otherwise told you to try it.'
         text += '\n' * 2
@@ -1276,6 +1103,22 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         if result == QW.QDialog.DialogCode.Accepted:
             
             self._controller.Write( 'clear_orphan_file_records' )
+            
+        
+    
+    def _ClearOrphanURLMappings( self ):
+        
+        text = 'DO NOT RUN THIS UNLESS YOU KNOW YOU NEED TO'
+        text += '\n' * 2
+        text += 'This will instruct the database to review its URL records\' integrity. If a mapping exists without a master URL, the mapping will be removed. This is useful if your client.master.db has been damaged or truncated because of a partial backup rollback.'
+        text += '\n' * 2
+        text += 'It will create a popup message while it works, but it will not have any feedback until it is complete. It may lock up the client for a bit.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'do it', no_label = 'forget it' )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            self._controller.Write( 'clear_orphan_url_mappings' )
             
         
     
@@ -1356,11 +1199,6 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         def qt_code( network_job ):
             
-            if not self or not QP.isValid( self ):
-                
-                return
-                
-            
             content = network_job.GetContentBytes()
             
             text = 'Request complete. Length of response is ' + HydrusData.ToHumanBytes( len( content ) ) + '.'
@@ -1381,7 +1219,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
             if result == 'file':
                 
-                with QP.FileDialog( self, 'select where to save content', default_filename = 'result.html', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as f_dlg:
+                with ClientGUIDialogsFiles.FileDialog( self, 'select where to save content', default_filename = 'output.txt', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as f_dlg:
                     
                     if f_dlg.exec() == QW.QDialog.DialogCode.Accepted:
                         
@@ -1427,18 +1265,19 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
                 job_status.FinishAndDismiss( seconds = 3 )
                 
             
-            QP.CallAfter( qt_code, network_job )
+            CG.client_controller.CallAfterQtSafe( self, qt_code, network_job )
             
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the URL.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                url = dlg.GetValue()
-                
-                self._controller.CallToThread( thread_wait, url )
-                
+            url = ClientGUIDialogsQuick.EnterText( self, 'Enter the URL.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        self._controller.CallToThread( thread_wait, url )
         
     
     def _DebugIsolateMPVWindows( self ):
@@ -1470,7 +1309,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
                     
                 
                 job_status.SetStatusText( 'Will auto-dismiss in ' + HydrusTime.TimeDeltaToPrettyTimeDelta( 10 - i ) + '.' )
-                job_status.SetVariable( 'popup_gauge_1', ( i, 10 ) )
+                job_status.SetGauge( i, 10 )
                 
                 time.sleep( 1 )
                 
@@ -1651,21 +1490,21 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         job_status.SetStatusTitle( 'sub gap downloader test' )
         
-        from hydrus.client.importing.options import FileImportOptions
+        from hydrus.client.importing.options import FileImportOptionsLegacy
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
-        from hydrus.client.importing.options import TagImportOptions
+        from hydrus.client.importing.options import TagImportOptionsLegacy
         
-        tag_import_options = TagImportOptions.TagImportOptions( is_default = True )
+        tag_import_options = TagImportOptionsLegacy.TagImportOptionsLegacy( is_default = True )
         
-        from hydrus.client.importing.options import NoteImportOptions
+        from hydrus.client.importing.options import NoteImportOptionsLegacy
         
-        note_import_options = NoteImportOptions.NoteImportOptions()
+        note_import_options = NoteImportOptionsLegacy.NoteImportOptionsLegacy()
         note_import_options.SetIsDefault( True )
         
-        call = HydrusData.Call( CG.client_controller.pub, 'make_new_subscription_gap_downloader', ( b'', 'safebooru tag search' ), 'skirt', file_import_options, tag_import_options, note_import_options, 2 )
+        call = HydrusData.Call( CG.client_controller.pub, 'make_new_subscription_gap_downloader', ( b'', 'booru tag search' ), 'skirt', file_import_options, tag_import_options, note_import_options, 2 )
         
         call.SetLabel( 'start a new downloader for this to fill in the gap!' )
         
@@ -1691,19 +1530,39 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         job_status.SetStatusTitle( 'test job' )
         
         job_status.SetStatusText( 'Currently processing test job 5/8' )
-        job_status.SetVariable( 'popup_gauge_1', ( 5, 8 ) )
+        job_status.SetGauge( 4, 8 )
         
         self._controller.pub( 'message', job_status )
         
-        self._controller.CallLater( 2.0, job_status.SetStatusText, 'Pulsing subjob', 2 )
+        self._controller.CallLater( 2.0, job_status.SetStatusText, 'Pulsing subjob', level = 2 )
         
-        self._controller.CallLater( 2.0, job_status.SetVariable, 'popup_gauge_2', ( 0, None ) )
+        self._controller.CallLater( 2.0, job_status.SetGauge, 0, None, level = 2 )
         
         #
         
-        e = HydrusExceptions.DataMissing( 'This is a test exception' )
+        job_status = ClientThreading.JobStatus( pausable = True, cancellable = True )
         
-        HydrusData.ShowException( e, do_wait = False )
+        job_status.SetStatusTitle( 'test network control' )
+        
+        job_status.SetStatusText( 'Downloading...' )
+        job_status.SetGauge( 2, 21 )
+        
+        from hydrus.client.networking import ClientNetworkingJobs
+        
+        job_status.SetNetworkJob( ClientNetworkingJobs.NetworkJob( 'GET', 'https://site.com/123456' ) )
+        
+        self._controller.pub( 'message', job_status )
+        
+        #
+        
+        try:
+            
+            raise HydrusExceptions.DataMissing( 'This is a test exception' )
+            
+        except Exception as e:
+            
+            HydrusData.ShowException( e, do_wait = False )
+            
         
         #
         
@@ -1786,6 +1645,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         if only_pending:
             
+            services = CG.client_controller.services_manager.GetServices( ( HC.TAG_REPOSITORY, HC.FILE_REPOSITORY, HC.IPFS ) )
+            
             types_to_delete = (
                 HC.SERVICE_INFO_NUM_PENDING_MAPPINGS,
                 HC.SERVICE_INFO_NUM_PENDING_TAG_SIBLINGS,
@@ -1801,6 +1662,8 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
             
         else:
             
+            services = CG.client_controller.services_manager.GetServices()
+            
             types_to_delete = None
             
             message = 'This clears the cached counts for things like the number of files or tags on a service. Due to unusual situations and little counting bugs, these numbers can sometimes become unsynced. Clearing them forces an accurate recount from source.'
@@ -1811,8 +1674,6 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         result = ClientGUIDialogsQuick.GetYesNo( self, message )
         
         if result == QW.QDialog.DialogCode.Accepted:
-            
-            services = CG.client_controller.services_manager.GetServices()
             
             choice_tuples = [ ( service.GetName(), service.GetServiceKey(), service.GetName() ) for service in services ]
             
@@ -1895,33 +1756,45 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
     
     def _FetchIP( self, service_key ):
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the file\'s hash.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                hash = bytes.fromhex( dlg.GetValue() )
-                
-                service = self._controller.services_manager.GetService( service_key )
-                
-                with ClientGUICommon.BusyCursor(): response = service.Request( HC.GET, 'ip', { 'hash' : hash } )
-                
-                ip = response[ 'ip' ]
-                timestamp = response[ 'timestamp' ]
-                
-                utc_time = HydrusTime.TimestampToPrettyTime( timestamp, in_utc = True )
-                local_time = HydrusTime.TimestampToPrettyTime( timestamp )
-                
-                text = 'File Hash: ' + hash.hex()
-                text += '\n'
-                text += 'Uploader\'s IP: ' + ip
-                text += 'Upload Time (UTC): ' + utc_time
-                text += 'Upload Time (Your time): ' + local_time
-                
-                HydrusData.Print( text )
-                
-                ClientGUIDialogsMessage.ShowInformation( self, text + '\n' * 2 + 'This has been written to the log.' )
-                
+            file_hash_hex = ClientGUIDialogsQuick.EnterText( self, 'Enter the file\'s hash.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        try:
+            
+            hash = bytes.fromhex( file_hash_hex )
+            
+        except Exception as e:
+            
+            ClientGUIDialogsMessage.ShowCritical( self, 'Error', 'Could not parse that hash!' )
+            
+            return
+            
+        
+        service = self._controller.services_manager.GetService( service_key )
+        
+        with ClientGUICommon.BusyCursor(): response = service.Request( HC.GET, 'ip', { 'hash' : hash } )
+        
+        ip = response[ 'ip' ]
+        timestamp = response[ 'timestamp' ]
+        
+        utc_time = HydrusTime.TimestampToPrettyTime( timestamp, in_utc = True )
+        local_time = HydrusTime.TimestampToPrettyTime( timestamp )
+        
+        text = 'File Hash: ' + hash.hex()
+        text += '\n'
+        text += 'Uploader\'s IP: ' + ip
+        text += 'Upload Time (UTC): ' + utc_time
+        text += 'Upload Time (Your time): ' + local_time
+        
+        HydrusData.Print( text )
+        
+        ClientGUIDialogsMessage.ShowInformation( self, text + '\n' * 2 + 'This has been written to the log.' )
         
     
     def _FindMenuBarIndex( self, name ):
@@ -1978,7 +1851,7 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
                 return
                 
             
-            CG.client_controller.CallAfterQtSafe( self, 'missing archive times reporter', qt_present_results, job_status, num_missing_legacy, num_missing_import )
+            CG.client_controller.CallAfterQtSafe( self, qt_present_results, job_status, num_missing_legacy, num_missing_import )
             
         
         def qt_present_results( job_status, num_missing_legacy, num_missing_import ):
@@ -2102,6 +1975,16 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
             
         
     
+    def _FlipCrashReporting( self ):
+        
+        CG.client_controller.logger.FlipCrashReporting()
+        
+        if CG.client_controller.logger.CurrentlyCrashReporting():
+            
+            HydrusData.ShowText( 'DO NOT PLAY ANYTHING WITH MPV WHILE CRASH REPORTING IS ON--IT WILL CAUSE A FAKE CRASH!' )
+            
+        
+
     def _FlipMinimiseRestore( self ):
         
         if not self._currently_minimised_to_system_tray:
@@ -2115,6 +1998,15 @@ QMenuBar::item { padding: 2px 8px; margin: 0px; }'''
                 self.showMinimized()
                 
             
+        
+    
+    def _FlipMPVCrashHandling( self ):
+        
+        HG.mpv_allow_crashy_files = not HG.mpv_allow_crashy_files
+        
+    def _FlipMPVSilentCrashHandling( self ):
+        
+        HG.mpv_allow_crashy_files_silently = not HG.mpv_allow_crashy_files_silently
         
     
     def _FlipShowHideWholeUI( self ):
@@ -2261,7 +2153,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, 'review files to import' )
         
-        panel = ClientGUIScrolledPanelsReview.ReviewLocalFileImports( frame, paths )
+        panel = ClientGUILocalFileImports.ReviewLocalFileImports( frame, paths )
         
         frame.SetPanel( panel )
         
@@ -2318,7 +2210,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                             
                             update = HydrusSerialisable.CreateFromNetworkBytes( update_network_bytes )
                             
-                        except:
+                        except Exception as e:
                             
                             num_errors += 1
                             
@@ -2348,8 +2240,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
                         
                     finally:
                         
-                        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i + 1, num_to_do ) )
-                        job_status.SetVariable( 'popup_gauge_1', ( i, num_to_do ) )
+                        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( i, num_to_do ) )
+                        job_status.SetGauge( i, num_to_do )
                         
                     
                 
@@ -2364,7 +2256,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
             finally:
                 
-                job_status.DeleteVariable( 'popup_gauge_1' )
+                job_status.DeleteGauge()
                 
                 job_status.Finish()
                 
@@ -2374,15 +2266,16 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ClientGUIDialogsMessage.ShowInformation( self, message )
         
-        with QP.DirDialog( self, 'Select location.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                path = dlg.GetPath()
-                
-                self._controller.CallToThread( do_it, path )
-                
+            path = ClientGUIDialogsQuick.PickDirectory( self, 'Select location.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        self._controller.CallToThread( do_it, path )
         
     
     def _ImportURL(
@@ -2408,6 +2301,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             additional_service_keys_to_tags = ClientTags.ServiceKeysToTags()
             
+        
+        ClientNetworkingFunctions.CheckLooksLikeAFullURL( unclean_url )
         
         url = ClientNetworkingFunctions.EnsureURLIsEncoded( unclean_url )
         
@@ -2497,6 +2392,10 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._DoMenuBarStyleHack()
             
         
+        # TODO: This is all an ugly mess!
+        # we want a unified system that updates menu presence and labels all the time and contents only on menu open/change-during-open
+        # look at the pages count/history stuff for a basic dirty-bit example. make that nice, generalise it, and convert all this gubbins to that
+        
         self._menu_updater_file = self._InitialiseMenubarGetMenuUpdaterFile()
         self._menu_updater_database = self._InitialiseMenubarGetMenuUpdaterDatabase()
         self._menu_updater_network = self._InitialiseMenubarGetMenuUpdaterNetwork()
@@ -2506,7 +2405,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
         self._menu_updater_tags = self._InitialiseMenubarGetMenuUpdaterTags()
         self._menu_updater_undo = self._InitialiseMenubarGetMenuUpdaterUndo()
         
-        self._menu_updater_pages_count = ClientGUIAsync.FastThreadToGUIUpdater( self, self._UpdateMenuPagesCount )
+        self._menu_updater_set_pages_count_dirty = ClientGUIAsync.FastThreadToGUIUpdater( self, self._SetPagesCountDirty )
+        self._menu_updater_set_pages_history_dirty = ClientGUIAsync.FastThreadToGUIUpdater( self, self._SetPagesHistoryDirty )
         
         self._boned_updater = self._InitialiseMenubarGetBonesUpdater()
         self._file_history_updater = self._InitialiseMenubarGetFileHistoryUpdater()
@@ -2547,9 +2447,12 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
             elif name == 'pages':
                 
-                ( menu, label ) = self._InitialiseMenuInfoPages()
+                ( self._pages_menu, label ) = self._InitialiseMenuInfoPages()
                 
-                self.ReplaceMenu( name, menu, label )
+                self._pages_menu.aboutToShow.connect( self._UpdateMenuPagesCountIfDirty )
+                self._pages_menu.aboutToShow.connect( self._UpdateMenuPagesHistoryIfDirty )
+                
+                self.ReplaceMenu( name, self._pages_menu, label )
                 
                 self._menu_updater_pages.update()
                 
@@ -2613,7 +2516,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             frame.SetPanel( panel )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'mr bones legacy', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetFileHistoryUpdater( self ):
@@ -2637,7 +2540,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             frame.SetPanel( panel )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'file history legacy', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterDatabase( self ):
@@ -2692,7 +2595,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._menubar_database_file_maintenance_during_active.setChecked( CG.client_controller.new_options.GetBoolean( 'file_maintenance_during_active' ) )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'database menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterFile( self ):
@@ -2763,8 +2666,10 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             self._menubar_file_minimise_to_system_tray.setVisible( ClientGUISystemTray.SystemTrayAvailable() and windows_or_advanced_non_windows )
             
+            self._menubar_file_import_folders_paused.setChecked( CG.client_controller.new_options.GetBoolean( 'pause_import_folders_sync' ) )
+            
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'file menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterNetwork( self ):
@@ -2792,7 +2697,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._menubar_network_paged_import_queues_paused.setChecked( CG.client_controller.new_options.GetBoolean( 'pause_all_file_queues' ) )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'network menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterPages( self ):
@@ -2822,7 +2727,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         def publish_callable( result ):
             
-            self._UpdateMenuPagesCount()
+            self._pages_count_dirty = True
             
             #
             
@@ -2930,7 +2835,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             ClientGUIMenus.AppendMenuItem( self._menubar_pages_search_submenu, 'trash', 'Open a new search tab for your recently deleted files.', self._notebook.NewPageQuery, location_context, on_deepest_notebook = True )
             
-            repositories = [ service for service in services if service.GetServiceType() in HC.REPOSITORIES ]
+            repositories: list[ ClientServices.ServiceRepository ] = [ service for service in services if service.GetServiceType() in HC.REPOSITORIES ]
             
             file_repositories = [ service for service in repositories if service.GetServiceType() == HC.FILE_REPOSITORY ]
             
@@ -2957,7 +2862,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'pages menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterPending( self ):
@@ -3104,7 +3009,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._menubar_pending_submenu.menuAction().setVisible( has_pending_services )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'pending menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterServices( self ):
@@ -3127,10 +3032,10 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             repository_admin_permissions = [ ( HC.CONTENT_TYPE_ACCOUNTS, HC.PERMISSION_ACTION_CREATE ), ( HC.CONTENT_TYPE_ACCOUNTS, HC.PERMISSION_ACTION_MODERATE ), ( HC.CONTENT_TYPE_ACCOUNT_TYPES, HC.PERMISSION_ACTION_MODERATE ), ( HC.CONTENT_TYPE_OPTIONS, HC.PERMISSION_ACTION_MODERATE ) ]
             
-            repositories = self._controller.services_manager.GetServices( HC.REPOSITORIES )
+            repositories: list[ ClientServices.ServiceRepository ] = self._controller.services_manager.GetServices( HC.REPOSITORIES )
             admin_repositories = [ service for service in repositories if True in ( service.HasPermission( content_type, action ) for ( content_type, action ) in repository_admin_permissions ) ]
             
-            servers_admin = self._controller.services_manager.GetServices( ( HC.SERVER_ADMIN, ) )
+            servers_admin: list[ ClientServices.ServiceRestricted ] = self._controller.services_manager.GetServices( ( HC.SERVER_ADMIN, ) )
             server_admins = [ service for service in servers_admin if service.HasPermission( HC.CONTENT_TYPE_SERVICES, HC.PERMISSION_ACTION_MODERATE ) ]
             
             admin_services = admin_repositories + server_admins
@@ -3221,7 +3126,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._menubar_services_admin_submenu.menuAction().setVisible( len( admin_services ) > 0 )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'services menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterTags( self ):
@@ -3242,7 +3147,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             self._menubar_tags_tag_display_maintenance_during_active.setChecked( CG.client_controller.new_options.GetBoolean( 'tag_display_maintenance_during_active' ) )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'tags menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenubarGetMenuUpdaterUndo( self ):
@@ -3250,6 +3155,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         def loading_callable():
             
             self._menubar_undo_closed_pages_submenu.setEnabled( False )
+            self._menubar_undo_searching_submenu.setEnabled( False )
             
         
         def work_callable( args ):
@@ -3261,13 +3167,15 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             have_closed_pages = len( self._closed_pages ) > 0
             
+            have_undo_searches = len( self._predicate_history_added_to_search ) > 0 or len( self._predicate_history_removed_from_search ) > 0
+            
             undo_manager = self._controller.GetManager( 'undo' )
             
             ( undo_string, redo_string ) = undo_manager.GetUndoRedoStrings()
             
             have_undo_stuff = undo_string is not None or redo_string is not None
             
-            if have_closed_pages or have_undo_stuff:
+            if have_closed_pages or have_undo_stuff or have_undo_searches:
                 
                 self._menubar_undo_undo.setVisible( undo_string is not None )
                 
@@ -3284,10 +3192,13 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     
                 
                 self._menubar_undo_closed_pages_submenu.setEnabled( True )
+                self._menubar_undo_searching_submenu.setEnabled( True )
                 
                 self._menubar_undo_closed_pages_submenu.clear()
+                self._menubar_undo_searching_submenu.clear()
                 
                 self._menubar_undo_closed_pages_submenu.menuAction().setVisible( have_closed_pages )
+                self._menubar_undo_searching_submenu.menuAction().setVisible( have_undo_searches )
                 
                 if have_closed_pages:
                     
@@ -3311,12 +3222,58 @@ ATTACH "client.mappings.db" as external_mappings;'''
                         ClientGUIMenus.AppendMenuItem( self._menubar_undo_closed_pages_submenu, name, 'Restore this page.', self._UnclosePage, index )
                         
                     
-                
+                if have_undo_searches:
+                    
+                    tooltip = ' behaviour may not match menu label, depending on the active predicates in the visible page.'
+                    
+                    if len( self._predicate_history_added_to_search ) > 0:
+                        
+                        added_to_search_menu = ClientGUIMenus.GenerateMenu( self._menubar_undo_searching_submenu )
+                        
+                        args = []
+                        
+                        for ( i, predicate ) in enumerate( self._predicate_history_added_to_search ):
+                            
+                            args.append( ( i, predicate.ToString(), predicate ) )
+                            
+                        args.reverse()
+                        
+                        for ( index, name, predicate ) in args:
+                            
+                            ClientGUIMenus.AppendMenuItem( added_to_search_menu, name, 'undo adding this search term.' + tooltip, self._UndoSearchPredAdd, index )
+                            
+                        
+                        ClientGUIMenus.AppendMenu( self._menubar_undo_searching_submenu, added_to_search_menu, 'addition' )
+                        
+                    if len( self._predicate_history_removed_from_search ) > 0:
+                        
+                        removed_from_search_menu = ClientGUIMenus.GenerateMenu( self._menubar_undo_searching_submenu )
+                        
+                        args = []
+                        
+                        for ( i, predicate ) in enumerate( self._predicate_history_removed_from_search ):
+                            
+                            args.append( ( i, predicate.ToString(), predicate ) )
+                            
+                        args.reverse()
+                        
+                        for ( index, name, predicate ) in args:
+                            
+                            ClientGUIMenus.AppendMenuItem( removed_from_search_menu, name, 'undo removing this search term.' + tooltip, self._UndoSearchPredRemove, index )
+                            
+                        
+                        ClientGUIMenus.AppendMenu( self._menubar_undo_searching_submenu, removed_from_search_menu, 'removal' )
+                        
+                    
+                    ClientGUIMenus.AppendMenuItem( self._menubar_undo_searching_submenu, 'clear history' + HC.UNICODE_ELLIPSIS, 'Remove all search history from memory.', self.AskToDeleteAllSearchPredHistory )
+                    
+                    self._menubar_undo_searching_submenu.addSeparator()
+                    
             
-            self._menubar_undo_submenu.menuAction().setEnabled( have_closed_pages or have_undo_stuff )
+            self._menubar_undo_submenu.menuAction().setEnabled( have_closed_pages or have_undo_stuff or have_undo_searches )
             
         
-        return ClientGUIAsync.AsyncQtUpdater( self, loading_callable, work_callable, publish_callable )
+        return ClientGUIAsync.AsyncQtUpdater( 'undo menu', self, loading_callable, work_callable, publish_callable )
         
     
     def _InitialiseMenuInfoDatabase( self ):
@@ -3416,6 +3373,8 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ClientGUIMenus.AppendMenuItem( db_maintenance_submenu, 'clear/fix orphan file records' + HC.UNICODE_ELLIPSIS, 'Clear out surplus file records that have not been deleted correctly.', self._ClearOrphanFileRecords )
         
+        ClientGUIMenus.AppendMenuItem( db_maintenance_submenu, 'clear orphan URL mappings' + HC.UNICODE_ELLIPSIS, 'Clear out surplus URL mappings after a damaged client.master.db.', self._ClearOrphanURLMappings )
+        
         ClientGUIMenus.AppendMenuItem( db_maintenance_submenu, 'clear orphan tables' + HC.UNICODE_ELLIPSIS, 'Clear out surplus db tables that have not been deleted correctly.', self._ClearOrphanTables )
         
         ClientGUIMenus.AppendMenuItem( db_maintenance_submenu, 'clear orphan hashed serialisables' + HC.UNICODE_ELLIPSIS, 'Clear non-needed cached hashed serialisable objects.', self._ClearOrphanHashedSerialisables )
@@ -3428,8 +3387,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         check_submenu = ClientGUIMenus.GenerateMenu( menu )
         
-        ClientGUIMenus.AppendMenuItem( check_submenu, 'database integrity' + HC.UNICODE_ELLIPSIS, 'Examine the database for file corruption.', self._CheckDBIntegrity )
-        ClientGUIMenus.AppendSeparator( check_submenu )
         ClientGUIMenus.AppendMenuItem( check_submenu, 'fix invalid tags' + HC.UNICODE_ELLIPSIS, 'Scan the database for invalid tags.', self._RepairInvalidTags )
         ClientGUIMenus.AppendMenuItem( check_submenu, 'fix logically inconsistent mappings' + HC.UNICODE_ELLIPSIS, 'Remove tags that are occupying two mutually exclusive states.', self._FixLogicallyInconsistentMappings )
         ClientGUIMenus.AppendSeparator( check_submenu )
@@ -3492,7 +3449,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         submenu = ClientGUIMenus.GenerateMenu( i_and_e_submenu )
         
-        ClientGUIMenus.AppendMenuCheckItem( submenu, 'import folders', 'Pause the client\'s import folders.', self._controller.new_options.GetBoolean( 'pause_import_folders_sync' ), self._PausePlaySync, 'import_folders' )
+        self._menubar_file_import_folders_paused = ClientGUIMenus.AppendMenuCheckItem( submenu, 'import folders', 'Pause the client\'s import folders.', self._controller.new_options.GetBoolean( 'pause_import_folders_sync' ), self._PausePlaySync, 'import_folders' )
         ClientGUIMenus.AppendMenuCheckItem( submenu, 'export folders', 'Pause the client\'s export folders.', self._controller.new_options.GetBoolean( 'pause_export_folders_sync' ), self._PausePlaySync, 'export_folders' )
         
         ClientGUIMenus.AppendMenu( i_and_e_submenu, submenu, 'pause' )
@@ -3565,11 +3522,11 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         links = ClientGUIMenus.GenerateMenu( menu )
         
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'site', 'Open hydrus\'s website, which is a mirror of the local help.', CC.global_icons().hydrus, ClientPaths.LaunchURLInWebBrowser, 'https://hydrusnetwork.github.io/hydrus/' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'site', 'Open hydrus\'s website, which is a mirror of the local help.', CC.global_icons().hydrus_black_square, ClientPaths.LaunchURLInWebBrowser, 'https://hydrusnetwork.github.io/hydrus/' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'github repository', 'Open the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'latest build', 'Open the latest build on the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/releases/latest' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'issue tracker', 'Open the github issue tracker, which is run by users.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/issues' )
-        site = ClientGUIMenus.AppendMenuBitmapItem( links, '8chan.moe /t/ (Hydrus Network General)', 'Open the 8chan.moe /t/ board, where a Hydrus Network General should exist with release posts and other status updates.', CC.global_pixmaps().eight_chan, ClientPaths.LaunchURLInWebBrowser, 'https://8chan.moe/t/catalog.html' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, '8chan.moe /t/ (Hydrus Network General)', 'Open the 8chan.moe /t/ board, where a Hydrus Network General should exist with release posts and other status updates.', CC.global_icons().eight_chan, ClientPaths.LaunchURLInWebBrowser, 'https://8chan.moe/t/catalog.html' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'x', 'Open hydrus dev\'s X account, where he makes general progress updates and emergency notifications.', CC.global_icons().x, ClientPaths.LaunchURLInWebBrowser, 'https://x.com/hydrusnetwork' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'tumblr', 'Open hydrus dev\'s tumblr, where he makes release posts and other status updates.', CC.global_icons().tumblr, ClientPaths.LaunchURLInWebBrowser, 'https://hydrus.tumblr.com/' )
         site = ClientGUIMenus.AppendMenuIconItem( links, 'discord', 'Open a discord channel where many hydrus users congregate. Hydrus dev visits regularly.', CC.global_icons().discord, ClientPaths.LaunchURLInWebBrowser, 'https://discord.gg/wPHPCUZ' )
@@ -3605,22 +3562,32 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'force idle mode', 'Make the client consider itself idle and fire all maintenance routines right now. This may hang the gui for a while.', HG.force_idle_mode, self._SwitchBoolean, 'force_idle_mode' )
         ClientGUIMenus.AppendMenuItem( debug_modes, 'simulate a wake from sleep', 'Tell the controller to pretend that it just woke up from sleep.', self._controller.SimulateWakeFromSleepEvent )
         ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'thumbnail debug mode', 'Show some thumbnail debug info.', HG.thumbnail_debug_mode, self._SwitchBoolean, 'thumbnail_debug_mode' )
+        ClientGUIMenus.AppendSeparator( debug_modes )
+        ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'allow crashy files in mpv', 'Disable the crash handling that unloads files from mpv when they raise certain fatal errors.', HG.mpv_allow_crashy_files, self._FlipMPVCrashHandling )
+        ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'allow crashy files in mpv (and silence errors)', 'Disable the crash handling that unloads files from mpv when they raise certain fatal errors and do not notify the user when it happens.', HG.mpv_allow_crashy_files_silently, self._FlipMPVSilentCrashHandling )
+        ClientGUIMenus.AppendSeparator( debug_modes )
+        crash_reporting_on = CG.client_controller.logger.CurrentlyCrashReporting()
+        ClientGUIMenus.AppendMenuCheckItem( debug_modes, 'use faulthandler to log crashes', 'Enable python crash logging. Note this will disable Windows Error Reporting or Linux Dumps, and it does not play well with mpv.', crash_reporting_on, self._FlipCrashReporting )
+        
         
         ClientGUIMenus.AppendMenu( debug_menu, debug_modes, 'debug modes' )
         
         profiling = ClientGUIMenus.GenerateMenu( debug_menu )
         
-        profile_mode_message = 'If something is running slow, you can turn on profile mode to have hydrus gather information on how long many jobs take to run.'
+        profile_mode_message = 'If something is running slow, you can turn on a profile mode to have hydrus gather information on it. You probably want "db" profile mode, but if it seems to be lag related to dialog spawning or similar, you might like to try the "ui" mode.'
         profile_mode_message += '\n' * 2
         profile_mode_message += 'Turn the mode on, do the slow thing for a bit, and then turn it off. In your database directory will be a new profile log, which is really helpful for hydrus dev to figure out what is running slow for you and how to fix it.'
         profile_mode_message += '\n' * 2
-        profile_mode_message += 'A new Query Planner mode also makes very detailed database analysis. This is an alternate profiling mode hydev is testing.'
+        profile_mode_message += 'The Query Planner mode makes detailed database analysis of specific database queries. This is sometimes useful to hydev, but he will usually ask for it specifically.'
         profile_mode_message += '\n' * 2
         profile_mode_message += 'More information is available in the help, under \'reducing lag\'.'
         
         ClientGUIMenus.AppendMenuItem( profiling, 'what is this?', 'Show profile info.', ClientGUIDialogsMessage.ShowInformation, self, profile_mode_message )
-        ClientGUIMenus.AppendMenuCheckItem( profiling, 'profile mode', 'Run detailed \'profiles\'.', HG.profile_mode, CG.client_controller.FlipProfileMode )
-        ClientGUIMenus.AppendMenuCheckItem( profiling, 'query planner mode', 'Run detailed \'query plans\'.', HG.query_planner_mode, CG.client_controller.FlipQueryPlannerMode )
+        self._profile_mode_client_api_menu_item = ClientGUIMenus.AppendMenuCheckItem( profiling, 'profile mode (client api)', 'Run detailed \'profiles\' on Client API jobs.', HydrusProfiling.IsProfileMode( 'client_api' ), self.FlipProfileMode, 'client_api' )
+        self._profile_mode_db_menu_item = ClientGUIMenus.AppendMenuCheckItem( profiling, 'profile mode (db)', 'Run detailed \'profiles\' on db jobs.', HydrusProfiling.IsProfileMode( 'db' ), self.FlipProfileMode, 'db' )
+        self._profile_mode_threads_menu_item = ClientGUIMenus.AppendMenuCheckItem( profiling, 'profile mode (threads)', 'Run detailed \'profiles\' on background threaded tasks.', HydrusProfiling.IsProfileMode( 'threads' ), self.FlipProfileMode, 'threads' )
+        self._profile_mode_ui_menu_item = ClientGUIMenus.AppendMenuCheckItem( profiling, 'profile mode (ui)', 'Run detailed \'profiles\' on some Qt jobs.', HydrusProfiling.IsProfileMode( 'ui' ), self.FlipProfileMode, 'ui' )
+        ClientGUIMenus.AppendMenuCheckItem( profiling, 'query planner mode', 'Run detailed \'query plans\'.', HydrusProfiling.query_planner_mode, CG.client_controller.FlipQueryPlannerMode )
         
         ClientGUIMenus.AppendMenu( debug_menu, profiling, 'profiling' )
         
@@ -3637,10 +3604,12 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file sort report mode', 'Have the file sorter spam you with sort key results.', HG.file_sort_report_mode, self._SwitchBoolean, 'file_sort_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'gui report mode', 'Have the gui report inside information, where supported.', HG.gui_report_mode, self._SwitchBoolean, 'gui_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'hover window report mode', 'Have the hover windows report their show/hide logic.', HG.hover_window_report_mode, self._SwitchBoolean, 'hover_window_report_mode' )
+        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'idle report mode', 'Make popups about idle mode on/off decisions.', HG.idle_report_mode, self._SwitchBoolean, 'idle_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'media load report mode', 'Have the client report media load information, where supported.', HG.media_load_report_mode, self._SwitchBoolean, 'media_load_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'mpv report mode', 'Have the client report significant mpv debug information.', HG.mpv_report_mode, self._SwitchBoolean, 'mpv_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'network report mode', 'Have the network engine report new jobs.', HG.network_report_mode, self._SwitchBoolean, 'network_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'network report mode (silent)', 'Have the network engine report new jobs, do not make spammy popups.', HG.network_report_mode_silent, self._SwitchBoolean, 'network_report_mode_silent' )
+        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'potential duplicates report mode', 'Report the speed and branching of the potential duplicate pair search.', HG.potential_duplicates_report_mode, self._SwitchBoolean, 'potential_duplicates_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'pubsub report mode', 'Report info about every pubsub processed.', HG.pubsub_report_mode, self._SwitchBoolean, 'pubsub_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'similar files metadata generation report mode', 'Have the perceptual_hash generation routine report its progress.', HG.phash_generation_report_mode, self._SwitchBoolean, 'phash_generation_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'shortcut report mode', 'Have the new shortcut system report what shortcuts it catches and whether it matches an action.', HG.shortcut_report_mode, self._SwitchBoolean, 'shortcut_report_mode' )
@@ -3683,6 +3652,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuItem( gui_actions, 'publish some sub files in five seconds', 'Publish some files like a subscription would.', self._controller.CallLater, 5, lambda: CG.client_controller.pub( 'imported_files_to_page', [ HydrusData.GenerateKey() for i in range( 5 ) ], 'example sub files' ) )
         ClientGUIMenus.AppendMenuItem( gui_actions, 'refresh pages menu in five seconds', 'Delayed refresh the pages menu, giving you time to minimise or otherwise alter the client before it arrives.', self._controller.CallLater, 5, self._menu_updater_pages.update )
         ClientGUIMenus.AppendMenuItem( gui_actions, 'reload current qss stylesheet', 'Reload the current QSS stylesheet. Helps if you just edited it on disk and do not want to restart.', self.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_RELOAD_CURRENT_STYLESHEET ) )
+        ClientGUIMenus.AppendMenuItem( gui_actions, 'reload icon cache', 'Reload the icons and pixmaps that new icon menus and buttons rely on. Will not affect widgets that are already loaded!', self._ReloadIconCache )
         ClientGUIMenus.AppendMenuItem( gui_actions, 'reset multi-column list settings to default', 'Reset all multi-column list widths and other display settings to default.', self._DebugResetColumnListManager )
         ClientGUIMenus.AppendMenuItem( gui_actions, 'save \'last session\' gui session', 'Make an immediate save of the \'last session\' gui session. Mostly for testing crashes, where last session is not saved correctly.', self.ProposeSaveGUISession, CC.LAST_SESSION_SESSION_NAME )
         
@@ -3732,10 +3702,17 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuItem( tests, 'run the client api test', 'Run hydrus_dev\'s weekly Client API Test. Guaranteed to work and not mess up your session, ha ha.', self._RunClientAPITest )
         ClientGUIMenus.AppendMenuItem( tests, 'run the server test on fresh server', 'This will try to initialise an already running server.', self._RunServerTest )
         ClientGUIMenus.AppendSeparator( tests )
+        ClientGUIMenus.AppendMenuItem( tests, 'run the visual duplicates tuning suite', 'Run some stats on some example files using the visual duplicates system.', self._RunVisualDuplicatesTuningSuite )
+        ClientGUIMenus.AppendMenuItem( tests, 'run the visual duplicates tuning suite (alpha)', 'Run some stats on some example files using the visual duplicates system, this time for pngs with alpha.', self._RunVisualDuplicatesTuningSuiteAlpha )
+        ClientGUIMenus.AppendSeparator( tests )
         ClientGUIMenus.AppendMenuCheckItem( tests, 'fake petition mode', 'Fill the petition panels with fake local data for testing.', HG.fake_petition_mode, self._SwitchBoolean, 'fake_petition_mode' )
         ClientGUIMenus.AppendSeparator( tests )
         ClientGUIMenus.AppendMenuItem( tests, 'do self-sigterm', 'Test a sigterm call for fast, non-ui-originating shutdown.', CG.client_controller.DoSelfSigterm )
         ClientGUIMenus.AppendMenuItem( tests, 'do self-sigterm (fake)', 'Test a sigterm call for fast, non-ui-originating shutdown.', CG.client_controller.DoSelfSigtermFake )
+        ClientGUIMenus.AppendSeparator( tests )
+        
+        ClientGUIMenus.AppendSeparator( tests )
+        ClientGUIMenus.AppendMenuItem( tests, 'induce a program crash', 'Crash the program to test a crash dumping/debugging routine.', CrashTheProgram, self )
         
         ClientGUIMenus.AppendMenu( debug_menu, tests, 'tests, do not touch' )
         
@@ -3768,9 +3745,43 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ClientGUIMenus.AppendSeparator( submenu )
         
-        self._menubar_network_paged_import_queues_paused = ClientGUIMenus.AppendMenuCheckItem( submenu, 'paged file import queues', 'Pause all file import queues.', self._controller.new_options.GetBoolean( 'pause_all_file_queues' ), self._controller.new_options.FlipBoolean, 'pause_all_file_queues' )
-        ClientGUIMenus.AppendMenuCheckItem( submenu, 'gallery searches', 'Pause all gallery imports\' searching.', self._controller.new_options.GetBoolean( 'pause_all_gallery_searches' ), self._controller.new_options.FlipBoolean, 'pause_all_gallery_searches' )
-        ClientGUIMenus.AppendMenuCheckItem( submenu, 'watcher checkers', 'Pause all watchers\' checking.', self._controller.new_options.GetBoolean( 'pause_all_watcher_checkers' ), self._controller.new_options.FlipBoolean, 'pause_all_watcher_checkers' )
+        #
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'pause_all_paged_importers' )
+        
+        check_manager.AddNotifyCall( HydrusData.Call( CG.client_controller.pub, 'notify_global_page_import_pause_change' ) )
+        
+        self._menubar_network_pause_all_paged_importers = ClientGUIMenus.AppendMenuCheckItem( submenu, 'all paged importer work', 'Pause all file/search/check work in paged importers.', check_manager.GetCurrentValue(), check_manager.Invert )
+        
+        #
+        
+        ClientGUIMenus.AppendSeparator( submenu )
+        
+        #
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'pause_all_file_queues' )
+        
+        check_manager.AddNotifyCall( HydrusData.Call( CG.client_controller.pub, 'notify_global_page_import_pause_change' ) )
+        
+        self._menubar_network_paged_import_queues_paused = ClientGUIMenus.AppendMenuCheckItem( submenu, 'paged file importing', 'Pause all file import queues in pages.', check_manager.GetCurrentValue(), check_manager.Invert )
+        
+        #
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'pause_all_gallery_searches' )
+        
+        check_manager.AddNotifyCall( HydrusData.Call( CG.client_controller.pub, 'notify_global_page_import_pause_change' ) )
+        
+        ClientGUIMenus.AppendMenuCheckItem( submenu, 'paged gallery searching', 'Pause all gallery imports\' searching in pages.', check_manager.GetCurrentValue(), check_manager.Invert )
+        
+        #
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'pause_all_watcher_checkers' )
+        
+        check_manager.AddNotifyCall( HydrusData.Call( CG.client_controller.pub, 'notify_global_page_import_pause_change' ) )
+        
+        ClientGUIMenus.AppendMenuCheckItem( submenu, 'paged watcher checking', 'Pause all watchers\' checking, obviously in pages.', check_manager.GetCurrentValue(), check_manager.Invert )
+        
+        #
         
         ClientGUIMenus.AppendMenu( menu, submenu, 'pause' )
         
@@ -3788,10 +3799,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuItem( submenu, 'review current network jobs', 'Review the jobs currently running in the network engine.', self._ReviewNetworkJobs )
         ClientGUIMenus.AppendMenuItem( submenu, 'review session cookies', 'Review and edit which cookies you have for which network contexts.', self._ReviewNetworkSessions )
         ClientGUIMenus.AppendMenuItem( submenu, 'manage http headers' + HC.UNICODE_ELLIPSIS, 'Configure how the client talks to the network.', self._ManageNetworkHeaders )
-        
-        ClientGUIMenus.AppendSeparator( submenu )
-        
-        ClientGUIMenus.AppendMenuItem( submenu, 'manage upnp' + HC.UNICODE_ELLIPSIS, 'If your router supports it, see and edit your current UPnP NAT traversal mappings.', self._ManageUPnP )
         
         ClientGUIMenus.AppendMenu( menu, submenu, 'data' )
         
@@ -3811,6 +3818,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
         
         ClientGUIMenus.AppendMenuItem( submenu, 'import downloaders' + HC.UNICODE_ELLIPSIS, 'Import new download capability through encoded pngs from other users.', self._ImportDownloaders )
+        ClientGUIMenus.AppendMenuIconItem( submenu, 'user-run downloader repository', 'Open the user-run github repository that has many additional downloaders.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/CuddleBear92/Hydrus-Presets-and-Scripts' )
         ClientGUIMenus.AppendMenuItem( submenu, 'export downloaders' + HC.UNICODE_ELLIPSIS, 'Export downloader components to easy-import pngs.', self._ExportDownloader )
         
         ClientGUIMenus.AppendSeparator( submenu )
@@ -3861,7 +3869,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         ClientGUIMenus.AppendMenuItem( submenu, 'DEBUG: do tumblr GDPR click-through', 'Do a manual click-through for the tumblr GDPR page.', self._controller.CallLater, 0.0, self._controller.network_engine.login_manager.LoginTumblrGDPR )
         
-        ClientGUIMenus.AppendMenu( menu, submenu, 'logins' )
+        ClientGUIMenus.AppendMenu( menu, submenu, 'logins (legacy; simple sites only)' )
         
         #
         
@@ -3875,6 +3883,14 @@ ATTACH "client.mappings.db" as external_mappings;'''
         self._menubar_pages_page_count = ClientGUIMenus.AppendMenuLabel( menu, 'initialising', 'You have this many pages open.' )
         
         self._menubar_pages_session_weight = ClientGUIMenus.AppendMenuItem( menu, 'initialising', 'Your session is this heavy.', self._ShowPageWeightInfo )
+        
+        ClientGUIMenus.AppendSeparator( menu )
+        
+        self._page_nav_history_menu = ClientGUIMenus.GenerateMenu( menu )
+        
+        ClientGUIMenus.AppendMenuLabel( self._page_nav_history_menu, 'no tab history', 'Your page history is currently empty.', None, True )
+        
+        ClientGUIMenus.AppendMenu( menu, self._page_nav_history_menu, 'history' )
         
         ClientGUIMenus.AppendSeparator( menu )
         
@@ -4045,6 +4061,10 @@ ATTACH "client.mappings.db" as external_mappings;'''
         self._menubar_undo_closed_pages_submenu = ClientGUIMenus.GenerateMenu( menu )
         
         ClientGUIMenus.AppendMenu( menu, self._menubar_undo_closed_pages_submenu, 'closed pages' )
+        
+        self._menubar_undo_searching_submenu = ClientGUIMenus.GenerateMenu( menu )
+        
+        ClientGUIMenus.AppendMenu( menu, self._menubar_undo_searching_submenu, 'searching' )
         
         return ( menu, '&undo' )
         
@@ -4218,7 +4238,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
     
     def _ManageDefaultImportOptions( self ):
         
-        title = 'edit default tag import options'
+        title = 'edit default import options'
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, title ) as dlg:
             
@@ -4374,14 +4394,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                             
                         
                     
-                    try:
-                        
-                        controller.CallBlockingToQt( self, qt_do_it )
-                        
-                    except HydrusExceptions.QtDeadWindowException:
-                        
-                        pass
-                        
+                    controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_do_it )
                     
                 finally:
                     
@@ -4493,14 +4506,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                             
                         
                     
-                    try:
-                        
-                        controller.CallBlockingToQt( self, qt_do_it )
-                        
-                    except HydrusExceptions.QtDeadWindowException:
-                        
-                        pass
-                        
+                    controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_do_it )
                     
                 finally:
                     
@@ -4642,7 +4648,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                 
             except Exception as e:
                 
-                HydrusData.ShowException( e )
+                HydrusData.ShowException( 'Could not apply stylesheet:' + str( e ) )
                 
             
         
@@ -4794,14 +4800,14 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     service.SetAccountRefreshDueNow()
                     
                 
-                def errback_ui_cleanup_callable():
+                def errback_callable( etype, value, tb ):
                     
-                    job_status.SetStatusText( 'error!' )
+                    job_status.SetExceptionTuple( etype, value, tb )
                     
                     job_status.Finish()
                     
                 
-                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
                 
                 job.start()
                 
@@ -4820,7 +4826,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             message = 'The repository will apply this to all new pending tags that are uploaded to it. Anything that does not pass is silently discarded.'
             
-            panel = ClientGUITags.EditTagFilterPanel( dlg, tag_filter, message = message, namespaces = namespaces )
+            panel = ClientGUITagFilter.EditTagFilterPanel( dlg, tag_filter, message = message, namespaces = namespaces )
             
             dlg.SetPanel( panel )
             
@@ -4851,14 +4857,14 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     service.SetAccountRefreshDueNow()
                     
                 
-                def errback_ui_cleanup_callable():
+                def errback_callable( etype, value, tb ):
                     
-                    job_status.SetStatusText( 'error!' )
+                    job_status.SetExceptionTuple( etype, value, tb )
                     
                     job_status.Finish()
                     
                 
-                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
                 
                 job.start()
                 
@@ -4921,14 +4927,14 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     service.SetAccountRefreshDueNow()
                     
                 
-                def errback_ui_cleanup_callable():
+                def errback_callable( etype, value, tb ):
                     
-                    job_status.SetStatusText( 'error!' )
+                    job_status.SetExceptionTuple( etype, value, tb )
                     
                     job_status.Finish()
                     
                 
-                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_ui_cleanup_callable = errback_ui_cleanup_callable )
+                job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, errback_callable = errback_callable )
                 
                 job.start()
                 
@@ -5102,9 +5108,9 @@ ATTACH "client.mappings.db" as external_mappings;'''
                         
                         CG.client_controller.subscriptions_manager.SetSubscriptions( subscriptions )
                         
-                    except HydrusExceptions.QtDeadWindowException:
+                    except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
                         
-                        pass
+                        return
                         
                     except HydrusExceptions.CancelledException:
                         
@@ -5131,7 +5137,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         with ClientGUITopLevelWindowsPanels.DialogEdit( self, title ) as dlg:
             
-            panel = ClientGUITags.EditTagDisplayManagerPanel( dlg, self._controller.tag_display_manager )
+            panel = ClientGUITagDisplayOptions.EditTagDisplayManagerPanel( dlg, self._controller.tag_display_manager )
             
             dlg.SetPanel( panel )
             
@@ -5156,7 +5162,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             ( master_service_keys_to_sibling_applicable_service_keys, master_service_keys_to_parent_applicable_service_keys ) = self._controller.Read( 'tag_display_application' )
             
-            panel = ClientGUITags.EditTagDisplayApplication( dlg, master_service_keys_to_sibling_applicable_service_keys, master_service_keys_to_parent_applicable_service_keys )
+            panel = ClientGUITagDisplayMaintenanceEdit.EditTagDisplayApplication( dlg, master_service_keys_to_sibling_applicable_service_keys, master_service_keys_to_parent_applicable_service_keys )
             
             dlg.SetPanel( panel )
             
@@ -5173,7 +5179,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         with ClientGUITopLevelWindowsPanels.DialogManage( self, 'manage tag parents' ) as dlg:
             
-            panel = ClientGUITags.ManageTagParents( dlg )
+            panel = ClientGUIManageTagParents.ManageTagParents( dlg )
             
             dlg.SetPanel( panel )
             
@@ -5185,7 +5191,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         with ClientGUITopLevelWindowsPanels.DialogManage( self, 'manage tag siblings' ) as dlg:
             
-            panel = ClientGUITags.ManageTagSiblings( dlg )
+            panel = ClientGUIManageTagSiblings.ManageTagSiblings( dlg )
             
             dlg.SetPanel( panel )
             
@@ -5203,7 +5209,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             url_classes = domain_manager.GetURLClasses()
             
-            panel = ClientGUIDownloaders.EditURLClassesPanel( dlg, url_classes )
+            panel = ClientGUIURLClass.EditURLClassesPanel( dlg, url_classes )
             
             dlg.SetPanel( panel )
             
@@ -5244,16 +5250,11 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
         
     
-    def _ManageUPnP( self ):
-        
-        with ClientGUIDialogsManage.DialogManageUPnP( self ) as dlg: dlg.exec()
-        
-    
     def _MoveMediaFiles( self ):
         
         with ClientGUITopLevelWindowsPanels.DialogNullipotent( self, 'move media files' ) as dlg:
             
-            panel = ClientGUIScrolledPanelsReview.MoveMediaFilesPanel( dlg, self._controller )
+            panel = ClientGUIFilesPhysicalStoragePanels.MoveMediaFilesPanel( dlg, self._controller )
             
             dlg.SetPanel( panel )
             
@@ -5278,30 +5279,33 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         service = self._controller.services_manager.GetService( service_key )
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the account id for the account to be modified.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                try:
-                    
-                    account_key = bytes.fromhex( dlg.GetValue() )
-                    
-                except:
-                    
-                    ClientGUIDialogsMessage.ShowCritical( self, 'Error', 'Could not parse that account id' )
-                    
-                    return
-                    
-                
-                subject_account_identifiers = [ HydrusNetwork.AccountIdentifier( account_key = account_key ) ]
-                
-                frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, 'manage accounts' )
-                
-                panel = ClientGUIHydrusNetwork.ModifyAccountsPanel( frame, service_key, subject_account_identifiers )
-                
-                frame.SetPanel( panel )
-                
+            account_key_hex = ClientGUIDialogsQuick.EnterText( self, 'Enter the account id for the account to be modified.' )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        try:
+            
+            account_key = bytes.fromhex( account_key_hex )
+            
+        except Exception as e:
+            
+            ClientGUIDialogsMessage.ShowCritical( self, 'Error', 'Could not parse that account id!' )
+            
+            return
+            
+        
+        subject_account_identifiers = [ HydrusNetwork.AccountIdentifier( account_key = account_key ) ]
+        
+        frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, 'manage accounts' )
+        
+        panel = ClientGUIHydrusNetwork.ModifyAccountsPanel( frame, service_key, subject_account_identifiers )
+        
+        frame.SetPanel( panel )
         
     
     def _OpenDBFolder( self ):
@@ -5600,7 +5604,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         if result == QW.QDialog.DialogCode.Accepted:
             
-            self._controller.Write( 'regenerate_similar_files' )
+            self._controller.Write( 'regenerate_similar_files_tree' )
             
         
     
@@ -5690,11 +5694,19 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             CG.client_controller.SaveGUISession( session )
             
-            CG.client_controller.CallBlockingToQt( self, qt_load )
+            CG.client_controller.CallBlockingToQtFireAndForgetNoResponse( self, qt_load )
             
         
         self._controller.CallToThread( do_save )
         
+        
+    
+    def _ReloadIconCache( self ):
+        
+        CC.global_pixmaps().Reload()
+        CC.global_icons().Reload()
+        
+        HydrusData.ShowText( 'Icon cache reloaded!' )
         
     
     def _RepairInvalidTags( self ):
@@ -5829,7 +5841,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     
                     working_now = True
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -6002,12 +6014,14 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         frame.SetPanel( panel )
         
+        return frame
+        
     
     def _ReviewTagDisplayMaintenance( self ):
         
         frame = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, 'tag display sync' )
         
-        panel = ClientGUITags.ReviewTagDisplayMaintenancePanel( frame )
+        panel = ClientGUITagDisplayMaintenanceReview.ReviewTagDisplayMaintenancePanel( frame )
         
         frame.SetPanel( panel )
         
@@ -6162,180 +6176,34 @@ ATTACH "client.mappings.db" as external_mappings;'''
                     HydrusData.ShowText( 'version incorrect!: {}, {}'.format( j[ 'version' ], HC.CLIENT_API_VERSION ) )
                     
                 
-                #
-                
-                job_status.SetStatusText( 'add url test' )
-                
-                local_tag_services = CG.client_controller.services_manager.GetServices( ( HC.LOCAL_TAG, ) )
-                
-                local_tag_service = random.choice( local_tag_services )
-                
-                local_tag_service_name = local_tag_service.GetName()
-                
-                samus_url = 'https://safebooru.org/index.php?page=post&s=view&id=3195917'
-                samus_hash_hex = '78f92ba4a786225ee2a1236efa6b7dc81dd729faf4af99f96f3e20bad6d8b538'
-                samus_test_tag = 'client api test tag'
-                samus_test_tag_filterable = 'client api test tag filterable'
-                destination_page_name = 'client api test'
-                
-                request_args = {}
-                
-                request_args[ 'url' ] = samus_url
-                request_args[ 'destination_page_name' ] = destination_page_name
-                request_args[ 'service_names_to_additional_tags' ] = {
-                    local_tag_service_name : [ samus_test_tag ]
-                }
-                request_args[ 'filterable_tags' ] = [
-                    samus_test_tag_filterable
-                ]
-                
-                data = json.dumps( request_args )
-                
-                r = s.post( '{}/add_urls/add_url'.format( api_base ), data = data )
-                
-                time.sleep( 0.25 )
-                
-                #
-                
-                job_status.SetStatusText( 'get session test' )
-                
-                def get_client_api_page():
-                    
-                    r = s.get( '{}/manage_pages/get_pages'.format( api_base ) )
-                    
-                    pages_to_process = [ r.json()[ 'pages' ] ]
-                    pages = []
-                    
-                    while len( pages_to_process ) > 0:
-                        
-                        page_to_process = pages_to_process.pop()
-                        
-                        if page_to_process[ 'page_type' ] == ClientGUIPagesCore.PAGE_TYPE_PAGE_OF_PAGES:
-                            
-                            pages_to_process.extend( page_to_process[ 'pages' ] )
-                            
-                        else:
-                            
-                            pages.append( page_to_process )
-                            
-                        
-                    
-                    for page in pages:
-                        
-                        if page[ 'name' ] == destination_page_name:
-                            
-                            return page
-                            
-                        
-                    
-                
-                client_api_page = get_client_api_page()
-                
-                if client_api_page is None:
-                    
-                    raise Exception( 'Could not find download page!' )
-                    
-                
-                destination_page_key_hex = client_api_page[ 'page_key' ]
-                
-                def get_hash_ids():
-                    
-                    r = s.get( '{}/manage_pages/get_page_info?page_key={}'.format( api_base, destination_page_key_hex ) )
-                    
-                    hash_ids = r.json()[ 'page_info' ][ 'media' ][ 'hash_ids' ]
-                    
-                    return hash_ids
-                    
-                
-                hash_ids = get_hash_ids()
-                
-                if len( hash_ids ) == 0:
-                    
-                    time.sleep( 3 )
-                    
-                
-                hash_ids = get_hash_ids()
-                
-                if len( hash_ids ) == 0:
-                    
-                    raise Exception( 'The download page had no hashes!' )
-                    
-                
-                #
-                
-                def get_hash_ids_to_hashes_and_tag_info():
-                    
-                    r = s.get( '{}/get_files/file_metadata?file_ids={}'.format( api_base, json.dumps( hash_ids ) ) )
-                    
-                    hash_ids_to_hashes_and_tag_info = {}
-                    
-                    for item in r.json()[ 'metadata' ]:
-                        
-                        hash_ids_to_hashes_and_tag_info[ item[ 'file_id' ] ] = ( item[ 'hash' ], item[ 'tags' ] )
-                        
-                    
-                    return hash_ids_to_hashes_and_tag_info
-                    
-                
-                hash_ids_to_hashes_and_tag_info = get_hash_ids_to_hashes_and_tag_info()
-                
-                samus_hash_id = None
-                
-                for ( hash_id, ( hash_hex, tag_info ) ) in hash_ids_to_hashes_and_tag_info.items():
-                    
-                    if hash_hex == samus_hash_hex:
-                        
-                        samus_hash_id = hash_id
-                        
-                    
-                
-                if samus_hash_id is None:
-                    
-                    raise Exception( 'Could not find the samus hash!' )
-                    
-                
-                samus_tag_info = hash_ids_to_hashes_and_tag_info[ samus_hash_id ][1]
-                
-                if samus_test_tag not in samus_tag_info[ local_tag_service.GetServiceKey().hex() ][ 'storage_tags' ][ str( HC.CONTENT_STATUS_CURRENT ) ]:
-                    
-                    raise Exception( 'Did not have the tag!' )
-                    
-                
-                #
-                
                 def qt_session_gubbins():
                     
                     self.ProposeSaveGUISession( CC.LAST_SESSION_SESSION_NAME )
                     
-                    page = self._notebook.GetPageFromPageKey( bytes.fromhex( destination_page_key_hex ) )
+                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
                     
-                    self._notebook.ShowPage( page )
-                    
-                    self._notebook.CloseCurrentPage()
-                    
-                    self.ProposeSaveGUISession( CC.LAST_SESSION_SESSION_NAME )
-                    
-                    location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
-                    
-                    page = self._notebook.NewPageQuery( location_context )
+                    page = self._notebook.NewPageQuery( location_context, page_name = 'client api test' )
                     
                     return page.GetPageKey()
                     
                 
-                page_key = CG.client_controller.CallBlockingToQt( CG.client_controller.gui, qt_session_gubbins )
+                try:
+                    
+                    page_key = CG.client_controller.CallBlockingToQtTLW( qt_session_gubbins )
+                    
+                except HydrusExceptions.ShutdownException:
+                    
+                    return
+                    
                 
                 #
                 
                 request_args = {}
                 
                 request_args[ 'page_key' ] = page_key.hex()
-                request_args[ 'hashes' ] = [ '78f92ba4a786225ee2a1236efa6b7dc81dd729faf4af99f96f3e20bad6d8b538' ]
+                request_args[ 'hashes' ] = [ 'faeda0c91271408e09c364db5f0d83c11e2131191fee060a4a7e1f750d8d7bbd' ]
                 
                 data = json.dumps( request_args )
-                
-                r = s.post( '{}/manage_pages/add_files'.format( api_base ), data = data )
-                
-                time.sleep( 0.25 )
                 
                 r = s.post( '{}/manage_pages/add_files'.format( api_base ), data = data )
                 
@@ -6364,6 +6232,15 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
     
     def _RunUITest( self ):
+        
+        def qt_review_services():
+            
+            frame = self._ReviewServices()
+            
+            t = 1.0
+            
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', frame.deleteLater )
+            
         
         def qt_open_pages():
             
@@ -6530,28 +6407,43 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             CG.client_controller.CallLaterQtSafe( self, t, 'test job', self._notebook.CloseCurrentPage )
             
+            t += 0.1
+            
+            CG.client_controller.CallLaterQtSafe( self, t, 'test job', HydrusData.ShowText, 'ui test done' )
+            
         
         def do_it():
             
-            # pages
-            
-            page_of_pages = CG.client_controller.CallBlockingToQt( self, qt_open_pages )
-            
-            time.sleep( 4 )
-            
-            CG.client_controller.CallBlockingToQt( self, qt_close_unclose_one_page )
-            
-            time.sleep( 1.5 )
-            
-            CG.client_controller.CallBlockingToQt( self, qt_close_pages, page_of_pages )
-            
-            time.sleep( 5 )
-            
-            del page_of_pages
-            
-            # a/c
-            
-            CG.client_controller.CallBlockingToQt( self, qt_test_ac )
+            try:
+                
+                # pages
+                
+                CG.client_controller.CallBlockingToQt( self, qt_review_services )
+                
+                time.sleep( 3 )
+                
+                page_of_pages = CG.client_controller.CallBlockingToQt( self, qt_open_pages )
+                
+                time.sleep( 4 )
+                
+                CG.client_controller.CallBlockingToQt( self, qt_close_unclose_one_page )
+                
+                time.sleep( 1.5 )
+                
+                CG.client_controller.CallBlockingToQt( self, qt_close_pages, page_of_pages )
+                
+                time.sleep( 5 )
+                
+                del page_of_pages
+                
+                # a/c
+                
+                CG.client_controller.CallBlockingToQt( self, qt_test_ac )
+                
+            except ( HydrusExceptions.QtDeadWindowException, HydrusExceptions.ShutdownException ):
+                
+                HydrusData.Print( 'Test could not finish because of a shutdown, looks like.' )
+                
             
         
         CG.client_controller.CallToThread( do_it )
@@ -6600,7 +6492,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             HydrusData.ShowText( 'Admin service initialised.' )
             
-            QP.CallAfter( ClientGUIFrames.ShowKeys, 'access', (access_key,) )
+            CG.client_controller.CallAfterQtSafe( self, ClientGUIFrames.ShowKeys, 'access', ( access_key, ) )
             
             #
             
@@ -6648,6 +6540,60 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             self._controller.CallToThread( do_it )
             
+        
+    
+    def _RunVisualDuplicatesTuningSuite( self ):
+        
+        text = 'Turn back, do not proceed, click "no" NOW.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, text )
+        
+        if result != QW.QDialog.DialogCode.Accepted:
+            
+            return
+            
+        
+        from hydrus.client.files.images import ClientVisualDataTuningSuite
+        
+        try:
+            
+            test_dir = ClientGUIDialogsQuick.PickDirectory( self, 'select dir' )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        ClientVisualDataTuningSuite.RunTuningSuite( test_dir )
+        
+        HydrusData.ShowText( 'Tuning suite done!' )
+        
+    
+    def _RunVisualDuplicatesTuningSuiteAlpha( self ):
+        
+        text = 'Turn back, do not proceed, click "no" NOW.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, text )
+        
+        if result != QW.QDialog.DialogCode.Accepted:
+            
+            return
+            
+        
+        from hydrus.client.files.images import ClientVisualDataTuningSuite
+        
+        try:
+            
+            test_dir = ClientGUIDialogsQuick.PickDirectory( self, 'select dir' )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        ClientVisualDataTuningSuite.RunTuningSuiteAlpha( test_dir )
+        
+        HydrusData.ShowText( 'Tuning suite done!' )
         
     
     def _SaveSplitterPositions( self ):
@@ -6705,28 +6651,56 @@ ATTACH "client.mappings.db" as external_mappings;'''
     
     def _SetPassword( self ):
         
-        message = '''You can set a password to be asked for whenever the client starts.
+        message = '''You can set a password to be asked for whenever the client starts. This does not encrypt or truly lock the database files or media folders; it is just a simple check on boot. It will stop noobs from easily booting your client and poking around if you leave your machine unattended.
 
-Though not foolproof by any means, it will stop noobs from easily seeing your files if you leave your machine unattended.
-
-Do not ever forget your password! If you do, you'll have to manually insert a yaml-dumped python dictionary into a sqlite database or run from edited source to regain easy access. This is not trivial.
+Do not forget your password! If you do, you'll have to manually insert a yaml-dumped python dictionary into a sqlite database or run from edited source to regain access.
 
 The password is cleartext here but obscured in the entry dialog. Enter a blank password to remove.'''
         
-        with ClientGUIDialogs.DialogTextEntry( self, message, allow_blank = True, min_char_width = 24 ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+            password = ClientGUIDialogsQuick.EnterText( self, message, allow_blank = True, min_char_width = 36 )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        if password == '':
+            
+            text = 'Clear any existing password?'
+            
+            result = ClientGUIDialogsQuick.GetYesNo( self, text )
+            
+            if result != QW.QDialog.DialogCode.Accepted:
                 
-                password = dlg.GetValue()
-                
-                if password == '':
-                    
-                    password = None
-                    
-                
-                self._controller.Write( 'set_password', password )
+                return
                 
             
+            password = None
+            
+        else:
+            
+            message = 'Please enter it again.'
+            
+            try:
+                
+                password_confirmation = ClientGUIDialogsQuick.EnterText( self, message, allow_blank = False, min_char_width = 36 )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return
+                
+            
+            if password != password_confirmation:
+                
+                ClientGUIDialogsMessage.ShowCritical( self, 'Problem!', 'Those passwords did not match!' )
+                
+                return
+                
+            
+        
+        self._controller.Write( 'set_password', password )
         
     
     def _SetMediaFocus( self ):
@@ -6737,6 +6711,33 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             page.SetMediaFocus()
             
+        
+    
+    def _SetPagesCountDirty( self ):
+        
+        self._pages_count_dirty = True
+        
+        if self._pages_menu.isVisible():
+            
+            self._UpdateMenuPagesCountIfDirty()
+            
+        
+    
+    def _SetPagesHistoryDirty( self ):
+        
+        self._pages_history_dirty = True
+        
+        if self._pages_menu.isVisible():
+            
+            self._UpdateMenuPagesHistoryIfDirty()
+            
+        
+    
+    def _SetPagesHistoryEmpty( self ):
+        
+        self._page_nav_history.CleanPages( {} )
+        
+        self._menu_updater_set_pages_history_dirty.Update()
         
     
     def _SetSearchFocus( self ):
@@ -6774,80 +6775,76 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         ClientGUIDialogsMessage.ShowInformation( self, backup_intro )
         
-        with QP.DirDialog( self, 'Select backup location.' ) as dlg:
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+            path = ClientGUIDialogsQuick.PickDirectory( self, 'Select backup location.' )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        if path == self._controller.GetDBDir():
+            
+            ClientGUIDialogsMessage.ShowWarning( self, 'That directory is your current database directory! You cannot backup to the same location you are backing up from!' )
+            
+            return
+            
+        
+        if path == existing_backup_path:
+            
+            ClientGUIDialogsMessage.ShowInformation( self, 'The path you chose is your current saved backup path. No changes have been made.' )
+            
+            return
+            
+        
+        if os.path.exists( path ):
+            
+            filenames = os.listdir( path )
+            
+            num_files = len( filenames )
+            
+            if num_files == 0:
                 
-                path = dlg.GetPath()
+                extra_info = 'It looks currently empty, which is great--there is no danger of anything being overwritten.'
                 
-                if path == '':
-                    
-                    return
-                    
+            elif 'client.db' in filenames:
                 
-                if path == self._controller.GetDBDir():
-                    
-                    ClientGUIDialogsMessage.ShowWarning( self, 'That directory is your current database directory! You cannot backup to the same location you are backing up from!' )
-                    
-                    return
-                    
+                extra_info = 'It looks like a client database already exists in the location--be certain that it is ok to overwrite it.'
                 
-                if path == existing_backup_path:
-                    
-                    ClientGUIDialogsMessage.ShowInformation( self, 'The path you chose is your current saved backup path. No changes have been made.' )
-                    
-                    return
-                    
+            else:
                 
-                if os.path.exists( path ):
-                    
-                    filenames = os.listdir( path )
-                    
-                    num_files = len( filenames )
-                    
-                    if num_files == 0:
-                        
-                        extra_info = 'It looks currently empty, which is great--there is no danger of anything being overwritten.'
-                        
-                    elif 'client.db' in filenames:
-                        
-                        extra_info = 'It looks like a client database already exists in the location--be certain that it is ok to overwrite it.'
-                        
-                    else:
-                        
-                        extra_info = 'It seems to have some files already in it--be careful and make sure you chose the correct location.'
-                        
-                    
-                else:
-                    
-                    extra_info = 'The path does not exist yet--it will be created when you make your first backup.'
-                    
+                extra_info = 'It seems to have some files already in it--be careful and make sure you chose the correct location.'
                 
-                text = 'You chose "' + path + '". Here is what I understand about it:'
-                text += '\n' * 2
-                text += extra_info
-                text += '\n' * 2
-                text += 'Are you sure this is the correct directory?'
+            
+        else:
+            
+            extra_info = 'The path does not exist yet--it will be created when you make your first backup.'
+            
+        
+        text = 'You chose "' + path + '". Here is what I understand about it:'
+        text += '\n' * 2
+        text += extra_info
+        text += '\n' * 2
+        text += 'Are you sure this is the correct directory?'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, text )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            self._new_options.SetNoneableString( 'backup_path', path )
+            self._new_options.SetNoneableInteger( 'last_backup_time', None )
+            
+            text = 'Would you like to create your backup now?'
+            
+            result = ClientGUIDialogsQuick.GetYesNo( self, text )
+            
+            if result == QW.QDialog.DialogCode.Accepted:
                 
-                result = ClientGUIDialogsQuick.GetYesNo( self, text )
+                self._BackupDatabase()
                 
-                if result == QW.QDialog.DialogCode.Accepted:
-                    
-                    self._new_options.SetNoneableString( 'backup_path', path )
-                    self._new_options.SetNoneableInteger( 'last_backup_time', None )
-                    
-                    text = 'Would you like to create your backup now?'
-                    
-                    result = ClientGUIDialogsQuick.GetYesNo( self, text )
-                    
-                    if result == QW.QDialog.DialogCode.Accepted:
-                        
-                        self._BackupDatabase()
-                        
-                    
-                    self._menu_updater_database.update()
-                    
-                
+            
+            self._menu_updater_database.update()
             
         
     
@@ -6970,6 +6967,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             HG.hover_window_report_mode = not HG.hover_window_report_mode
             
+        elif name == 'idle_report_mode':
+            
+            HG.idle_report_mode = not HG.idle_report_mode
+            
         elif name == 'media_load_report_mode':
             
             HG.media_load_report_mode = not HG.media_load_report_mode
@@ -6995,6 +6996,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         elif name == 'phash_generation_report_mode':
             
             HG.phash_generation_report_mode = not HG.phash_generation_report_mode
+            
+        elif name == 'potential_duplicates_report_mode':
+            
+            HG.potential_duplicates_report_mode = not HG.potential_duplicates_report_mode
             
         elif name == 'pubsub_report_mode':
             
@@ -7082,37 +7087,99 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         self._controller.UnclosePageKeys( page.GetPageKeys() )
         
-        self._controller.pub( 'notify_page_unclosed', page )
+        self._controller.pub( 'unclose_this_page', page )
         
         self._menu_updater_undo.update()
         
         self._controller.pub( 'notify_new_pages' )
         
     
-    def _UpdateMenuPagesCount( self ):
+    def _UndoSearchPredAdd( self, index ):
         
-        (
-            total_active_page_count,
-            total_active_num_hashes,
-            total_active_num_seeds,
-            total_closed_page_count,
-            total_closed_num_hashes,
-            total_closed_num_seeds
-        ) = self.GetTotalPageCounts()
+        predicate = self._predicate_history_added_to_search[ index ]
         
-        total_active_weight = ClientGUIPages.ConvertNumHashesAndSeedsToWeight( total_active_num_hashes, total_active_num_seeds )
+        page = self._notebook.GetCurrentMediaPage()
         
-        if total_active_weight > 10000000 and self._controller.new_options.GetBoolean( 'show_session_size_warnings' ) and not self._have_shown_session_size_warning:
+        if page is not None:
             
-            self._have_shown_session_size_warning = True
+            page.EnterPredicates( [ predicate ] )
             
-            HydrusData.ShowText( 'Your session weight is {}, which is pretty big! To keep your UI lag-free, please try to close some pages or clear some finished downloaders!'.format( HydrusNumbers.ToHumanInt( total_active_weight ) ) )
+            self._predicate_history_added_to_search.pop( index )
             
         
-        ClientGUIMenus.SetMenuItemLabel( self._menubar_pages_page_count, '{} pages open'.format( HydrusNumbers.ToHumanInt( total_active_page_count ) ) )
+    def _UndoSearchPredRemove( self, index ):
         
-        ClientGUIMenus.SetMenuItemLabel( self._menubar_pages_session_weight, 'total session weight: {}'.format( HydrusNumbers.ToHumanInt( total_active_weight ) ) )
+        predicate = self._predicate_history_removed_from_search[ index ]
         
+        page = self._notebook.GetCurrentMediaPage()
+        
+        if page is not None:
+            
+            page.EnterPredicates( [ predicate ] )
+            
+            self._predicate_history_removed_from_search.pop( index )
+            
+        
+    
+    def _UpdateMenuPagesCountIfDirty( self ):
+        
+        if self._pages_count_dirty:
+            
+            (
+                total_active_page_count,
+                total_active_num_hashes,
+                total_active_num_seeds,
+                total_closed_page_count,
+                total_closed_num_hashes,
+                total_closed_num_seeds
+            ) = self.GetTotalPageCounts()
+            
+            total_active_weight = ClientGUIPages.ConvertNumHashesAndSeedsToWeight( total_active_num_hashes, total_active_num_seeds )
+            
+            if total_active_weight > 10000000 and self._controller.new_options.GetBoolean( 'show_session_size_warnings' ) and not self._have_shown_session_size_warning:
+                
+                self._have_shown_session_size_warning = True
+                
+                HydrusData.ShowText( 'Your session weight is {}, which is pretty big! To keep your UI lag-free, please try to close some pages or clear some finished downloaders!'.format( HydrusNumbers.ToHumanInt( total_active_weight ) ) )
+                
+            
+            ClientGUIMenus.SetMenuItemLabel( self._menubar_pages_page_count, '{} pages open'.format( HydrusNumbers.ToHumanInt( total_active_page_count ) ) )
+            
+            ClientGUIMenus.SetMenuItemLabel( self._menubar_pages_session_weight, 'total session weight: {}'.format( HydrusNumbers.ToHumanInt( total_active_weight ) ) )
+            
+            self._pages_count_dirty = False
+            
+        
+    
+    def _UpdateMenuPagesHistoryIfDirty( self ):
+        
+        if self._pages_history_dirty:
+            
+            self._page_nav_history_menu.clear()
+            
+            for i, ( page_key, page_name ) in enumerate( reversed( self._page_nav_history.GetHistory() ) ):
+                
+                if i >= CG.client_controller.new_options.GetInteger( 'page_nav_history_max_entries' ):
+                    
+                    break
+                    
+                
+                history_menuitem = ClientGUIMenus.AppendMenuItem( self._page_nav_history_menu, '{}: {}'.format( i + 1, page_name ), 'Activate this tab from your viewing history.', CG.client_controller.gui.ShowPage, page_key )
+                
+                if i == 0:
+                    
+                    font = history_menuitem.font()
+                    font.setBold( True )
+                    history_menuitem.setFont( font )
+                    
+                
+            ClientGUIMenus.AppendSeparator( self._page_nav_history_menu )
+            ClientGUIMenus.AppendMenuItem( self._page_nav_history_menu, 'Clear History', 'Clear the in-memory page nav history.', self._SetPagesHistoryEmpty )
+            
+            self._pages_history_dirty = False
+            
+        
+    
     
     def _UpdateSystemTrayIcon( self, currently_booting = False ):
         
@@ -7290,6 +7357,21 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         if result == QW.QDialog.DialogCode.Accepted:
             
             self.DeleteAllClosedPages()
+            
+        
+    
+    def AskToDeleteAllSearchPredHistory( self ):
+        
+        message = 'Clear the entire search predicate history? This cannot be undone.'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, message )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            self._predicate_history_added_to_search.clear()
+            self._predicate_history_removed_from_search.clear()
+            
+            self._menu_updater_undo.update()
             
         
     
@@ -7507,16 +7589,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 try:
                     
-                    if HG.profile_mode:
-                        
-                        summary = 'Profiling animation timer: ' + repr( window )
-                        
-                        HydrusProfiling.Profile( summary, 'window.TIMERAnimationUpdate()', globals(), locals(), min_duration_ms = HG.ui_timer_profile_min_job_time_ms )
-                        
-                    else:
-                        
-                        window.TIMERAnimationUpdate()
-                        
+                    window.TIMERAnimationUpdate()
                     
                 except Exception:
                     
@@ -7524,7 +7597,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                     
                 
             
-        except:
+        except Exception as e:
             
             # obsolote comment below, leaving it just in case
             #
@@ -7575,6 +7648,16 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._UpdateSystemTrayIcon()
         
         self._menu_updater_network.update()
+        
+    
+    def FlipProfileMode( self, name ):
+        
+        HydrusProfiling.FlipProfileMode( name )
+        
+        self._profile_mode_client_api_menu_item.setChecked( HydrusProfiling.IsProfileMode( 'client_api' ) )
+        self._profile_mode_db_menu_item.setChecked( HydrusProfiling.IsProfileMode( 'db' ) )
+        self._profile_mode_threads_menu_item.setChecked( HydrusProfiling.IsProfileMode( 'threads' ) )
+        self._profile_mode_ui_menu_item.setChecked( HydrusProfiling.IsProfileMode( 'ui' ) )
         
     
     def FlipSubscriptionsPaused( self ):
@@ -7633,6 +7716,50 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         return mpv_widget
         
     
+    def GetMediaViewersAPIInfo( self ):
+        
+        self.MaintainCanvasFrameReferences()
+        
+        media_viewers = []
+        
+        for frame in self._canvas_frames:
+            
+            canvas_window = frame.GetCanvas()
+            
+            if canvas_window is None:
+                
+                continue
+                
+            
+            # TODO: we could add pos/size stuff here maybe, and similar for the main gui in a diff call?
+            
+            media_viewer_info_dict = {
+                'canvas_type' : canvas_window.GetCanvasType(),
+                'canvas_key' : canvas_window.GetCanvasKey().hex(),
+            }
+            
+            current_media = canvas_window.GetMedia()
+            
+            if current_media is None:
+                
+                media_viewer_info_dict[ 'current_media' ] = None
+                
+            else:
+                
+                media_viewer_info_dict[ 'current_media' ] = ClientMediaResultAPI.GetMediaResultAPIDict( current_media.GetMediaResult() )
+                
+            
+            media_viewers.append( media_viewer_info_dict )
+            
+        
+        return media_viewers
+        
+    
+    def GetNotebookCurrentPage( self ):
+        
+        return self._notebook.GetCurrentMediaPage()
+        
+    
     def GetPageFromPageKey( self, page_key ):
         
         return self._notebook.GetPageFromPageKey( page_key )
@@ -7650,6 +7777,16 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             return page.GetAPIInfoDict( simple )
             
+        
+    
+    def GetPagesHistory( self ):
+        
+        return self._page_nav_history.GetHistory()
+        
+    
+    def GetTopLevelNotebook( self ):
+        
+        return self._notebook
         
     
     def GetTotalPageCounts( self ):
@@ -7848,7 +7985,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         activate_window = False
     ):
         
-        self._notebook.NewPageQuery(
+        page = self._notebook.NewPageQuery(
             location_context,
             initial_hashes = initial_hashes,
             initial_predicates = initial_predicates,
@@ -7864,6 +8001,38 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             self.activateWindow()
             
+        
+        return page
+        
+    
+    def NewPageQueryFileSearchContext(
+        self,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        initial_hashes = None,
+        initial_sort = None,
+        initial_collect = None,
+        page_name = None,
+        do_sort = False,
+        select_page = True,
+        activate_window = False
+    ):
+        
+        page = self._notebook.NewPageQueryFileSearchContext(
+            file_search_context,
+            initial_hashes,
+            initial_sort,
+            initial_collect,
+            page_name,
+            do_sort,
+            select_page
+        )
+        
+        if activate_window and not self.isActiveWindow():
+            
+            self.activateWindow()
+            
+        
+        return page
         
     
     def NotifyAdvancedMode( self ):
@@ -7889,6 +8058,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._closed_pages.append( ( close_time, page ) )
         
         self._controller.ClosePageKeys( page.GetPageKeys() )
+        
+        open_pages = self._notebook.GetPageKeys()
+        self._page_nav_history.CleanPages( open_pages )
+        
+        self._menu_updater_set_pages_history_dirty.Update()
         
         self._menu_updater_pages.update()
         self._menu_updater_undo.update()
@@ -7924,6 +8098,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._menu_updater_database.update()
         self._menu_updater_services.update()
         self._menu_updater_tags.update()
+        self._locator_widget.updateOptions()
         
     
     def NotifyNewPages( self ):
@@ -7933,7 +8108,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     
     def NotifyNewPagesCount( self ):
         
-        self._menu_updater_pages_count.Update()
+        self._menu_updater_set_pages_count_dirty.Update()
         
     
     def NotifyNewPending( self ):
@@ -7961,6 +8136,18 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     def NotifyNewUndo( self ):
         
         self._menu_updater_undo.update()
+        
+    
+    def NotifyPageJustChanged( self ):
+        
+        current_page = self._notebook.GetCurrentMediaPage()
+        
+        if current_page is not None:
+            
+            self._page_nav_history.AddPage( current_page )
+            
+        
+        self._menu_updater_set_pages_history_dirty.Update()
         
     
     def NotifyPendingUploadFinished( self, service_key: bytes ):
@@ -8034,9 +8221,12 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
                 if page is not None:
                     
-                    parent = page.GetParentNotebook()
+                    parent = ClientGUIPages.GetParentNotebook( page )
                     
-                    parent.RefreshAllPages()
+                    if parent is not None and isinstance( parent, ClientGUIPages.PagesNotebook ):
+                        
+                        parent.RefreshAllPages()
+                        
                     
                 
             elif action == CAC.SIMPLE_NEW_PAGE:
@@ -8101,7 +8291,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
             elif action == CAC.SIMPLE_GLOBAL_PROFILE_MODE_FLIP:
                 
-                CG.client_controller.FlipProfileMode()
+                self.FlipProfileMode( 'db' )
                 
             elif action == CAC.SIMPLE_GLOBAL_FORCE_ANIMATION_SCANBAR_SHOW:
                 
@@ -8167,43 +8357,42 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             while True:
                 
-                with ClientGUIDialogs.DialogTextEntry( self, 'Enter a name for the new session.', default = suggested_name ) as dlg:
+                try:
                     
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+                    message = 'Enter a name for the new session.'
+                    
+                    name = ClientGUIDialogsQuick.EnterText( self, message, default = suggested_name )
+                    
+                except HydrusExceptions.CancelledException:
+                    
+                    return
+                    
+                
+                if name in ClientGUISession.RESERVED_SESSION_NAMES:
+                    
+                    ClientGUIDialogsMessage.ShowWarning( self, 'Sorry, you cannot have that name! Try another.' )
+                    
+                else:
+                    
+                    existing_session_names = self._controller.Read( 'serialisable_names', HydrusSerialisable.SERIALISABLE_TYPE_GUI_SESSION_CONTAINER )
+                    
+                    if name in existing_session_names:
                         
-                        name = dlg.GetValue()
+                        message = 'Session "{}" already exists! Do you want to overwrite it?'.format( name )
                         
-                        if name in ClientGUISession.RESERVED_SESSION_NAMES:
+                        ( result, closed_by_user ) = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Overwrite existing session?', yes_label = 'yes, overwrite', no_label = 'no, choose another name', check_for_cancelled = True )
+                        
+                        if closed_by_user:
                             
-                            ClientGUIDialogsMessage.ShowWarning( self, 'Sorry, you cannot have that name! Try another.' )
+                            return
                             
-                        else:
+                        elif result == QW.QDialog.DialogCode.Rejected:
                             
-                            existing_session_names = self._controller.Read( 'serialisable_names', HydrusSerialisable.SERIALISABLE_TYPE_GUI_SESSION_CONTAINER )
-                            
-                            if name in existing_session_names:
-                                
-                                message = 'Session "{}" already exists! Do you want to overwrite it?'.format( name )
-                                
-                                ( result, closed_by_user ) = ClientGUIDialogsQuick.GetYesNo( self, message, title = 'Overwrite existing session?', yes_label = 'yes, overwrite', no_label = 'no, choose another name', check_for_cancelled = True )
-                                
-                                if closed_by_user:
-                                    
-                                    return
-                                    
-                                elif result == QW.QDialog.DialogCode.Rejected:
-                                    
-                                    continue
-                                    
-                                
-                            
-                            break
+                            continue
                             
                         
-                    else:
-                        
-                        return
-                        
+                    
+                    break
                     
                 
             
@@ -8291,11 +8480,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
         
     
-    def RegisterCanvasFrameReference( self, frame ):
+    def RegisterCanvasFrameReference( self, canvas_frame: ClientGUICanvasFrame.CanvasFrame ):
         
-        self._canvas_frames = [ fr for fr in self._canvas_frames if QP.isValid( fr ) ]
+        self.MaintainCanvasFrameReferences()
         
-        self._canvas_frames.append( frame )
+        self._canvas_frames.append( canvas_frame )
         
     
     def RegisterUIUpdateWindow( self, window ):
@@ -8308,14 +8497,14 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
         
     
-    def ReleaseMPVWidget( self, mpv_widget ):
+    def ReleaseMPVWidget( self, mpv_widget: ClientGUIMPV.MPVWidget ):
         
         mpv_widget.setParent( self )
         
         self._persistent_mpv_widgets.append( mpv_widget )
         
     
-    def _UnloadAndPurgeQtMediaplayer( self, qt_media_player: ClientGUICanvasMedia.QtMediaPlayer ):
+    def _UnloadAndPurgeQtMediaPlayer( self, qt_media_player: ClientGUIQtMediaPlayer.QtMediaPlayer ):
         
         if qt_media_player.IsCompletelyUnloaded():
             
@@ -8325,18 +8514,18 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             qt_media_player.TryToUnload()
             
-            self._controller.CallLaterQtSafe( self, 5.0, 'purge QMediaPlayer', self._UnloadAndPurgeQtMediaplayer, qt_media_player )
+            self._controller.CallLaterQtSafe( self, 2.0, 'purge QMediaPlayer', self._UnloadAndPurgeQtMediaPlayer, qt_media_player )
             
         
     
-    def ReleaseQtMediaPlayer( self, qt_media_player: ClientGUICanvasMedia.QtMediaPlayer ):
+    def ReleaseQtMediaPlayer( self, qt_media_player: ClientGUIQtMediaPlayer.QtMediaPlayer ):
         
         if qt_media_player.parentWidget() != self:
             
             qt_media_player.setParent( self )
             
         
-        self._controller.CallLaterQtSafe( self, 5.0, 'start QMediaPlayer purge', self._UnloadAndPurgeQtMediaplayer, qt_media_player )
+        self._controller.CallLaterQtSafe( self, 0.5, 'start QMediaPlayer purge', self._UnloadAndPurgeQtMediaPlayer, qt_media_player )
         
     
     def REPEATINGBandwidth( self ):
@@ -8449,16 +8638,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
         if page is not None:
             
-            if HG.profile_mode:
-                
-                summary = 'Profiling page timer: ' + repr( page )
-                
-                HydrusProfiling.Profile( summary, 'page.REPEATINGPageUpdate()', globals(), locals(), min_duration_ms = HG.ui_timer_profile_min_job_time_ms )
-                
-            else:
-                
-                page.REPEATINGPageUpdate()
-                
+            page.REPEATINGPageUpdate()
             
         
         if len( self._pending_modal_job_statuses ) > 0:
@@ -8497,16 +8677,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             try:
                 
-                if HG.profile_mode:
-                    
-                    summary = 'Profiling ui update timer: ' + repr( window )
-                    
-                    HydrusProfiling.Profile( summary, 'window.TIMERUIUpdate()', globals(), locals(), min_duration_ms = HG.ui_timer_profile_min_job_time_ms )
-                    
-                else:
-                    
-                    window.TIMERUIUpdate()
-                    
+                window.TIMERUIUpdate()
                 
             except Exception as e:
                 
@@ -8728,6 +8899,31 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._statusbar_db_thread_updater.Update()
         
     
+    def SetPredicateHistoryAdded( self, predicates ):
+        
+        for pred in predicates:
+            
+            if pred in self._predicate_history_added_to_search:
+                
+                self._predicate_history_added_to_search.remove( pred )
+            
+            self._predicate_history_added_to_search.append( pred )
+        
+        self._menu_updater_undo.update()
+        
+    def SetPredicateHistoryRemoved( self, predicates ):
+        
+        for pred in predicates:
+            
+            if pred in self._predicate_history_removed_from_search:
+                
+                self._predicate_history_removed_from_search.remove( pred )
+            
+            self._predicate_history_removed_from_search.append( pred )
+        
+        self._menu_updater_undo.update()
+        
+    
     def ShowPage( self, page_key ):
         
         page = self._notebook.GetPageFromPageKey( page_key )
@@ -8743,6 +8939,20 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     def TryToExit( self, restart = False, force_shutdown_maintenance = False ):
         
         if not self._controller.DoingFastExit():
+            
+            ( space_needed, free_space ) = CG.client_controller.db.GetSafeTransactionDiskSpaceAndCurrentFreeSpace()
+            
+            if free_space is not None and free_space < space_needed:
+                
+                text = f'You currently have very little free space ({HydrusData.ToHumanBytes( free_space )}) on your hydrus database drive partition. I think you should really have at least {HydrusData.ToHumanBytes( space_needed )} in order to save your exit data correctly. I recommend you free up disk space NOW.'
+                
+                result = ClientGUIDialogsQuick.GetYesNo( self, text, yes_label = 'try exiting now', no_label = 'back out' )
+                
+                if result != QW.QDialog.DialogCode.Accepted:
+                    
+                    return
+                    
+                
             
             reasons_and_pages = self._notebook.GetAbleToCloseData( for_session_close = True )
             
@@ -8871,7 +9081,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
             
         
-        QP.CallAfter( self._controller.Exit )
+        CG.client_controller.CallAfterQtSafe( self, self._controller.Exit )
         
     
     def TryToOpenManageServicesForAutoAccountCreation( self, service_key: bytes ):

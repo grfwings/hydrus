@@ -194,6 +194,16 @@ SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED = 181
 SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER = 182
 SIMPLE_OPEN_OPTIONS = 183
 SIMPLE_DUPLICATE_MEDIA_CLEAR_INTERNAL_FALSE_POSITIVES = 184
+SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA = 185
+SIMPLE_VIEW_RANDOM = 186
+SIMPLE_UNDO_RANDOM = 187
+SIMPLE_FOCUS_TAB_AND_MEDIA = 188
+SIMPLE_DUPLICATE_FILTER_APPROVE_AUTO_RESOLUTION = 189
+SIMPLE_DUPLICATE_FILTER_DENY_AUTO_RESOLUTION = 190
+SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER = 191
+SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER = 192
+SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN = 193
+SIMPLE_START_SLIDESHOW = 194
 
 REARRANGE_THUMBNAILS_TYPE_FIXED = 0
 REARRANGE_THUMBNAILS_TYPE_COMMAND = 1
@@ -257,6 +267,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_CHECK_ALL_IMPORT_FOLDERS : 'check all import folders now',
     SIMPLE_CLOSE_MEDIA_VIEWER : 'close media viewer',
     SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB : 'close media viewer and focus the tab the media came from, if possible',
+    SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA : 'close media viewer and focus the tab the media came from, if possible, and focus the media',
+    SIMPLE_FOCUS_TAB_AND_MEDIA : 'focus the tab the media came from, if possible, and focus the media',
     SIMPLE_CLOSE_PAGE : 'close page',
     LEGACY_SIMPLE_COPY_BMP : 'copy bmp of image',
     LEGACY_SIMPLE_COPY_LITTLE_BMP : 'copy small bmp of image for quick source lookups',
@@ -280,6 +292,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_DUPLICATE_FILTER_SKIP : 'duplicate filter: skip',
     SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_AND_DELETE_OTHER : 'duplicate filter: this is better, delete other',
     SIMPLE_DUPLICATE_FILTER_THIS_IS_BETTER_BUT_KEEP_BOTH : 'duplicate filter: this is better, keep both',
+    SIMPLE_DUPLICATE_FILTER_APPROVE_AUTO_RESOLUTION : 'duplicate filter: approve auto-resolution pair',
+    SIMPLE_DUPLICATE_FILTER_DENY_AUTO_RESOLUTION : 'duplicate filter: deny auto-resolution pair',
     SIMPLE_DUPLICATE_MEDIA_SET_ALTERNATE : 'file relationships: set files as alternates',
     SIMPLE_DUPLICATE_MEDIA_SET_ALTERNATE_COLLECTIONS : 'file relationships: set collects as separate alternate groups',
     SIMPLE_DUPLICATE_MEDIA_SET_CUSTOM : 'file relationships: do custom action',
@@ -380,6 +394,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_VIEW_LAST : 'media navigation: last',
     SIMPLE_VIEW_NEXT : 'media navigation: next',
     SIMPLE_VIEW_PREVIOUS : 'media navigation: previous',
+    SIMPLE_VIEW_RANDOM : 'media navigation: random',
+    SIMPLE_UNDO_RANDOM : 'media navigation: undo random',
     SIMPLE_ZOOM_IN : 'zoom: in',
     SIMPLE_ZOOM_OUT : 'zoom: out',
     SIMPLE_ZOOM_TO_PERCENTAGE : 'zoom: set to percentage',
@@ -433,6 +449,9 @@ simple_enum_to_str_lookup = {
     SIMPLE_NATIVE_OPEN_FILE_WITH_DIALOG : 'open in another program',
     SIMPLE_RELOAD_CURRENT_STYLESHEET : 'reload current qss stylesheet',
     SIMPLE_FLIP_ICC_PROFILE_APPLICATION : 'flip apply image ICC Profile colour adjustments',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER : 'flip drawing transparency as checkerboard in media viewer',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER : 'flip drawing transparency as checkerboard in media viewer (duplicate filter)',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN : 'flip between drawing transparency and checkerboard and greenscreen',
     SIMPLE_OPEN_OPTIONS : 'open the options dialog'
 }
 
@@ -540,8 +559,11 @@ legacy_simple_str_to_enum_lookup = {
     'view_last' : SIMPLE_VIEW_LAST,
     'view_next' : SIMPLE_VIEW_NEXT,
     'view_previous' : SIMPLE_VIEW_PREVIOUS,
+    'view_random' : SIMPLE_VIEW_RANDOM,
+    'undo_random' : SIMPLE_UNDO_RANDOM,
     'zoom_in' : SIMPLE_ZOOM_IN,
-    'zoom_out' : SIMPLE_ZOOM_OUT
+    'zoom_out' : SIMPLE_ZOOM_OUT,
+    'focus_media_thumbnail' : SIMPLE_FOCUS_TAB_AND_MEDIA
 }
 
 APPLICATION_COMMAND_TYPE_SIMPLE = 0
@@ -630,7 +652,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
             
             ( service_key, content_type, action, value ) = self._data
             
-            if content_type == HC.CONTENT_TYPE_FILES and action == HC.CONTENT_UPDATE_MOVE and value is not None and isinstance( value, bytes ):
+            if content_type == HC.CONTENT_TYPE_FILES and value is not None and isinstance( value, bytes ):
                 
                 value = value.hex()
                 
@@ -667,13 +689,13 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
             
             ( serialisable_service_key, content_type, action, value ) = serialisable_data
             
-            if content_type == HC.CONTENT_TYPE_FILES and action == HC.CONTENT_UPDATE_MOVE and value is not None and isinstance( value, str ):
+            if content_type == HC.CONTENT_TYPE_FILES and value is not None and isinstance( value, str ):
                 
                 try:
                     
                     value = bytes.fromhex( value )
                     
-                except:
+                except Exception as e:
                     
                     value = None
                     
@@ -1019,7 +1041,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                         
                         file_command_target_string = file_command_target_enum_to_str_lookup[ hacky_ipfs_dict[ 'file_command_target' ] ]
                         
-                    except:
+                    except Exception as e:
                         
                         file_command_target_string = 'unknown'
                         
@@ -1030,7 +1052,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                         
                         name = CG.client_controller.services_manager.GetName( ipfs_service_key )
                         
-                    except:
+                    except Exception as e:
                         
                         name = 'unknown service'
                         
@@ -1060,6 +1082,15 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                     elif rearrange_type == REARRANGE_THUMBNAILS_TYPE_FIXED:
                         
                         s = f'{s} (to index {HydrusNumbers.ToHumanInt(rearrange_data)})'
+                        
+                    
+                elif action == SIMPLE_RESIZE_WINDOW_TO_MEDIA_ZOOMED_VIEWER_CENTER:
+                    
+                    new_zoom = self.GetSimpleData()
+                    
+                    if new_zoom is not None:
+                        
+                        s = f'resize window to fit media at {HydrusNumbers.FloatToPercentage( new_zoom )} and recenter it in the viewer'
                         
                     
                 
@@ -1101,7 +1132,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                         value_string = '' # only 1 up/down allowed atm
                         
                     
-                elif content_type == HC.CONTENT_TYPE_FILES and action == HC.CONTENT_UPDATE_MOVE and value is not None:
+                elif content_type == HC.CONTENT_TYPE_FILES and value is not None:
                     
                     try:
                         
@@ -1109,7 +1140,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                         
                         value_string = '(from {})'.format( from_name )
                         
-                    except:
+                    except Exception as e:
                         
                         value_string = ''
                         
@@ -1149,7 +1180,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                 return ' '.join( components )
                 
             
-        except:
+        except Exception as e:
             
             return 'Unknown Application Command: ' + repr( ( self._command_type, self._data ) )
             

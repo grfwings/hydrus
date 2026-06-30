@@ -7,7 +7,7 @@ from twisted.internet import reactor, defer
 from twisted.internet.threads import deferToThread
 from twisted.web.server import NOT_DONE_YET
 from twisted.web.resource import Resource
-from twisted.web.static import File as FileResource, NoRangeStaticProducer, SingleRangeStaticProducer
+from twisted.web.static import NoRangeStaticProducer, SingleRangeStaticProducer
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
@@ -371,8 +371,6 @@ def GenerateNormieEris( service ):
     )
     
 
-hydrus_favicon = FileResource( os.path.join( HC.STATIC_DIR, 'hydrus.ico' ), defaultType = 'image/x-icon' )
-
 class HydrusDomain( object ):
     
     def __init__( self, local_only ):
@@ -460,7 +458,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoGETJob, request )
             
@@ -483,7 +481,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoOPTIONSJob, request )
             
@@ -506,7 +504,7 @@ class HydrusResource( Resource ):
             return request
             
         
-        if HG.profile_mode:
+        if HydrusProfiling.IsProfileMode( 'client_api' ):
             
             d = deferToThread( self._profileJob, self._threadDoPOSTJob, request )
             
@@ -732,7 +730,7 @@ class HydrusResource( Resource ):
                 
                 user_agents = user_agent_text.split( ' ' )
                 
-            except:
+            except Exception as e:
                 
                 return # crazy user agent string, so just assume not a hydrus client
                 
@@ -773,7 +771,14 @@ class HydrusResource( Resource ):
     
     def _profileJob( self, call, request: HydrusServerRequest.HydrusRequest ):
         
-        HydrusProfiling.Profile( 'Profiling {}: {}'.format( self._service.GetName(), request.path ), 'request.profile_result = call( request )', globals(), locals(), min_duration_ms = HG.server_profile_min_job_time_ms )
+        def do_it():
+            
+            request.profile_result = call( request )
+            
+        
+        summary = 'Profiling {}: {}'.format( self._service.GetName(), request.path )
+        
+        HydrusProfiling.Profile( summary, do_it, min_duration_ms = HG.server_profile_min_job_time_ms )
         
         return request.profile_result
         
@@ -795,7 +800,7 @@ class HydrusResource( Resource ):
                 request.producer.stopProducing()
                 
             
-        except:
+        except Exception as e:
             
             pass
             
@@ -808,7 +813,7 @@ class HydrusResource( Resource ):
                 
                 c()
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -833,8 +838,14 @@ class HydrusResource( Resource ):
                 e = e.db_e # could well be a DataException, which we want to promote
                 
             
-            try: self._CleanUpTempFile( request )
-            except: pass
+            try:
+                
+                self._CleanUpTempFile( request )
+                
+            except Exception as e:
+                
+                pass
+                
             
             error_summary = str( e )
             
@@ -896,7 +907,7 @@ class HydrusResource( Resource ):
                 
                 HydrusData.DebugPrint( failure.getTraceback() )
                 
-                error_summary = f'The "{self._service.GetName()}" encountered an error it could not handle!\n\nHere is a full traceback of what happened. If you are using the hydrus client, it will be saved to your log. Please forward it to hydrus.admin@gmail.com:\n\n' + failure.getTraceback()
+                error_summary = f'The "{self._service.GetName()}" encountered an error it could not handle!\n\nHere is a full traceback of what happened. If you are using the hydrus client, it will be saved to your log. Please forward it to hydrus_dev@proton.me:\n\n' + failure.getTraceback()
                 
             
             # TODO: maybe pull the cbor stuff down to hydrus core here and respond with Dumps( blah, requested_mime ) instead
@@ -919,24 +930,48 @@ class HydrusResource( Resource ):
             
             self._callbackRenderResponseContext( request )
             
-        except:
+        except Exception as e:
             
-            try: HydrusData.DebugPrint( failure.getTraceback() )
-            except: pass
+            try:
+                
+                HydrusData.DebugPrint( failure.getTraceback() )
+                
+            except Exception as e:
+                
+                pass
+                
             
             if hasattr( request, 'channel' ) and request.channel is not None:
                 
-                try: request.setResponseCode( 500 )
-                except: pass
+                try:
+                    
+                    request.setResponseCode( 500 )
+                    
+                except Exception as e:
+                    
+                    pass
+                    
                 
-                try: request.write( failure.getTraceback() )
-                except: pass
+                try:
+                    
+                    request.write( failure.getTraceback() )
+                    
+                except Exception as e:
+                    
+                    pass
+                    
                 
             
             if not request.finished:
                 
-                try: request.finish()
-                except: pass
+                try:
+                    
+                    request.finish()
+                    
+                except Exception as e:
+                    
+                    pass
+                    
                 
             
         
@@ -965,7 +1000,7 @@ class HydrusResource( Resource ):
             
             access_key = bytes.fromhex( hex_key )
             
-        except:
+        except Exception as e:
             
             raise HydrusExceptions.BadRequestException( 'Could not parse the hydrus key!' )
             

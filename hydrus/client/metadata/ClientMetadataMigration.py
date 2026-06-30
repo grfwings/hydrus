@@ -1,6 +1,6 @@
 import collections.abc
-import typing
 
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusSerialisable
 
 from hydrus.client import ClientStrings
@@ -16,9 +16,9 @@ class SingleFileMetadataRouter( HydrusSerialisable.SerialisableBase ):
     
     def __init__(
         self,
-        importers: typing.Optional[ collections.abc.Collection[ ClientMetadataMigrationImporters.SingleFileMetadataImporter ] ] = None,
-        string_processor: typing.Optional[ ClientStrings.StringProcessor ] = None,
-        exporter: typing.Optional[ ClientMetadataMigrationExporters.SingleFileMetadataExporter ] = None
+        importers: collections.abc.Collection[ ClientMetadataMigrationImporters.SingleFileMetadataImporter ] | None = None,
+        string_processor: ClientStrings.StringProcessor | None = None,
+        exporter: ClientMetadataMigrationExporters.SingleFileMetadataExporter | None = None
     ):
         
         if importers is None:
@@ -201,23 +201,25 @@ class SingleFileMetadataRouter( HydrusSerialisable.SerialisableBase ):
     
     def Work( self, media_result: ClientMediaResult.MediaResult, file_path: str ) -> bool:
         
-        rows = set()
+        rows = []
         
         for importer in self._importers:
             
             if isinstance( importer, ClientMetadataMigrationImporters.SingleFileMetadataImporterSidecar ):
                 
-                rows.update( importer.Import( file_path ) )
+                rows.extend( importer.Import( file_path ) )
                 
             elif isinstance( importer, ClientMetadataMigrationImporters.SingleFileMetadataImporterMedia ):
                 
-                rows.update( importer.Import( media_result ) )
+                rows.extend( importer.Import( media_result ) )
                 
             else:
                 
                 raise Exception( 'Problem with importer object!' )
                 
             
+        
+        rows = HydrusLists.DedupeList( rows )
         
         rows = self._string_processor.ProcessStrings( starting_strings = rows )
         

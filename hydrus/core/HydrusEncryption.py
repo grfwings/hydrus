@@ -2,6 +2,8 @@ import datetime
 import os
 import stat
 
+from hydrus.core import HydrusDateTime
+
 try:
     
     from cryptography import x509
@@ -12,7 +14,7 @@ try:
     
     CRYPTO_OK = True
     
-except:
+except Exception as e:
     
     CRYPTO_OK = False
     
@@ -23,7 +25,7 @@ try:
     
     OPENSSL_OK = True
     
-except:
+except Exception as e:
     
     OPENSSL_OK = False
     
@@ -59,9 +61,9 @@ def GenerateOpenSSLCertAndKeyFile( cert_path, key_path ):
     ).serial_number(
         x509.random_serial_number()
     ).not_valid_before(
-        datetime.datetime.utcnow()
+        HydrusDateTime.nowutc()
     ).not_valid_after(
-        datetime.datetime.utcnow() + datetime.timedelta( days = 365 * 10 )
+        HydrusDateTime.nowutc() + datetime.timedelta( days = 365 * 10 )
     ).add_extension(
         x509.SubjectAlternativeName( [ x509.DNSName( 'localhost' ) ] ),
         critical = False

@@ -21,12 +21,10 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientThreading
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUICore as CGC
-from hydrus.client.gui import ClientGUIDialogs
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIReviewWindowsQuick
-from hydrus.client.gui import QtInit
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUICanvas
 from hydrus.client.gui.pages import ClientGUIPagesCore
@@ -57,19 +55,36 @@ def ConvertNumSeedsToWeight( num_seeds: int ) -> int:
     return num_seeds * 20
     
 
+def GetParentNotebook( widget: QW.QWidget ) -> "PagesNotebook | None":
+    
+    parent = widget.parentWidget()
+    
+    while not isinstance( parent, PagesNotebook ):
+        
+        if parent is None:
+            
+            return None
+            
+        
+        parent = parent.parentWidget()
+        
+    
+    return parent
+    
+
 class Page( QW.QWidget ):
     
     def __init__( self, parent: QW.QWidget, page_manager: ClientGUIPageManager.PageManager, initial_hashes ):
         
         super().__init__( parent )
         
-        self._parent_notebook = parent
-        
         self._page_key = CG.client_controller.AcquirePageKey()
         
         self._page_manager = page_manager
         
         self._initial_hashes = initial_hashes
+        self._initial_hash_blocks_still_to_load = []
+        self._initial_media_results_loaded = []
         
         self._page_manager.SetVariable( 'page_key', self._page_key )
         
@@ -81,7 +96,10 @@ class Page( QW.QWidget ):
         self._initialised = len( initial_hashes ) == 0
         self._pre_initialisation_media_results = []
         
+        self._initial_media_results_load_updater = self._InitialiseInitialMediaResultsLoadUpdater()
+        
         self._pretty_status = ''
+        self._pretty_status_override = ''
         
         self._management_media_split = QW.QSplitter( self )
         self._management_media_split.setOrientation( QC.Qt.Orientation.Horizontal )
@@ -97,7 +115,7 @@ class Page( QW.QWidget ):
         self._preview_panel.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         self._preview_panel.setLineWidth( 2 )
         
-        self._preview_canvas = ClientGUICanvas.CanvasPanel( self._preview_panel, self._page_key, self._page_manager.GetLocationContext() )
+        self._preview_canvas = ClientGUICanvas.CanvasPanelWithHovers( self._preview_panel, self._page_key, self._page_manager.GetLocationContext() )
         
         self._sidebar.locationChanged.connect( self._preview_canvas.SetLocationContext )
         
@@ -166,6 +184,11 @@ class Page( QW.QWidget ):
         self._sidebar.ConnectMediaResultsPanelSignals( self._media_panel )
         
     
+    def _DoInitialMediaResultsLoadWork( self ):
+        
+        self._initial_media_results_load_updater.update()
+        
+    
     def _GetCurrentSessionPageHashesHash( self ):
         
         hashlist = self.GetHashes()
@@ -173,6 +196,84 @@ class Page( QW.QWidget ):
         hashlist_hashable = tuple( hashlist )
         
         return hash( hashlist_hashable )
+        
+    
+    def _InitialiseInitialMediaResultsLoadUpdater( self ):
+        
+        def loading_callable():
+            
+            pass
+            
+        
+        def pre_work_callable():
+            
+            if len( self._initial_hash_blocks_still_to_load ) == 0:
+                
+                self._initialised = True
+                
+            
+            if self._initialised:
+                
+                raise HydrusExceptions.CancelledException()
+                
+            
+            if CG.client_controller.PageClosedButNotDestroyed( self._page_key ):
+                
+                raise HydrusExceptions.CancelledException()
+                
+            
+            status = f'Loading initial files{HC.UNICODE_ELLIPSIS} {HydrusNumbers.ValueRangeToPrettyString( len( self._initial_media_results_loaded ), len( self._initial_hashes ) )}'
+            
+            self._SetPrettyStatus( status, override = True )
+            
+            block_of_hashes = self._initial_hash_blocks_still_to_load.pop()
+            
+            return block_of_hashes
+            
+        
+        def work_callable( block_of_hashes ):
+            
+            block_of_media_results = CG.client_controller.Read( 'media_results', block_of_hashes )
+            
+            return block_of_media_results
+            
+        
+        def publish_callable( block_of_media_results ):
+            
+            self._initial_media_results_loaded.extend( block_of_media_results )
+            
+            if len( self._initial_hash_blocks_still_to_load ) == 0:
+                
+                self._SetPrettyStatus( '', override = True )
+                
+                hashes_to_media_results = { media_result.GetHash() : media_result for media_result in self._initial_media_results_loaded }
+                
+                sorted_initial_media_results = [ hashes_to_media_results[ hash ] for hash in self._initial_hashes if hash in hashes_to_media_results ]
+                
+                media_panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self, self._page_key, self._page_manager, sorted_initial_media_results )
+                
+                self._SwapMediaResultsPanel( media_panel )
+                
+                self._initialised = True
+                self._initial_media_results_loaded = []
+                self._initial_hashes = []
+                
+                if len( self._pre_initialisation_media_results ) > 0:
+                    
+                    media_panel.AddMediaResults( self._page_key, self._pre_initialisation_media_results )
+                    
+                    self._pre_initialisation_media_results = []
+                    
+                
+                CG.client_controller.CallAfterQtSafe( self, self._sidebar.Start )
+                
+            else:
+                
+                self._DoInitialMediaResultsLoadWork()
+                
+            
+        
+        return ClientGUIAsync.AsyncQtUpdater( 'page initial media results load', self, loading_callable, work_callable, publish_callable, pre_work_callable = pre_work_callable )
         
     
     def _PreviewCanvasWantsToLaunchMediaViewer( self ):
@@ -205,11 +306,21 @@ class Page( QW.QWidget ):
         self._current_session_page_container_timestamp = HydrusTime.GetNow()
         
     
-    def _SetPrettyStatus( self, status: str ):
+    def _SetPrettyStatus( self, status: str, override = False ):
         
-        self._pretty_status = status
+        if override:
+            
+            self._pretty_status_override = status
+            
+        else:
+            
+            self._pretty_status = status
+            
         
-        CG.client_controller.gui.SetStatusBarDirty()
+        if self.isVisible():
+            
+            CG.client_controller.gui.SetStatusBarDirty()
+            
         
     
     def _SwapMediaResultsPanel( self, new_panel: ClientGUIMediaResultsPanel.MediaResultsPanel ):
@@ -241,29 +352,18 @@ class Page( QW.QWidget ):
         # note focus isn't on the thumb panel but some innerwidget scroll gubbins
         had_focus_before = ClientGUIFunctions.IsQtAncestor( QW.QApplication.focusWidget(), old_panel )
         
-        if QtInit.WE_ARE_QT5:
+        if new_panel.parentWidget() == self._management_media_split:
             
-            # this takes ownership of new_panel
-            self._management_media_split.insertWidget( 1, new_panel )
+            # ideally, this does not occur. we always want to replace and reduce flicker
             
             old_panel.setParent( None )
             old_panel.setVisible( False )
             
         else:
             
-            if new_panel.parentWidget() == self._management_media_split:
-                
-                # ideally, this does not occur. we always want to replace and reduce flicker
-                
-                old_panel.setParent( None )
-                old_panel.setVisible( False )
-                
-            else:
-                
-                # this sets parent of new panel to self and sets parent of old panel to None
-                # rumao, it doesn't work if new_panel is already our child
-                self._management_media_split.replaceWidget( 1, new_panel )
-                
+            # this sets parent of new panel to self and sets parent of old panel to None
+            # rumao, it doesn't work if new_panel is already our child
+            self._management_media_split.replaceWidget( 1, new_panel )
             
         
         self._media_panel.setMinimumWidth( 120 )
@@ -302,6 +402,11 @@ class Page( QW.QWidget ):
         clean_up_old_panel()
         
     
+    def ActivateFavouriteSearch( self, fav_search: tuple[ str, str ] ):
+        
+        self._sidebar.ActivateFavouriteSearch( fav_search )
+        
+    
     def AddMediaResults( self, media_results ):
         
         if self._initialised:
@@ -324,7 +429,7 @@ class Page( QW.QWidget ):
             
         except HydrusExceptions.VetoException as e:
             
-            message = '{} Are you sure you want to close it?'.format( str( e ) )
+            message = f'Close "{self.GetName()}"?\n\n{e}'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -338,7 +443,7 @@ class Page( QW.QWidget ):
         
         if not user_was_asked and CG.client_controller.new_options.GetBoolean( 'confirm_all_page_closes' ):
             
-            message = 'Are you sure you want to close this page?'
+            message = f'Close "{self.GetName()}"?'
             
             result = ClientGUIDialogsQuick.GetYesNo( self, message )
             
@@ -372,6 +477,11 @@ class Page( QW.QWidget ):
         CG.client_controller.ReleasePageKey( self._page_key )
         
     
+    def EnterPredicates( self, predicates ):
+        
+        self._sidebar.EnterPredicates( self._page_key, predicates )
+        
+        
     def EventPreviewUnsplit( self, event ):
         
         QP.Unsplit( self._search_preview_split, self._preview_panel )
@@ -423,7 +533,7 @@ class Page( QW.QWidget ):
             hashes = list( self._initial_hashes )
             hashes.extend( ( media_result.GetHash() for media_result in self._pre_initialisation_media_results ) )
             
-            hashes = HydrusData.DedupeList( hashes )
+            hashes = HydrusLists.DedupeList( hashes )
             
             return hashes
             
@@ -455,7 +565,7 @@ class Page( QW.QWidget ):
         return self._page_manager.GetPageName()
         
     
-    def GetNameForMenu( self ) -> str:
+    def GetNameForMenu( self, elide = True ) -> str:
         
         name_for_menu = self.GetName()
         
@@ -471,7 +581,7 @@ class Page( QW.QWidget ):
             name_for_menu = '{} - {}'.format( name_for_menu, HydrusNumbers.ValueRangeToPrettyString( num_value, num_range ) )
             
         
-        return HydrusText.ElideText( name_for_menu, 32, elide_center = True )
+        return HydrusText.ElideText( name_for_menu, 32, elide_center = True ) if elide else name_for_menu
         
     
     def GetNumFileSummary( self ):
@@ -517,14 +627,16 @@ class Page( QW.QWidget ):
             
         
     
-    def GetParentNotebook( self ):
-        
-        return self._parent_notebook
-        
-    
     def GetPrettyStatusForStatusBar( self ):
         
-        return self._pretty_status
+        if self._pretty_status_override != '':
+            
+            return self._pretty_status_override
+            
+        else:
+            
+            return self._pretty_status
+            
         
     
     def GetSerialisablePage( self, only_changed_page_data, about_to_save ):
@@ -677,6 +789,11 @@ class Page( QW.QWidget ):
         return self._page_manager.GetType() == ClientGUIPagesCore.PAGE_TYPE_IMPORT_URLS
         
     
+    def NotifyUnclosed( self ):
+        
+        self._DoInitialMediaResultsLoadWork()
+        
+    
     def PageHidden( self ):
         
         self._sidebar.PageHidden()
@@ -696,6 +813,8 @@ class Page( QW.QWidget ):
         self._sidebar.PageShown()
         self._media_panel.PageShown()
         self._preview_canvas.PageShown()
+        
+        self._DoInitialMediaResultsLoadWork()
         
     
     def RefreshQuery( self ):
@@ -788,7 +907,7 @@ class Page( QW.QWidget ):
         
         if HC.options[ 'hide_preview' ]:
             
-            QP.CallAfter( QP.Unsplit, self._search_preview_split, self._preview_panel )
+            CG.client_controller.CallAfterQtSafe( self, QP.Unsplit, self._search_preview_split, self._preview_panel )
             
         
     
@@ -810,70 +929,6 @@ class Page( QW.QWidget ):
             
         
     
-    def _StartInitialMediaResultsLoad( self ):
-        
-        def qt_code_status( status ):
-            
-            if not self._initialised:
-                
-                self._SetPrettyStatus( status )
-                
-            
-        
-        controller = CG.client_controller
-        initial_hashes = HydrusData.DedupeList( self._initial_hashes )
-        
-        def work_callable():
-            
-            initial_media_results = []
-            
-            for group_of_initial_hashes in HydrusLists.SplitListIntoChunks( initial_hashes, 64 ):
-                
-                more_media_results = controller.Read( 'media_results', group_of_initial_hashes )
-                
-                initial_media_results.extend( more_media_results )
-                
-                status = f'Loading initial files{HC.UNICODE_ELLIPSIS} {HydrusNumbers.ValueRangeToPrettyString( len( initial_media_results ), len( initial_hashes ) )}'
-                
-                controller.CallAfterQtSafe( self, 'setting status bar loading string', qt_code_status, status )
-                
-                QP.CallAfter( qt_code_status, status )
-                
-            
-            hashes_to_media_results = { media_result.GetHash() : media_result for media_result in initial_media_results }
-            
-            sorted_initial_media_results = [ hashes_to_media_results[ hash ] for hash in initial_hashes if hash in hashes_to_media_results ]
-            
-            return sorted_initial_media_results
-            
-        
-        def publish_callable( media_results ):
-            
-            self._SetPrettyStatus( '' )
-            
-            media_panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self, self._page_key, self._page_manager, media_results )
-            
-            self._SwapMediaResultsPanel( media_panel )
-            
-            if len( self._pre_initialisation_media_results ) > 0:
-                
-                media_panel.AddMediaResults( self._page_key, self._pre_initialisation_media_results )
-                
-                self._pre_initialisation_media_results = []
-                
-            
-            # do this 'after' so on a long session setup, it all boots once session loaded
-            CG.client_controller.CallAfterQtSafe( self, 'starting page controller', self._sidebar.Start )
-            
-            self._initialised = True
-            self._initial_hashes = []
-            
-        
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable )
-        
-        job.start()
-        
-    
     def SetSort( self, media_sort, do_sort = True ):
         
         self._sidebar.SetMediaSort( media_sort, do_sort = do_sort )
@@ -883,14 +938,16 @@ class Page( QW.QWidget ):
         
         if self._initial_hashes is not None and len( self._initial_hashes ) > 0:
             
-            self._StartInitialMediaResultsLoad()
+            self._initial_hash_blocks_still_to_load = list( HydrusLists.SplitListIntoChunks( self._initial_hashes, 100 ) )
+            
+            self._DoInitialMediaResultsLoadWork()
             
         else:
             
-            # do this 'after' so on a long session setup, it all boots once session loaded
-            CG.client_controller.CallAfterQtSafe( self, 'starting page controller', self._sidebar.Start )
-            
             self._initialised = True
+            
+            # do this 'after' so on a long session setup, it all boots once session loaded
+            CG.client_controller.CallAfterQtSafe( self, self._sidebar.Start )
             
         
     
@@ -992,7 +1049,7 @@ def ShowReasonsAndPagesConfirmationDialog( win: QW.QWidget, reasons_and_pages, m
                 ClientGUIReviewWindowsQuick.OpenListButtons( win, 'Go To Page', choice_tuples )
                 
             
-            CG.client_controller.CallAfterQtSafe( win, 'creating show pages list', spawn_this_guy )
+            CG.client_controller.CallAfterQtSafe( win, spawn_this_guy )
             
         
         raise HydrusExceptions.VetoException()
@@ -1006,8 +1063,6 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     def __init__( self, parent: QW.QWidget, name ):
         
         super().__init__( parent )
-        
-        self._parent_notebook = parent
         
         direction = CG.client_controller.new_options.GetInteger( 'notebook_tab_alignment' )
         
@@ -1024,7 +1079,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         self._closed_pages = []
         
         CG.client_controller.sub( self, 'RefreshPageName', 'refresh_page_name' )
-        CG.client_controller.sub( self, 'NotifyPageUnclosed', 'notify_page_unclosed' )
+        CG.client_controller.sub( self, 'TryToUncloseThisPage', 'unclose_this_page' )
         CG.client_controller.sub( self, '_UpdateOptions', 'notify_new_options' )
         
         self.currentChanged.connect( self.pageJustChanged )
@@ -1050,42 +1105,6 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         self.installEventFilter( self )
         
     
-    def _RefreshPageNamesAfterDnD( self, page_widget, source_widget ):
-        
-        if hasattr( page_widget, 'GetPageKey' ):
-            
-            CG.client_controller.pub( 'refresh_page_name', page_widget.GetPageKey() )
-            
-        
-        source_notebook = source_widget.parentWidget()
-        
-        if hasattr( source_notebook, 'GetPageKey' ):
-            
-            CG.client_controller.pub( 'refresh_page_name', source_notebook.GetPageKey() )
-            
-        
-    
-    def _UpdateOptions( self ):
-        
-        if CG.client_controller.new_options.GetBoolean( 'elide_page_tab_names' ):
-            
-            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideMiddle )
-            
-        else:
-            
-            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideNone )
-            
-        
-        direction = CG.client_controller.new_options.GetInteger( 'notebook_tab_alignment' )
-        
-        self.setTabPosition( directions_for_notebook_tabs[ direction ] )
-        
-    
-    def _UpdatePreviousPageIndex( self ):
-        
-        self._previous_page_index = self.currentIndex()
-        
-    
     def _ChooseNewPage( self, insertion_index = None ):
         
         self._next_new_page_index = insertion_index
@@ -1102,17 +1121,21 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                     
                     if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_pick_new' ):
                         
-                        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                        message = 'Enter the name for the new page of pages.'
+                        
+                        try:
                             
-                            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                                
-                                new_name = dlg.GetValue()
-                                
-                                new_notebook.SetName( new_name )
-                                
-                                CG.client_controller.pub( 'refresh_page_name', new_notebook.GetPageKey() )
-                                
+                            new_name = ClientGUIDialogsQuick.EnterText( self, message, default = 'pages' )
                             
+                        except HydrusExceptions.CancelledException:
+                            
+                            return
+                            
+                        
+                        new_notebook.SetName( new_name )
+                        
+                        CG.client_controller.pub( 'refresh_page_name', new_notebook.GetPageKey() )
+                        
                     
                 elif page_type == 'page':
                     
@@ -1156,7 +1179,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+        page = typing.cast( Page | PagesNotebook, self.widget( index ) )
         
         if polite:
             
@@ -1212,7 +1235,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
             
         
-        self._UpdatePreviousPageIndex()
+        self.UpdatePreviousPageIndex()
         
         return True
         
@@ -1305,7 +1328,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if 0 <= page_index <= self.count() - 1:
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( page_index ) )
+            page = typing.cast( Page | PagesNotebook, self.widget( page_index ) )
             
             hashes = page.GetHashes()
             
@@ -1336,12 +1359,12 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         for index in closees:
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+            page = typing.cast( Page | PagesNotebook, self.widget( index ) )
             
             hashes.extend( page.GetHashes() )
             
         
-        hashes = HydrusData.DedupeList( hashes )
+        hashes = HydrusLists.DedupeList( hashes )
         
         message = f'This will collect the {HydrusNumbers.ToHumanInt(len(hashes))} files in view in the {HydrusNumbers.ToHumanInt(len(closees))} pages and place them, in current order, in a single new search page.'
         message += '\n\n'
@@ -1368,7 +1391,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return False
             
         
-        page = typing.cast(  typing.Union[ Page, PagesNotebook ], self.widget( index ) )
+        page = typing.cast(  Page | PagesNotebook, self.widget( index ) )
         
         only_changed_page_data = False
         about_to_save = False
@@ -1445,7 +1468,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         for ( page, index ) in ( ( self.widget( index ), index ) for index in range( self.count() ) ):
             
-            page = typing.cast( typing.Union[ Page, PagesNotebook ], page )
+            page = typing.cast( Page | PagesNotebook, page )
             
             if page.GetPageKey() == page_key:
                 
@@ -1477,7 +1500,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self
         
     
-    def _GetPages( self ) -> list[ typing.Union[ Page, "PagesNotebook" ] ]:
+    def _GetPages( self ) -> "list[ Page | PagesNotebook ]":
         
         return [ self.widget( i ) for i in range( self.count() ) ]
         
@@ -1510,17 +1533,24 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return None
         
     
-    def _MovePage( self, page, dest_notebook, insertion_tab_index, follow_dropped_page = False ):
+    def _MovePage( self, page, dest_notebook: "PagesNotebook", insertion_tab_index, follow_dropped_page = False ):
         
-        source_notebook = page.GetParentNotebook()
+        source_notebook = GetParentNotebook( page )
         
-        for ( index, p ) in enumerate( source_notebook._GetPages() ):
+        if source_notebook is None:
+            
+            return
+            
+        
+        source_notebook = typing.cast( PagesNotebook, source_notebook )
+        
+        for ( index, p ) in enumerate( source_notebook.GetPages() ):
             
             if p == page:
                 
                 source_notebook.removeTab( index )
                 
-                source_notebook._UpdatePreviousPageIndex()
+                source_notebook.UpdatePreviousPageIndex()
                 
                 break
                 
@@ -1547,21 +1577,6 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         CG.client_controller.pub( 'refresh_page_name', page.GetPageKey() )
         
     
-    def _MovePages( self, pages, dest_notebook ):
-        
-        insertion_tab_index = dest_notebook.GetNumPagesHeld( only_my_level = True )
-        
-        for page in pages:
-            
-            if page.GetParentNotebook() != dest_notebook:
-                
-                self._MovePage( page, dest_notebook, insertion_tab_index )
-                
-                insertion_tab_index += 1
-                
-            
-        
-    
     def _RefreshPageName( self, index ):
         
         if index == -1 or index > self.count() - 1:
@@ -1577,7 +1592,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         import_page_progress_display = new_options.GetBoolean( 'import_page_progress_display' )
         
-        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
+        page: Page | PagesNotebook = self.widget( index )
         
         if isinstance( page, Page ) and not page.IsInitialised():
             
@@ -1627,6 +1642,13 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             page_name += f' ({num_string})'
             
         
+        if isinstance( page, PagesNotebook ) and CG.client_controller.new_options.GetBoolean( 'decorate_page_of_pages_tab_names' ):
+            
+            name_decorator = CG.client_controller.new_options.GetString( 'page_of_pages_decorator' )
+            
+            page_name += name_decorator
+            
+        
         safe_page_name = ClientGUIFunctions.EscapeMnemonics( page_name )
         
         tab_bar = self.tabBar()
@@ -1651,21 +1673,24 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             return
             
         
-        page: typing.Union[ Page, PagesNotebook ] = self.widget( index )
+        page: Page | PagesNotebook = self.widget( index )
         
         current_name = page.GetName()
         
-        with ClientGUIDialogs.DialogTextEntry( self, 'Enter the new name.', default = current_name, allow_blank = False ) as dlg:
+        message = 'Enter the new name.'
+        
+        try:
             
-            if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                
-                new_name = dlg.GetValue()
-                
-                page.SetName( new_name )
-                
-                CG.client_controller.pub( 'refresh_page_name', page.GetPageKey() )
-                
+            new_name = ClientGUIDialogsQuick.EnterText( self, message, default = current_name )
             
+        except HydrusExceptions.CancelledException:
+            
+            return
+            
+        
+        page.SetName( new_name )
+        
+        CG.client_controller.pub( 'refresh_page_name', page.GetPageKey() )
         
     
     def _SendPageToNewNotebook( self, index ):
@@ -1680,17 +1705,20 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_send' ):
                 
-                with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                message = 'Enter the name for the new page of pages.'
+                
+                try:
                     
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        new_name = dlg.GetValue()
-                        
-                        dest_notebook.SetName( new_name )
-                        
-                        CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
-                        
+                    new_name = ClientGUIDialogsQuick.EnterText( self, message, default = 'pages' )
                     
+                except HydrusExceptions.CancelledException:
+                    
+                    return
+                    
+                
+                dest_notebook.SetName( new_name )
+                
+                CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
                 
             
         
@@ -1720,17 +1748,20 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             if CG.client_controller.new_options.GetBoolean( 'rename_page_of_pages_on_send' ):
                 
-                with ClientGUIDialogs.DialogTextEntry( self, 'Enter the name for the new page of pages.', default = 'pages', allow_blank = False ) as dlg:
+                message = 'Enter the name for the new page of pages.'
+                
+                try:
                     
-                    if dlg.exec() == QW.QDialog.DialogCode.Accepted:
-                        
-                        new_name = dlg.GetValue()
-                        
-                        dest_notebook.SetName( new_name )
-                        
-                        CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
-                        
+                    new_name = ClientGUIDialogsQuick.EnterText( self, message, default = 'pages' )
                     
+                except HydrusExceptions.CancelledException:
+                    
+                    return
+                    
+                
+                dest_notebook.SetName( new_name )
+                
+                CG.client_controller.pub( 'refresh_page_name', dest_notebook.GetPageKey() )
                 
             
         
@@ -1763,7 +1794,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             self.removeTab( page_index )
             
-            self._UpdatePreviousPageIndex()
+            self.UpdatePreviousPageIndex()
             
             self.insertTab( new_page_index, page, name )
             if page_is_selected: self.setCurrentIndex( new_page_index )
@@ -1793,7 +1824,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if click_over_tab:
             
-            page: typing.Union[ Page, PagesNotebook ] = self.widget( tab_index )
+            page: Page | PagesNotebook = self.widget( tab_index )
             
             click_over_page_of_pages = isinstance( page, PagesNotebook )
             
@@ -1976,8 +2007,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             if can_go_right:
                 
-                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages from here to the right', 'Gather all the files from here to the right and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index, 1 )
-                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages to the right', 'Gather all the files from the right of here and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index + 1, 1 )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages from here to the right', 'Gather all the files from here to the right and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index )
+                ClientGUIMenus.AppendMenuItem( collapse_menu, 'pages to the right', 'Gather all the files from the right of here and put them all in a single search page.', self._CollapsePagesToTheRight, tab_index + 1 )
                 
             
             ClientGUIMenus.AppendMenu( menu, collapse_menu, 'collapse to a single page' )
@@ -2107,7 +2138,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             self.removeTab( 0 )
             
-            self._UpdatePreviousPageIndex()
+            self.UpdatePreviousPageIndex()
             
         
         for page in ordered_pages:
@@ -2121,6 +2152,37 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 self.setCurrentIndex( self.count() - 1 )
                 
             
+        
+    
+    def _RefreshPageNamesAfterDnD( self, page_widget, source_widget ):
+        
+        if hasattr( page_widget, 'GetPageKey' ):
+            
+            CG.client_controller.pub( 'refresh_page_name', page_widget.GetPageKey() )
+            
+        
+        source_notebook = GetParentNotebook( source_widget )
+        
+        if source_notebook is not None and hasattr( source_notebook, 'GetPageKey' ):
+            
+            CG.client_controller.pub( 'refresh_page_name', source_notebook.GetPageKey() )
+            
+        
+    
+    def _UpdateOptions( self ):
+        
+        if CG.client_controller.new_options.GetBoolean( 'elide_page_tab_names' ):
+            
+            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideMiddle )
+            
+        else:
+            
+            self.tabBar().setElideMode( QC.Qt.TextElideMode.ElideNone )
+            
+        
+        direction = CG.client_controller.new_options.GetInteger( 'notebook_tab_alignment' )
+        
+        self.setTabPosition( directions_for_notebook_tabs[ direction ] )
         
     
     def AppendGUISession( self, session: ClientGUISession.GUISessionContainer ):
@@ -2211,7 +2273,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             statement = ConvertReasonsAndPagesToStatement( reasons_and_pages )
             
-            message = 'Are you sure you want to close this page of pages?'
+            message = f'Close "{self.GetName()}"?'
             message += '\n' * 2
             message += statement
             
@@ -2223,7 +2285,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if not user_was_asked and CG.client_controller.new_options.GetBoolean( 'confirm_all_page_closes' ) and not for_session_close:
             
-            message = 'Are you sure you want to close this page of pages?'
+            message = f'Close "{self.GetName()}"?'
             
             num_pages_held = self.GetNumPagesHeld()
             
@@ -2480,7 +2542,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             hashes.extend( page.GetHashes() )
             
         
-        hashes = HydrusData.DedupeList( hashes )
+        hashes = HydrusLists.DedupeList( hashes )
         
         return hashes
         
@@ -2495,7 +2557,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self._name
         
     
-    def GetNameForMenu( self ) -> str:
+    def GetNameForMenu( self, elide = True ) -> str:
         
         name_for_menu = self.GetName()
         
@@ -2511,7 +2573,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             name_for_menu = '{} - {}'.format( name_for_menu, HydrusNumbers.ValueRangeToPrettyString( num_value, num_range ) )
             
         
-        return HydrusText.ElideText( name_for_menu, 32, elide_center = True )
+        return HydrusText.ElideText( name_for_menu, 32, elide_center = True ) if elide else name_for_menu
         
     
     def GetNumFileSummary( self ):
@@ -2649,7 +2711,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 file_import_options = urls_import.GetFileImportOptions()
                 
-                if not file_import_options.IsDefault() and file_import_options.GetDestinationLocationContext() == destination_location_context:
+                if not file_import_options.IsDefault() and file_import_options.GetLocationImportOptions().GetDestinationLocationContext() == destination_location_context:
                     
                     good_url_import_pages.append( url_import_page )
                     
@@ -2698,7 +2760,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
     
-    def GetPageFromPageKey( self, page_key ) -> typing.Optional[ Page ]:
+    def GetPageFromPageKey( self, page_key ) -> "Page | PagesNotebook | None":
         
         if self._page_key == page_key:
             
@@ -2739,11 +2801,6 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
         return page_keys
-        
-    
-    def GetParentNotebook( self ):
-        
-        return self._parent_notebook
         
     
     def GetPages( self ):
@@ -3237,7 +3294,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return True
         
     
-    def NewPage( self, page_manager, initial_hashes = None, forced_insertion_index = None, on_deepest_notebook = False, select_page = True ):
+    def NewPage( self, page_manager, initial_hashes = None, forced_insertion_index = None, on_deepest_notebook = False, select_page = True ) -> Page:
         
         current_page = self.currentWidget()
         
@@ -3378,29 +3435,9 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         select_page = True
     ):
         
-        if initial_hashes is None:
-            
-            initial_hashes = []
-            
-        
-        start_system_hash_locked = False
-        
         if initial_predicates is None:
             
-            if len( initial_hashes ) > 0:
-                
-                start_system_hash_locked = True
-                initial_predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HASH, value = ( tuple( initial_hashes ), 'sha256' ) ) ]
-                
-            else:
-                
-                initial_predicates = []
-                
-            
-        
-        if page_name is None:
-            
-            page_name = 'files'
+            initial_predicates = []
             
         
         new_options = CG.client_controller.new_options
@@ -3414,14 +3451,61 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if location_context.IsAllKnownFiles() and tag_service_key == CC.COMBINED_TAG_SERVICE_KEY:
             
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
             
         
         tag_context = ClientSearchTagContext.TagContext( service_key = tag_service_key )
         
         file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context, predicates = initial_predicates )
         
+        return self.NewPageQueryFileSearchContext(
+            file_search_context,
+            initial_hashes = initial_hashes,
+            initial_sort = initial_sort,
+            initial_collect = initial_collect,
+            page_name = page_name,
+            on_deepest_notebook = on_deepest_notebook,
+            do_sort = do_sort,
+            forced_insertion_index = forced_insertion_index,
+            select_page = select_page
+        )
+        
+    
+    def NewPageQueryFileSearchContext(
+        self,
+        file_search_context: ClientSearchFileSearchContext.FileSearchContext,
+        initial_hashes = None,
+        initial_sort = None,
+        initial_collect = None,
+        page_name = None,
+        on_deepest_notebook = False,
+        do_sort = False,
+        forced_insertion_index = None,
+        select_page = True
+    ):
+        
+        if initial_hashes is None:
+            
+            initial_hashes = []
+            
+        
+        if page_name is None:
+            
+            page_name = 'files'
+            
+        
+        start_system_hash_locked = False
+        
         if len( initial_hashes ) > 0:
+            
+            if len( file_search_context.GetPredicates() ) == 0:
+                
+                start_system_hash_locked = True
+                
+                predicates = [ ClientSearchPredicate.Predicate( predicate_type = ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HASH, value = ( tuple( initial_hashes ), 'sha256' ) ) ]
+                
+                file_search_context.SetPredicates( predicates )
+                
             
             # this is important, it is consulted deeper to determine query refresh on start!
             file_search_context.SetComplete()
@@ -3506,7 +3590,15 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return page
         
     
-    def NotifyPageUnclosed( self, page ):
+    def NotifyUnclosed( self ):
+        
+        for page in self._GetPages():
+            
+            page.NotifyUnclosed()
+            
+        
+    
+    def TryToUncloseThisPage( self, page ):
         
         page_key = page.GetPageKey()
         
@@ -3525,6 +3617,8 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 CG.client_controller.pub( 'refresh_page_name', page.GetPageKey() )
                 
+                page.NotifyUnclosed()
+                
                 self._closed_pages.remove( ( index, closed_page_key ) )
                 
                 break
@@ -3534,7 +3628,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageHidden( self ):
         
-        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
+        result: Page | PagesNotebook = self.currentWidget()
         
         if result is not None:
             
@@ -3549,19 +3643,20 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if old_selection != -1 and old_selection < self.count():
             
-            old_page: typing.Union[ Page, PagesNotebook ] = self.widget( old_selection )
+            old_page: Page | PagesNotebook = self.widget( old_selection )
             
             old_page.PageHidden()
             
         
         if selection != -1:
             
-            new_page: typing.Union[ Page, PagesNotebook ] = self.widget( selection )
+            new_page: Page | PagesNotebook = self.widget( selection )
             
             new_page.PageShown()
             
         
         CG.client_controller.gui.RefreshStatusBar()
+        CG.client_controller.gui.NotifyPageJustChanged()
         
         self._previous_page_index = index
         
@@ -3570,7 +3665,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
     
     def PageShown( self ):
         
-        result: typing.Union[ Page, PagesNotebook ] = self.currentWidget()
+        result: Page | PagesNotebook = self.currentWidget()
         
         if result is not None:
             
@@ -3586,7 +3681,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         if page is None:
             
-            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+            location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
             
             page = self.NewPageQuery( location_context, initial_hashes = hashes, page_name = page_name, on_deepest_notebook = True, select_page = False )
             
@@ -3687,7 +3782,47 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
     
+    def UpdatePreviousPageIndex( self ):
+        
+        self._previous_page_index = self.currentIndex()
+        
+    
     def REPEATINGPageUpdate( self ):
         
         pass
         
+    
+
+class PagesHistory( collections.OrderedDict ):
+    
+    def __init__( self ):
+        
+        collections.OrderedDict.__init__( self )
+        
+    
+    def AddPage( self, page: Page ):
+        
+        page_key = page.GetPageKey()
+        page_name = page.GetNameForMenu( elide = False )
+        
+        if page_key in self:
+            
+            self.pop( page_key )
+            
+        
+        self[ page_key ] = page_name
+        
+    
+    def CleanPages( self, existing_page_keys: set[ bytes ] ):
+        
+        for page_key in set( self.keys() ).difference( existing_page_keys ):
+            
+            self.pop( page_key )
+            
+        
+    
+    def GetHistory( self ):
+        
+        return list( self.items() )
+        
+    

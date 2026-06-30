@@ -19,6 +19,7 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientSerialisable
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
+from hydrus.client.gui import ClientGUIDialogsFiles
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -221,7 +222,7 @@ class HydrusListItemModel( QC.QAbstractItemModel ):
         return self._column_list_type
         
     
-    def GetData( self, indices: typing.Optional[ collections.abc.Collection[ int ] ] = None ):
+    def GetData( self, indices: collections.abc.Collection[ int ] | None = None ):
         
         if indices is None:
             
@@ -430,11 +431,16 @@ class HydrusListItemModel( QC.QAbstractItemModel ):
         
         sort_data_has_changed = False
         
+        if len( datas ) == 0:
+            
+            return sort_data_has_changed 
+            
+        
         try:
             
             existing_sort_logical_index = CGLC.column_list_column_type_logical_position_lookup[ self._column_list_type ][ self._sort_column_type ]
             
-        except:
+        except Exception as e:
             
             existing_sort_logical_index = 0
             
@@ -504,7 +510,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
     
     columnListContentsChanged = QC.Signal()
     
-    def __init__( self, parent, height_num_chars, model: HydrusListItemModel, use_simple_delete = False, delete_key_callback = None, can_delete_callback = None, activation_callback = None, column_types_to_name_overrides = None ):
+    def __init__( self, parent, min_height_num_chars: int, model: HydrusListItemModel, use_simple_delete = False, delete_key_callback = None, can_delete_callback = None, activation_callback = None, column_types_to_name_overrides = None, max_height_num_chars = None ):
         
         super().__init__( parent )
         
@@ -527,8 +533,14 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         self.setRootIsDecorated( False )
         self.setEditTriggers( QW.QAbstractItemView.EditTrigger.NoEditTriggers )
         
-        self._initial_height_num_chars = height_num_chars
-        self._forced_height_num_chars = None
+        self._min_height_num_chars = min_height_num_chars
+        
+        if max_height_num_chars is None:
+            
+            max_height_num_chars = min_height_num_chars
+            
+        
+        self._max_height_num_chars = max_height_num_chars
         
         self._has_initialised_size = False
         
@@ -608,7 +620,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         self.header().setContextMenuPolicy( QC.Qt.ContextMenuPolicy.CustomContextMenu )
         self.header().customContextMenuRequested.connect( self._ShowHeaderMenu )
         
-        CG.client_controller.CallAfterQtSafe( self, 'initialising multi-column list widths', self._InitialiseColumnWidths )
+        CG.client_controller.CallAfterQtSafe( self, self._InitialiseColumnWidths )
         
         CG.client_controller.sub( self, 'NotifySettingsUpdated', 'reset_all_listctrl_status' )
         CG.client_controller.sub( self, 'NotifySettingsUpdated', 'reset_listctrl_status' )
@@ -742,9 +754,29 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         return height
         
     
-    def _GetSelectedIndices( self ) -> list[ int ]:
+    def _GetSelectedIndicesIterator( self ) -> typing.Iterator[ int ]:
         
-        return sorted( ( index.row() for index in self.selectionModel().selectedRows() ) )
+        # selectedRows() is quite expensive, so let's peer into the underlying gubbins
+        
+        selection = self.selectionModel().selection()
+        
+        selected_row_ranges = []
+        
+        # this guy is iterable (it is a subclass of QList), trust me linterbros
+        for selection_range in selection:
+            
+            typing.cast( QC.QItemSelectionRange, selection_range )
+            
+            selected_row_ranges.append( ( selection_range.top(), selection_range.bottom() + 1 ) )
+            
+        
+        # we are assuming no overlapping ranges because we are in rowSelection mode!
+        
+        selected_row_ranges.sort()
+        
+        selected_rows_iterator = ( row_index for row_indices in ( range( top, bottom ) for ( top, bottom ) in selected_row_ranges ) for row_index in row_indices )
+        
+        return selected_rows_iterator
         
     
     def _PreserveSelectionRestore( self ):
@@ -838,6 +870,8 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         
         self.columnListContentsChanged.emit()
         
+        self.updateGeometry()
+        
     
     def AddRowsMenuCallable( self, menu_callable ):
         
@@ -856,6 +890,8 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         self.columnListContentsChanged.emit()
         
         self._has_done_deletes = True
+        
+        self.updateGeometry()
         
     
     def DeleteSelected( self ):
@@ -916,22 +952,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
     
     def EventShowMenu( self ):
         
-        QP.CallAfter( self._ShowRowsMenu )
-        
-    
-    def ForceHeight( self, rows ):
-        
-        self._forced_height_num_chars = rows
-        
-        self.updateGeometry()
-        
-        # +2 for the header row and * 1.25 for magic rough text-to-rowheight conversion
-        
-        #existing_min_width = self.minimumWidth()
-        
-        #( width_gumpf, ideal_client_height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 20, int( ( ideal_rows + 2 ) * 1.25 ) ) )
-        
-        #QP.SetMinClientSize( self, ( existing_min_width, ideal_client_height ) )
+        CG.client_controller.CallAfterQtSafe( self, self._ShowRowsMenu )
         
     
     def count( self ):
@@ -943,7 +964,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         
         if only_selected:
             
-            indices = self._GetSelectedIndices()
+            indices = list( self._GetSelectedIndicesIterator() )
             
             return self.model().GetData( indices = indices )
             
@@ -953,13 +974,13 @@ class BetterListCtrlTreeView( QW.QTreeView ):
             
         
     
-    def GetTopSelectedData( self ) -> typing.Optional[ typing.Any ]:
+    def GetTopSelectedData( self ) -> typing.Any | None:
         
-        indices = self._GetSelectedIndices()
+        indices_iter = self._GetSelectedIndicesIterator()
         
-        if len( indices ) > 0:
+        try:
             
-            top_index = min( indices )
+            top_index = next( indices_iter )
             
             result = self.model().GetData( ( top_index, ) )
             
@@ -967,6 +988,10 @@ class BetterListCtrlTreeView( QW.QTreeView ):
                 
                 return result[ 0 ]
                 
+            
+        except StopIteration:
+            
+            return None
             
         
         return None
@@ -986,12 +1011,26 @@ class BetterListCtrlTreeView( QW.QTreeView ):
     
     def HasOneSelected( self ):
         
-        return len( self.selectionModel().selectedRows() ) == 1
+        rows_seen = set()
+        
+        indices_iter = self._GetSelectedIndicesIterator()
+        
+        for index in indices_iter:
+            
+            rows_seen.add( index )
+            
+            if len( rows_seen ) > 1:
+                
+                break
+                
+            
+        
+        return len( rows_seen ) == 1
         
     
     def HasSelected( self ):
         
-        return len( self.selectionModel().selectedRows() ) > 0
+        return self.selectionModel().hasSelection()
         
     
     def minimumSizeHint( self ):
@@ -1009,14 +1048,10 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         
         width += FRAMEWIDTH_PADDING
         
-        if self._forced_height_num_chars is None:
-            
-            num_rows = 4
-            
-        else:
-            
-            num_rows = self._forced_height_num_chars
-            
+        num_rows = self._min_height_num_chars
+        
+        #num_rows = max( self._min_height_num_chars, self.model().rowCount() )
+        #num_rows = min( num_rows, self._max_height_num_chars )
         
         data_area_height = self._GetRowHeightEstimate() * num_rows
         
@@ -1223,14 +1258,8 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         
         #
         
-        if self._forced_height_num_chars is None:
-            
-            num_rows = self._initial_height_num_chars
-            
-        else:
-            
-            num_rows = self._forced_height_num_chars
-            
+        num_rows = max( self._min_height_num_chars, self.model().rowCount() )
+        num_rows = min( num_rows, self._max_height_num_chars )
         
         data_area_height = self._GetRowHeightEstimate() * num_rows
         
@@ -1246,7 +1275,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         return size_hint
         
     
-    def ScrollToData( self, data: object ):
+    def ScrollToData( self, data: object, do_focus = True ):
         
         data = QP.ListsToTuples( data )
         
@@ -1256,7 +1285,10 @@ class BetterListCtrlTreeView( QW.QTreeView ):
             
             self.scrollTo( model_index, hint = QW.QAbstractItemView.ScrollHint.PositionAtCenter )
             
-            self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
+            if do_focus:
+                
+                self.setFocus( QC.Qt.FocusReason.OtherFocusReason )
+                
             
         
     
@@ -1326,12 +1358,14 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         
         self.columnListContentsChanged.emit()
         
+        self.updateGeometry()
+        
     
-    def SetNonDupeName( self, obj: object ):
+    def SetNonDupeName( self, obj: object, do_casefold = False ):
         
         current_names = { o.GetName() for o in self.GetData() if o is not obj }
 
-        HydrusSerialisable.SetNonDupeName( obj, current_names )
+        HydrusSerialisable.SetNonDupeName( obj, current_names, do_casefold = do_casefold )
         
     
     def ShowDeleteSelectedDialog( self ):
@@ -1378,7 +1412,7 @@ class BetterListCtrlTreeView( QW.QTreeView ):
             
         
     
-    def UpdateDatas( self, datas: typing.Optional[ collections.abc.Iterable[ object ] ] = None, check_for_changed_sort_data = False ):
+    def UpdateDatas( self, datas: collections.abc.Iterable[ object ] | None = None, check_for_changed_sort_data = False ):
         
         if datas is not None:
             
@@ -1387,6 +1421,11 @@ class BetterListCtrlTreeView( QW.QTreeView ):
         else:
             
             datas = self.GetData()
+            
+        
+        if len( datas ) == 0:
+            
+            return False
             
         
         sort_data_has_changed = self.model().UpdateDatas( datas, check_for_changed_sort_data = check_for_changed_sort_data )
@@ -1407,7 +1446,7 @@ class BetterListCtrlPanel( QW.QWidget ):
         
         self._buttonbox = QP.HBoxLayout()
         
-        self._listctrl: typing.Optional[ BetterListCtrlTreeView ] = None
+        self._listctrl: BetterListCtrlTreeView | None = None
         
         self._permitted_object_types = []
         self._import_add_callable = lambda x: None
@@ -1525,7 +1564,7 @@ class BetterListCtrlPanel( QW.QWidget ):
             
             json = export_object.DumpToString()
             
-            with QP.FileDialog( self, 'select where to save the json file', default_filename = 'export.json', wildcard = 'JSON (*.json)', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as f_dlg:
+            with ClientGUIDialogsFiles.FileDialog( self, 'select where to save the json file', default_filename = 'export.json', wildcard = 'JSON (*.json)', acceptMode = QW.QFileDialog.AcceptMode.AcceptSave, fileMode = QW.QFileDialog.FileMode.AnyFile ) as f_dlg:
                 
                 if f_dlg.exec() == QW.QDialog.DialogCode.Accepted:
                     
@@ -1603,7 +1642,7 @@ class BetterListCtrlPanel( QW.QWidget ):
             
         
     
-    def _GetExportObject( self ) -> typing.Optional[ HydrusSerialisable.SerialisableBase ]:
+    def _GetExportObject( self ) -> HydrusSerialisable.SerialisableBase | None:
         
         to_export = HydrusSerialisable.SerialisableList()
         
@@ -1718,7 +1757,7 @@ class BetterListCtrlPanel( QW.QWidget ):
     
     def _ImportFromJSON( self ):
         
-        with QP.FileDialog( self, 'select the json or jsons with the serialised data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'JSON (*.json)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the json or jsons with the serialised data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'JSON (*.json)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1733,7 +1772,7 @@ class BetterListCtrlPanel( QW.QWidget ):
     
     def _ImportFromPNG( self ):
         
-        with QP.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
+        with ClientGUIDialogsFiles.FileDialog( self, 'select the png or pngs with the encoded data', acceptMode = QW.QFileDialog.AcceptMode.AcceptOpen, fileMode = QW.QFileDialog.FileMode.ExistingFiles, wildcard = 'PNG (*.png)' ) as dlg:
             
             if dlg.exec() == QW.QDialog.DialogCode.Accepted:
                 
@@ -1932,9 +1971,9 @@ class BetterListCtrlPanel( QW.QWidget ):
             
         
     
-    def AddBitmapButton( self, bitmap, clicked_func, tooltip = None, enabled_only_on_selection = False, enabled_only_on_single_selection = False, enabled_check_func = None ):
+    def AddIconButton( self, icon: QG.QIcon, clicked_func, tooltip = None, enabled_only_on_selection = False, enabled_only_on_single_selection = False, enabled_check_func = None ):
         
-        button = ClientGUICommon.BetterBitmapButton( self, bitmap, clicked_func )
+        button = ClientGUICommon.IconButton( self, icon, clicked_func )
         
         if tooltip is not None:
             
@@ -1964,15 +2003,15 @@ class BetterListCtrlPanel( QW.QWidget ):
     
     def AddDefaultsButton( self, defaults_callable, add_callable ):
         
-        import_menu_items = []
+        import_menu_template_items = []
         
         all_call = HydrusData.Call( self._AddAllDefaults, defaults_callable, add_callable )
         some_call = HydrusData.Call( self._AddSomeDefaults, defaults_callable, add_callable )
         
-        import_menu_items.append( ( 'normal', 'add them all', 'Load all the defaults.', all_call ) )
-        import_menu_items.append( ( 'normal', 'select from a list', 'Load some of the defaults.', some_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'add them all', 'Load all the defaults.', all_call ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'select from a list', 'Load some of the defaults.', some_call ) )
         
-        self.AddMenuButton( 'add defaults', import_menu_items )
+        self.AddMenuButton( 'add defaults', import_menu_template_items )
         
     
     def AddDeleteButton( self, enabled_check_func = None ):
@@ -1995,11 +2034,11 @@ class BetterListCtrlPanel( QW.QWidget ):
         self._import_add_callable = import_add_callable
         self._custom_get_callable = custom_get_callable
         
-        export_menu_items = []
+        export_menu_template_items = []
         
-        export_menu_items.append( ( 'normal', 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
-        export_menu_items.append( ( 'normal', 'to json file', 'Serialise the selected data and export to a json file.', self._ExportToJSON ) )
-        export_menu_items.append( ( 'normal', 'to png file', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to clipboard', 'Serialise the selected data and put it on your clipboard.', self._ExportToClipboard ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to json file', 'Serialise the selected data and export to a json file.', self._ExportToJSON ) )
+        export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to png file', 'Serialise the selected data and encode it to an image file you can easily share with other hydrus users.', self._ExportToPNG ) )
         
         if self._custom_get_callable is None:
             
@@ -2007,18 +2046,18 @@ class BetterListCtrlPanel( QW.QWidget ):
             
             if all_objs_are_named:
                 
-                export_menu_items.append( ( 'normal', 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
+                export_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'to pngs', 'Serialise the selected data and encode it to multiple image files you can easily share with other hydrus users.', self._ExportToPNGs ) )
                 
             
         
-        import_menu_items = []
+        import_menu_template_items = []
         
-        import_menu_items.append( ( 'normal', 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
-        import_menu_items.append( ( 'normal', 'from json files', 'Load a data from .json files.', self._ImportFromJSON ) )
-        import_menu_items.append( ( 'normal', 'from png files (you can also drag and drop pngs onto this list)', 'Load a data from an encoded png.', self._ImportFromPNG ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from clipboard', 'Load a data from text in your clipboard.', self._ImportFromClipboard ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from json files', 'Load a data from .json files.', self._ImportFromJSON ) )
+        import_menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'from png files (you can also drag and drop pngs onto this list)', 'Load a data from an encoded png.', self._ImportFromPNG ) )
         
-        self.AddMenuButton( 'export', export_menu_items, enabled_only_on_selection = True )
-        self.AddMenuButton( 'import', import_menu_items )
+        self.AddMenuButton( 'export', export_menu_template_items, enabled_only_on_selection = True )
+        self.AddMenuButton( 'import', import_menu_template_items )
         
         if and_duplicate_button:
             
@@ -2029,9 +2068,20 @@ class BetterListCtrlPanel( QW.QWidget ):
         self.installEventFilter( ClientGUIDragDrop.FileDropTarget( self, filenames_callable = self.ImportFromDragDrop ) )
         
     
-    def AddMenuButton( self, label, menu_items, enabled_only_on_selection = False, enabled_check_func = None ):
+    def AddMenuButton( self, label, menu_template_items: list[ ClientGUIMenuButton.MenuTemplateItem ], enabled_only_on_selection = False, enabled_check_func = None ):
         
-        button = ClientGUIMenuButton.MenuButton( self, label, menu_items )
+        button = ClientGUIMenuButton.MenuButton( self, label, menu_template_items )
+        
+        self._AddButton( button, enabled_only_on_selection = enabled_only_on_selection, enabled_check_func = enabled_check_func )
+        
+        self._UpdateButtons()
+        
+    
+    def AddMenuIconButton( self, icon: QG.QIcon, tooltip: str, menu_template_items: list[ ClientGUIMenuButton.MenuTemplateItem ], enabled_only_on_selection = False, enabled_check_func = None ):
+        
+        button = ClientGUIMenuButton.MenuIconButton( self, icon, menu_template_items )
+        
+        button.setToolTip( ClientGUIFunctions.WrapToolTip( tooltip ) )
         
         self._AddButton( button, enabled_only_on_selection = enabled_only_on_selection, enabled_check_func = enabled_check_func )
         
@@ -2048,17 +2098,65 @@ class BetterListCtrlPanel( QW.QWidget ):
         QP.AddToLayout( self._buttonbox, window, CC.FLAGS_CENTER_PERPENDICULAR )
         
     
-    def EventContentChanged( self, parent, first, last ):
+    def ImportFromDragDrop( self, paths: list[ str ] ):
         
-        if not self._listctrl:
-            
-            return
-            
+        from hydrus.client.gui import ClientGUIDialogsQuick
         
-        self._UpdateButtons()
+        message = 'Try to import the {} dropped files to this list? I am expecting json or png files.'.format( HydrusNumbers.ToHumanInt( len( paths ) ) )
+        
+        result = ClientGUIDialogsQuick.GetYesNo( self, message )
+        
+        if result == QW.QDialog.DialogCode.Accepted:
+            
+            def list_test( path: str ):
+                
+                return path.endswith( '.png' )
+                
+            
+            ( jsons, pngs ) = HydrusLists.PartitionIteratorIntoLists( list_test, paths )
+            
+            self._ImportPNGs( pngs )
+            self._ImportJSONs( jsons )
+            
+            self._listctrl.Sort()
+            
         
     
-    def EventSelectionChanged( self ):
+    def NewButtonRow( self ):
+        
+        self._buttonbox = QP.HBoxLayout()
+        
+        QP.AddToLayout( self._vbox, self._buttonbox, CC.FLAGS_ON_RIGHT )
+        
+    
+    def SetListCtrl( self, listctrl: BetterListCtrlTreeView, minimum_expanding = False ):
+        
+        self._listctrl = listctrl
+        
+        QP.AddToLayout( self._vbox, self._listctrl, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        if minimum_expanding:
+            
+            size_policy = self._listctrl.sizePolicy()
+            
+            size_policy.setVerticalPolicy( QW.QSizePolicy.Policy.MinimumExpanding )
+            
+            self._listctrl.setSizePolicy( size_policy )
+            
+        
+        QP.AddToLayout( self._vbox, self._buttonbox, CC.FLAGS_ON_RIGHT )
+        
+        self.setLayout( self._vbox )
+        
+        self._listctrl.selectionModel().selectionChanged.connect( self.UpdateButtons )
+        
+        self._listctrl.model().rowsInserted.connect( self.UpdateButtons )
+        self._listctrl.model().rowsRemoved.connect( self.UpdateButtons )
+        
+        self._listctrl.columnListContentsChanged.connect( self.UpdateButtons )
+        
+    
+    def UpdateButtons( self ):
         
         if not self._listctrl:
             
@@ -2075,48 +2173,3 @@ class BetterListCtrlPanel( QW.QWidget ):
             
         
     
-    def ImportFromDragDrop( self, paths ):
-        
-        from hydrus.client.gui import ClientGUIDialogsQuick
-        
-        message = 'Try to import the {} dropped files to this list? I am expecting json or png files.'.format( HydrusNumbers.ToHumanInt( len( paths ) ) )
-        
-        result = ClientGUIDialogsQuick.GetYesNo( self, message )
-        
-        if result == QW.QDialog.DialogCode.Accepted:
-            
-            ( jsons, pngs ) = HydrusData.PartitionIteratorIntoLists( lambda path: path.endswith( '.png' ), paths )
-            
-            self._ImportPNGs( pngs )
-            self._ImportJSONs( jsons )
-            
-            self._listctrl.Sort()
-            
-        
-    
-    def NewButtonRow( self ):
-        
-        self._buttonbox = QP.HBoxLayout()
-        
-        QP.AddToLayout( self._vbox, self._buttonbox, CC.FLAGS_ON_RIGHT )
-        
-    
-    def SetListCtrl( self, listctrl: BetterListCtrlTreeView ):
-        
-        self._listctrl = listctrl
-        
-        QP.AddToLayout( self._vbox, self._listctrl, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
-        QP.AddToLayout( self._vbox, self._buttonbox, CC.FLAGS_ON_RIGHT )
-        
-        self.setLayout( self._vbox )
-        
-        self._listctrl.selectionModel().selectionChanged.connect( self.EventSelectionChanged )
-        
-        self._listctrl.model().rowsInserted.connect( self.EventContentChanged )
-        self._listctrl.model().rowsRemoved.connect( self.EventContentChanged )
-        
-    
-    def UpdateButtons( self ):
-        
-        self._UpdateButtons()
-        

@@ -1,11 +1,13 @@
 import collections
 import collections.abc
 import itertools
-import typing
 
 from hydrus.core import HydrusConstants as HC
-from hydrus.core import HydrusPaths
 from hydrus.core import HydrusData
+from hydrus.core import HydrusLists
+from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusPaths
+from hydrus.core import HydrusTime
 from hydrus.core.files.images import HydrusImageHandling
 
 from hydrus.client import ClientApplicationCommand as CAC
@@ -13,9 +15,56 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientPaths
+from hydrus.client import ClientThreading
 from hydrus.client.media import ClientMedia
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.search import ClientSearchPredicate
+
+def CommitContentUpdatePackagesAsync( title: str, content_update_packages: list[ ClientContentUpdates.ContentUpdatePackage ] ):
+    
+    def do_it():
+        
+        have_pubbed_job = False
+        cumulative_weight = 0
+        
+        job_status = ClientThreading.JobStatus( cancellable = True )
+        
+        job_status.SetStatusTitle( title )
+        
+        start_time = HydrusTime.GetNowFloat()
+        
+        num_to_do = len( content_update_packages )
+        
+        for ( num_done, content_update_package ) in enumerate( content_update_packages ):
+            
+            job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
+            job_status.SetGauge( num_done, num_to_do )
+            
+            if job_status.IsCancelled():
+                
+                break
+                
+            
+            if not have_pubbed_job:
+                
+                cumulative_weight += content_update_package.GetWeight()
+                
+                if ( HydrusTime.TimeHasPassedFloat( start_time + 1 ) or cumulative_weight > 1000 ):
+                    
+                    have_pubbed_job = True
+                    
+                    CG.client_controller.pub( 'message', job_status )
+                    
+                
+            
+            CG.client_controller.WriteSynchronous( 'content_updates', content_update_package )
+            
+        
+        job_status.FinishAndDismiss()
+        
+    
+    CG.client_controller.CallToThread( do_it )
+    
 
 def GetLocalMediaPaths( medias: collections.abc.Collection[ ClientMedia.Media ] ):
     
@@ -214,12 +263,18 @@ def GetLocalFileActionServiceKeys( media: collections.abc.Collection[ ClientMedi
     
     local_media_file_service_keys = set( CG.client_controller.services_manager.GetServiceKeys( ( HC.LOCAL_FILE_DOMAIN, ) ) )
     
-    local_duplicable_to_file_service_keys = set()
-    local_moveable_from_and_to_file_service_keys = set()
+    local_duplicable_to_file_service_keys = collections.Counter()
+    local_moveable_from_and_to_file_service_keys = collections.Counter()
+    local_mergable_from_and_to_file_service_keys = collections.Counter()
     
     for m in media:
         
         locations_manager = m.GetLocationsManager()
+        
+        if CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY not in locations_manager.GetCurrent():
+            
+            continue
+            
         
         current = locations_manager.GetCurrent()
         
@@ -234,18 +289,21 @@ def GetLocalFileActionServiceKeys( media: collections.abc.Collection[ ClientMedi
                 
                 if len( can_send_from ) > 0:
                     
-                    # can_send_from does not include trash. we won't say 'move from trash to blah' since that's a little complex. we'll just say 'add to blah' in that case I think
-                    
                     local_moveable_from_and_to_file_service_keys.update( list( itertools.product( can_send_from, can_send_to ) ) )
                     
                 
             
+            if len( can_send_from ) > 0:
+                
+                local_mergable_from_and_to_file_service_keys.update( [ ( f, t ) for ( f, t ) in itertools.product( can_send_from, local_media_file_service_keys ) if f != t ] )
+                
+            
         
     
-    return ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys )
+    return ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, local_mergable_from_and_to_file_service_keys )
     
 
-def OpenExternally( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bool:
+def OpenExternally( media: ClientMedia.MediaSingleton | None ) -> bool:
     
     if media is None:
         
@@ -269,7 +327,7 @@ def OpenExternally( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bo
     return True
     
 
-def OpenFileLocation( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bool:
+def OpenFileLocation( media: ClientMedia.MediaSingleton | None ) -> bool:
     
     if media is None:
         
@@ -291,7 +349,7 @@ def OpenFileLocation( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> 
     return True
     
 
-def OpenInWebBrowser( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bool:
+def OpenInWebBrowser( media: ClientMedia.MediaSingleton | None ) -> bool:
     
     if media is None:
         
@@ -312,7 +370,7 @@ def OpenInWebBrowser( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> 
     
     return True
     
-def OpenNativeFileProperties( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bool:
+def OpenNativeFileProperties( media: ClientMedia.MediaSingleton | None ) -> bool:
     
     if media is None:
         
@@ -334,7 +392,7 @@ def OpenNativeFileProperties( media: typing.Optional[ ClientMedia.MediaSingleton
     return True
 
 
-def OpenFileWithDialog( media: typing.Optional[ ClientMedia.MediaSingleton ] ) -> bool:
+def OpenFileWithDialog( media: ClientMedia.MediaSingleton | None ) -> bool:
     
     if media is None:
         
@@ -425,7 +483,7 @@ def UndeleteFiles( hashes ):
     
     local_file_service_keys = CG.client_controller.services_manager.GetServiceKeys( ( HC.LOCAL_FILE_DOMAIN, ) )
     
-    for chunk_of_hashes in HydrusData.SplitIteratorIntoChunks( hashes, 64 ):
+    for chunk_of_hashes in HydrusLists.SplitIteratorIntoChunks( hashes, 64 ):
         
         media_results = CG.client_controller.Read( 'media_results', chunk_of_hashes )
         

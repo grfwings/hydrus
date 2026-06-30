@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtWidgets as QW
 
 from hydrus.core import HydrusConstants as HC
@@ -27,9 +25,12 @@ class LocalFilesSubPanel( QW.QWidget ):
         self._add_or_move_action = ClientGUICommon.BetterChoice( self )
         
         self._add_or_move_action.addItem( 'add to', HC.CONTENT_UPDATE_ADD )
-        self._add_or_move_action.addItem( 'move to', HC.CONTENT_UPDATE_MOVE )
+        self._add_or_move_action.addItem( 'move to (even if already in destination)', HC.CONTENT_UPDATE_MOVE_MERGE )
+        self._add_or_move_action.addItem( 'move to (if not already in destination)', HC.CONTENT_UPDATE_MOVE )
         
         self._add_or_move_action.SetValue( HC.CONTENT_UPDATE_ADD )
+        tt = 'A "move (if not already in destination)" is a strict move: it will not "move" files that are already in the destination; a "move (even if already in destination)" is a softer "merge": it will ensure everything ends up in the destination and then clears all items from the source.'
+        self._add_or_move_action.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
         self._service_keys = ClientGUICommon.BetterChoice( self )
         
@@ -178,7 +179,7 @@ class RatingLikeSubPanel( QW.QWidget ):
         return CAC.ApplicationCommand( CAC.APPLICATION_COMMAND_TYPE_CONTENT, ( service_key, HC.CONTENT_TYPE_RATINGS, action, value ) )
         
     
-    def SetValue( self, action: int, service_key: bytes, rating: typing.Optional[ float ] ):
+    def SetValue( self, action: int, service_key: bytes, rating: float | None ):
         
         self._flip_or_set_action.SetValue( action )
         
@@ -313,7 +314,7 @@ class RatingNumericalSubPanel( QW.QWidget ):
         return CAC.ApplicationCommand( CAC.APPLICATION_COMMAND_TYPE_CONTENT, ( service_key, HC.CONTENT_TYPE_RATINGS, action, rating ) )
         
     
-    def SetValue( self, action: int, service_key: bytes, rating: typing.Optional[ float ] ):
+    def SetValue( self, action: int, service_key: bytes, rating: float | None ):
         
         self._flip_or_set_action.SetValue( action )
         

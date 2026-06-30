@@ -7,7 +7,9 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTime
+from hydrus.core.files import HydrusFilesPhysicalStorage
 from hydrus.core.files.images import HydrusImageHandling
 from hydrus.core.networking import HydrusNetwork
 
@@ -23,7 +25,7 @@ from hydrus.client.gui.pages import ClientGUIPageManager
 from hydrus.client.gui.pages import ClientGUISession
 from hydrus.client.importing import ClientImportLocal
 from hydrus.client.importing import ClientImportFiles
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.search import ClientNumberTest
@@ -92,7 +94,7 @@ class TestClientDB( unittest.TestCase ):
     
     def test_autocomplete( self ):
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_FILE_SERVICE_KEY )
@@ -114,7 +116,7 @@ class TestClientDB( unittest.TestCase ):
         
         hash = b'\xadm5\x99\xa6\xc4\x89\xa5u\xeb\x19\xc0&\xfa\xce\x97\xa9\xcdey\xe7G(\xb0\xce\x94\xa6\x01\xd22\xf3\xc3'
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
         
@@ -360,9 +362,9 @@ class TestClientDB( unittest.TestCase ):
         
         hash = b'\xadm5\x99\xa6\xc4\x89\xa5u\xeb\x19\xc0&\xfa\xce\x97\xa9\xcdey\xe7G(\xb0\xce\x94\xa6\x01\xd22\xf3\xc3'
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -386,12 +388,12 @@ class TestClientDB( unittest.TestCase ):
         
         tests = []
         
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 1, 1, 1, 1, ) ), 1 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '<', 'delta', ( 0, 0, 0, 0, ) ), 0 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( HC.UNICODE_APPROX_EQUAL, 'delta', ( 1, 1, 1, 1, ) ), 0 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( HC.UNICODE_APPROX_EQUAL, 'delta', ( 0, 0, 0, 0, ) ), 0 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '>', 'delta', ( 1, 1, 1, 1, ) ), 0 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_AGE, ( '>', 'delta', ( 0, 0, 0, 0, ) ), 1 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 1, 1, 1, 1, ) ), 1 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '<', 'delta', ( 0, 0, 0, 0, ) ), 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( HC.UNICODE_APPROX_EQUAL, 'delta', ( 1, 1, 1, 1, ) ), 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( HC.UNICODE_APPROX_EQUAL, 'delta', ( 0, 0, 0, 0, ) ), 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '>', 'delta', ( 1, 1, 1, 1, ) ), 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME, ( '>', 'delta', ( 0, 0, 0, 0, ) ), 1 ) )
         
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVE, None, 0 ) )
         
@@ -549,7 +551,7 @@ class TestClientDB( unittest.TestCase ):
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         
-        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, ( hash, ) ) )
+        content_update_package.AddContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_ARCHIVE, ( hash, ) ) )
         content_update_package.AddContentUpdate( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'car', ( hash, ) ) ) )
         
         self._write( 'content_updates', content_update_package )
@@ -799,9 +801,9 @@ class TestClientDB( unittest.TestCase ):
         
         hash = b'\xadm5\x99\xa6\xc4\x89\xa5u\xeb\x19\xc0&\xfa\xce\x97\xa9\xcdey\xe7G(\xb0\xce\x94\xa6\x01\xd22\xf3\xc3'
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -838,7 +840,7 @@ class TestClientDB( unittest.TestCase ):
         
         md5 = bytes.fromhex( 'fdadb2cae78f2dfeb629449cd005f2a2' )
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         ( media_result, ) = self._read( 'media_results', ( hash, ) )
         
@@ -849,8 +851,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertFalse( locations_manager.IsLocal() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -858,7 +860,7 @@ class TestClientDB( unittest.TestCase ):
         
         #
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -876,8 +878,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertTrue( locations_manager.IsLocal() )
         self.assertTrue( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertTrue( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertTrue( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -898,8 +900,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertTrue( locations_manager.IsLocal() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertTrue( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertTrue( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertTrue( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertTrue( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -920,8 +922,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertTrue( locations_manager.IsLocal() )
         self.assertTrue( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertTrue( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertTrue( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -931,7 +933,7 @@ class TestClientDB( unittest.TestCase ):
         
         content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, ( hash, ), reason = 'test delete' )
         
-        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
         
         self._write( 'content_updates', content_update_package )
         
@@ -942,8 +944,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertFalse( locations_manager.IsLocal() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertTrue( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertTrue( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertTrue( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -957,7 +959,7 @@ class TestClientDB( unittest.TestCase ):
         
         md5 = bytes.fromhex( 'fdadb2cae78f2dfeb629449cd005f2a2' )
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         ( media_result, ) = self._read( 'media_results', ( hash, ) )
         
@@ -967,7 +969,7 @@ class TestClientDB( unittest.TestCase ):
         
         #
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -988,7 +990,7 @@ class TestClientDB( unittest.TestCase ):
         
         content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, ( hash, ), reason = 'test delete' )
         
-        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
         
         self._write( 'content_updates', content_update_package )
         
@@ -999,8 +1001,8 @@ class TestClientDB( unittest.TestCase ):
         self.assertFalse( locations_manager.IsLocal() )
         self.assertFalse( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertTrue( CC.LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
-        self.assertFalse( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetCurrent() )
-        self.assertTrue( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() )
+        self.assertFalse( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetCurrent() )
+        self.assertTrue( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetCurrent() )
         self.assertFalse( CC.TRASH_SERVICE_KEY in locations_manager.GetDeleted() )
         
@@ -1033,8 +1035,8 @@ class TestClientDB( unittest.TestCase ):
         
         content_updates = []
         
-        content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'character:samus aran', ( hash, ) ) ) )
-        content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'series:metroid', ( hash, ) ) ) )
+        content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'character:space bounty hunter', ( hash, ) ) ) )
+        content_updates.append( ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_MAPPINGS, HC.CONTENT_UPDATE_ADD, ( 'series:bountyvania', ( hash, ) ) ) )
         
         content_update_package.AddContentUpdates( CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, content_updates )
         
@@ -1046,15 +1048,15 @@ class TestClientDB( unittest.TestCase ):
         
         self._write( 'content_updates', content_update_package )
         
-        result = self._read( 'filter_existing_tags', CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, { 'character:samus aran', 'series:metroid', 'clothing:bodysuit' } )
+        result = self._read( 'filter_existing_tags', CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, { 'character:space bounty hunter', 'series:bountyvania', 'clothing:bodysuit' } )
         
-        self.assertEqual( result, { 'character:samus aran', 'series:metroid' } )
+        self.assertEqual( result, { 'character:space bounty hunter', 'series:bountyvania' } )
         
-        result = self._read( 'filter_existing_tags', new_service_key, { 'character:samus aran', 'series:metroid', 'clothing:bodysuit' } )
+        result = self._read( 'filter_existing_tags', new_service_key, { 'character:space bounty hunter', 'series:bountyvania', 'clothing:bodysuit' } )
         
         self.assertEqual( result, { 'clothing:bodysuit' } )
         
-        result = self._read( 'filter_existing_tags', empty_service_key, { 'character:samus aran', 'series:metroid', 'clothing:bodysuit' } )
+        result = self._read( 'filter_existing_tags', empty_service_key, { 'character:space bounty hunter', 'series:bountyvania', 'clothing:bodysuit' } )
         
         self.assertEqual( result, set() )
         
@@ -1100,7 +1102,7 @@ class TestClientDB( unittest.TestCase ):
         
         service_keys_to_tags = ClientTags.ServiceKeysToTags( { HydrusData.GenerateKey() : [ 'some', 'tags' ] } )
         
-        page_manager = ClientGUIPageManager.CreatePageManagerImportHDD( [ 'some', 'paths' ], FileImportOptions.FileImportOptions(), [], { 'paths' : service_keys_to_tags }, True )
+        page_manager = ClientGUIPageManager.CreatePageManagerImportHDD( [ 'some', 'paths' ], FileImportOptionsLegacy.FileImportOptionsLegacy(), [], { 'paths' : service_keys_to_tags }, True )
         
         page_manager.GetVariable( 'hdd_import' ).PausePlay() # to stop trying to import 'some' 'paths'
         
@@ -1282,7 +1284,7 @@ class TestClientDB( unittest.TestCase ):
         test_files = []
         
         test_files.append( ( 'muh_swf.swf', 'edfef9905fdecde38e0752a5b6ab7b6df887c3968d4246adc9cffc997e168cdf', 456774, HC.APPLICATION_FLASH, 400, 400, { 33 }, { 1 }, True, None ) )
-        test_files.append( ( 'muh_mp4.mp4', '2fa293907144a046d043d74e9570b1c792cbfd77ee3f5c93b2b1a1cb3e4c7383', 570534, HC.VIDEO_MP4, 480, 480, { 6266, 6290 }, { 151 }, True, None ) )
+        test_files.append( ( 'muh_mp4.mp4', '18497489f7b432d2bd635e33ba0b1f3e0bb01de3a4313b75e4fee4fb018acb89', 42822, HC.VIDEO_MP4, 410, 306, { 4640 }, { 58 }, False, None ) )
         test_files.append( ( 'muh_mpeg.mpeg', 'aebb10aaf3b27a5878fd2732ea28aaef7bbecef7449eaa759421c4ba4efff494', 772096, HC.VIDEO_MPEG, 657, 480, { 3490, 3500 }, { 105 }, False, None ) ) # not actually 720, as this has mickey-mouse SAR, it turns out
         test_files.append( ( 'muh_webm.webm', '55b6ce9d067326bf4b2fbe66b8f51f366bc6e5f776ba691b0351364383c43fcb', 84069, HC.VIDEO_WEBM, 640, 360, { 4010 }, { 120 }, True, None ) )
         test_files.append( ( 'muh_jpg.jpg', '5d884d84813beeebd59a35e474fa3e4742d0f2b6679faa7609b245ddbbd05444', 42296, HC.IMAGE_JPEG, 392, 498, { None }, { None }, False, None ) )
@@ -1290,14 +1292,14 @@ class TestClientDB( unittest.TestCase ):
         test_files.append( ( 'muh_apng.png', '9e7b8b5abc7cb11da32db05671ce926a2a2b701415d1b2cb77a28deea51010c3', 616956, HC.ANIMATION_APNG, 500, 500, { 3133, 1880, 1125, 1800 }, { 27, 47 }, False, None ) )
         test_files.append( ( 'muh_gif.gif', '00dd9e9611ebc929bfc78fde99a0c92800bbb09b9d18e0946cea94c099b211c2', 15660, HC.ANIMATION_GIF, 329, 302, { 600 }, { 5 }, False, None ) )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         for ( filename, hex_hash, size, mime, width, height, durations, possible_num_frames, has_audio, num_words ) in test_files:
             
             TG.test_controller.SetRead( 'hash_status', ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
-            path = os.path.join( HC.STATIC_DIR, 'testing', filename )
+            path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
             
             hash = bytes.fromhex( hex_hash )
             
@@ -1407,15 +1409,20 @@ class TestClientDB( unittest.TestCase ):
         
         base_location = ClientFilesPhysical.FilesStorageBaseLocation( client_files_default, 1 )
         
-        for prefix in HydrusData.IterateHexPrefixes():
+        for prefix in HydrusFilesPhysicalStorage.IteratePrefixes( 'f', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ):
             
-            for c in ( 'f', 't' ):
-                
-                subfolder = ClientFilesPhysical.FilesStorageSubfolder( c + prefix, base_location )
-                
-                self.assertTrue( os.path.exists( subfolder.path ) )
-                self.assertTrue( subfolder.PathExists() )
-                
+            subfolder = ClientFilesPhysical.FilesStorageSubfolder( prefix, base_location )
+            
+            self.assertTrue( os.path.exists( subfolder.path ) )
+            self.assertTrue( subfolder.PathExists() )
+            
+        
+        for prefix in HydrusFilesPhysicalStorage.IteratePrefixes( 't', HydrusFilesPhysicalStorage.DEFAULT_PREFIX_LENGTH ):
+            
+            subfolder = ClientFilesPhysical.FilesStorageSubfolder( prefix, base_location )
+            
+            self.assertTrue( os.path.exists( subfolder.path ) )
+            self.assertTrue( subfolder.PathExists() )
             
         
     
@@ -1427,7 +1434,7 @@ class TestClientDB( unittest.TestCase ):
         
         md5 = bytes.fromhex( 'fdadb2cae78f2dfeb629449cd005f2a2' )
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         #
         
@@ -1442,7 +1449,7 @@ class TestClientDB( unittest.TestCase ):
         
         #
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -1496,7 +1503,7 @@ class TestClientDB( unittest.TestCase ):
         
         md5 = bytes.fromhex( 'fdadb2cae78f2dfeb629449cd005f2a2' )
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
         #
         
@@ -1511,7 +1518,7 @@ class TestClientDB( unittest.TestCase ):
         
         #
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -1542,7 +1549,7 @@ class TestClientDB( unittest.TestCase ):
         
         content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, ( hash, ), reason = 'test delete' )
         
-        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.COMBINED_LOCAL_FILE_SERVICE_KEY, content_update )
+        content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
         
         self._write( 'content_updates', content_update_package )
         
@@ -1562,9 +1569,9 @@ class TestClientDB( unittest.TestCase ):
         
         TestClientDB._clear_db()
         
-        path = os.path.join( HC.STATIC_DIR, 'hydrus.png' )
+        path = HydrusStaticDir.GetStaticPath( 'hydrus.png' )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
@@ -1633,14 +1640,14 @@ class TestClientDB( unittest.TestCase ):
         test_files.append( 'muh_swf.swf' )
         test_files.append( 'muh_mp4.mp4' )
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         for filename in test_files:
             
             TG.test_controller.SetRead( 'hash_status', ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
-            path = os.path.join( HC.STATIC_DIR, 'testing', filename )
+            path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
             
             file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
             
@@ -1655,7 +1662,7 @@ class TestClientDB( unittest.TestCase ):
         
         media_result = self._read( 'media_result', bytes.fromhex( swf_hash_hex ) )
         
-        earliest_import_timestamp = HydrusTime.SecondiseMS( media_result.GetLocationsManager().GetTimesManager().GetImportedTimestampMS( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY ) )
+        earliest_import_timestamp = HydrusTime.SecondiseMS( media_result.GetLocationsManager().GetTimesManager().GetImportedTimestampMS( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY ) )
         
         result = self._read( 'boned_stats' )
         
@@ -1666,18 +1673,18 @@ class TestClientDB( unittest.TestCase ):
             'num_inbox': 2,
             'size_archive': 0,
             'size_deleted': 0,
-            'size_inbox': 1027308,
+            'size_inbox': 499596,
             'total_alternate_files': 0,
             'total_alternate_groups': 0,
             'total_duplicate_files': 0,
-            'total_viewtime': (0, 0, 0, 0)
+            'total_viewtime': ( 0, 0.0, 0, 0.0 )
         }
         
         self.assertEqual( result, expected_result )
         
         #
         
-        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+        location_context = ClientLocation.LocationContext.STATICCreateSimple( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
         
         predicates = [ ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MIME, value = ( HC.APPLICATION_FLASH, ) ) ]
         
@@ -1797,8 +1804,8 @@ class TestClientDB( unittest.TestCase ):
         #
         
         pairs = [
-            ( 'samus aran', 'princess peach' ),
-            ( 'lara croft', 'princess peach' )
+            ( 'space bounty hunter', 'princess tuna' ),
+            ( 'jane raider', 'princess tuna' )
         ]
         
         content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TAG_SIBLINGS, HC.CONTENT_UPDATE_ADD, pair ) for pair in pairs ]
@@ -1830,7 +1837,7 @@ class TestClientDB( unittest.TestCase ):
         #
         
         pairs = [
-            ( 'ayanami rei', 'zelda' )
+            ( 'ayanami rei', 'cool princess' )
         ]
         
         content_updates = [ ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_TAG_PARENTS, HC.CONTENT_UPDATE_ADD, pair ) for pair in pairs ]
@@ -1873,14 +1880,14 @@ class TestClientDB( unittest.TestCase ):
             '9e7b8b5abc7cb11da32db05671ce926a2a2b701415d1b2cb77a28deea51010c3' : 'muh_apng.png'
         }
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         file_import_options.SetIsDefault( True )
         
         for ( hash, filename ) in test_files.items():
             
             TG.test_controller.SetRead( 'hash_status', ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
             
-            path = os.path.join( HC.STATIC_DIR, 'testing', filename )
+            path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
             
             file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
             
@@ -1992,31 +1999,15 @@ class TestClientDB( unittest.TestCase ):
         TestClientDB._clear_db()
         
     
-    def test_pixiv_account( self ):
-        
-        result = self._read( 'serialisable_simple', 'pixiv_account' )
-        
-        self.assertEqual( result, None )
-        
-        pixiv_id = 123456
-        password = 'password'
-        
-        self._write( 'serialisable_simple', 'pixiv_account', ( pixiv_id, password ) )
-        
-        result = self._read( 'serialisable_simple', 'pixiv_account' )
-        
-        self.assertEqual( result, [ pixiv_id, password ] )
-        
-    
     def test_services( self ):
         
         TestClientDB._clear_db()
         
-        result = self._read( 'services', ( HC.LOCAL_FILE_DOMAIN, HC.LOCAL_FILE_UPDATE_DOMAIN, HC.LOCAL_FILE_TRASH_DOMAIN, HC.COMBINED_LOCAL_FILE, HC.COMBINED_LOCAL_MEDIA, HC.LOCAL_TAG, HC.LOCAL_RATING_LIKE ) )
+        result = self._read( 'services', ( HC.LOCAL_FILE_DOMAIN, HC.LOCAL_FILE_UPDATE_DOMAIN, HC.LOCAL_FILE_TRASH_DOMAIN, HC.HYDRUS_LOCAL_FILE_STORAGE, HC.COMBINED_LOCAL_FILE_DOMAINS, HC.LOCAL_TAG, HC.LOCAL_RATING_LIKE ) )
         
         result_service_keys = { service.GetServiceKey() for service in result }
         
-        self.assertEqual( { CC.TRASH_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY, CC.LOCAL_UPDATE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, CC.DEFAULT_LOCAL_DOWNLOADER_TAG_SERVICE_KEY, CC.DEFAULT_FAVOURITES_RATING_SERVICE_KEY }, result_service_keys )
+        self.assertEqual( { CC.TRASH_SERVICE_KEY, CC.LOCAL_FILE_SERVICE_KEY, CC.LOCAL_UPDATE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, CC.DEFAULT_LOCAL_TAG_SERVICE_KEY, CC.DEFAULT_LOCAL_DOWNLOADER_TAG_SERVICE_KEY, CC.DEFAULT_FAVOURITES_RATING_SERVICE_KEY }, result_service_keys )
         
         #
         

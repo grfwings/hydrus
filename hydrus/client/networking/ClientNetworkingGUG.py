@@ -104,7 +104,10 @@ class GalleryURLGenerator( HydrusSerialisable.SerialisableBaseNamed ):
             raise HydrusExceptions.GUGException( 'Replacement phrase not in URL template!' )
             
         
-        query_text = query_text.replace( '%20', ' ' )
+        if CG.client_controller.new_options.GetBoolean( 'replace_percent_twenty_with_space_in_gug_input' ):
+            
+            query_text = query_text.replace( '%20', ' ' )
+            
         
         search_terms = query_text.split( ' ' )
         
@@ -199,6 +202,11 @@ class GalleryURLGenerator( HydrusSerialisable.SerialisableBaseNamed ):
             
             return False
             
+        
+    
+    def IsMultiDomainNGUG( self ):
+        
+        return False
         
     
     def SetGUGKey( self, gug_key: bytes ):
@@ -361,6 +369,25 @@ class NestedGalleryURLGenerator( HydrusSerialisable.SerialisableBaseNamed ):
             
             return False
             
+        
+    
+    def IsMultiDomainNGUG( self ):
+        
+        try:
+            
+            example_urls = self.GetExampleURLs()
+            
+        except Exception as e:
+            
+            return False
+            
+        
+        example_url_domains = { ClientNetworkingFunctions.ConvertURLIntoDomain( url ) for url in example_urls }
+        
+        # not perfect, but it'll do for most cases for now
+        example_url_second_level_domains = { ClientNetworkingFunctions.ConvertDomainIntoSecondLevelDomain( domain ) for domain in example_url_domains }
+        
+        return len( example_url_second_level_domains ) > 1
         
     
     def RegenerateGUGKey( self ):

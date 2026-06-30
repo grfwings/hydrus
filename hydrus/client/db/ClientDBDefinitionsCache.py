@@ -243,7 +243,7 @@ class ClientDBCacheLocalHashes( ClientDBModule.ClientDBModule ):
         
         all_hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM local_hashes_cache;' ) )
         
-        all_hash_ids.update( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.combined_local_file_service_id ) )
+        all_hash_ids.update( self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id ) )
         
         self.SyncHashIds( all_hash_ids, job_status = job_status )
         
@@ -261,13 +261,12 @@ class ClientDBCacheLocalHashes( ClientDBModule.ClientDBModule ):
             
         
         BLOCK_SIZE = 10000
-        num_to_do = len( all_hash_ids )
         
         all_excess_hash_ids = set()
         all_missing_hash_ids = set()
         all_incorrect_hash_ids = set()
         
-        for ( i, block_of_hash_ids ) in enumerate( HydrusLists.SplitListIntoChunks( all_hash_ids, BLOCK_SIZE ) ):
+        for ( num_done, num_to_do, block_of_hash_ids ) in HydrusLists.SplitListIntoChunksRich( all_hash_ids, BLOCK_SIZE ):
             
             if job_status.IsCancelled():
                 
@@ -276,14 +275,14 @@ class ClientDBCacheLocalHashes( ClientDBModule.ClientDBModule ):
             
             block_of_hash_ids = set( block_of_hash_ids )
             
-            text = 'syncing local hashes {}'.format( HydrusNumbers.ValueRangeToPrettyString( i * BLOCK_SIZE, num_to_do ) )
+            text = 'syncing local hashes {}'.format( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
             
             CG.client_controller.frame_splash_status.SetSubtext( text )
             job_status.SetStatusText( text )
             
             with self._MakeTemporaryIntegerTable( block_of_hash_ids, 'hash_id' ) as temp_table_name:
                 
-                table_join = self.modules_files_storage.GetTableJoinLimitedByFileDomain( self.modules_services.combined_local_file_service_id, temp_table_name, HC.CONTENT_STATUS_CURRENT )
+                table_join = self.modules_files_storage.GetTableJoinLimitedByFileDomain( self.modules_services.hydrus_local_file_storage_service_id, temp_table_name, HC.CONTENT_STATUS_CURRENT )
                 
                 local_hash_ids = self._STS( self._Execute( f'SELECT hash_id FROM {table_join};' ) )
                 
@@ -543,7 +542,7 @@ class ClientDBCacheLocalTags( ClientDBModule.ClientDBModule ):
         
         tag_service_ids = self.modules_services.GetServiceIds( HC.REAL_TAG_SERVICES )
         
-        queries = [ self.modules_mappings_counts.GetQueryPhraseForCurrentTagIds( ClientTags.TAG_DISPLAY_STORAGE, self.modules_services.combined_local_file_service_id, tag_service_id ) for tag_service_id in tag_service_ids ]
+        queries = [ self.modules_mappings_counts.GetQueryPhraseForCurrentTagIds( ClientTags.TAG_DISPLAY_STORAGE, self.modules_services.hydrus_local_file_storage_service_id, tag_service_id ) for tag_service_id in tag_service_ids ]
         
         full_query = '{};'.format( ' UNION '.join( queries ) )
         

@@ -1,5 +1,6 @@
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusStaticDir
 from hydrus.core.networking import HydrusServerRequest
 from hydrus.core.networking import HydrusServerResources
 
@@ -142,8 +143,8 @@ class HydrusResourceClientAPIRestrictedGetService( ClientLocalServerResources.Hy
             HC.LOCAL_FILE_DOMAIN,
             HC.LOCAL_FILE_UPDATE_DOMAIN,
             HC.FILE_REPOSITORY,
-            HC.COMBINED_LOCAL_FILE,
-            HC.COMBINED_LOCAL_MEDIA,
+            HC.HYDRUS_LOCAL_FILE_STORAGE,
+            HC.COMBINED_LOCAL_FILE_DOMAINS,
             HC.COMBINED_FILE,
             HC.COMBINED_TAG,
             HC.LOCAL_RATING_LIKE,
@@ -230,8 +231,8 @@ class HydrusResourceClientAPIRestrictedGetServices( ClientLocalServerResources.H
             ( ( HC.LOCAL_FILE_DOMAIN, ), 'local_files' ),
             ( ( HC.LOCAL_FILE_UPDATE_DOMAIN, ), 'local_updates' ),
             ( ( HC.FILE_REPOSITORY, ), 'file_repositories' ),
-            ( ( HC.COMBINED_LOCAL_FILE, ), 'all_local_files' ),
-            ( ( HC.COMBINED_LOCAL_MEDIA, ), 'all_local_media' ),
+            ( ( HC.HYDRUS_LOCAL_FILE_STORAGE, ), 'all_local_files' ), # legacy, so not 'hydrus_local_file_storage'
+            ( ( HC.COMBINED_LOCAL_FILE_DOMAINS, ), 'all_local_media' ),
             ( ( HC.COMBINED_FILE, ), 'all_known_files' ),
             ( ( HC.COMBINED_TAG, ), 'all_known_tags' ),
             ( ( HC.LOCAL_FILE_TRASH_DOMAIN, ), 'trash' )
@@ -265,6 +266,101 @@ class HydrusResourceClientAPIRestrictedGetServices( ClientLocalServerResources.H
         body = ClientLocalServerCore.Dumps( body_dict, request.preferred_mime )
         
         response_context = HydrusServerResources.ResponseContext( 200, mime = request.preferred_mime, body = body )
+        
+        return response_context
+        
+    
+
+class HydrusResourceClientAPIRestrictedGetServiceRatingSVG( ClientLocalServerResources.HydrusResourceClientAPIRestricted ):
+    
+    def _CheckAPIPermissions( self, request: HydrusServerRequest.HydrusRequest ):
+        
+        request.client_api_permissions.CheckAtLeastOnePermission(
+            (
+                ClientAPI.CLIENT_API_PERMISSION_ADD_FILES,
+                ClientAPI.CLIENT_API_PERMISSION_EDIT_RATINGS,
+                ClientAPI.CLIENT_API_PERMISSION_ADD_TAGS,
+                ClientAPI.CLIENT_API_PERMISSION_ADD_NOTES,
+                ClientAPI.CLIENT_API_PERMISSION_MANAGE_PAGES,
+                ClientAPI.CLIENT_API_PERMISSION_MANAGE_FILE_RELATIONSHIPS,
+                ClientAPI.CLIENT_API_PERMISSION_SEARCH_FILES
+            )
+        )
+        
+    
+    def _threadDoGETJob( self, request: HydrusServerRequest.HydrusRequest ):
+        
+        allowed_service_types = {
+            HC.LOCAL_RATING_LIKE,
+            HC.LOCAL_RATING_NUMERICAL,
+        }
+        
+        if 'service_key' in request.parsed_request_args:
+            
+            service_key = request.parsed_request_args.GetValue( 'service_key', bytes )
+            
+        elif 'service_name' in request.parsed_request_args:
+            
+            service_name = request.parsed_request_args.GetValue( 'service_name', str )
+            
+            try:
+                
+                service_key = CG.client_controller.services_manager.GetServiceKeyFromName( allowed_service_types, service_name )
+                
+            except HydrusExceptions.DataMissing:
+                
+                raise HydrusExceptions.NotFoundException( 'Sorry, did not find a service with name "{}"!'.format( service_name ) )
+                
+            
+        else:
+            
+            raise HydrusExceptions.BadRequestException( 'Sorry, you need to give a service_key or service_name!' )
+            
+        
+        try:
+            
+            service = CG.client_controller.services_manager.GetService( service_key )
+            
+        except HydrusExceptions.DataMissing:
+            
+            raise HydrusExceptions.NotFoundException( 'Sorry, did not find a service with key "{}"!'.format( service_key.hex() ) )
+            
+        
+        if service.GetServiceType() not in allowed_service_types:
+            
+            raise HydrusExceptions.BadRequestException( 'This type of service cannot have a SVG associated with it!' )
+            
+        
+        try:
+            
+            star_type = service.GetStarType()
+            
+            if star_type.HasRatingSVG():
+                
+                svg_name = star_type.GetRatingSVG()
+                
+                svg_path = HydrusStaticDir.GetRatingSVGPath( svg_name )
+                
+                with open( svg_path, 'rb' ) as f:
+                    
+                    svg_content = f.read()
+                    
+                
+            else:
+                
+                raise HydrusExceptions.NotFoundException( 'Rating service "{}" does not use a SVG icon!'.format( service.GetName() ) )
+                
+            
+        except HydrusExceptions.NotFoundException:
+            
+            raise
+            
+        except Exception as e:
+            
+            raise HydrusExceptions.ServerException( 'There was a problem getting the SVG file for rating service "{}"! Error follows: {}'.format( service.GetName(), str(e) ) )
+            
+        
+        response_context = HydrusServerResources.ResponseContext( 200, mime = HC.IMAGE_SVG, body = svg_content )
         
         return response_context
         

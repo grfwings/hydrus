@@ -1,4 +1,5 @@
 import random
+import typing
 
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
@@ -16,9 +17,12 @@ from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientData
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientServices
 from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.gui import ClientGUIDragDrop
 from hydrus.client.gui import ClientGUICore as CGC
+from hydrus.client.gui import ClientGUIDialogsMessage
+from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIRatings
@@ -37,6 +41,8 @@ from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientRatings
 
 FRAME_DURATION_60FPS = 1.0 / 60
+
+WE_HAVE_SHOWN_THE_MAX_VIRTUAL_HEIGHT_WARNING = False
 
 class ThumbnailWaitingToBeDrawn( object ):
     
@@ -427,7 +433,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
     def _GetMediaCoordinates( self, media ):
         
         try: index = self._sorted_media.index( media )
-        except: return ( -1, -1 )
+        except Exception as e: return ( -1, -1 )
         
         row = index // self._num_columns
         column = index % self._num_columns
@@ -665,6 +671,36 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
                 
             
             virtual_height = max( virtual_height, my_height )
+            
+            MAX_HEIGHT = getattr( QW, 'QWIDGETSIZE_MAX', 16777215 ) # 2^24-1
+            
+            if virtual_height > MAX_HEIGHT:
+                
+                global WE_HAVE_SHOWN_THE_MAX_VIRTUAL_HEIGHT_WARNING
+                
+                if not WE_HAVE_SHOWN_THE_MAX_VIRTUAL_HEIGHT_WARNING:
+                    
+                    # set true before showing the dialog, or the new event loop will allow more pages in session I think to spam the error
+                    WE_HAVE_SHOWN_THE_MAX_VIRTUAL_HEIGHT_WARNING = True
+                    
+                    if self.isVisible():
+                        
+                        message = 'Hey, it looks like this thumbnail view'
+                        
+                    else:
+                        
+                        message = 'Hey, it looks like one of the thumbnail views on a page not currently in view'
+                        
+                    
+                    message += f' is very very very tall. I want to make it {HydrusNumbers.ToHumanInt( virtual_height )} pixels tall, but Qt only supports a max virtual scroll height of {HydrusNumbers.ToHumanInt( MAX_HEIGHT )} pixels.'
+                    message += '\n\n'
+                    message += 'This page will handle ctrl+a and do its math correct (albeit slowly!), but you will not be able to scroll down all the way. This situation is probably not stable and you should rethink your query (e.g. adding a system:limit and doing the job in batches) before there is a real problem.'
+                    message += '\n\n'
+                    message += 'To stop spam, this message will only show one time per program boot. The error may happen again, silently.'
+                    
+                    ClientGUIDialogsMessage.ShowWarning( self, message )
+                    
+                
             
             virtual_size = QC.QSize( virtual_width, virtual_height )
             
@@ -1192,7 +1228,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
                 
                 self._ScrollToMedia( self._focused_media )
                 
-            except:
+            except Exception as e:
                 
                 pass
                 
@@ -1215,10 +1251,10 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         selection_has_trash = True in ( locations_manager.IsTrashed() for locations_manager in selected_locations_managers )
         selection_has_inbox = True in ( media.HasInbox() for media in self._selected_media )
         selection_has_archive = True in ( media.HasArchive() and media.GetLocationsManager().IsLocal() for media in self._selected_media )
-        selection_has_deletion_record = True in ( CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted() for locations_manager in selected_locations_managers )
+        selection_has_deletion_record = True in ( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted() for locations_manager in selected_locations_managers )
         
         all_file_domains = HydrusLists.MassUnion( locations_manager.GetCurrent() for locations_manager in all_locations_managers )
-        all_specific_file_domains = all_file_domains.difference( { CC.COMBINED_FILE_SERVICE_KEY, CC.COMBINED_LOCAL_FILE_SERVICE_KEY } )
+        all_specific_file_domains = all_file_domains.difference( { CC.COMBINED_FILE_SERVICE_KEY, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY } )
         
         some_downloading = True in ( locations_manager.IsDownloading() for locations_manager in selected_locations_managers )
         
@@ -1233,7 +1269,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         any_selected = num_selected > 0
         multiple_selected = num_selected > 1
         
-        menu = ClientGUIMenus.GenerateMenu( self.window() )
+        menu = ClientGUIMenus.GenerateMenu( self )
         
         # variables
         
@@ -1243,7 +1279,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         services = services_manager.GetServices()
         
-        file_repositories = [ service for service in services if service.GetServiceType() == HC.FILE_REPOSITORY ]
+        file_repositories: list[ ClientServices.ServiceRepository ] = [ service for service in services if service.GetServiceType() == HC.FILE_REPOSITORY ]
         
         ipfs_services = [ service for service in services if service.GetServiceType() == HC.IPFS ]
         
@@ -1613,26 +1649,33 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         if len( local_file_service_keys_we_are_in ) > 0:
             
-            delete_menu = ClientGUIMenus.GenerateMenu( menu )
-            
-            for file_service_key in local_file_service_keys_we_are_in:
+            if len( local_file_service_keys_we_are_in ) == 1:
                 
-                service_name = CG.client_controller.services_manager.GetName( file_service_key )
+                file_service_key = local_file_service_keys_we_are_in[0]
                 
-                ClientGUIMenus.AppendMenuItem( delete_menu, f'from {service_name}', f'Delete the selected files from {service_name}.', self._Delete, file_service_key )
+                ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
                 
-            
-            ClientGUIMenus.AppendMenu( menu, delete_menu, local_delete_phrase )
+            else:
+                
+                delete_menu = ClientGUIMenus.GenerateMenu( menu )
+                
+                for file_service_key in local_file_service_keys_we_are_in:
+                    
+                    ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    
+                
+                ClientGUIMenus.AppendMenu( menu, delete_menu, local_delete_phrase )
+                
             
         
         if selection_has_trash:
             
             if selection_has_local_file_domain:
                 
-                ClientGUIMenus.AppendMenuItem( menu, 'delete trash physically now', 'Completely delete the selected trashed files, forcing an immediate physical delete from your hard drive.', self._Delete, CC.COMBINED_LOCAL_FILE_SERVICE_KEY, only_those_in_file_service_key = CC.TRASH_SERVICE_KEY )
+                ClientGUIMenus.AppendMenuItem( menu, 'delete trash physically now', 'Completely delete the selected trashed files, forcing an immediate physical delete from your hard drive.', self._Delete, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, only_those_in_file_service_key = CC.TRASH_SERVICE_KEY )
                 
             
-            ClientGUIMenus.AppendMenuItem( menu, delete_physically_phrase, 'Completely delete the selected files, forcing an immediate physical delete from your hard drive.', self._Delete, CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+            ClientGUIMenus.AppendMenuItem( menu, delete_physically_phrase, 'Completely delete the selected files, forcing an immediate physical delete from your hard drive.', self._Delete, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
             ClientGUIMenus.AppendMenuItem( menu, undelete_phrase, 'Restore the selected files back to \'my files\'.', self._Undelete )
             
         
@@ -1695,12 +1738,16 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
             
             ClientGUIMenus.AppendMenu( menu, manage_menu, 'manage' )
             
-            ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys ) = ClientGUIMediaSimpleActions.GetLocalFileActionServiceKeys( flat_selected_medias )
+            local_file_service_keys = ClientMedia.GetLocalFileServiceKeys( flat_selected_medias )
+            
+            ( local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, local_mergable_from_and_to_file_service_keys ) = ClientGUIMediaSimpleActions.GetLocalFileActionServiceKeys( flat_selected_medias )
             
             len_interesting_local_service_keys = 0
             
+            len_interesting_local_service_keys += len( local_file_service_keys )
             len_interesting_local_service_keys += len( local_duplicable_to_file_service_keys )
             len_interesting_local_service_keys += len( local_moveable_from_and_to_file_service_keys )
+            len_interesting_local_service_keys += len( local_mergable_from_and_to_file_service_keys )
             
             #
             
@@ -1731,7 +1778,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
                 
                 if len_interesting_local_service_keys > 0:
                     
-                    ClientGUIMediaMenus.AddLocalFilesMoveAddToMenu( self, locations_menu, local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, multiple_selected, self.ProcessApplicationCommand )
+                    ClientGUIMediaMenus.AddLocalFilesMoveAddToMenu( self, locations_menu, local_file_service_keys, local_duplicable_to_file_service_keys, local_moveable_from_and_to_file_service_keys, local_mergable_from_and_to_file_service_keys, multiple_selected, self.ProcessApplicationCommand )
                     
                 
                 if len_interesting_remote_service_keys > 0:
@@ -1864,7 +1911,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         page_height = self._num_rows_per_canvas_page * thumbnail_span_height
         
-        for hash in HydrusData.IterateListRandomlyAndFast( hashes ):
+        for hash in HydrusLists.IterateListRandomlyAndFast( hashes ):
             
             thumbnail_draw_object = self._hashes_to_thumbnails_waiting_to_be_drawn[ hash ]
             
@@ -1878,7 +1925,7 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
                     
                     expected_thumbnail = self._sorted_media[ thumbnail_index ]
                     
-                except:
+                except Exception as e:
                     
                     expected_thumbnail = None
                     
@@ -1985,92 +2032,99 @@ class MediaResultsPanelThumbnails( ClientGUIMediaResultsPanel.MediaResultsPanel 
         
         def paintEvent( self, event ):
             
-            if self._parent.devicePixelRatio() != self._parent._last_device_pixel_ratio:
+            try:
                 
-                self._parent._last_device_pixel_ratio = self._parent.devicePixelRatio()
-                
-                self._parent._DirtyAllPages()
-                self._parent._DeleteAllDirtyPages()
-                
-            
-            painter = QG.QPainter( self )
-            
-            ( thumbnail_span_width, thumbnail_span_height ) = self._parent._GetThumbnailSpanDimensions()
-            
-            page_height = self._parent._num_rows_per_canvas_page * thumbnail_span_height
-            
-            page_indices_to_display = self._parent._CalculateVisiblePageIndices()
-            
-            earliest_page_index_to_display = min( page_indices_to_display )
-            last_page_index_to_display = max( page_indices_to_display )
-            
-            page_indices_to_draw = list( page_indices_to_display )
-            
-            if earliest_page_index_to_display > 0:
-                
-                page_indices_to_draw.append( earliest_page_index_to_display - 1 )
-                
-            
-            page_indices_to_draw.append( last_page_index_to_display + 1 )
-            
-            page_indices_to_draw.sort()
-            
-            potential_clean_indices_to_steal = [ page_index for page_index in self._parent._clean_canvas_pages.keys() if page_index not in page_indices_to_draw ]
-            
-            random.shuffle( potential_clean_indices_to_steal )
-            
-            y_start = self._parent._GetYStart()
-            
-            bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
-            
-            painter.setBackground( QG.QBrush( bg_colour ) )
-            
-            painter.eraseRect( painter.viewport() )
-            
-            background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
-            
-            if background_pixmap is not None:
-                
-                my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
-                
-                pixmap_size = background_pixmap.size()
-                
-                painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
-                
-            
-            for page_index in page_indices_to_draw:
-                
-                if page_index not in self._parent._clean_canvas_pages:
+                if self._parent.devicePixelRatio() != self._parent._last_device_pixel_ratio:
                     
-                    if len( self._parent._dirty_canvas_pages ) == 0:
+                    self._parent._last_device_pixel_ratio = self._parent.devicePixelRatio()
+                    
+                    self._parent._DirtyAllPages()
+                    self._parent._DeleteAllDirtyPages()
+                    
+                
+                painter = QG.QPainter( self )
+                
+                ( thumbnail_span_width, thumbnail_span_height ) = self._parent._GetThumbnailSpanDimensions()
+                
+                page_height = self._parent._num_rows_per_canvas_page * thumbnail_span_height
+                
+                page_indices_to_display = self._parent._CalculateVisiblePageIndices()
+                
+                earliest_page_index_to_display = min( page_indices_to_display )
+                last_page_index_to_display = max( page_indices_to_display )
+                
+                page_indices_to_draw = list( page_indices_to_display )
+                
+                if earliest_page_index_to_display > 0:
+                    
+                    page_indices_to_draw.append( earliest_page_index_to_display - 1 )
+                    
+                
+                page_indices_to_draw.append( last_page_index_to_display + 1 )
+                
+                page_indices_to_draw.sort()
+                
+                potential_clean_indices_to_steal = [ page_index for page_index in self._parent._clean_canvas_pages.keys() if page_index not in page_indices_to_draw ]
+                
+                random.shuffle( potential_clean_indices_to_steal )
+                
+                y_start = self._parent._GetYStart()
+                
+                bg_colour = self._parent.GetColour( CC.COLOUR_THUMBGRID_BACKGROUND )
+                
+                painter.setBackground( QG.QBrush( bg_colour ) )
+                
+                painter.eraseRect( painter.viewport() )
+                
+                background_pixmap = CG.client_controller.bitmap_manager.GetMediaBackgroundPixmap()
+                
+                if background_pixmap is not None:
+                    
+                    my_size = QP.ScrollAreaVisibleRect( self._parent ).size()
+                    
+                    pixmap_size = background_pixmap.size()
+                    
+                    painter.drawPixmap( my_size.width() - pixmap_size.width(), my_size.height() - pixmap_size.height(), background_pixmap )
+                    
+                
+                for page_index in page_indices_to_draw:
+                    
+                    if page_index not in self._parent._clean_canvas_pages:
                         
-                        if len( potential_clean_indices_to_steal ) > 0:
+                        if len( self._parent._dirty_canvas_pages ) == 0:
                             
-                            index_to_steal = potential_clean_indices_to_steal.pop()
-                            
-                            self._parent._DirtyPage( index_to_steal )
-                            
-                        else:
-                            
-                            self._parent._CreateNewDirtyPage()
+                            if len( potential_clean_indices_to_steal ) > 0:
+                                
+                                index_to_steal = potential_clean_indices_to_steal.pop()
+                                
+                                self._parent._DirtyPage( index_to_steal )
+                                
+                            else:
+                                
+                                self._parent._CreateNewDirtyPage()
+                                
                             
                         
+                        canvas_page = self._parent._dirty_canvas_pages.pop()
+                        
+                        self._parent._DrawCanvasPage( page_index, canvas_page )
+                        
+                        self._parent._clean_canvas_pages[ page_index ] = canvas_page
+                        
                     
-                    canvas_page = self._parent._dirty_canvas_pages.pop()
-                    
-                    self._parent._DrawCanvasPage( page_index, canvas_page )
-                    
-                    self._parent._clean_canvas_pages[ page_index ] = canvas_page
+                    if page_index in page_indices_to_display:
+                        
+                        canvas_page = self._parent._clean_canvas_pages[ page_index ]
+                        
+                        page_virtual_y = page_height * page_index
+                        
+                        painter.drawImage( 0, page_virtual_y, canvas_page )
+                        
                     
                 
-                if page_index in page_indices_to_display:
-                    
-                    canvas_page = self._parent._clean_canvas_pages[ page_index ]
-                    
-                    page_virtual_y = page_height * page_index
-                    
-                    painter.drawImage( 0, page_virtual_y, canvas_page )
-                    
+            except Exception as e:
+                
+                ClientGUIExceptionHandling.HandlePaintEventException( self, e )
                 
             
         
@@ -2283,7 +2337,19 @@ class Thumbnail( Selectable ):
         
         painter.fillRect( thumbnail_border, thumbnail_border, width - ( thumbnail_border * 2 ), height - ( thumbnail_border * 2 ), media_panel_background_colour )
         
-        raw_thumbnail_qt_image = thumbnail_hydrus_bmp.GetQtImage()
+        try:
+            
+            raw_thumbnail_qt_image = thumbnail_hydrus_bmp.GetQtImage()
+            
+        except Exception as e:
+            
+            HydrusData.ShowText( f'Failed to render thumbnail for file {media.GetDisplayMedia().GetHash().hex()}!' )
+            HydrusData.ShowException( e, do_wait = False )
+            
+            thumbnail_hydrus_bmp = CG.client_controller.thumbnails_cache.GetHydrusPlaceholderThumbnail()
+            
+            raw_thumbnail_qt_image = thumbnail_hydrus_bmp.GetQtImage()
+            
         
         thumbnail_dpr_percent = new_options.GetInteger( 'thumbnail_dpr_percent' )
         
@@ -2293,17 +2359,16 @@ class Thumbnail( Selectable ):
             
             raw_thumbnail_qt_image.setDevicePixelRatio( thumbnail_dpr )
             
-            # qt_image.deviceIndepedentSize isn't supported in Qt5 lmao
-            device_independent_thumb_size = raw_thumbnail_qt_image.size() / thumbnail_dpr
+            device_independent_thumb_size = raw_thumbnail_qt_image.deviceIndependentSize()
             
         else:
             
             device_independent_thumb_size = raw_thumbnail_qt_image.size()
             
         
-        x_offset = ( width - device_independent_thumb_size.width() ) // 2
+        x_offset = int( ( width - device_independent_thumb_size.width() ) // 2 )
         
-        y_offset = ( height - device_independent_thumb_size.height() ) // 2
+        y_offset = int( ( height - device_independent_thumb_size.height() ) // 2 )
         
         painter.drawImage( x_offset, y_offset, raw_thumbnail_qt_image )
         
@@ -2442,6 +2507,7 @@ class Thumbnail( Selectable ):
         
         # ratings
         THUMBNAIL_RATING_ICON_SET_SIZE = round( new_options.GetFloat( 'draw_thumbnail_rating_icon_size_px' ) )
+        THUMBNAIL_RATING_INCDEC_SET_HEIGHT = round( new_options.GetFloat( 'thumbnail_rating_incdec_height_px' ) )
         STAR_DX = THUMBNAIL_RATING_ICON_SET_SIZE
         STAR_DY = THUMBNAIL_RATING_ICON_SET_SIZE
         
@@ -2475,8 +2541,8 @@ class Thumbnail( Selectable ):
                 painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
                 
             
-            like_rating_current_x = rect_x + ICON_PAD / 2
-            like_rating_current_y = rect_y + ICON_PAD / 2
+            like_rating_current_x = rect_x + round( ICON_PAD / 2 )
+            like_rating_current_y = rect_y + round( ICON_PAD / 2 )
             
             for like_service in like_services_to_show:
                 
@@ -2495,17 +2561,21 @@ class Thumbnail( Selectable ):
         
         numerical_services = services_manager.GetServices( ( HC.LOCAL_RATING_NUMERICAL, ) )
         
+        draw_collapsed_numerical_ratings = new_options.GetBoolean( 'draw_thumbnail_numerical_ratings_collapsed_always' )
+        
         numerical_services_to_show = [ numerical_service for numerical_service in numerical_services if ShouldShowRatingInThumbnail( media, numerical_service.GetServiceKey() ) ]
         
         for numerical_service in numerical_services_to_show:
             
             service_key = numerical_service.GetServiceKey()
             
+            numerical_service = typing.cast( ClientServices.ServiceLocalRatingNumerical, numerical_service )
+            
             custom_pad = numerical_service.GetCustomPad()
             
             ( rating_state, rating ) = ClientRatings.GetNumericalStateFromMedia( ( media, ), service_key )
             
-            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, STAR_DX )
+            numerical_width = ClientGUIRatings.GetNumericalWidth( service_key, STAR_DX, None, draw_collapsed_numerical_ratings, rating_state, rating )
             
             rect_width = numerical_width + ( ICON_MARGIN * 2 ) #icon padding is included in GetNumericalWidth
             rect_height = STAR_DY + ICON_PAD + ( ICON_MARGIN * 2 )
@@ -2518,10 +2588,10 @@ class Thumbnail( Selectable ):
                 painter.fillRect( rect_x, rect_y, rect_width, rect_height, qss_window_colour )
                 
             
-            numerical_rating_current_x = rect_x + ICON_PAD / 2
-            numerical_rating_current_y = rect_y + ICON_PAD / 2
+            numerical_rating_current_x = rect_x + round( ICON_PAD / 2 )
+            numerical_rating_current_y = rect_y + round( ICON_PAD / 2 )
             
-            ClientGUIRatings.DrawNumerical( painter, numerical_rating_current_x, numerical_rating_current_y, service_key, rating_state, rating, QC.QSize( STAR_DX, STAR_DY ) )
+            ClientGUIRatings.DrawNumerical( painter, numerical_rating_current_x, numerical_rating_current_y, service_key, rating_state, rating, size = QC.QSize( STAR_DX, STAR_DY ), pad_px = custom_pad, draw_collapsed = draw_collapsed_numerical_ratings, text_pen_colour = qss_text_colour )
             
             current_top_right_y += rect_height
             
@@ -2535,11 +2605,29 @@ class Thumbnail( Selectable ):
         
         if num_to_show > 0:
             
-            control_width = THUMBNAIL_RATING_ICON_SET_SIZE * 2 #+ PAD_PX?
-            control_height = THUMBNAIL_RATING_ICON_SET_SIZE
+            """
+            The total rect_width will be added to dynamically, since we want to be able to have dramatically large numbers in some inc/dec services without needing to have unnecessary whitespace in others' boxes
+            We need this rect_width for drawing the thumbnail_rating_background only, but it must be pre-calculated for proper painter drawing, so;
+            to avoid extra fetches of Service data / Media rating state, we buffer the values used for this pre-calculation for use a moment later in the Draw call.
+            """
             
-            rect_width = ( control_width * num_to_show ) + ( ICON_MARGIN * 2 )
-            rect_height = control_height + ( ICON_MARGIN * 2 )
+            rect_width = ( ICON_MARGIN * 2 ) + ( ICON_MARGIN * ( num_to_show - 1 ) )
+            rect_height = THUMBNAIL_RATING_INCDEC_SET_HEIGHT + ( ICON_MARGIN * 2 )
+            
+            prefetched_display_values = []
+            
+            for incdec_service in incdec_services_to_show:
+                
+                service_key = incdec_service.GetServiceKey()
+                
+                ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( media, ), service_key )
+                
+                service_size = ClientGUIRatings.GetIncDecSize( THUMBNAIL_RATING_INCDEC_SET_HEIGHT, rating )
+                
+                rect_width += service_size.width()
+                
+                prefetched_display_values.append( ( service_key, rating_state, rating, service_size ) )
+                
             
             rect_x = width - thumbnail_border - rect_width
             rect_y = current_top_right_y
@@ -2552,15 +2640,13 @@ class Thumbnail( Selectable ):
             incdec_rating_current_x = rect_x + ICON_MARGIN
             incdec_rating_current_y = rect_y + ICON_MARGIN
             
-            for incdec_service in incdec_services_to_show:
+            for incdec_service_details in prefetched_display_values:
                 
-                service_key = incdec_service.GetServiceKey()
+                ( service_key, rating_state, rating, incdec_size ) = incdec_service_details
                 
-                ( rating_state, rating ) = ClientRatings.GetIncDecStateFromMedia( ( media, ), service_key )
+                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, incdec_rating_current_y, service_key, rating_state, rating, incdec_size, QC.QSize( ICON_PAD, ICON_MARGIN ) )
                 
-                ClientGUIRatings.DrawIncDec( painter, incdec_rating_current_x, incdec_rating_current_y, service_key, rating_state, rating, QC.QSize( STAR_DX * 2, STAR_DY ), QC.QSize( ICON_PAD, ICON_MARGIN ) )
-                
-                incdec_rating_current_x += control_width
+                incdec_rating_current_x += incdec_size.width() + ICON_MARGIN
                 
             
             current_top_right_y += rect_height
@@ -2580,7 +2666,7 @@ class Thumbnail( Selectable ):
             icons_to_draw.append( CC.global_pixmaps().notes )
             
         
-        if locations_manager.IsTrashed() or CC.COMBINED_LOCAL_FILE_SERVICE_KEY in locations_manager.GetDeleted():
+        if locations_manager.IsTrashed() or CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY in locations_manager.GetDeleted():
             
             icons_to_draw.append( CC.global_pixmaps().trash )
             
@@ -2644,7 +2730,7 @@ class Thumbnail( Selectable ):
             
             icons_to_draw.append( CC.global_pixmaps().sound )
             
-        elif media.HasDuration():
+        elif media.HasDuration() or media.HasSimulatedDuration():
             
             icons_to_draw.append( CC.global_pixmaps().play )
             

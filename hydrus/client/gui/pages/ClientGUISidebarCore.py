@@ -1,5 +1,3 @@
-import typing
-
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
@@ -22,7 +20,7 @@ from hydrus.client.search import ClientSearchTagContext
 
 class ListBoxTagsMediaSidebar( ClientGUIListBoxes.ListBoxTagsMedia ):
     
-    def __init__( self, parent: QW.QWidget, page_manager: ClientGUIPageManager.PageManager, page_key, tag_display_type = ClientTags.TAG_DISPLAY_SELECTION_LIST, tag_autocomplete: typing.Optional[ ClientGUIACDropdown.AutoCompleteDropdownTagsRead ] = None ):
+    def __init__( self, parent: QW.QWidget, page_manager: ClientGUIPageManager.PageManager, page_key, tag_display_type = ClientTags.TAG_DISPLAY_SELECTION_LIST, tag_autocomplete: ClientGUIACDropdown.AutoCompleteDropdownTagsRead | None = None ):
         
         super().__init__( parent, tag_display_type, CC.TAG_PRESENTATION_SEARCH_PAGE, include_counts = True )
         
@@ -169,11 +167,12 @@ class Sidebar( QW.QScrollArea ):
         self.setWidgetResizable( True )
         #self.setFrameStyle( QW.QFrame.Shape.Panel | QW.QFrame.Shadow.Sunken )
         #self.setLineWidth( 2 )
-        #self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarAlwaysOff )
+        self.setHorizontalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         self.setVerticalScrollBarPolicy( QC.Qt.ScrollBarPolicy.ScrollBarAsNeeded )
         
         self._page_manager = page_manager
         
+        # page here should be a data object not the UI widget, or an interface, to provide the various 'Get/AppendMediaResults' and such. the future version of MediaList
         self._page = page
         self._page_key = self._page_manager.GetVariable( 'page_key' )
         
@@ -193,8 +192,6 @@ class Sidebar( QW.QScrollArea ):
             
         
         self._media_collect_widget = ClientGUIMediaResultsPanelSortCollect.MediaCollectControl( self, media_collect = media_collect )
-        
-        self._media_collect_widget.ListenForNewOptions()
         
         if self.SHOW_COLLECT:
             
@@ -218,7 +215,12 @@ class Sidebar( QW.QScrollArea ):
         return 'empty page'
         
     
-    def _MakeCurrentSelectionTagsBox( self, sizer, tag_display_type = ClientTags.TAG_DISPLAY_SELECTION_LIST ):
+    def _MakeCurrentSelectionTagsBox( self, sizer, tag_display_type = None ):
+        
+        if tag_display_type is None: # petitions sets this guy explicitly and for good reason, so now None
+            
+            tag_display_type = CG.client_controller.new_options.GetInteger( 'tag_list_tag_display_type_sidebar' )
+            
         
         self._current_selection_tags_box = ClientGUIListBoxes.StaticBoxSorterForListBoxTags( self, 'selection tags', CC.TAG_PRESENTATION_SEARCH_PAGE )
         
@@ -232,6 +234,11 @@ class Sidebar( QW.QScrollArea ):
     def _SortChanged( self, media_sort ):
         
         self._page_manager.SetVariable( 'media_sort', media_sort )
+        
+    
+    def ActivateFavouriteSearch( self, fav_search: tuple[ str, str ] ):
+        
+        pass
         
     
     def ConnectMediaResultsPanelSignals( self, media_panel: ClientGUIMediaResultsPanel.MediaResultsPanel ):
@@ -258,6 +265,11 @@ class Sidebar( QW.QScrollArea ):
         
     
     def CleanBeforeDestroy( self ):
+        
+        pass
+        
+    
+    def EnterPredicates( self, predicates = None ):
         
         pass
         

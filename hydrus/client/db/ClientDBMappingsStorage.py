@@ -9,7 +9,7 @@ from hydrus.client.db import ClientDBServices
 
 def DoingAFileJoinTagSearchIsFaster( estimated_file_row_count, estimated_tag_row_count ):
     
-    # ok, so there are times we want to do a tag search when we already know a superset of the file results (e.g. 'get all of these files that are tagged with samus')
+    # ok, so there are times we want to do a tag search when we already know a superset of the file results (e.g. 'get all of these files that are tagged with dave')
     # sometimes it is fastest to just do the search using tag outer-join-loop/indices and intersect/difference in python
     # sometimes it is fastest to do the search with a temp file table and CROSS JOIN or EXISTS or similar to effect file outer-join-loop/indices
     
@@ -426,7 +426,7 @@ class ClientDBMappingsStorage( ClientDBModule.ClientDBModule ):
     
     def GetFastestStorageMappingTableNamesFromLocationContext( self, location_context: ClientLocation.LocationContext, tag_service_id: int ):
         
-        # TODO: this can probably work better, e.g. if we have multiple local domains we can return all local files or whatever
+        # TODO: this can probably work better, e.g. if we have multiple local domains we can return hydrus local file storage or whatever
         
         if location_context.IncludesDeleted() and not location_context.IncludesCurrent():
             

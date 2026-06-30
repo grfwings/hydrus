@@ -78,6 +78,7 @@ SHORTCUT_KEY_SPECIAL_MEDIA_VOLUME_DOWN = 32
 SHORTCUT_KEY_SPECIAL_MEDIA_VOLUME_UP = 33
 SHORTCUT_KEY_SPECIAL_MEDIA_VOLUME_MUTE_UNMUTE = 32
 SHORTCUT_KEY_SPECIAL_EMPTY_MODIFIER = 33
+SHORTCUT_KEY_SPECIAL_BACKTAB = 34
 
 if HC.PLATFORM_MACOS:
     
@@ -94,6 +95,7 @@ special_key_shortcut_enum_lookup = {
     QC.Qt.Key.Key_Space : SHORTCUT_KEY_SPECIAL_SPACE,
     QC.Qt.Key.Key_Backspace : SHORTCUT_KEY_SPECIAL_BACKSPACE,
     QC.Qt.Key.Key_Tab : SHORTCUT_KEY_SPECIAL_TAB,
+    QC.Qt.Key.Key_Backtab : SHORTCUT_KEY_SPECIAL_BACKTAB,
     QC.Qt.Key.Key_Return : SHORTCUT_KEY_SPECIAL_RETURN,
     QC.Qt.Key.Key_Enter : SHORTCUT_KEY_SPECIAL_ENTER,
     QC.Qt.Key.Key_Pause : SHORTCUT_KEY_SPECIAL_PAUSE,
@@ -138,6 +140,7 @@ special_key_shortcut_str_lookup = {
     SHORTCUT_KEY_SPECIAL_SPACE : 'space',
     SHORTCUT_KEY_SPECIAL_BACKSPACE : 'backspace',
     SHORTCUT_KEY_SPECIAL_TAB : 'tab',
+    SHORTCUT_KEY_SPECIAL_BACKTAB : 'backtab',
     SHORTCUT_KEY_SPECIAL_RETURN : 'return',
     SHORTCUT_KEY_SPECIAL_ENTER : 'enter',
     SHORTCUT_KEY_SPECIAL_PAUSE : 'pause',
@@ -208,7 +211,7 @@ shortcut_mouse_string_lookup = {
     SHORTCUT_MOUSE_SCROLL_RIGHT : 'scroll right'
 }
 
-def get_shortcut_mouse_string( shortcut_key: int, call_mouse_buttons_primary_secondary_override: typing.Optional[ bool ] = None ):
+def get_shortcut_mouse_string( shortcut_key: int, call_mouse_buttons_primary_secondary_override: bool | None = None ):
     
     if call_mouse_buttons_primary_secondary_override is None:
         
@@ -216,7 +219,7 @@ def get_shortcut_mouse_string( shortcut_key: int, call_mouse_buttons_primary_sec
             
             call_mouse_buttons_primary_secondary = CG.client_controller.new_options.GetBoolean( 'call_mouse_buttons_primary_secondary' )
             
-        except:
+        except Exception as e:
             
             call_mouse_buttons_primary_secondary = False
             
@@ -391,7 +394,11 @@ SHORTCUTS_MEDIA_VIEWER_ACTIONS = [
     CAC.SIMPLE_FLIP_DARKMODE,
     CAC.SIMPLE_CLOSE_MEDIA_VIEWER,
     CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB,
+    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA,
+    CAC.SIMPLE_FOCUS_TAB_AND_MEDIA,
     CAC.SIMPLE_FLIP_ICC_PROFILE_APPLICATION,
+    CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER,
+    CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN,
     CAC.SIMPLE_RESET_PAN_TO_CENTER
 ]
 
@@ -400,10 +407,14 @@ SHORTCUTS_MEDIA_VIEWER_BROWSER_ACTIONS = [
     CAC.SIMPLE_VIEW_FIRST,
     CAC.SIMPLE_VIEW_LAST,
     CAC.SIMPLE_VIEW_PREVIOUS,
+    CAC.SIMPLE_VIEW_RANDOM,
+    CAC.SIMPLE_UNDO_RANDOM,
     CAC.SIMPLE_PAUSE_PLAY_SLIDESHOW,
     CAC.SIMPLE_SHOW_MENU,
     CAC.SIMPLE_CLOSE_MEDIA_VIEWER,
-    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB
+    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB,
+    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA,
+    CAC.SIMPLE_FOCUS_TAB_AND_MEDIA
 ]
 
 SHORTCUTS_MAIN_GUI_ACTIONS = [
@@ -458,8 +469,11 @@ SHORTCUTS_DUPLICATE_FILTER_ACTIONS = [
     CAC.SIMPLE_DUPLICATE_FILTER_CUSTOM_ACTION,
     CAC.SIMPLE_DUPLICATE_FILTER_SKIP,
     CAC.SIMPLE_DUPLICATE_FILTER_BACK,
+    CAC.SIMPLE_DUPLICATE_FILTER_APPROVE_AUTO_RESOLUTION,
+    CAC.SIMPLE_DUPLICATE_FILTER_DENY_AUTO_RESOLUTION,
     CAC.SIMPLE_CLOSE_MEDIA_VIEWER,
-    CAC.SIMPLE_VIEW_NEXT
+    CAC.SIMPLE_VIEW_NEXT,
+    CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER
 ]
 
 SHORTCUTS_ARCHIVE_DELETE_FILTER_ACTIONS = [
@@ -475,7 +489,9 @@ SHORTCUTS_MEDIA_VIEWER_VIDEO_AUDIO_PLAYER_ACTIONS = [
     CAC.SIMPLE_PAUSE_PLAY_MEDIA,
     CAC.SIMPLE_MEDIA_SEEK_DELTA,
     CAC.SIMPLE_CLOSE_MEDIA_VIEWER,
-    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB
+    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB,
+    CAC.SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA,
+    CAC.SIMPLE_FOCUS_TAB_AND_MEDIA
 ]
 
 SHORTCUTS_PREVIEW_VIDEO_AUDIO_PLAYER_ACTIONS = [
@@ -509,7 +525,7 @@ simple_shortcut_name_to_action_lookup = {
     'custom' : SHORTCUTS_MEDIA_ACTIONS + SHORTCUTS_MEDIA_VIEWER_ACTIONS
 }
 
-simple_shortcut_name_to_action_lookup = { key : HydrusData.DedupeList( value ) for ( key, value ) in simple_shortcut_name_to_action_lookup.items() }
+simple_shortcut_name_to_action_lookup = { key : HydrusLists.DedupeList( value ) for ( key, value ) in simple_shortcut_name_to_action_lookup.items() }
 
 CUMULATIVE_MOUSEWARP_MANHATTAN_LENGTH = 0
 
@@ -584,7 +600,7 @@ def ConvertQtKeyToShortcutKey( key_qt ):
             
             return ( SHORTCUT_TYPE_KEYBOARD_CHARACTER, casefold_key_ord )
             
-        except:
+        except Exception as e:
             
             if HG.shortcut_report_mode:
                 
@@ -641,7 +657,7 @@ def ConvertKeyEventToShortcut( event, shortcuts_merge_non_number_numpad_override
                     
                     shortcuts_merge_non_number_numpad = CG.client_controller.new_options.GetBoolean( 'shortcuts_merge_non_number_numpad' )
                     
-                except:
+                except Exception as e:
                     
                     shortcuts_merge_non_number_numpad = True
                     
@@ -719,7 +735,7 @@ def ConvertKeyEventToSimpleTuple( event ):
 GLOBAL_MOUSE_SCROLL_DELTA_FOR_TRACKPADS = 0
 ONE_TICK_ON_A_NORMAL_MOUSE_IN_EIGHTS_OF_A_DEGREE = 15 * 8 # fifteen degrees, in eighths of a degree
 
-def ConvertMouseEventToShortcut( event: typing.Union[ QG.QMouseEvent, QG.QWheelEvent ] ):
+def ConvertMouseEventToShortcut( event: QG.QMouseEvent | QG.QWheelEvent ):
     
     key = None
     
@@ -843,7 +859,7 @@ def ConvertMouseEventToShortcut( event: typing.Union[ QG.QMouseEvent, QG.QWheelE
     return None
     
 
-def IShouldCatchShortcutEvent( event_handler_owner: QC.QObject, event_catcher: QW.QWidget, event: typing.Optional[ QC.QEvent ] = None, child_tlw_classes_who_can_pass_up: typing.Optional[ collections.abc.Collection[ type ] ] = None ):
+def IShouldCatchShortcutEvent( event_handler_owner: QC.QObject, event_catcher: QW.QWidget, event: QC.QEvent | None = None, child_tlw_classes_who_can_pass_up: collections.abc.Collection[ type ] | None = None ):
     
     do_focus_test = True
     
@@ -1148,7 +1164,7 @@ class Shortcut( HydrusSerialisable.SerialisableBase ):
                 
                 shortcuts_merge_non_number_numpad = CG.client_controller.new_options.GetBoolean( 'shortcuts_merge_non_number_numpad' )
                 
-            except:
+            except Exception as e:
                 
                 shortcuts_merge_non_number_numpad = False
                 
@@ -1300,7 +1316,7 @@ class Shortcut( HydrusSerialisable.SerialisableBase ):
                     action_name += chr( self.shortcut_key )
                     
                 
-            except:
+            except Exception as e:
                 
                 action_name += 'unknown key: {}'.format( repr( self.shortcut_key ) )
                 

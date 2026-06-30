@@ -1,11 +1,11 @@
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
-from hydrus.core import HydrusThreading
+from hydrus.core import HydrusLists
 from hydrus.core import HydrusTime
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import QtPorting as QP
@@ -110,7 +110,10 @@ class JobStatus( object ):
         
         with self._variable_lock:
             
-            self._urls.append( url )
+            if url not in self._urls:
+                
+                self._urls.append( url )
+                
             
         
     
@@ -126,6 +129,11 @@ class JobStatus( object ):
         self.DeleteVariable( 'attached_files' )
         
     
+    def DeleteGauge( self, level = 1 ):
+        
+        self.DeleteVariable( f'popup_gauge_{level}' )
+        
+    
     def DeleteNetworkJob( self ):
         
         self.DeleteVariable( 'network_job' )
@@ -133,7 +141,7 @@ class JobStatus( object ):
     
     def DeleteStatusText( self, level = 1 ):
         
-        self.DeleteVariable( 'status_text_{}'.format( level ) )
+        self.DeleteVariable( f'status_text_{level}' )
         
     
     def DeleteStatusTitle( self ):
@@ -222,6 +230,11 @@ class JobStatus( object ):
             
         
     
+    def GetGauge( self, level = 1 ) -> tuple[ int | None, int | None ] | None:
+        
+        return self.GetIfHasVariable( f'popup_gauge_{level}' )
+        
+    
     def GetKey( self ):
         
         return self._key
@@ -232,12 +245,12 @@ class JobStatus( object ):
         return self.GetIfHasVariable( 'network_job' )
         
     
-    def GetStatusText( self, level = 1 ) -> typing.Optional[ str ]:
+    def GetStatusText( self, level = 1 ) -> str | None:
         
         return self.GetIfHasVariable( 'status_text_{}'.format( level ) )
         
     
-    def GetStatusTitle( self ) -> typing.Optional[ str ]:
+    def GetStatusTitle( self ) -> str | None:
         
         return self.GetIfHasVariable( 'status_title' )
         
@@ -255,7 +268,7 @@ class JobStatus( object ):
             
         
     
-    def GetUserCallable( self ) -> typing.Optional[ HydrusData.Call ]:
+    def GetUserCallable( self ) -> HydrusData.Call | None:
         
         return self.GetIfHasVariable( 'user_callable' )
         
@@ -318,6 +331,49 @@ class JobStatus( object ):
         self.Cancel()
         
     
+    def SetExceptionTuple( self, etype, value, tb ):
+        
+        try:
+            
+            try:
+                
+                self.SetStatusTitle( str( etype.__name__ ) )
+                
+            except Exception as e:
+                
+                self.SetStatusTitle( str( etype ) )
+                
+            
+            if value is None:
+                
+                value = 'Unknown error'
+                
+            
+            pretty_value = f'{value}'
+            
+            all_lines = pretty_value.splitlines()
+            
+            first_line = 'Exception'
+            
+            if len( all_lines ) > 0:
+                
+                first_line = all_lines[0]
+                
+            
+            self.SetStatusText( first_line )
+            
+            nice_trace = HydrusData.ConvertExceptionTupleToNiceTrace( etype, value, tb )
+            
+            self.SetVariable( 'traceback', nice_trace )
+            
+        except Exception as e:
+            
+            HydrusData.PrintExceptionTuple( etype, value, tb )
+            
+            self.SetStatusText( 'Encountered exception I could not parse!' )
+            
+        
+    
     def SetFiles( self, hashes: list[ bytes ], label: str ):
         
         if len( hashes ) == 0:
@@ -326,10 +382,15 @@ class JobStatus( object ):
             
         else:
             
-            hashes = HydrusData.DedupeList( list( hashes ) )
+            hashes = HydrusLists.DedupeList( list( hashes ) )
             
             self.SetVariable( 'attached_files', ( hashes, label ) )
             
+        
+    
+    def SetGauge( self, num_done: int | None, num_to_do: int | None, level = 1 ):
+        
+        self.SetVariable( f'popup_gauge_{level}', ( num_done, num_to_do ) )
         
     
     def SetNetworkJob( self, network_job ):
@@ -345,11 +406,6 @@ class JobStatus( object ):
     def SetStatusTitle( self, title: str ):
         
         self.SetVariable( 'status_title', title )
-        
-    
-    def SetTraceback( self, trace: str ):
-        
-        self.SetVariable( 'traceback', trace )
         
     
     def SetUserCallable( self, call: HydrusData.Call ):
@@ -414,7 +470,7 @@ class JobStatus( object ):
             
             return '\n'.join( stuff_to_print )
             
-        except:
+        except Exception as e:
             
             return repr( stuff_to_print )
             
@@ -629,7 +685,8 @@ class QtAwareJob( HydrusThreading.SingleJob ):
             self.Work()
             
         
-        QP.CallAfter( qt_code )
+        # yo if you change this, alter how profile_mode (ui) works
+        CG.client_controller.CallAfterQtSafe( self._window, qt_code )
         
     
     def _MyWindowDead( self ):
@@ -654,6 +711,7 @@ class QtAwareJob( HydrusThreading.SingleJob ):
         return self._MyWindowDead()
         
     
+
 class QtAwareRepeatingJob( HydrusThreading.RepeatingJob ):
     
     PRETTY_CLASS_NAME = 'repeating UI job'
@@ -679,7 +737,8 @@ class QtAwareRepeatingJob( HydrusThreading.RepeatingJob ):
     
     def _BootWorker( self ):
         
-        QP.CallAfter( self._QTWork )
+        # yo if you change this, alter how profile_mode (ui) works
+        CG.client_controller.CallAfterQtSafe( self._window, self._QTWork )
         
     
     def _MyWindowDead( self ):

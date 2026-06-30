@@ -5,23 +5,23 @@ import random
 import sys
 import threading
 import time
-import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
-from hydrus.core import HydrusDB
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusLogger
 from hydrus.core import HydrusPaths
-from hydrus.core import HydrusProcess
 from hydrus.core import HydrusPubSub
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusTemp
 from hydrus.core import HydrusTime
 from hydrus.core.networking import HydrusNATPunch
+from hydrus.core.processes import HydrusProcess
+from hydrus.core.processes import HydrusSubprocess
+from hydrus.core.processes import HydrusThreading
 
 class HydrusController( object ):
     
-    def __init__( self, db_dir ):
+    def __init__( self, db_dir: str, logger: HydrusLogger.HydrusLogger ):
         
         super().__init__()
         
@@ -33,8 +33,9 @@ class HydrusController( object ):
         self._i_own_running_file = False
         
         self.db_dir = db_dir
+        self.logger = logger
         
-        self.db: typing.Optional[ HydrusDB.HydrusDB ] = None
+        self.db = None
         
         pubsub_valid_callable = self._GetPubsubValidCallable()
         
@@ -516,6 +517,11 @@ class HydrusController( object ):
         return self._managers[ name ]
         
     
+    def GetName( self ):
+        
+        return self._name
+        
+    
     def GetThreadPoolBusyStatus( self ):
         
         if HydrusTime.TimeHasPassed( self._thread_pool_busy_status_text_new_check_time ):
@@ -592,10 +598,14 @@ class HydrusController( object ):
             
             self._InitHydrusTempDir()
             
-        except:
+        except Exception as e:
             
             HydrusData.Print( 'Failed to initialise temp folder.' )
             
+        
+        from hydrus.core.files import HydrusFileHandling
+        
+        HydrusFileHandling.InitialiseMimesToDefaultThumbnailPaths()
         
         self._fast_job_scheduler = HydrusThreading.JobScheduler( self )
         self._slow_job_scheduler = HydrusThreading.JobScheduler( self )
@@ -671,76 +681,14 @@ class HydrusController( object ):
         self._fast_job_scheduler.ClearOutDead()
         self._slow_job_scheduler.ClearOutDead()
         
+        HydrusSubprocess.ReapDeadLongLivedExternalProcesses()
+        
     
     def MaintainMemorySlow( self ):
         
         HydrusTemp.CleanUpOldTempPaths()
         
         self._MaintainCallToThreads()
-        
-    
-    def PrintProfile( self, summary, profile_text = None ):
-        
-        pretty_timestamp = time.strftime( '%Y-%m-%d %H-%M-%S', time.localtime( HG.profile_start_time ) )
-        
-        profile_log_filename = '{} profile - {}.log'.format( self._name, pretty_timestamp )
-        
-        profile_log_path = os.path.join( self.db_dir, profile_log_filename )
-        
-        with open( profile_log_path, 'a', encoding = 'utf-8' ) as f:
-            
-            prefix = time.strftime( '%Y-%m-%d %H:%M:%S: ' )
-            
-            f.write( prefix + summary )
-            
-            if profile_text is not None:
-                
-                f.write( '\n\n' )
-                f.write( profile_text )
-                
-            
-        
-    
-    def PrintQueryPlan( self, query, plan_lines ):
-        
-        if query in HG.queries_planned:
-            
-            return
-            
-        
-        HG.queries_planned.add( query )
-        
-        pretty_timestamp = time.strftime( '%Y-%m-%d %H-%M-%S', time.localtime( HG.query_planner_start_time ) )
-        
-        query_planner_log_filename = '{} query planner - {}.log'.format( self._name, pretty_timestamp )
-        
-        query_planner_log_path = os.path.join( self.db_dir, query_planner_log_filename )
-        
-        with open( query_planner_log_path, 'a', encoding = 'utf-8' ) as f:
-            
-            prefix = time.strftime( '%Y-%m-%d %H:%M:%S: ' )
-            
-            if ' ' in query:
-                
-                first_word = query.split( ' ', 1 )[0]
-                
-            else:
-                
-                first_word = 'unknown'
-                
-            
-            f.write( prefix + first_word )
-            f.write( '\n' )
-            f.write( query )
-            
-            if len( plan_lines ) > 0:
-                
-                f.write( '\n' )
-                f.write( '\n'''.join( ( str( p ) for p in plan_lines ) ) )
-                
-            
-            f.write( '\n\n' )
-            
         
     
     def Read( self, action, *args, **kwargs ):

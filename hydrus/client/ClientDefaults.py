@@ -4,8 +4,8 @@ import os
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusStaticDir
 from hydrus.core.networking import HydrusNetworking
-from hydrus.core import HydrusTime
 
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
@@ -89,91 +89,7 @@ def GetDefaultCheckerOptions( name ):
         return ClientImportOptions.CheckerOptions( intended_files_per_check = 1, never_faster_than = 7 * 86400, never_slower_than = 180 * 86400, death_file_velocity = ( 1, 365 * 86400 ) )
         
     
-def GetDefaultHentaiFoundryInfo():
 
-    info = {}
-    
-    info[ 'rating_nudity' ] = '3'
-    info[ 'rating_violence' ] = '3'
-    info[ 'rating_profanity' ] = '3'
-    info[ 'rating_racism' ] = '3'
-    info[ 'rating_sex' ] = '3'
-    info[ 'rating_spoilers' ] = '3'
-    
-    info[ 'rating_yaoi' ] = '1'
-    info[ 'rating_yuri' ] = '1'
-    info[ 'rating_teen' ] = '1'
-    info[ 'rating_guro' ] = '1'
-    info[ 'rating_furry' ] = '1'
-    info[ 'rating_beast' ] = '1'
-    info[ 'rating_male' ] = '1'
-    info[ 'rating_female' ] = '1'
-    info[ 'rating_futa' ] = '1'
-    info[ 'rating_other' ] = '1'
-    info[ 'rating_scat' ] = '1'
-    info[ 'rating_incest' ] = '1'
-    info[ 'rating_rape' ] = '1'
-    
-    info[ 'filter_media' ] = 'A'
-    info[ 'filter_order' ] = 'date_new'
-    info[ 'filter_type' ] = '0'
-    
-    info[ 'yt0' ] = 'Apply' # the submit button wew lad
-    
-    return info
-    
-def GetDefaultGUGs():
-    
-    dir_path = os.path.join( HC.STATIC_DIR, 'default', 'gugs' )
-    
-    from hydrus.client.networking import ClientNetworkingGUG
-    
-    return GetDefaultObjectsFromPNGs( dir_path, ( ClientNetworkingGUG.GalleryURLGenerator, ClientNetworkingGUG.NestedGalleryURLGenerator ) )
-    
-def GetDefaultNGUGs():
-    
-    from hydrus.client.networking import ClientNetworkingGUG
-    
-    gugs = [ gug for gug in GetDefaultGUGs() if isinstance( gug, ClientNetworkingGUG.NestedGalleryURLGenerator ) ]
-    
-    return gugs
-    
-def GetDefaultSingleGUGs():
-    
-    from hydrus.client.networking import ClientNetworkingGUG
-    
-    gugs = [ gug for gug in GetDefaultGUGs() if isinstance( gug, ClientNetworkingGUG.GalleryURLGenerator ) ]
-    
-    return gugs
-    
-
-def GetDefaultLoginScripts():
-    
-    dir_path = os.path.join( HC.STATIC_DIR, 'default', 'login_scripts' )
-    
-    from hydrus.client.networking import ClientNetworkingLogin
-    
-    return GetDefaultObjectsFromPNGs( dir_path, ( ClientNetworkingLogin.LoginScriptDomain, ) )
-    
-
-def GetDefaultParsers():
-    
-    dir_path = os.path.join( HC.STATIC_DIR, 'default', 'parsers' )
-    
-    from hydrus.client.parsing import ClientParsing
-    
-    return GetDefaultObjectsFromPNGs( dir_path, ( ClientParsing.PageParser, ) )
-    
-def GetDefaultScriptRows():
-    
-    script_info = []
-    
-    script_info.append( ( 32, 'iqdb danbooru', 2, HydrusTime.GetNowMS(), '''["https://danbooru.iqdb.org/", 1, 0, [55, 1, [[], "some hash bytes"]], "file", {}, [[29, 1, ["link to danbooru", [27, 6, [[26, 1, [[62, 2, [0, "td", {"class": "image"}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 0, "href", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], [[30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "tag-list"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {"class": "tag-type-1"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {"class": "search-tag"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "creator"]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "tag-list"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {"class": "tag-type-3"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {"class": "search-tag"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "series"]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "tag-list"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {"class": "tag-type-4"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {"class": "search-tag"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "character"]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "tag-list"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {"class": "tag-type-0"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {"class": "search-tag"}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, ""]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "post-information"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [2, "Rating:*", null, null, "Rating: Safe"]], [55, 1, [[[0, 8]], "Rating: Safe"]]]], 0, false, "rating"]], [30, 4, ["", 7, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "post-information"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {}, null, null, true, [51, 1, [2, "Source:*", null, null, "Source:"]]]], [62, 2, [0, "a", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 0, "href", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, [8, 0]]]]]], [30, 4, ["no iqdb match found", 8, [27, 6, [[26, 1, [[62, 2, [0, "th", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, [false, [51, 1, [2, "Best match", null, null, "Best match"]]]]]]]''' ) )
-    script_info.append( ( 32, 'danbooru md5', 2, HydrusTime.GetNowMS(), '''["https://danbooru.donmai.us/", 0, 1, [55, 1, [[[4, "hex"]], "some hash bytes"]], "md5", {"page": "post", "s": "list"}, [[30, 4, ["we got sent back to main gallery page -- title test", 8, [27, 6, [[26, 1, [[62, 2, [0, "head", {}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "title", {}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, [true, [51, 1, [2, "Image List", null, null, "Image List"]]]]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-0"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, ""]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-3"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "series"]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-1"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "creator"]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-4"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, "character"]], [30, 4, ["we got sent back to main gallery page -- page links exist", 8, [27, 6, [[26, 1, [[62, 2, [0, "div", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 0, "class", [51, 1, [3, "", null, null, "example string"]], [55, 1, [[], "parsed information"]]]], 0, false, [true, [51, 1, [2, "pagination", null, null, "pagination"]]]]], [30, 4, ["", 0, [27, 6, [[26, 1, [[62, 2, [0, "section", {"id": "post-information"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "li", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "href", [51, 1, [2, "Rating:*", null, null, "Rating: Safe"]], [55, 1, [[[0, 8]], "Rating: Safe"]]]], 0, false, "rating"]]]]''' ) )
-    script_info.append( ( 32, 'gelbooru md5', 2, HydrusTime.GetNowMS(), '''["http://gelbooru.com/index.php", 0, 1, [55, 1, [[[4, "hex"]], "some hash bytes"]], "md5", {"s": "list", "page": "post"}, [[30, 6, ["we got sent back to main gallery page -- title test", 8, [27, 7, [[26, 1, [[62, 2, [0, "head", {}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "title", {}, 0, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [84, 1, [26, 1, []]]]], [true, [51, 1, [2, "Image List", null, null, "Image List"]]]]], [30, 6, ["", 0, [27, 7, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-general"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [84, 1, [26, 1, []]]]], ""]], [30, 6, ["", 0, [27, 7, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-copyright"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [84, 1, [26, 1, []]]]], "series"]], [30, 6, ["", 0, [27, 7, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-artist"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [84, 1, [26, 1, []]]]], "creator"]], [30, 6, ["", 0, [27, 7, [[26, 1, [[62, 2, [0, "li", {"class": "tag-type-character"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, 1, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 1, "", [84, 1, [26, 1, []]]]], "character"]], [30, 6, ["we got sent back to main gallery page -- page links exist", 8, [27, 7, [[26, 1, [[62, 2, [0, "div", {"id": "paginator"}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]], [62, 2, [0, "a", {}, null, null, false, [51, 1, [3, "", null, null, "example string"]]]]]], 2, "class", [84, 1, [26, 1, []]]]], [true, [51, 1, [3, "", null, null, "pagination"]]]]]]]''' ) )
-    
-    return script_info
-    
 def GetDefaultShortcuts():
     
     from hydrus.client.gui import ClientGUIShortcuts
@@ -731,34 +647,29 @@ def GetDefaultShortcuts():
 
 def GetDefaultSimpleDownloaderFormulae():
     
-    dir_path = os.path.join( HC.STATIC_DIR, 'default', 'simple_downloader_formulae' )
+    paths = HydrusStaticDir.ListStaticDirFilePaths( os.path.join( 'default', 'simple_downloader_formulae' ) )
     
     from hydrus.client.parsing import ClientParsing
     
-    return GetDefaultObjectsFromPNGs( dir_path, ( ClientParsing.SimpleDownloaderParsingFormula, ) )
+    return GetDefaultObjectsFromPNGs( paths, ( ClientParsing.SimpleDownloaderParsingFormula, ) )
     
+
 def GetDefaultURLClasses():
     
-    dir_path = os.path.join( HC.STATIC_DIR, 'default', 'url_classes' )
+    paths = HydrusStaticDir.ListStaticDirFilePaths( os.path.join( 'default', 'url_classes' ) )
     
     from hydrus.client.networking import ClientNetworkingURLClass
     
-    return GetDefaultObjectsFromPNGs( dir_path, ( ClientNetworkingURLClass.URLClass, ) )
+    return GetDefaultObjectsFromPNGs( paths, ( ClientNetworkingURLClass.URLClass, ) )
     
-def GetDefaultObjectsFromPNGs( dir_path, allowed_object_types ):
-    
-    if not os.path.exists( dir_path ):
-        
-        return []
-        
+
+def GetDefaultObjectsFromPNGs( paths: list[ str ], allowed_object_types ):
     
     default_objects = []
     
     from hydrus.client import ClientSerialisable
     
-    for filename in os.listdir( dir_path ):
-        
-        path = os.path.join( dir_path, filename )
+    for path in paths:
         
         try:
             
@@ -791,6 +702,7 @@ def GetDefaultObjectsFromPNGs( dir_path, allowed_object_types ):
     
     return default_objects
     
+
 def SetDefaultBandwidthManagerRules( bandwidth_manager ):
     
     from hydrus.client.networking import ClientNetworkingContexts
@@ -869,14 +781,10 @@ def SetDefaultDomainManagerData( domain_manager ):
     custom_header_dict = {}
     
     custom_header_dict[ 'User-Agent' ] = ( DEFAULT_USER_AGENT, ClientNetworkingDomain.VALID_APPROVED, 'This is the default User-Agent identifier for the client for all network connections.' )
+    custom_header_dict[ 'Accept' ] = ( 'image/jpeg,image/png,image/*;q=0.9,*/*;q=0.8', ClientNetworkingDomain.VALID_APPROVED, 'Prefers jpeg/png over webp, but provides graceful fallback.' )
+    custom_header_dict[ 'Cache-Control' ] = ( 'no-transform', ClientNetworkingDomain.VALID_APPROVED, 'Tells CDNs not to deliver "optimised" versions of files. May not be honoured.' )
     
     network_contexts_to_custom_header_dicts[ ClientNetworkingContexts.GLOBAL_NETWORK_CONTEXT ] = custom_header_dict
-    
-    custom_header_dict = {}
-    
-    custom_header_dict[ 'Accept-Language' ] = ( 'en-US,en;q=0.5', ClientNetworkingDomain.VALID_APPROVED, 'Tells Pixiv to give English tag translations.' )
-    
-    network_contexts_to_custom_header_dicts[ ClientNetworkingContexts.NetworkContext.STATICGenerateForDomain( 'pixiv.net' ) ] = custom_header_dict
     
     #
     
@@ -884,29 +792,8 @@ def SetDefaultDomainManagerData( domain_manager ):
     
     #
     
-    gugs = GetDefaultGUGs()
-    
-    domain_manager.SetGUGs( gugs )
-    
-    gug_keys_to_display = [ gug.GetGUGKey() for gug in gugs if 'ugoira' not in gug.GetName() ]
-    
-    domain_manager.SetGUGKeysToDisplay( gug_keys_to_display )
-    
-    #
-    
-    domain_manager.SetURLClasses( GetDefaultURLClasses() )
-    
-    #
-    
-    domain_manager.SetParsers( GetDefaultParsers() )
-    
-    #
-    
-    domain_manager.TryToLinkURLClassesAndParsers()
-    
-    #
-    
     from hydrus.client.importing.options import TagImportOptions
+    from hydrus.client.importing.options import TagImportOptionsLegacy
     
     service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = True )
     
@@ -914,7 +801,9 @@ def SetDefaultDomainManagerData( domain_manager ):
     
     tag_import_options = TagImportOptions.TagImportOptions( service_keys_to_service_tag_import_options = service_keys_to_service_tag_import_options )
     
-    domain_manager.SetDefaultFilePostTagImportOptions( tag_import_options )
+    tag_import_options_legacy = TagImportOptionsLegacy.TagImportOptionsLegacy( tag_import_options = tag_import_options )
+    
+    domain_manager.SetDefaultFilePostTagImportOptions( tag_import_options_legacy )
     
 
 def SetDefaultFavouriteSearchManagerData( favourite_search_manager ):
@@ -958,11 +847,4 @@ def SetDefaultFavouriteSearchManagerData( favourite_search_manager ):
     #
     
     favourite_search_manager.SetFavouriteSearchRows( rows )
-    
-
-def SetDefaultLoginManagerScripts( login_manager ):
-    
-    default_login_scripts = GetDefaultLoginScripts()
-    
-    login_manager.SetLoginScripts( default_login_scripts, auto_link = True )
     

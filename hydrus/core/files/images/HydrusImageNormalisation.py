@@ -10,68 +10,18 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core.files.images import HydrusImageColours
 from hydrus.core.files.images import HydrusImageICCProfiles
+from hydrus.core.files.images import HydrusImageMathSlop as MathSlop
 from hydrus.core.files.images import HydrusImageMetadata
 
 PIL_SRGB_PROFILE = PILImageCms.createProfile( 'sRGB' )
 
 DO_ICC_PROFILE_NORMALISATION = True
 
-def xy_to_xyz( x, y ):
-    
-    return numpy.array( [ x / y, 1.0, ( 1 - x - y ) / y ] )
-    
-
-def chromaticities_to_rgb_to_xyz( white, red, green, blue ):
-    
-    W = xy_to_xyz( white[0], white[1] )
-    R = xy_to_xyz( red[0], red[1] )
-    G = xy_to_xyz( green[0], green[1] )
-    B = xy_to_xyz( blue[0], blue[1] )
-    
-    # Build unscaled RGB→XYZ matrix
-    M = numpy.column_stack( ( R, G, B ) )
-    
-    # Solve scaling factors so that M @ S = W
-    S = numpy.linalg.solve( M, W )
-    
-    # Scale each column
-    return M * S
-    
-
-def adapt_white_point( XYZ_src_white, XYZ_dst_white ):
-    
-    # Bradford adaptation matrix
-    M = numpy.array( [
-        [ 0.8951,  0.2664, -0.1614],
-        [-0.7502,  1.7135,  0.0367],
-        [ 0.0389, -0.0685,  1.0296],
-    ] )
-    
-    M_inv = numpy.linalg.inv( M )
-    
-    src_cone = M @ XYZ_src_white
-    dst_cone = M @ XYZ_dst_white
-    scale = dst_cone / src_cone
-    
-    adapt = M_inv @ numpy.diag(scale) @ M
-    
-    return adapt
-    
-
-def srgb_encode(c):
-    
-    a = 0.055
-    
-    return numpy.where(
-        c <= 0.0031308,
-        12.92 * c,
-        (1 + a) * numpy.power(c, 1/2.4) - a
-    )
-    
-
 def ConvertGammaChromaticityPNGToSRGB( pil_image ):
     
-    if not PilImageIsPNGWithGammaAndChromaticity( pil_image ):
+    # this is no longer used. it is ten times slower than the ICC Profile solution and may be unstable for very large images
+    
+    if not PILImageIsPNGWithGammaAndChromaticity( pil_image ):
         
         return pil_image
         
@@ -88,7 +38,7 @@ def ConvertGammaChromaticityPNGToSRGB( pil_image ):
     blue_xy = ( chroma[6], chroma[7] )
     
     # Compute RGB→XYZ matrix for source
-    M_src_rgb_to_xyz = chromaticities_to_rgb_to_xyz( white_xy, red_xy, green_xy, blue_xy )
+    M_src_rgb_to_xyz = MathSlop.chromaticities_to_rgb_to_xyz( white_xy, red_xy, green_xy, blue_xy )
     
     '''
     # as far as I can tell, this makes no change to the end pixel hash in my main test file
@@ -159,10 +109,10 @@ def ConvertGammaChromaticityPNGToSRGB( pil_image ):
             
             numpy.clip( transformed, 0, 1, out = transformed )
             
-            transformed = srgb_encode( transformed )
+            transformed = MathSlop.srgb_encode( transformed )
             
             # Restore to image shape
-            corrected_rgb = transformed.reshape( shape )
+            corrected_rgb = numpy.reshape( transformed, shape )
             
             # If alpha present, preserve it
             if work_tile_alpha is not None:
@@ -182,34 +132,43 @@ def ConvertGammaChromaticityPNGToSRGB( pil_image ):
             
         
     
-    return PILImage.fromarray( primary_work_canvas_uint8, mode = pil_image.mode )
+    converted_pil_image_modeless = PILImage.fromarray( primary_work_canvas_uint8 )
+    
+    converted_pil_image = converted_pil_image_modeless.convert( pil_image.mode ) # probably a no-op
+    
+    return converted_pil_image
     
 
 def GenerateICCProfileBytesFromGammaAndChromaticityPNG( pil_image: PILImage.Image ):
     
-    linear_gamma = pil_image.info[ 'gamma' ] # 0.45455
+    file_gamma = pil_image.info[ 'gamma' ]  # e.g. 0.45455
     
-    if linear_gamma == 0:
+    # PNG gAMA stores "file gamma" = 1/encoding_gamma.
+    # We want encoding_gamma for an ICC TRC.
+    if not file_gamma:
         
-        display_gamma = 2.2
+        encoding_gamma = 2.2
         
     else:
         
-        display_gamma = 1.0 / linear_gamma # 2.2
+        encoding_gamma = 1.0 / float( file_gamma )
         
     
     chroma = pil_image.info[ 'chromaticity' ]
     
-    # Extract chromaticities
-    white_xy = ( chroma[0], chroma[1] )
-    red_xy = ( chroma[2], chroma[3] )
-    green_xy = ( chroma[4], chroma[5] )
-    blue_xy = ( chroma[6], chroma[7] )
+    # Extract chromaticities (white, R, G, B)
+    white_xy = (float(chroma[0]), float(chroma[1]))
+    red_xy = (float(chroma[2]), float(chroma[3]))
+    green_xy = (float(chroma[4]), float(chroma[5]))
+    blue_xy = (float(chroma[6]), float(chroma[7]))
     
-    # Compute RGB→XYZ matrix for source
-    M_src_rgb_to_xyz = chromaticities_to_rgb_to_xyz( white_xy, red_xy, green_xy, blue_xy )
+    # Compute RGB→XYZ matrix referenced to the PNG's stated white (commonly D65)
+    M_rgb_to_xyz_src = MathSlop.chromaticities_to_rgb_to_xyz(white_xy, red_xy, green_xy, blue_xy)
     
-    icc_profile_bytes = HydrusImageICCProfiles.make_gamma_and_chromaticity_icc_profile( display_gamma, white_xy, M_src_rgb_to_xyz )
+    # ICC PCS is D50; adapt the matrix columns to D50 to match v2 expectations
+    M_rgb_to_xyz_D50 = MathSlop.adapt_rgb_to_xyz_matrix_to_D50(M_rgb_to_xyz_src, white_xy)
+    
+    icc_profile_bytes = HydrusImageICCProfiles.make_gamma_and_chromaticity_icc_profile( encoding_gamma, M_rgb_to_xyz_D50 )
     
     return icc_profile_bytes
     
@@ -245,8 +204,8 @@ def NormaliseNumPyImageToUInt8( numpy_image: numpy.ndarray ):
         #numpy_image = cv2.normalize( numpy_image, None, 0, 255, cv2.NORM_MINMAX, dtype = cv2.CV_8U )
         
         # this is hacky and is applying some crazy old-school flickr HDR to minmax our range, but it basically works
-        min_value = numpy.min( numpy_image )
-        max_value = numpy.max( numpy_image )
+        min_value = float( numpy.min( numpy_image ) )
+        max_value = float( numpy.max( numpy_image ) )
         
         if min_value > 0:
             
@@ -314,7 +273,7 @@ def DequantizeFreshlyLoadedNumPyImage( numpy_image: numpy.ndarray ) -> numpy.nda
     return numpy_image
     
 
-def PilImageIsPNGWithGammaAndChromaticity( pil_image: PILImage.Image ):
+def PILImageIsPNGWithGammaAndChromaticity( pil_image: PILImage.Image ):
     
     if pil_image.format == 'PNG' and pil_image.mode in ( 'RGB', 'RGBA' ) and 'gamma' in pil_image.info and 'chromaticity' in pil_image.info:
         
@@ -329,6 +288,16 @@ def PilImageIsPNGWithGammaAndChromaticity( pil_image: PILImage.Image ):
             
             return False
             
+        
+        return True
+        
+    
+    return False
+    
+
+def PILImageIsPNGWithSRGB( pil_image: PILImage.Image ):
+    
+    if pil_image.format == 'PNG' and 'srgb' in pil_image.info:
         
         return True
         
@@ -360,7 +329,12 @@ def DequantizePILImage( pil_image: PILImage.Image ) -> PILImage.Image:
             pass
             
         
-    elif PilImageIsPNGWithGammaAndChromaticity( pil_image ):
+    elif PILImageIsPNGWithSRGB( pil_image ):
+        
+        pass # we are already sRGB
+        # the 'srgb' key has a value like 0 or 1. this is 'rendering intent' stuff and would be useful if we wanted to convert to another system
+        
+    elif PILImageIsPNGWithGammaAndChromaticity( pil_image ):
         
         # if a png has an ICC Profile, that overrides gamma/chromaticity, so this should be elif
         # there's also srgb, which has precedence between those two and we can consider if and when it comes up.
@@ -368,7 +342,7 @@ def DequantizePILImage( pil_image: PILImage.Image ) -> PILImage.Image:
         
         # this doesn't work, but I think we are close! it would be great if we could figure this out since it works fast as anything
         # Qt does it but I couldn't replicate their colourspace and whitepoint conversions right
-        '''
+        
         icc_profile_bytes = GenerateICCProfileBytesFromGammaAndChromaticityPNG( pil_image )
         
         try:
@@ -393,7 +367,7 @@ def DequantizePILImage( pil_image: PILImage.Image ) -> PILImage.Image:
             
             HydrusData.ShowText( 'Failed to normalise PNG with gamma/chromaticity info.' )
             
-        
+        '''
     
     pil_image = NormalisePILImageToRGB( pil_image )
     

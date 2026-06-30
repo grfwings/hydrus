@@ -28,10 +28,11 @@ Lets you customise where hydrus should use for its base database directory. This
 
 ##**`--temp_dir TEMP_DIR`**
 
-This tells all aspects of the client, including the SQLite database, to use a different path for temp operations. This would be by default your system temp path, such as:
+This tells all aspects of the client, including the SQLite database (unless the overriding `SQLITE_TMPDIR` environment variable is set), to use a different path for temp operations. This would be by default your system temp path, such as:
 
 ```
 C:\Users\You\AppData\Local\Temp
+/tmp
 ```
 
 But you can also check it in _help->about_. A handful of database operations (PTR tag processing, vacuums) require a lot of free space, so if your system drive is very full, or you have unusual ramdisk-based temp storage limits, you may want to relocate to another location or drive.
@@ -69,9 +70,13 @@ When SQLite performs very large queries, it may spool temporary table results to
 
 Prints additional debug information to the log during the bootup phase of the application.
 
+##**`--no_user_static_dir`**
+
+Disallows the 'custom assets' override that lets files in `db_dir/static` override what is it `install_dir/static`. Use for quick debugging.
+
 ##**`--profile_mode`**
 
-This starts the program with 'Profile Mode' turned on, which captures the performance of boot functions. This is also a way to get Profile Mode on the server, although support there is very limited.
+This starts the program with 'Profile Mode' turned on, which captures the performance of boot functions. This is also a way to get Profile Mode on the server, although support there is very limited. Since Profile Mode is now split into different types, note this specifically turns on "db" Profile Mode.
 
 # client-specific arguments
 

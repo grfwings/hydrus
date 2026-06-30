@@ -75,8 +75,8 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
         
         self.local_update_service_id = None
         self.trash_service_id = None
-        self.combined_local_file_service_id = None
-        self.combined_local_media_service_id = None
+        self.hydrus_local_file_storage_service_id = None
+        self.combined_local_file_domains_service_id = None
         self.combined_file_service_id = None
         self.combined_deleted_file_service_id = None
         self.combined_tag_service_id = None
@@ -118,13 +118,13 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
             
             self.local_update_service_id = self.GetServiceId( CC.LOCAL_UPDATE_SERVICE_KEY )
             self.trash_service_id = self.GetServiceId( CC.TRASH_SERVICE_KEY )
-            self.combined_local_file_service_id = self.GetServiceId( CC.COMBINED_LOCAL_FILE_SERVICE_KEY )
+            self.hydrus_local_file_storage_service_id = self.GetServiceId( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY )
             self.combined_file_service_id = self.GetServiceId( CC.COMBINED_FILE_SERVICE_KEY )
             
             try:
                 
                 self.combined_deleted_file_service_id = self.GetServiceId( CC.COMBINED_DELETED_FILE_SERVICE_KEY )
-                self.combined_local_media_service_id = self.GetServiceId( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY )
+                self.combined_local_file_domains_service_id = self.GetServiceId( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
                 
             except HydrusExceptions.DataMissing:
                 
@@ -158,13 +158,13 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
             
             self.trash_service_id = service_id
             
-        elif service_key == CC.COMBINED_LOCAL_FILE_SERVICE_KEY:
+        elif service_key == CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY:
             
-            self.combined_local_file_service_id = service_id
+            self.hydrus_local_file_storage_service_id = service_id
             
-        elif service_key == CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY:
+        elif service_key == CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY:
             
-            self.combined_local_media_service_id = service_id
+            self.combined_local_file_domains_service_id = service_id
             
         elif service_key == CC.COMBINED_FILE_SERVICE_KEY:
             
@@ -199,11 +199,11 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
         self._Execute( 'DELETE FROM services WHERE service_id = ?;', ( service_id, ) )
         
     
-    def FileServiceIsCoveredByAllLocalFiles( self, service_id ) -> bool:
+    def FileServiceIsCoveredByHydrusLocalFileStorage( self, service_id ) -> bool:
         
         service_type = self.GetService( service_id ).GetServiceType()
         
-        return service_type in HC.FILE_SERVICES_COVERED_BY_COMBINED_LOCAL_FILE
+        return service_type in HC.FILE_SERVICES_COVERED_BY_HYDRUS_LOCAL_FILE_STORAGE
         
     
     def GetFileSearchContextBranch( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext ) -> FileSearchContextBranch:
@@ -256,7 +256,7 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
         
         existing_names = { service.GetName() for service in self._service_ids_to_services.values() }
         
-        return HydrusData.GetNonDupeName( name, existing_names )
+        return HydrusData.GetNonDupeName( name, existing_names, do_casefold = True )
         
     
     def GetService( self, service_id ) -> typing.Any:
@@ -314,12 +314,37 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
         raise HydrusExceptions.DataMissing( 'Service id error in database: id "{}" does not exist!'.format( service_id ) )
         
     
+    def GetServiceTypesToServiceIds( self, service_specifier: ClientServices.ServiceSpecifier ):
+        
+        service_types = service_specifier.GetServiceTypes()
+        
+        if len( service_types ) > 0:
+            
+            service_ids = self.GetServiceIds( service_types )
+            
+        else:
+            
+            service_keys = service_specifier.GetServiceKeys()
+            
+            service_ids = [ self._service_keys_to_service_ids[ service_key ] for service_key in service_keys  if service_key in self._service_keys_to_service_ids ]
+            
+        
+        service_types_to_service_ids = collections.defaultdict( list )
+        
+        for service_id in service_ids:
+            
+            service_types_to_service_ids[ self._service_ids_to_services[ service_id ].GetServiceType() ].append( service_id )
+            
+        
+        return service_types_to_service_ids
+        
+    
     def GetTablesAndColumnsThatUseDefinitions( self, content_type: int ) -> list[ tuple[ str, str ] ]:
         
         return []
         
     
-    def LocationContextIsCoveredByCombinedLocalFiles( self, location_context: ClientLocation.LocationContext ):
+    def LocationContextIsCoveredByHydrusLocalFileStorage( self, location_context: ClientLocation.LocationContext ):
         
         if location_context.IncludesDeleted():
             
@@ -330,7 +355,7 @@ class ClientDBMasterServices( ClientDBModule.ClientDBModule ):
         
         for service_id in service_ids:
             
-            if not self.FileServiceIsCoveredByAllLocalFiles( service_id ):
+            if not self.FileServiceIsCoveredByHydrusLocalFileStorage( service_id ):
                 
                 return False
                 

@@ -14,8 +14,9 @@ from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.importing import ClientImportSubscriptions
 from hydrus.client.importing import ClientImportSubscriptionQuery
 from hydrus.client.importing.options import ClientImportOptions
-from hydrus.client.importing.options import FileImportOptions
+from hydrus.client.importing.options import FileImportOptionsLegacy
 from hydrus.client.importing.options import TagImportOptions
+from hydrus.client.importing.options import TagImportOptionsLegacy
 from hydrus.client.media import ClientMediaManagers
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
@@ -197,7 +198,7 @@ class TestSerialisables( unittest.TestCase ):
         
         local_times_manager = ClientMediaManagers.TimesManager()
         
-        current_to_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 123000, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : 123000, CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 123000 }
+        current_to_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 123000, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : 123000, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 123000 }
         
         local_times_manager.SetImportedTimestampsMS( current_to_timestamps_ms )
         
@@ -205,7 +206,7 @@ class TestSerialisables( unittest.TestCase ):
         
         trash_times_manager = ClientMediaManagers.TimesManager()
         
-        current_to_timestamps_ms = { CC.TRASH_SERVICE_KEY : 123000, CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 12000 }
+        current_to_timestamps_ms = { CC.TRASH_SERVICE_KEY : 123000, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 12000 }
         
         local_times_manager.SetImportedTimestampsMS( current_to_timestamps_ms )
         
@@ -213,8 +214,8 @@ class TestSerialisables( unittest.TestCase ):
         
         deleted_times_manager = ClientMediaManagers.TimesManager()
         
-        deleted_to_previously_imported_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 10000, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : 118000, CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 118000 }
-        deleted_to_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 120000, CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY : 120000, CC.COMBINED_LOCAL_FILE_SERVICE_KEY : 123000 }
+        deleted_to_previously_imported_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 10000, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : 118000, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 118000 }
+        deleted_to_timestamps_ms = { CC.LOCAL_FILE_SERVICE_KEY : 120000, CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY : 120000, CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY : 123000 }
         
         deleted_times_manager.SetDeletedTimestampsMS( deleted_to_timestamps_ms )
         deleted_times_manager.SetPreviouslyImportedTimestampsMS( deleted_to_previously_imported_timestamps_ms )
@@ -309,7 +310,7 @@ class TestSerialisables( unittest.TestCase ):
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         
-        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { local_hash_empty }, reason = file_deletion_reason ) )
+        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { local_hash_empty }, reason = file_deletion_reason ) )
         
         HF.compare_content_update_packages( self, result[0], content_update_package )
         
@@ -340,7 +341,7 @@ class TestSerialisables( unittest.TestCase ):
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         
-        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { other_local_hash_has_values }, reason = file_deletion_reason ) )
+        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { other_local_hash_has_values }, reason = file_deletion_reason ) )
         
         HF.compare_content_update_packages( self, result[1], content_update_package )
         
@@ -359,7 +360,7 @@ class TestSerialisables( unittest.TestCase ):
         
         content_update_package = ClientContentUpdates.ContentUpdatePackage()
         
-        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_MEDIA_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { other_local_hash_has_values }, reason = file_deletion_reason ) )
+        content_update_package.AddContentUpdate( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY, ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, { other_local_hash_has_values }, reason = file_deletion_reason ) )
         
         HF.compare_content_update_packages( self, result[1], content_update_package )
         
@@ -558,20 +559,32 @@ class TestSerialisables( unittest.TestCase ):
         periodic_file_limit = 50
         paused = False
         
-        file_import_options = FileImportOptions.FileImportOptions()
+        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
         
         service_tag_import_options = TagImportOptions.ServiceTagImportOptions( get_tags = False, additional_tags = { 'test additional tag', 'and another' } )
         
         tag_import_options = TagImportOptions.TagImportOptions( service_keys_to_service_tag_import_options = { HydrusData.GenerateKey() : service_tag_import_options } )
         
+        tag_import_options_legacy = TagImportOptionsLegacy.TagImportOptionsLegacy( tag_import_options = tag_import_options )
+        
         no_work_until = HydrusTime.GetNow() - 86400 * 20
         
-        sub.SetTuple( gug_key_and_name, checker_options, initial_file_limit, periodic_file_limit, paused, file_import_options, tag_import_options, no_work_until )
+        sub.SetGUGKeyAndName( gug_key_and_name )
+        sub.SetCheckerOptions( checker_options )
+        
+        sub.SetFileLimits( initial_file_limit, periodic_file_limit )
+        
+        sub.SetPaused( paused )
+        
+        sub.SetFileImportOptions( file_import_options )
+        sub.SetTagImportOptions( tag_import_options_legacy )
+        
+        sub.SetNoWorkUntil( no_work_until )
         
         sub.SetQueryHeaders( query_headers )
         
         self.assertEqual( sub.GetGUGKeyAndName(), gug_key_and_name )
-        self.assertEqual( sub.GetTagImportOptions(), tag_import_options )
+        self.assertEqual( sub.GetTagImportOptions().DumpToString(), tag_import_options_legacy.DumpToString() )
         self.assertEqual( sub.GetQueryHeaders(), query_headers )
         
         self.assertEqual( sub._paused, False )
@@ -729,23 +742,23 @@ class TestSerialisables( unittest.TestCase ):
         
         # blacklist namespace test
         
-        blacklist_tags = { 'nintendo', 'studio:nintendo' }
+        blacklist_tags = { 'cool project house', 'studio:cool project house' }
         
         #
         
         tag_filter = HydrusTags.TagFilter()
         
-        tag_filter.SetRule( 'nintendo', HC.FILTER_BLACKLIST )
+        tag_filter.SetRule( 'cool project house', HC.FILTER_BLACKLIST )
         
         self._dump_and_load_and_test( tag_filter, test )
         
-        self.assertEqual( tag_filter.Filter( blacklist_tags ), { 'studio:nintendo' } )
+        self.assertEqual( tag_filter.Filter( blacklist_tags ), { 'studio:cool project house' } )
         
         #
         
         tag_filter = HydrusTags.TagFilter()
         
-        tag_filter.SetRule( 'nintendo', HC.FILTER_BLACKLIST )
+        tag_filter.SetRule( 'cool project house', HC.FILTER_BLACKLIST )
         
         self._dump_and_load_and_test( tag_filter, test )
         
@@ -755,11 +768,11 @@ class TestSerialisables( unittest.TestCase ):
         
         tag_filter = HydrusTags.TagFilter()
         
-        tag_filter.SetRule( 'nintendo', HC.FILTER_BLACKLIST )
-        tag_filter.SetRule( 'studio:nintendo', HC.FILTER_WHITELIST )
+        tag_filter.SetRule( 'cool project house', HC.FILTER_BLACKLIST )
+        tag_filter.SetRule( 'studio:cool project house', HC.FILTER_WHITELIST )
         
         self._dump_and_load_and_test( tag_filter, test )
         
-        self.assertEqual( tag_filter.Filter( blacklist_tags, apply_unnamespaced_rules_to_namespaced_tags = True ), { 'studio:nintendo' } )
+        self.assertEqual( tag_filter.Filter( blacklist_tags, apply_unnamespaced_rules_to_namespaced_tags = True ), { 'studio:cool project house' } )
         
     

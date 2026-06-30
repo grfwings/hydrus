@@ -7,16 +7,18 @@ import typing
 
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusExceptions
-from hydrus.core import HydrusThreading
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
+from hydrus.core import HydrusStaticDir
 from hydrus.core import HydrusTime
 from hydrus.core.files import HydrusFileHandling
 from hydrus.core.files.images import HydrusBlurhash
 from hydrus.core.files.images import HydrusImageHandling
+from hydrus.core.processes import HydrusThreading
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientRendering
+from hydrus.client import ClientSVGHandling
 from hydrus.client import ClientThreading
 from hydrus.client.caches import ClientCachesBase
 from hydrus.client.files import ClientFilesMaintenance
@@ -137,6 +139,10 @@ class ImageRendererCache( object ):
         cache_size = self._controller.new_options.GetInteger( 'image_cache_size' )
         cache_timeout = self._controller.new_options.GetInteger( 'image_cache_timeout' )
         
+        # there was a good user submission about 'pinned', which may be something to explore again in future
+        # I looked into adding pin tech to the datacache itself. not a bad idea, but I'm not sure how to handle various overflow events, so that needs careful thought
+        # the problem is not so much the caching atm, but the overflows
+        
         self._data_cache = ClientCachesBase.DataCache( self._controller, 'image cache', cache_size, timeout = cache_timeout )
         
         self._controller.sub( self, 'NotifyNewOptions', 'notify_new_options' )
@@ -157,7 +163,7 @@ class ImageRendererCache( object ):
             
         
     
-    def GetImageRenderer( self, media_result: ClientMediaResult.MediaResult ) -> ClientRendering.ImageRenderer:
+    def GetImageRenderer( self, media_result: ClientMediaResult.MediaResult, this_is_for_metadata_alone = False ) -> ClientRendering.ImageRenderer:
         
         hash = media_result.GetHash()
         
@@ -167,13 +173,14 @@ class ImageRendererCache( object ):
         
         if result is None:
             
-            image_renderer = ClientRendering.ImageRenderer( media_result )
+            image_renderer = ClientRendering.ImageRenderer( media_result, this_is_for_metadata_alone = this_is_for_metadata_alone )
             
             # we are no longer going to let big lads flush the whole cache. they can render on demand
             
             image_cache_storage_limit_percentage = self._controller.new_options.GetInteger( 'image_cache_storage_limit_percentage' )
+            acceptable_size = image_renderer.GetEstimatedMemoryFootprint() < self._data_cache.GetSizeLimit() * ( image_cache_storage_limit_percentage / 100 )
             
-            if image_renderer.GetEstimatedMemoryFootprint() < self._data_cache.GetSizeLimit() * ( image_cache_storage_limit_percentage / 100 ):
+            if acceptable_size:
                 
                 self._data_cache.AddData( key, image_renderer )
                 
@@ -201,20 +208,74 @@ class ImageRendererCache( object ):
         self._data_cache.SetCacheSizeAndTimeout( cache_size, cache_timeout )
         
     
-    def PrefetchImageRenderer( self, media_result: ClientMediaResult.MediaResult ):
+    def PrefetchImageRenderers( self, media_results: list[ ClientMediaResult.MediaResult ] ):
         
-        ( width, height ) = media_result.GetResolution()
-        
-        # essentially, we are not going to prefetch giganto images any more. they can render on demand and not mess our queue
-        
+        image_cache_storage_limit_percentage = self._controller.new_options.GetInteger( 'image_cache_storage_limit_percentage' )
         image_cache_prefetch_limit_percentage = self._controller.new_options.GetInteger( 'image_cache_prefetch_limit_percentage' )
         
-        if width * height * 3 < self._data_cache.GetSizeLimit() * ( image_cache_prefetch_limit_percentage / 100 ):
+        cache_size = self._data_cache.GetSizeLimit()
+        
+        single_file_size_we_are_ok_with = cache_size * ( image_cache_storage_limit_percentage / 100 )
+        total_size_we_are_ok_with = cache_size * ( image_cache_prefetch_limit_percentage / 100 )
+        total_size_we_have_prefetched_here = 0
+        
+        for media_result in media_results:
             
-            self.GetImageRenderer( media_result )
+            hash = media_result.GetHash()
+            
+            key = hash
+            
+            result = self._data_cache.GetIfHasData( key )
+            
+            if result is not None:
+                
+                image_renderer = typing.cast( ClientRendering.ImageRenderer, result )
+                
+                if image_renderer.IsReady():
+                    
+                    total_size_we_have_prefetched_here += image_renderer.GetEstimatedMemoryFootprint()
+                    
+                else:
+                    
+                    return # we are still rendering a guy, no desire to add more work right now
+                    
+                
+            else:
+                
+                # ok, here's a guy to do
+                
+                ( width, height ) = media_result.GetResolution()
+                
+                if width is None or height is None:
+                    
+                    return
+                    
+                
+                expected_size = width * height * 3
+                
+                if total_size_we_have_prefetched_here + expected_size > total_size_we_are_ok_with:
+                    
+                    return # ok, this prefetch is pretty bulky
+                    
+                
+                if expected_size > single_file_size_we_are_ok_with:
+                    
+                    return # ok this guy is too bulky to save
+                    
+                
+                successful = self._data_cache.TryToFlushEasySpaceForPrefetch( expected_size )
+                
+                if successful:
+                    
+                    self.GetImageRenderer( media_result )
+                    
+                
+                return
+                
             
         
     
+
 class ImageTileCache( object ):
     
     def __init__( self, controller: "CG.ClientController.Controller" ):
@@ -360,7 +421,7 @@ class ThumbnailCache( object ):
                     
                     return hydrus_bitmap
                     
-                except:
+                except Exception as e:
                     
                     pass
                     
@@ -670,7 +731,33 @@ class ThumbnailCache( object ):
             thumbnail_scale_type = self._controller.new_options.GetInteger( 'thumbnail_scale_type' )
             thumbnail_dpr_percent = CG.client_controller.new_options.GetInteger( 'thumbnail_dpr_percent' )
             
+            image_svg_hydrus_bitmap = None
+            
+            try:
+                
+                svg_thumbnail_path = HydrusStaticDir.GetStaticPath( 'image.svg' )
+                
+                numpy_image_resolution = ClientSVGHandling.GetSVGResolution( svg_thumbnail_path )
+                
+                target_resolution = HydrusImageHandling.GetThumbnailResolution( numpy_image_resolution, bounding_dimensions, thumbnail_scale_type, thumbnail_dpr_percent )
+                
+                numpy_image = ClientSVGHandling.GenerateThumbnailNumPyFromSVGPath( svg_thumbnail_path, target_resolution )
+                
+                image_svg_hydrus_bitmap = ClientRendering.GenerateHydrusBitmapFromNumPyImage( numpy_image )
+                
+            except Exception as e:
+                
+                pass
+                
+            
             for ( mime, thumbnail_path ) in HydrusFileHandling.mimes_to_default_thumbnail_paths.items():
+                
+                if mime in HC.IMAGES and image_svg_hydrus_bitmap is not None:
+                    
+                    self._special_thumbs[ mime ] = image_svg_hydrus_bitmap
+                    
+                    continue
+                    
                 
                 numpy_image = HydrusImageHandling.GenerateNumPyImage( thumbnail_path, HC.IMAGE_PNG )
                 
@@ -762,7 +849,7 @@ class ThumbnailCache( object ):
                         
                         hydrus_bitmap = self._GetThumbnailHydrusBitmap( media_result )
                         
-                    except:
+                    except Exception as e:
                         
                         return default_thumb_hydrus_bitmap
                         
