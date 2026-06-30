@@ -53,10 +53,9 @@ if BASE_DIR == '':
 BIN_DIR = os.path.join( CONTENT_BASE_DIR, 'bin' )
 HELP_DIR = os.path.join( CONTENT_BASE_DIR, 'help' )
 
-LICENSE_PATH = os.path.join( CONTENT_BASE_DIR, 'license.txt' )
+LICENSE_PATH = os.path.join( CONTENT_BASE_DIR, 'LICENSE' )
 
 DEFAULT_DB_DIR = os.path.join( BASE_DIR, 'db' )
-CONTENT_DB_DIR = os.path.join( CONTENT_BASE_DIR, 'db' )
 
 #
 
@@ -89,6 +88,8 @@ if NICE_ARCHITECTURE_STRING == 'AMD64':
 RUNNING_FROM_MACOS_APP = os.path.exists( os.path.join( BASE_DIR, 'running_from_app' ) )
 
 RUNNING_FROM_SOURCE = not ( RUNNING_FROM_FROZEN_BUILD or RUNNING_FROM_MACOS_APP )
+
+GOT_A_NORMAL_LOOKING_VENV = os.path.exists( os.path.join( BASE_DIR, 'venv' ) )
 
 if RUNNING_FROM_SOURCE:
     NICE_RUNNING_AS_STRING = 'from source'
@@ -126,8 +127,8 @@ options = {}
 # Misc
 
 NETWORK_VERSION = 20
-SOFTWARE_VERSION = 666
-CLIENT_API_VERSION = 88
+SOFTWARE_VERSION = 676
+CLIENT_API_VERSION = 93
 
 SERVER_THUMBNAIL_DIMENSIONS = ( 200, 200 )
 
@@ -1568,6 +1569,7 @@ DOCUMENTATION_DOWNLOADER_PARSERS_FORMULAE_STATIC = 'downloader_parsers_formulae.
 DOCUMENTATION_RATINGS = 'getting_started_ratings.html'
 DOCUMENTATION_SIDECARS = 'advanced_sidecars.html'
 DOCUMENTATION_ABOUT_DOCS = "about_docs.html"
+DOCUMENTATION_IMPORT_OPTIONS = 'getting_started_import_options.html'
 
 # default options
 

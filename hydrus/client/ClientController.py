@@ -10,7 +10,6 @@ import typing
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 from qtpy import QtGui as QG
-
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusController
 from hydrus.core import HydrusData
@@ -29,15 +28,11 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientOptions
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
-from hydrus.client.caches import ClientCaches
-from hydrus.client.db import ClientDB
-from hydrus.client.files import ClientFilesMaintenance
-from hydrus.client.files import ClientFilesManager
 from hydrus.client.gui import ClientGUICallAfter
 from hydrus.client.gui import ClientGUIDialogsMessage
+from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUISplash
 from hydrus.client.gui import QtPorting as QP
 
@@ -117,6 +112,11 @@ class App( QW.QApplication ):
         
         if HC.PLATFORM_LINUX:
             
+            # if this guy prints a Qt warning to log like this:
+            # Failed to register with host portal QDBusError("org.freedesktop.portal.Error.Failed", "Could not register app ID: Connection already associated with an application ID")
+            # that's fine; it just means 'hey there was no .desktop file in your like ~/.local/share/applications that actually agreed with this, so idk about icons and so on bro'
+            # maybe there's a better way of handling this, but I don't want to scan the users applications folder tbh
+            # maybe we just suppress the warning
             self.setDesktopFileName( 'io.github.hydrusnetwork.hydrus' )
             
         
@@ -191,16 +191,16 @@ class Controller( HydrusController.HydrusController ):
         
         # just to set up some defaults, in case some db update expects something for an odd yaml-loading reason
         self.options = ClientDefaults.GetClientDefaultOptions()
+        
+        from hydrus.client import ClientOptions
+        
         self.new_options = ClientOptions.ClientOptions()
         
         HC.options = self.options
         
-        self._page_key_lock = threading.Lock()
+        self._have_set_some_twisted_services_at_least_once = False
         
-        self._thread_slots[ 'watcher_files' ] = ( 0, 15 )
-        self._thread_slots[ 'watcher_check' ] = ( 0, 5 )
-        self._thread_slots[ 'gallery_files' ] = ( 0, 15 )
-        self._thread_slots[ 'gallery_search' ] = ( 0, 5 )
+        self._page_key_lock = threading.Lock()
         
         self._alive_page_keys = set()
         self._closed_page_keys = set()
@@ -215,15 +215,15 @@ class Controller( HydrusController.HydrusController ):
         
         self.call_after_catcher = ClientGUICallAfter.CallAfterEventCatcher( QW.QApplication.instance() )
         
-        self.thumbnails_cache: ClientCaches.ThumbnailCache | None = None
-        
-        self.client_files_manager: ClientFilesManager.ClientFilesManager | None = None
-        self.services_manager: ClientServices.ServicesManager | None = None
+        self.thumbnails_cache = None
+        self.thumbnails_cache_graphics_view_test = None
         
         Controller.my_instance = self
         
     
     def _InitDB( self ):
+        
+        from hydrus.client.db import ClientDB
         
         self.db = ClientDB.DB( self, self.db_dir, 'client' )
         
@@ -252,11 +252,6 @@ class Controller( HydrusController.HydrusController ):
     def _GetPubsubValidCallable( self ):
         
         return QP.isValid
-        
-    
-    def _GetUPnPServices( self ):
-        
-        return self.services_manager.GetServices( ( HC.CLIENT_API_SERVICE, ) )
         
     
     def _GetWakeDelayPeriodMS( self ):
@@ -370,6 +365,27 @@ class Controller( HydrusController.HydrusController ):
                     break
                     
                 
+            
+        
+    
+    def _UpdateThreadSlotLockLimits( self ):
+        
+        for ( lock_name, option_name ) in [
+            ( 'misc', 'thread_slots_misc' ),
+            ( 'gallery_files', 'thread_slots_gallery_files' ),
+            ( 'gallery_search', 'thread_slots_gallery_search' ),
+            ( 'watcher_files', 'thread_slots_watcher_files' ),
+            ( 'watcher_check', 'thread_slots_watcher_check' ),
+        ]:
+            
+            if lock_name not in self._thread_slots:
+                
+                self._thread_slots[ lock_name ] = ( 0, 1 )
+                
+            
+            ( current_thread_count, current_option ) = self._thread_slots[ lock_name ]
+            
+            self._thread_slots[ lock_name ] = ( current_thread_count, self.new_options.GetInteger( option_name ) )
             
         
     
@@ -630,7 +646,7 @@ class Controller( HydrusController.HydrusController ):
     
     def CheckMouseIdle( self ):
         
-        mouse_position = QG.QCursor.pos()
+        mouse_position = ClientGUIFunctions.GetMousePos()
         
         if self._last_mouse_position is None:
             
@@ -660,6 +676,7 @@ class Controller( HydrusController.HydrusController ):
         self.images_cache.Clear()
         self.image_tiles_cache.Clear()
         self.thumbnails_cache.Clear()
+        self.thumbnails_cache_graphics_view_test.Clear()
         
     
     def ClipboardHasImage( self ):
@@ -1177,6 +1194,8 @@ class Controller( HydrusController.HydrusController ):
     
     def InitClientFilesManager( self ):
         
+        from hydrus.client.files import ClientFilesManager
+        
         def qt_code( missing_subfolders ):
             
             from hydrus.client.gui import ClientGUITopLevelWindowsPanels
@@ -1234,10 +1253,23 @@ class Controller( HydrusController.HydrusController ):
         
         HydrusPaths.DO_NOT_DO_CHMOD_MODE = self.new_options.GetBoolean( 'do_not_do_chmod_mode' )
         
+        with self._thread_slot_lock:
+            
+            self._UpdateThreadSlotLockLimits()
+            
+        
+        from hydrus.core.files import HydrusFFMPEG
+        
+        HydrusFFMPEG.HYDRUS_BIN_FFMPEG_WAS_LOOKED_FOR = False
+        HydrusFFMPEG.HYDRUS_BIN_FFMPEG_EXISTS = False
+        HydrusFFMPEG.PREFER_SYSTEM_FFMPEG = self.new_options.GetBoolean( 'use_system_ffmpeg' )
+        HydrusFFMPEG.FFMPEG_SUBPROCESS_TIMEOUT = self.new_options.GetInteger( 'ffmpeg_subprocess_timeout' )
+        
     
     def InitModel( self ):
         
         from hydrus.client import ClientManagers
+        from hydrus.client.caches import ClientCaches
         
         self.frame_splash_status.SetTitleText( 'booting db' + HC.UNICODE_ELLIPSIS )
         
@@ -1251,21 +1283,14 @@ class Controller( HydrusController.HydrusController ):
         
         HC.options = self.options
         
-        if self.new_options.GetBoolean( 'use_system_ffmpeg' ):
-            
-            from hydrus.core.files import HydrusFFMPEG
-            
-            if HydrusFFMPEG.FFMPEG_PATH.startswith( HC.BIN_DIR ):
-                
-                HydrusFFMPEG.FFMPEG_PATH = os.path.basename( HydrusFFMPEG.FFMPEG_PATH )
-                
-            
+        self.ReinitGlobalSettings()
         
         self.frame_splash_status.SetSubtext( 'image caches' )
         
         self.images_cache = ClientCaches.ImageRendererCache( self )
         self.image_tiles_cache = ClientCaches.ImageTileCache( self )
         self.thumbnails_cache = ClientCaches.ThumbnailCache( self )
+        self.thumbnails_cache_graphics_view_test = ClientCaches.ThumbnailCacheGraphicsViewTest( self )
         
         self.frame_splash_status.SetText( 'initialising managers' )
         
@@ -1407,6 +1432,23 @@ class Controller( HydrusController.HydrusController ):
         
         #
         
+        import_options_manager = self.Read( 'serialisable', HydrusSerialisable.SERIALISABLE_TYPE_IMPORT_OPTIONS_MANAGER )
+        
+        if import_options_manager is None:
+            
+            from hydrus.client.importing.options import ImportOptionsManager
+            
+            import_options_manager = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager()
+            
+            import_options_manager._dirty = True
+            
+            self.BlockingSafeShowCriticalMessage( 'Problem loading object', 'Your import options manager was missing on boot! I have recreated a new one with default settings. Please check that your hard drive and client are ok and let the hydrus dev know the details if there is a mystery.' )
+            
+        
+        self.import_options_manager = import_options_manager
+        
+        #
+        
         from hydrus.client import ClientDownloading
         
         self.quick_download_manager = ClientDownloading.QuickDownloadManager( self )
@@ -1517,7 +1559,9 @@ class Controller( HydrusController.HydrusController ):
         
         self.frame_splash_status.SetTitleText( 'booting gui' + HC.UNICODE_ELLIPSIS )
         
-        self.files_maintenance_manager = ClientFilesMaintenance.FilesMaintenanceManager( self )
+        from hydrus.client.files import ClientFilesMaintenanceManager
+        
+        self.files_maintenance_manager = ClientFilesMaintenanceManager.FilesMaintenanceManager( self )
         
         self._managers_with_mainloops.append( self.files_maintenance_manager )
         
@@ -1587,8 +1631,6 @@ class Controller( HydrusController.HydrusController ):
             
         
         self.CallBlockingToQtTLW( qt_code_style )
-        
-        self.ReinitGlobalSettings()
         
         def qt_code_pregui():
             
@@ -2023,6 +2065,15 @@ class Controller( HydrusController.HydrusController ):
                 self.tag_display_manager.SetClean()
                 
             
+            if self.import_options_manager.IsDirty():
+                
+                self.frame_splash_status.SetSubtext( 'import options manager' )
+                
+                self.WriteSynchronous( 'serialisable', self.import_options_manager )
+                
+                self.import_options_manager.SetClean()
+                
+            
         
     
     def SaveDirtyObjectsInfrequent( self ):
@@ -2239,16 +2290,22 @@ class Controller( HydrusController.HydrusController ):
                 
             
         
+        if not self._have_set_some_twisted_services_at_least_once and len( services ) == 0:
+            
+            return
+            
+        
+        self._have_set_some_twisted_services_at_least_once = True
+        
         if HG.twisted_is_broke:
             
-            if True in ( service.GetPort() is not None for service in services ):
-                
-                HydrusData.ShowText( 'Twisted failed to import, so could not start the local booru/client api! Specific error has been printed to log. Please contact hydrus dev!' )
-                
-                HydrusData.Print( HG.twisted_is_broke_exception )
-                
+            HydrusData.ShowText( 'Twisted failed to import, so could not start the local client api! Specific error has been printed to log. Please contact hydrus dev!' )
+            
+            HydrusData.Print( HG.twisted_is_broke_exception )
             
         else:
+            
+            self.StartTwistedIfNeeded()
             
             threads.blockingCallFromThread( reactor, TWISTEDDoIt )
             
@@ -2257,12 +2314,6 @@ class Controller( HydrusController.HydrusController ):
     def SetServices( self, services ):
         
         with HG.dirty_object_lock:
-            
-            previous_services = self.services_manager.GetServices()
-            
-            upnp_services = [ service for service in services if service.GetServiceType() in ( HC.CLIENT_API_SERVICE, ) ]
-            
-            self.CallToThreadLongRunning( self.services_upnp_manager.SetServices, upnp_services )
             
             self.WriteSynchronous( 'update_services', services )
             
@@ -2337,7 +2388,8 @@ class Controller( HydrusController.HydrusController ):
                 
             except Exception as e:
                 
-                pass # sometimes this throws a wobbler, screw it
+                HydrusData.Print( 'Twisted failed to shut down cleanly:' )
+                HydrusData.PrintException( e, do_wait = False )
                 
             
         
@@ -2374,16 +2426,18 @@ class Controller( HydrusController.HydrusController ):
             
             service = typing.cast( ClientServices.ServiceRestricted, service )
             
-            service.SyncAccount()
+            try:
+                
+                service.SyncAccount()
+                
+            except HydrusExceptions.CancelledException:
+                
+                continue
+                
             
         
     
     def SynchroniseRepositories( self ):
-        
-        if CG.client_controller.new_options.GetBoolean( 'pause_all_new_network_traffic' ):
-            
-            return
-            
         
         if not self.new_options.GetBoolean( 'pause_repo_sync' ):
             
@@ -2519,7 +2573,7 @@ class Controller( HydrusController.HydrusController ):
             
             if 'malformed' in trace:
                 
-                hell_message = 'Looking at it, it looks like your database may be malformed! This is a serious error. Please check "/install_dir/db/help my db is broke.txt" as soon as you can for the next steps. The specific error will now follow.'
+                hell_message = 'Looking at it, it looks like your database may be malformed! This is a serious error. Please check the \'Recovery->Help my db is broke\' document in the help as soon as you can for the next steps. The specific error will now follow.'
                 
                 HydrusData.DebugPrint( hell_message )
                 
@@ -2565,14 +2619,14 @@ class Controller( HydrusController.HydrusController ):
             
             ( media, optional_target_resolution_tuple ) = data
             
-            display_media = media.GetDisplayMedia()
+            display_media_result = media.GetDisplayMediaResult()
             
-            if display_media is None:
+            if display_media_result is None:
                 
                 return
                 
             
-            image_renderer = self.images_cache.GetImageRenderer( display_media.GetMediaResult() )
+            image_renderer = self.images_cache.GetImageRenderer( display_media_result )
             
             def CopyToClipboard():
                 
@@ -2616,12 +2670,19 @@ class Controller( HydrusController.HydrusController ):
             
             media = data
             
-            if media.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
+            display_media_result = media.GetDisplayMediaResult()
+            
+            if display_media_result is None:
                 
                 return
                 
             
-            thumbnail = self.thumbnails_cache.GetThumbnail( media.GetDisplayMedia().GetMediaResult() )
+            if display_media_result.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
+                
+                return
+                
+            
+            thumbnail = self.thumbnails_cache.GetThumbnail( display_media_result )
             
             qt_image = thumbnail.GetQtImage().copy()
             

@@ -17,6 +17,7 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
 from hydrus.core import HydrusText
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
@@ -39,11 +40,128 @@ from hydrus.client.gui.lists import ClientGUIListBoxesData
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaList
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientTagSorting
 from hydrus.client.search import ClientSearchPredicate
 from hydrus.client.search import ClientSearchTagContext
+
+def AddTagFavouritesMenu( win: QW.QWidget, menu: QW.QMenu, tag: str ):
+    
+    def add_favourite_tag():
+        
+        favourite_tags = set( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
+        
+        favourite_tags.add( tag )
+        
+        CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
+        
+        CG.client_controller.pub( 'notify_new_favourite_tags' )
+        
+    
+    def remove_favourite_tag():
+        
+        message = f'Remove "{tag}" from the favourites list?'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( win, message )
+        
+        if result != QW.QDialog.DialogCode.Accepted:
+            
+            return
+            
+        
+        favourite_tags = set( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
+        
+        favourite_tags.discard( tag )
+        
+        CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
+        
+        CG.client_controller.pub( 'notify_new_favourite_tags' )
+        
+    
+    def add_most_used_tag( tag_service ):
+        
+        tag_service_key = tag_service.GetServiceKey()
+        
+        most_used_tags = set( CG.client_controller.new_options.GetSuggestedTagsMostUsed( tag_service_key ) )
+        
+        most_used_tags.add( tag )
+        
+        CG.client_controller.new_options.SetSuggestedTagsMostUsed( tag_service_key, sorted( most_used_tags, key = HydrusText.HumanTextSortKey ) )
+        
+        CG.client_controller.pub( 'notify_new_most_used_tags' )
+        
+    
+    def remove_most_used_tag( tag_service ):
+        
+        tag_service_key = tag_service.GetServiceKey()
+        
+        message = f'Remove "{tag}" from the most used list for "{tag_service.GetName()}"?'
+        
+        result = ClientGUIDialogsQuick.GetYesNo( win, message )
+        
+        if result != QW.QDialog.DialogCode.Accepted:
+            
+            return
+            
+        
+        most_used_tags = set( CG.client_controller.new_options.GetSuggestedTagsMostUsed( tag_service_key ) )
+        
+        most_used_tags.discard( tag )
+        
+        CG.client_controller.new_options.SetSuggestedTagsMostUsed( tag_service_key, sorted( most_used_tags, key = HydrusText.HumanTextSortKey ) )
+        
+        CG.client_controller.pub( 'notify_new_most_used_tags' )
+        
+    
+    favourites_menu = ClientGUIMenus.GenerateMenu( menu )
+    
+    favourite_tags = list( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
+    
+    if tag in favourite_tags:
+        
+        label = f'remove "{tag}" from favourites'
+        description = 'Remove this tag from the favourites list that sits under every tag autocomplete.'
+        
+        ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, remove_favourite_tag )
+        
+    else:
+        
+        label = f'add "{tag}" to favourites'
+        description = 'Add this tag to the favourites list that sits under every tag autocomplete.'
+        
+        ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, add_favourite_tag )
+        
+    
+    ClientGUIMenus.AppendSeparator( favourites_menu )
+    
+    tag_services = CG.client_controller.services_manager.GetServices( HC.REAL_TAG_SERVICES )
+    
+    for tag_service in tag_services:
+        
+        tag_service_key = tag_service.GetServiceKey()
+        
+        most_used_tags = list( CG.client_controller.new_options.GetSuggestedTagsMostUsed( tag_service_key ) )
+        
+        if tag in most_used_tags:
+            
+            label = f'remove "{tag}" from most used for "{tag_service.GetName()}"'
+            description = 'Remove this tag from the "most used" list that appears in manage tags dialogs.'
+            
+            ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, remove_most_used_tag, tag_service )
+            
+        else:
+            
+            label = f'add "{tag}" to most used for "{tag_service.GetName()}"'
+            description = 'Add this tag to the "most used" list that appears in manage tags dialogs.'
+            
+            ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, add_most_used_tag, tag_service )
+            
+        
+    
+    ClientGUIMenus.AppendMenu( menu, favourites_menu, 'favourites' )
+    
 
 class BetterQListWidget( QW.QListWidget ):
     
@@ -312,6 +430,7 @@ class BetterQListWidget( QW.QListWidget ):
             
         
     
+
 class AddEditDeleteListBox( QW.QWidget ):
     
     listBoxChanged = QC.Signal()
@@ -1508,6 +1627,9 @@ class ListBox( QW.QScrollArea ):
         self._selected_terms = set()
         self._total_positional_rows = 0
         
+        self._last_wheel_event_that_scrolled_direction = 0
+        self._last_wheel_event_that_scrolled_time = 0
+        
         self._last_hit_logical_index = None
         self._shift_click_start_logical_index = None
         self._logical_indices_selected_this_shift_click = set()
@@ -1868,7 +1990,7 @@ class ListBox( QW.QScrollArea ):
         return list( itertools.chain.from_iterable( ( term.GetSearchPredicates() for term in terms ) ) )
         
     
-    def _GetRowsOfTextsAndColours( self, term: ClientGUIListBoxesData.ListBoxItem ):
+    def _GetRowsOfTextsAndColours( self, term: ClientGUIListBoxesData.ListBoxItem ) -> list[ tuple[ str, tuple[ int, int, int ] ] ]:
         
         raise NotImplementedError()
         
@@ -2856,6 +2978,16 @@ class ListBox( QW.QScrollArea ):
         return text_height * self._total_positional_rows + 20
         
     
+    def GetLastWheelEventThatScrolledDirection( self ):
+        
+        return self._last_wheel_event_that_scrolled_direction
+        
+    
+    def GetLastWheelEventThatScrolledTime( self ):
+        
+        return self._last_wheel_event_that_scrolled_time
+        
+    
     def GetNumTerms( self ):
         
         return len( self._ordered_terms )
@@ -3006,6 +3138,17 @@ class ListBox( QW.QScrollArea ):
         return size_hint
         
     
+    def wheelEvent( self, event: QG.QWheelEvent ):
+        
+        super().wheelEvent( event )
+        
+        if event.isAccepted():
+            
+            self._last_wheel_event_that_scrolled_direction = 1 if event.angleDelta().y() > 0 else -1
+            self._last_wheel_event_that_scrolled_time = HydrusTime.GetNowFloat()
+            
+        
+    
 
 COPY_ALL_TAGS = 0
 COPY_ALL_TAGS_WITH_COUNTS = 1
@@ -3060,6 +3203,9 @@ class ListBoxTags( ListBox ):
         CG.client_controller.sub( self, '_UpdateBackgroundColour', 'notify_new_colourset' )
         CG.client_controller.sub( self, 'NotifyNewOptions', 'notify_new_options' )
         
+        self.setContextMenuPolicy( QC.Qt.ContextMenuPolicy.CustomContextMenu )
+        self.customContextMenuRequested.connect( self.ShowMenuFromSignal )
+        
     
     def _GetCurrentLocationContext( self ):
         
@@ -3095,7 +3241,7 @@ class ListBoxTags( ListBox ):
             
         
     
-    def _GetRowsOfTextsAndColours( self, term: ClientGUIListBoxesData.ListBoxItem ):
+    def _GetRowsOfTextsAndColours( self, term: ClientGUIListBoxesData.ListBoxItem ) -> list[ tuple[ str, tuple[ int, int, int ] ] ]:
         
         namespace_colours = self._GetNamespaceColours()
         
@@ -3293,14 +3439,6 @@ class ListBoxTags( ListBox ):
         pass
         
     
-    def contextMenuEvent( self, event ):
-        
-        if event.reason() == QG.QContextMenuEvent.Reason.Keyboard:
-            
-            self.ShowMenu()
-            
-        
-    
     def eventFilter( self, watched, event ):
         
         try:
@@ -3330,17 +3468,6 @@ class ListBoxTags( ListBox ):
                                 self._NewSearchPages( [ predicates ] )
                                 
                             
-                        
-                        event.accept()
-                        
-                        return True
-                        
-                    
-                elif event.type() == QC.QEvent.Type.MouseButtonRelease:
-                    
-                    if event.button() == QC.Qt.MouseButton.RightButton:
-                        
-                        self.ShowMenu()
                         
                         event.accept()
                         
@@ -3378,7 +3505,12 @@ class ListBoxTags( ListBox ):
             
         
     
-    def ShowMenu( self ):
+    def ForceTagRecalc( self ):
+        
+        pass
+        
+    
+    def ShowMenuFromSignal( self, pos ):
         
         if len( self._ordered_terms ) == 0 or not self.isEnabled():
             
@@ -3650,7 +3782,7 @@ class ListBoxTags( ListBox ):
                     num_parents = len( parents_to_service_keys )
                     num_children = len( children_to_service_keys )
                     
-                    service_keys_to_service_names = { service_key : CG.client_controller.services_manager.GetName( service_key ) for service_key in service_keys_in_order }
+                    service_keys_to_service_names = { service_key : CG.client_controller.services_manager.GetNameSafe( service_key ) for service_key in service_keys_in_order }
                     
                     ALL_SERVICES_LABEL = 'all services'
                     
@@ -3834,8 +3966,6 @@ class ListBoxTags( ListBox ):
                     
                     edit_menu = ClientGUIMenus.GenerateMenu( menu )
                     
-                    ClientGUIMenus.AppendMenu( menu, edit_menu, 'search' )
-                    
                     self._AddEditMenu( edit_menu )
                     
                     ClientGUIMenus.AppendSeparator( edit_menu )
@@ -3935,6 +4065,15 @@ class ListBoxTags( ListBox ):
                             
                         
                     
+                    if len( edit_menu.actions() ) > 0:
+                        
+                        ClientGUIMenus.AppendMenu( menu, edit_menu, 'search' )
+                        
+                    else:
+                        
+                        edit_menu.setVisible( False )
+                        
+                    
                 
             
             if len( selected_actual_tags ) > 0 and self._page_key is not None:
@@ -4029,99 +4168,11 @@ class ListBoxTags( ListBox ):
         
         #
         
-        def add_favourite_tags( tags ):
+        if len( selected_actual_tags ) == 1:
             
-            if len( tags ) > 5:
-                
-                message = f'Add{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary( tags )}to the favourites list?'
-                
-                from hydrus.client.gui import ClientGUIDialogsQuick
-                
-                result = ClientGUIDialogsQuick.GetYesNo( self, message )
-                
-                if result != QW.QDialog.DialogCode.Accepted:
-                    
-                    return
-                    
-                
+            ( selected_actual_tag, ) = selected_actual_tags
             
-            favourite_tags = set( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
-            
-            favourite_tags.update( tags )
-            
-            CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
-            
-            CG.client_controller.pub( 'notify_new_favourite_tags' )
-            
-        
-        def remove_favourite_tags( tags ):
-            
-            message = f'Remove{HydrusText.ConvertManyStringsToNiceInsertableHumanSummary( tags )}from the favourites list?'
-            
-            from hydrus.client.gui import ClientGUIDialogsQuick
-            
-            result = ClientGUIDialogsQuick.GetYesNo( self, message )
-            
-            if result != QW.QDialog.DialogCode.Accepted:
-                
-                return
-                
-            
-            favourite_tags = set( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
-            
-            favourite_tags.difference_update( tags )
-            
-            CG.client_controller.new_options.SetStringList( 'favourite_tags', sorted( favourite_tags, key = HydrusText.HumanTextSortKey ) )
-            
-            CG.client_controller.pub( 'notify_new_favourite_tags' )
-            
-        
-        favourite_tags = list( CG.client_controller.new_options.GetStringList( 'favourite_tags' ) )
-        
-        to_add = set( selected_actual_tags ).difference( favourite_tags )
-        to_remove = set( selected_actual_tags ).intersection( favourite_tags )
-        
-        if len( to_add ) + len( to_remove ) > 0:
-            
-            favourites_menu = ClientGUIMenus.GenerateMenu( menu )
-            
-            if len( to_add ) > 0:
-                
-                if len( to_add ) == 1:
-                    
-                    tag = list( to_add )[0]
-                    
-                    label = f'Add "{tag}" to favourites'
-                    
-                else:
-                    
-                    label = f'Add {HydrusNumbers.ToHumanInt( len( to_add ) )} selected tags to favourites'
-                    
-                
-                description = 'Add these tags to the favourites list.'
-                
-                ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, add_favourite_tags, to_add )
-                
-            
-            if len( to_remove ) > 0:
-                
-                if len( to_remove ) == 1:
-                    
-                    tag = list( to_remove )[0]
-                    
-                    label = f'Remove "{tag}" from favourites'
-                    
-                else:
-                    
-                    label = f'Remove {HydrusNumbers.ToHumanInt( len( to_remove ) )} selected tags from favourites'
-                    
-                
-                description = 'Add these tags to the favourites list.'
-                
-                ClientGUIMenus.AppendMenuItem( favourites_menu, label, description, remove_favourite_tags, to_remove )
-                
-            
-            ClientGUIMenus.AppendMenu( menu, favourites_menu, 'favourites' )
+            AddTagFavouritesMenu( self, menu, selected_actual_tag )
             
         
         #
@@ -4218,11 +4269,6 @@ class ListBoxTags( ListBox ):
             
         
         CGC.core().PopupMenu( self, menu )
-        
-    
-    def ForceTagRecalc( self ):
-        
-        pass
         
     
     def get_htl_background( self ):
@@ -5089,7 +5135,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
     
     def IncrementTagsByMedia( self, media ):
         
-        flat_media = ClientMedia.FlattenMedia( media )
+        flat_media = ClientMediaList.FlattenMedia( media )
         
         media_results = [ m.GetMediaResult() for m in flat_media ]
         
@@ -5131,7 +5177,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
     
     def SetTagsByMedia( self, media ):
         
-        flat_media = ClientMedia.FlattenMedia( media )
+        flat_media = ClientMediaList.FlattenMedia( media )
         
         media_results = [ m.GetMediaResult() for m in flat_media ]
         
@@ -5161,7 +5207,7 @@ class ListBoxTagsMedia( ListBoxTagsDisplayCapable ):
     
     def SetTagsByMediaFromMediaResultsPanel( self, media, tags_changed, capped_due_to_setting ):
         
-        flat_media = ClientMedia.FlattenMedia( media )
+        flat_media = ClientMediaList.FlattenMedia( media )
         
         media_results = [ m.GetMediaResult() for m in flat_media ]
         
@@ -5313,7 +5359,9 @@ class StaticBoxSorterForListBoxTags( ClientGUICommon.StaticBox ):
             
             if service_key != CC.COMBINED_TAG_SERVICE_KEY:
                 
-                title = '{} for {}'.format( title, CG.client_controller.services_manager.GetName( service_key ) )
+                name = CG.client_controller.services_manager.GetNameSafe( service_key )
+                
+                title = '{} for {}'.format( title, name )
                 
             
         

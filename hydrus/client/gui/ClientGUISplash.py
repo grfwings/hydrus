@@ -28,7 +28,7 @@ class FrameSplashPanel( QW.QWidget ):
         
         self._my_status.SetWindow( self )
         
-        width = ClientGUIFunctions.ConvertTextToPixelWidth( self, 64 )
+        width = ClientGUIFunctions.ConvertTextToPixelWidth( self, 60 )
         
         self.setMinimumWidth( width )
         
@@ -61,7 +61,7 @@ class FrameSplashPanel( QW.QWidget ):
         QP.AddToLayout( vbox, self._status_label, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, self._status_sub_label, CC.FLAGS_EXPAND_PERPENDICULAR )
         
-        margin = ClientGUIFunctions.ConvertTextToPixelWidth( self, 3 )
+        margin = ClientGUIFunctions.ConvertTextToPixelWidth( self, 2 )
         
         self._image_label.setMargin( margin )
         
@@ -72,7 +72,7 @@ class FrameSplashPanel( QW.QWidget ):
         
         if ( event.buttons() & QC.Qt.MouseButton.LeftButton ) and self._drag_last_pos is not None:
             
-            mouse_pos = QG.QCursor.pos()
+            mouse_pos = self.mapToGlobal( event.pos() )
             
             delta = mouse_pos - self._drag_last_pos
             
@@ -94,7 +94,7 @@ class FrameSplashPanel( QW.QWidget ):
         
         if event.button() == QC.Qt.MouseButton.LeftButton:
             
-            self._drag_last_pos = QG.QCursor.pos()
+            self._drag_last_pos = self.mapToGlobal( event.pos() )
             
             event.accept()
             

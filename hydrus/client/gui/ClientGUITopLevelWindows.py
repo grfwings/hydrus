@@ -19,43 +19,106 @@ FUZZY_PADDING = 10
 
 # saw a ( 24, -14 ) child position off a top-left corner, which means the frameGeometry topleft was ( 0, -38 )????
 # let's see what happens if we forgive such madness
-FORGIVE_FRAME_GUBBINS_FUZZY_PADDING = 40
+#FORGIVE_FRAME_GUBBINS_FUZZY_PADDING = 40 #now global user controlled. leaving this and above for posterity
 
-def GetSafePosition( position: QC.QPoint, frame_key ):
+def GetSafePosition( position: QC.QPoint, frame_key, window_size = None ):
     
     if CG.client_controller.new_options.GetBoolean( 'disable_get_safe_position_test' ):
         
         return ( position, None )
         
     
+    if frame_key == 'media_window_size_self_to_media':
+        
+        do_fuzzy_relocate = CG.client_controller.new_options.GetBoolean( 'fuzzy_relocate_on_get_safe_position_test_only_for_self_sizing_media_viewer_canvas' )
+        
+    else:
+        
+        do_fuzzy_relocate = CG.client_controller.new_options.GetBoolean( 'fuzzy_relocate_on_get_safe_position_test' )
+        
+    
     # some window managers size the windows just off screen to cut off borders
     # so choose a test position that's a little more lenient
-    
-    fuzzy_point = QC.QPoint( FORGIVE_FRAME_GUBBINS_FUZZY_PADDING, FORGIVE_FRAME_GUBBINS_FUZZY_PADDING )
+    fuzzy_padding = CG.client_controller.new_options.GetInteger( 'forgive_frame_gubbins_fuzzy_padding' )
+    fuzzy_point = QC.QPoint( fuzzy_padding, fuzzy_padding )
     
     test_position = position + fuzzy_point
     
     # note that some version of Qt cannot figure this out, they just deliver None for a particular monitor!
     # https://github.com/hydrusnetwork/hydrus/issues/1511
     
-    screen = QW.QApplication.screenAt( test_position )
+    initial_test_position_screen = QW.QApplication.screenAt( test_position )
     
-    if screen is None:
+    topleft_ok = initial_test_position_screen is not None
+    
+    if not topleft_ok:
         
         try:
             
-            first_display = QW.QApplication.screens()[0]
+            # TODO: write a second test or modify this guy to handle windows that straddle multiple monitors
+            # this requires looking at window size vs monitor size so we can sanely decide whether panning left/up is a good idea
             
-            rescue_position = first_display.availableGeometry().topLeft() + fuzzy_point
+            # TODO: consider this taking framegeometry or whatever so tiny 'archive 7 files' dialogs up top don't go off the screen in mouse position mode
+            # it would be nice to be pixel-perfect, too, but what's the chance of that? maybe better to just KISS this and make it pixel-perfect and clean by default and allow opt-in fuzzy debug hacks
             
-            rescue_screen = QW.QApplication.screenAt( rescue_position )
+            rescue_position = None
             
-            if rescue_screen == first_display:
+            if window_size is not None:
                 
-                message = 'A window with frame key "{}" that wanted to display at "{}" was rescued from apparent off-screen to the new location at "{}".'.format( frame_key, position, rescue_position )
+                # let's run through the other corners and see if any are in view
+                corner_test_positions = [
+                    ( position + QC.QPoint( 0, window_size.height() ), QC.QPoint( 0, fuzzy_padding )  ),
+                    ( position + QC.QPoint( window_size.width(), 0 ), QC.QPoint( fuzzy_padding, 0 )  ),
+                    ( position + QC.QPoint( window_size.width(), window_size.height() ), QC.QPoint( fuzzy_padding, fuzzy_padding )  ),
+                ]
                 
-                return ( rescue_position, message )
+                for ( corner_test_position, appropriate_fuzzy_point ) in corner_test_positions:
+                    
+                    screen = QW.QApplication.screenAt( corner_test_position )
+                    
+                    if screen is not None:
+                        
+                        original_desired_rect = QC.QRect( position, window_size )
+                        
+                        screen_rect = screen.geometry()
+                        
+                        if screen_rect.intersects( original_desired_rect ): # just a sanity check; the screenAt hit should guarantee this yeah?
+                            
+                            intersection_rect = screen_rect.intersected( original_desired_rect )
+                            
+                            potential_rescue_position = intersection_rect.topLeft()
+                            
+                            if do_fuzzy_relocate:
+                                
+                                potential_rescue_position += appropriate_fuzzy_point
+                                
+                            
+                            if QW.QApplication.screenAt( potential_rescue_position ) == screen: # another sanity check
+                                
+                                rescue_position = potential_rescue_position
+                                
+                                break
+                                
+                            
+                        
+                    
                 
+            
+            if rescue_position is None:
+                
+                first_display = QW.QApplication.screens()[0]
+                
+                rescue_position = first_display.availableGeometry().topLeft()
+                
+                if do_fuzzy_relocate:
+                    
+                    rescue_position += fuzzy_point
+                    
+                
+            
+            message = 'A window with frame key "{}" that wanted to display at "{}" was rescued from apparent off-screen to the new location at "{}".'.format( frame_key, position, rescue_position )
+            
+            return ( rescue_position, message )
             
         except Exception as e:
             
@@ -400,8 +463,21 @@ def SetInitialTLWSizeAndPosition( tlw: QW.QWidget, frame_key ):
             desired_position = parent_window.frameGeometry().center() - tlw.rect().center()
             
         
+    elif default_position == 'mouse':
+        
+        screen = ClientGUIFunctions.GetMouseScreen()
+        
+        if screen is not None:
+            
+            we_care_about_off_screen_messages = False
+            
+            current_mouse_pos = ClientGUIFunctions.GetMousePos()
+            
+            desired_position = current_mouse_pos - tlw.rect().center()
+            
+        
     
-    ( safe_position, position_message ) = GetSafePosition( desired_position, frame_key )
+    ( safe_position, position_message ) = GetSafePosition( desired_position, frame_key, window_size = tlw.size() )
     
     if we_care_about_off_screen_messages and position_message is not None:
         

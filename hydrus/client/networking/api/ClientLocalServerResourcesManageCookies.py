@@ -10,10 +10,9 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingDomain
-from hydrus.client.networking import ClientNetworkingFunctions
+from hydrus.client.networking import ClientNetworkingSessions
 from hydrus.client.networking.api import ClientLocalServerCore
 from hydrus.client.networking.api import ClientLocalServerResources
-
 
 class HydrusResourceClientAPIRestrictedManageCookies( ClientLocalServerResources.HydrusResourceClientAPIRestricted ):
     
@@ -40,7 +39,9 @@ class HydrusResourceClientAPIRestrictedManageCookiesGetCookies( HydrusResourceCl
         
         body_cookies_list = []
         
-        for cookie in session.cookies:
+        cookies = ClientNetworkingSessions.GetRequestsSessionCookieJar( session )
+        
+        for cookie in cookies:
             
             name = cookie.name
             value = cookie.value
@@ -99,13 +100,17 @@ class HydrusResourceClientAPIRestrictedManageCookiesSetCookies( HydrusResourceCl
                 
                 domains_cleared.add( domain )
                 
-                session.cookies.clear( domain, path, name )
+                cookies = ClientNetworkingSessions.GetRequestsSessionCookieJar( session )
+                
+                cookies.clear( domain = domain, path = path, name = name )
+                
+                ClientNetworkingSessions.EnsureSessionCookiesAreSynced( session, cookies )
                 
             else:
                 
                 domains_set.add( domain )
                 
-                ClientNetworkingFunctions.AddCookieToSession( session, name, value, domain, path, expires )
+                ClientNetworkingSessions.AddCookieToSession( session, name, value, domain, path, expires )
                 
             
             CG.client_controller.network_engine.session_manager.SetSessionDirty( network_context )
@@ -148,7 +153,7 @@ class HydrusResourceClientAPIRestrictedManageCookiesSetUserAgent( HydrusResource
     def _threadDoPOSTJob( self, request: HydrusServerRequest.HydrusRequest ):
         
         warnings.warn(
-            'Hey, the "set_user_agent" command is deprecated, but a Client API script you are using it just called it! That script may stop working in v668 if it is not updated to use the newer "set_headers" command!',
+            'Hey, the "set_user_agent" command is deprecated, but a Client API script you are using it just called it! It would be better to use the newer "set_headers" command!',
             FutureWarning,
             stacklevel = 1
         )

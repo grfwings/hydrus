@@ -40,6 +40,7 @@ from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking.api import ClientLocalServer
+from hydrus.client.gui.pages import ClientGUIPagesCore
 from hydrus.client.networking.api import ClientLocalServerCore
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
@@ -198,6 +199,155 @@ def GetExampleServicesDict():
     }
     
     return services_dict
+    
+
+def GetExampleServicesList():
+    
+    services_list = [
+        {
+            'name' : 'my tags',
+            'service_key' : '6c6f63616c2074616773',
+            'type' : 5,
+            'type_pretty' : 'local tag domain'
+        },
+        {
+            'name' : 'example tag repo',
+            'service_key' : TG.test_controller.example_tag_repo_service_key.hex(),
+            'type' : 0,
+            'type_pretty' : 'hydrus tag repository'
+        },
+        {
+            'name' : 'my files',
+            'service_key' : '6c6f63616c2066696c6573',
+            'type' : 2,
+            'type_pretty' : 'local file domain'
+        },
+        {
+            'name' : 'repository updates',
+            'service_key' : '7265706f7369746f72792075706461746573',
+            'type' : 20,
+            'type_pretty' : 'local update file domain'
+        },
+        {
+            'name' : 'example file repo 1',
+            'service_key' : TG.test_controller.example_file_repo_service_key_1.hex(),
+            'type' : 1,
+            'type_pretty' : 'hydrus file repository'
+        },
+        {
+            'name' : 'example file repo 2',
+            'service_key' : TG.test_controller.example_file_repo_service_key_2.hex(),
+            'type' : 1,
+            'type_pretty' : 'hydrus file repository'
+        },
+        {
+            'name' : 'hydrus local file storage',
+            'service_key' : '616c6c206c6f63616c2066696c6573',
+            'type' : 15,
+            'type_pretty' : 'virtual combined local file domain'
+        },
+        {
+            'name' : 'combined local file domains',
+            'service_key' : '616c6c206c6f63616c206d65646961',
+            'type' : 21,
+            'type_pretty' : 'virtual combined local media domain'
+        },
+        {
+            'name' : 'all known files',
+            'service_key' : '616c6c206b6e6f776e2066696c6573',
+            'type' : 11,
+            'type_pretty' : 'virtual combined file domain'
+        },
+        {
+            'name' : 'all known tags',
+            'service_key' : '616c6c206b6e6f776e2074616773',
+            'type' : 10,
+            'type_pretty' : 'virtual combined tag domain'
+        },
+        {
+            'name' : 'example local rating like service',
+            'service_key' : TG.test_controller.example_like_rating_service_key.hex(),
+            'type' : 7,
+            'type_pretty' : 'local like/dislike rating service',
+            'star_shape' : 'svg',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'dislike': {
+                    'brush': '#C85078',
+                    'pen': '#000000'
+                },
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+                'null': {
+                    'brush': '#BFBFBF',
+                    'pen': '#000000'
+                }
+            },
+        },
+        {
+            'name' : 'example local rating numerical service',
+            'service_key' : TG.test_controller.example_numerical_rating_service_key.hex(),
+            'type' : 6,
+            'type_pretty' : 'local numerical rating service',
+            'allows_zero' : True,
+            'min_stars' : 0,
+            'max_stars' : 5,
+            'star_shape' : 'circle',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'dislike': {
+                    'brush': '#FFFFFF',
+                    'pen': '#000000'
+                },
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+                'null': {
+                    'brush': '#BFBFBF',
+                    'pen': '#000000'
+                }
+            },
+        },
+        {
+            'name' : 'example local rating inc/dec service',
+            'service_key' : TG.test_controller.example_incdec_rating_service_key.hex(),
+            'type' : 22,
+            'type_pretty' : 'local inc/dec rating service',
+            'show_in_thumbnail' : False,
+            'show_in_thumbnail_even_when_null' : False,
+            'colours': {
+                'like': {
+                    'brush': '#50C878',
+                    'pen': '#000000'
+                },
+                'mixed': {
+                    'brush': '#5F5F5F',
+                    'pen': '#000000'
+                },
+            },
+        },
+        {
+            'name' : 'trash',
+            'service_key' : '7472617368',
+            'type' : 14,
+            'type_pretty' : 'local trash file domain'
+        }
+    ]
+    
+    return services_list
     
 
 class TestClientAPI( unittest.TestCase ):
@@ -756,6 +906,32 @@ class TestClientAPI( unittest.TestCase ):
         
         #
         
+        api_permissions = set_up_permissions[ 'everything' ]
+        
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex }
+        
+        connection.request( 'GET', '/client_info', headers = headers )
+        
+        response = connection.getresponse()
+        
+        data = response.read()
+        
+        text = str( data, 'utf-8' )
+        
+        body_dict = json.loads( text )
+        
+        self.assertTrue( isinstance( body_dict[ 'boot_id' ], str ) )
+        self.assertTrue( isinstance( body_dict[ 'boot_time' ], float ) )
+        self.assertTrue( isinstance( body_dict[ 'currently_idle' ], bool ) )
+        
+        boot_id_hex = body_dict[ 'boot_id' ]
+        
+        self.assertEqual( len( bytes.fromhex( boot_id_hex ) ), 32 )
+        
+        #
+        
         return set_up_permissions
         
     
@@ -900,7 +1076,8 @@ class TestClientAPI( unittest.TestCase ):
                     'type_pretty': 'local trash file domain'
                 }
             ],
-            'services' : GetExampleServicesDict()
+            'services' : GetExampleServicesDict(),
+            'services_v2' : GetExampleServicesList()
         }
         
         wash_example_json_response( expected_result )
@@ -3682,6 +3859,7 @@ class TestClientAPI( unittest.TestCase ):
         
         expected_result = {
             'services' : GetExampleServicesDict(),
+            'services_v2' : GetExampleServicesList(),
             'tags' : {}
         }
         
@@ -6255,6 +6433,339 @@ class TestClientAPI( unittest.TestCase ):
         self.assertEqual( result, expected_result )
         
     
+    def _test_manage_pages_new_page( self, connection, set_up_permissions ):
+
+        api_permissions = set_up_permissions[ 'manage_pages' ]
+        access_key_hex = api_permissions.GetAccessKey().hex()
+        headers = { 'Hydrus-Client-API-Access-Key' : access_key_hex, 'Content-Type' : HC.mime_mimetype_string_lookup[ HC.APPLICATION_JSON ] }
+
+        class MockPage:
+
+            def __init__( self, page_manager, page_name ):
+
+                self._page_key = os.urandom( 32 )
+                self._page_manager = page_manager
+                self._page_name = page_name
+
+
+            def GetPageKey( self ):
+
+                return self._page_key
+
+
+            def GetPageManager( self ):
+
+                return self._page_manager
+
+
+            def GetName( self ):
+
+                return self._page_name
+
+
+
+        class MockNotebook:
+            
+            def NewPage( self, page_manager, initial_hashes = None, forced_insertion_index = None, on_deepest_notebook = False, select_page = True ):
+                
+                return MockPage( page_manager, page_manager.GetPageName() )
+                
+            
+            def NewPagesNotebook( self, name = 'pages', forced_insertion_index = None, on_deepest_notebook = False, give_it_a_blank_page = True, select_page = True ):
+                
+                from hydrus.client.gui.pages import ClientGUIPagesCore
+                
+                class MockPagesNotebookPageManager:
+                    
+                    def GetType( self ):
+                        
+                        return ClientGUIPagesCore.PAGE_TYPE_PAGE_OF_PAGES
+                        
+                    
+                
+                return MockPage( MockPagesNotebookPageManager(), name )
+                
+            
+            def GetPageFromPageKey( self, page_key ):
+                
+                return None
+                
+            
+        
+        mock_notebook = MockNotebook()
+        
+        with mock.patch.object( TG.test_controller, 'GetTopLevelNotebook', return_value = mock_notebook, create = True ):
+            
+            path = '/manage_pages/new_page'
+            
+            #
+            # PAGE_TYPE_PAGE_OF_PAGES
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_PAGE_OF_PAGES,
+                'page_name' : 'my sub-notebook',
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            
+            response = connection.getresponse()
+            
+            data = response.read()
+            
+            self.assertEqual( response.status, 200 )
+            
+            text = str( data, 'utf-8' )
+            
+            d = json.loads( text )
+            
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_PAGE_OF_PAGES )
+            self.assertEqual( d[ 'page_name' ], 'my sub-notebook' )
+            
+            #
+            # PAGE_TYPE_QUERY with namespace sort
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'namespace sort page',
+                'tags' : [ 'title:serpent ring' ],
+                'file_service_key' : '48eb05cfcc855f5cebfcf5df7cef5d6458b6867425fad37684718779536813e7',
+                'file_sort_namespaces' : [ 'series', 'creator', 'title', 'volume', 'chapter', 'page' ],
+                'file_sort_asc' : True,
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_QUERY )
+            self.assertEqual( d[ 'page_name' ], 'namespace sort page' )
+            
+            #
+            # PAGE_TYPE_QUERY with tag service key
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'tag service page',
+                'tags' : [ 'title:serpent ring' ],
+                'tag_service_key' : CC.DEFAULT_LOCAL_TAG_SERVICE_KEY.hex(),
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_QUERY )
+            self.assertEqual( d[ 'page_name' ], 'tag service page' )
+            
+            #
+            # PAGE_TYPE_QUERY with collect by tag
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'collect page',
+                'collect_namespaces' : [ 'series', 'volume', 'page' ],
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_QUERY )
+            self.assertEqual( d[ 'page_name' ], 'collect page' )
+            
+            #
+            # PAGE_TYPE_QUERY with hashes + system_hash_locked
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'locked hashes page',
+                'hashes' : [ os.urandom( 32 ).hex() ],
+                'system_hash_locked' : True,
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_QUERY )
+            self.assertEqual( d[ 'page_name' ], 'locked hashes page' )
+            
+            #
+            # system_hash_locked without hashes should error
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'bad lock',
+                'system_hash_locked' : True,
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 400 )
+            
+            #
+            # PAGE_TYPE_IMPORT_URLS with urls
+
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_IMPORT_URLS,
+                'page_name' : 'urls with seeds',
+                'urls' : [ 'https://example.com/image1.png', 'https://example.com/image2.png' ],
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_IMPORT_URLS )
+            self.assertEqual( d[ 'page_name' ], 'urls with seeds' )
+            
+            #
+            # PAGE_TYPE_IMPORT_MULTIPLE_WATCHER with url
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_IMPORT_MULTIPLE_WATCHER,
+                'page_name' : 'my watcher',
+                'url' : 'https://example.com/gallery/page/1',
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_IMPORT_MULTIPLE_WATCHER )
+            self.assertEqual( d[ 'page_name' ], 'my watcher' )
+            
+            #
+            # PAGE_TYPE_DUPLICATE_FILTER with file_service_key
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_DUPLICATE_FILTER,
+                'page_name' : 'filter in service',
+                'file_service_key' : CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY.hex(),
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 200 )
+            text = str( data, 'utf-8' )
+            d = json.loads( text )
+            self.assertIn( 'page_key', d )
+            self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_DUPLICATE_FILTER )
+            self.assertEqual( d[ 'page_name' ], 'filter in service' )
+            
+            #
+            # Both file_sort_type and file_sort_namespaces should error
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'bad sort',
+                'file_sort_type' : 0,
+                'file_sort_namespaces' : [ 'series' ],
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 400 )
+            
+            #
+            # PAGE_TYPE_PETITIONS without service_key (should error)
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_PETITIONS,
+                'page_name' : 'no service',
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 400 )
+            
+            #
+            # page_of_pages_key with invalid key (should error)
+            
+            request_dict = {
+                'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                'page_name' : 'bad notebook',
+                'page_of_pages_key' : os.urandom( 32 ).hex(),
+                'focus_page' : False
+            }
+            
+            request_body = json.dumps( request_dict )
+            connection.request( 'POST', path, body = request_body, headers = headers )
+            response = connection.getresponse()
+            data = response.read()
+            self.assertEqual( response.status, 404 )
+            
+            #
+            # focus_page = True
+            
+            with mock.patch.object( TG.test_controller.gui, 'ShowPage', return_value = True, create = True ):
+                
+                request_dict = {
+                    'page_type' : ClientGUIPagesCore.PAGE_TYPE_QUERY,
+                    'page_name' : 'focus test',
+                    'focus_page' : True
+                }
+                
+                request_body = json.dumps( request_dict )
+                connection.request( 'POST', path, body = request_body, headers = headers )
+                response = connection.getresponse()
+                data = response.read()
+                self.assertEqual( response.status, 200 )
+                text = str( data, 'utf-8' )
+                d = json.loads( text )
+                self.assertIn( 'page_key', d )
+                self.assertEqual( d[ 'page_type' ], ClientGUIPagesCore.PAGE_TYPE_QUERY )
+                self.assertEqual( d[ 'page_name' ], 'focus test' )
+                
+            
+        
+    
     def _test_manage_pages_media_viewers( self, connection, set_up_permissions ):
         
         api_permissions = set_up_permissions[ 'manage_pages' ]
@@ -6596,7 +7107,7 @@ class TestClientAPI( unittest.TestCase ):
         sort_by = kwargs[ 'sort_by' ]
         
         self.assertEqual( sort_by.sort_type, ( 'system', CC.SORT_FILES_BY_IMPORT_TIME ) )
-        self.assertEqual( sort_by.sort_order, CC.SORT_DESC )
+        self.assertEqual( sort_by.sort_order, CC.SORT_ASC )
         
         self.assertIn( 'apply_implicit_limit', kwargs )
         
@@ -6715,7 +7226,7 @@ class TestClientAPI( unittest.TestCase ):
         sort_by = kwargs[ 'sort_by' ]
         
         self.assertEqual( sort_by.sort_type, ( 'system', CC.SORT_FILES_BY_IMPORT_TIME ) )
-        self.assertEqual( sort_by.sort_order, CC.SORT_DESC )
+        self.assertEqual( sort_by.sort_order, CC.SORT_ASC )
         
         self.assertIn( 'apply_implicit_limit', kwargs )
         
@@ -6776,7 +7287,7 @@ class TestClientAPI( unittest.TestCase ):
         sort_by = kwargs[ 'sort_by' ]
         
         self.assertEqual( sort_by.sort_type, ( 'system', CC.SORT_FILES_BY_IMPORT_TIME ) )
-        self.assertEqual( sort_by.sort_order, CC.SORT_DESC )
+        self.assertEqual( sort_by.sort_order, CC.SORT_ASC )
         
         self.assertIn( 'apply_implicit_limit', kwargs )
         
@@ -6825,7 +7336,7 @@ class TestClientAPI( unittest.TestCase ):
         sort_by = kwargs[ 'sort_by' ]
         
         self.assertEqual( sort_by.sort_type, ( 'system', CC.SORT_FILES_BY_FRAMERATE ) )
-        self.assertEqual( sort_by.sort_order, CC.SORT_DESC )
+        self.assertEqual( sort_by.sort_order, CC.SORT_ASC )
         
         self.assertIn( 'apply_implicit_limit', kwargs )
         
@@ -7238,7 +7749,7 @@ class TestClientAPI( unittest.TestCase ):
             metadata.append( metadata_row )
             
         
-        expected_identifier_result = { 'metadata' : metadata, 'services' : GetExampleServicesDict() }
+        expected_identifier_result = { 'metadata' : metadata, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         wash_example_json_response( expected_identifier_result )
         
@@ -7421,7 +7932,7 @@ class TestClientAPI( unittest.TestCase ):
                     'current' : {
                         random_file_service_hex_current.hex() : {
                             'time_imported' : HydrusTime.SecondiseMS( current_import_timestamp_ms ),
-                            'name' : TG.test_controller.services_manager.GetName( random_file_service_hex_current ),
+                            'name' : TG.test_controller.services_manager.GetNameSafe( random_file_service_hex_current ),
                             'type' : TG.test_controller.services_manager.GetServiceType( random_file_service_hex_current ),
                             'type_pretty' : HC.service_string_lookup[ TG.test_controller.services_manager.GetServiceType( random_file_service_hex_current ) ]
                         }
@@ -7430,7 +7941,7 @@ class TestClientAPI( unittest.TestCase ):
                         random_file_service_hex_deleted.hex() : {
                             'time_deleted' : HydrusTime.SecondiseMS( deleted_deleted_timestamp_ms ),
                             'time_imported' : HydrusTime.SecondiseMS( previously_imported_timestamp_ms ),
-                            'name' : TG.test_controller.services_manager.GetName( random_file_service_hex_deleted ),
+                            'name' : TG.test_controller.services_manager.GetNameSafe( random_file_service_hex_deleted ),
                             'type' : TG.test_controller.services_manager.GetServiceType( random_file_service_hex_deleted ),
                             'type_pretty' : HC.service_string_lookup[ TG.test_controller.services_manager.GetServiceType( random_file_service_hex_deleted ) ]
                         }
@@ -7461,7 +7972,7 @@ class TestClientAPI( unittest.TestCase ):
                     
                     metadata_row[ 'file_services' ][ 'current' ][ i_s_k.hex() ] = {
                         'time_imported' : HydrusTime.SecondiseMS( ipfs_import_timestamp_ms ),
-                        'name' : TG.test_controller.services_manager.GetName( i_s_k ),
+                        'name' : TG.test_controller.services_manager.GetNameSafe( i_s_k ),
                         'type' : TG.test_controller.services_manager.GetServiceType( i_s_k ),
                         'type_pretty' : HC.service_string_lookup[ TG.test_controller.services_manager.GetServiceType( i_s_k ) ]
                     }
@@ -7560,11 +8071,11 @@ class TestClientAPI( unittest.TestCase ):
             with_notes_metadata.append( with_notes_metadata_row )
             
         
-        expected_metadata_result = { 'metadata' : metadata, 'services' : GetExampleServicesDict() }
-        expected_detailed_known_urls_metadata_result = { 'metadata' : detailed_known_urls_metadata, 'services' : GetExampleServicesDict() }
-        expected_notes_metadata_result = { 'metadata' : with_notes_metadata, 'services' : GetExampleServicesDict() }
-        expected_only_return_basic_information_result = { 'metadata' : only_return_basic_information_metadata, 'services' : GetExampleServicesDict() }
-        expected_only_return_basic_information_but_blurhash_too_result = { 'metadata' : only_return_basic_information_metadata_but_blurhash_too, 'services' : GetExampleServicesDict() }
+        expected_metadata_result = { 'metadata' : metadata, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
+        expected_detailed_known_urls_metadata_result = { 'metadata' : detailed_known_urls_metadata, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
+        expected_notes_metadata_result = { 'metadata' : with_notes_metadata, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
+        expected_only_return_basic_information_result = { 'metadata' : only_return_basic_information_metadata, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
+        expected_only_return_basic_information_but_blurhash_too_result = { 'metadata' : only_return_basic_information_metadata_but_blurhash_too, 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         wash_example_json_response( expected_metadata_result )
         wash_example_json_response( expected_detailed_known_urls_metadata_result )
@@ -7686,7 +8197,7 @@ class TestClientAPI( unittest.TestCase ):
         
         d = json.loads( text )
         
-        expected_result = { 'metadata' : list( expected_only_return_basic_information_result[ 'metadata' ] ), 'services' : GetExampleServicesDict() }
+        expected_result = { 'metadata' : list( expected_only_return_basic_information_result[ 'metadata' ] ), 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         expected_result[ 'metadata' ].sort( key = lambda basic: expected_order.index( basic[ 'file_id' ] ) )
         
@@ -7780,7 +8291,7 @@ class TestClientAPI( unittest.TestCase ):
         self.maxDiff = None
         '''
         
-        expected_result = { 'metadata' : list( expected_metadata_result[ 'metadata' ] ), 'services' : GetExampleServicesDict() }
+        expected_result = { 'metadata' : list( expected_metadata_result[ 'metadata' ] ), 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         expected_result[ 'metadata' ].sort( key = lambda basic: expected_order.index( basic[ 'file_id' ] ) )
         
@@ -7865,7 +8376,7 @@ class TestClientAPI( unittest.TestCase ):
         
         d = json.loads( text )
         
-        expected_result = { 'metadata' : list( expected_identifier_result[ 'metadata' ] ), 'services' : GetExampleServicesDict() }
+        expected_result = { 'metadata' : list( expected_identifier_result[ 'metadata' ] ), 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         expected_result[ 'metadata' ].sort( key = lambda basic: expected_order.index( basic[ 'file_id' ] ) )
         
@@ -7909,7 +8420,7 @@ class TestClientAPI( unittest.TestCase ):
         
         d = json.loads( text )
         
-        expected_result = { 'metadata' : list( expected_only_return_basic_information_result[ 'metadata' ] ), 'services' : GetExampleServicesDict() }
+        expected_result = { 'metadata' : list( expected_only_return_basic_information_result[ 'metadata' ] ), 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         expected_result[ 'metadata' ].sort( key = lambda basic: expected_order.index( basic[ 'file_id' ] ) )
         
@@ -7951,7 +8462,7 @@ class TestClientAPI( unittest.TestCase ):
         
         d = json.loads( text )
         
-        expected_result = { 'metadata' : list( expected_metadata_result[ 'metadata' ] ), 'services' : GetExampleServicesDict() }
+        expected_result = { 'metadata' : list( expected_metadata_result[ 'metadata' ] ), 'services' : GetExampleServicesDict(), 'services_v2' : GetExampleServicesList() }
         
         expected_result[ 'metadata' ].sort( key = lambda basic: expected_order.index( basic[ 'file_id' ] ) )
         
@@ -8521,6 +9032,7 @@ class TestClientAPI( unittest.TestCase ):
         self._test_manage_cookies( connection, set_up_permissions )
         self._test_manage_headers( connection, set_up_permissions )
         self._test_manage_pages_media_viewers( connection, set_up_permissions )
+        self._test_manage_pages_new_page( connection, set_up_permissions )
         self._test_manage_pages( connection, set_up_permissions )
         self._test_search_files( connection, set_up_permissions )
         

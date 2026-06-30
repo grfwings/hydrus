@@ -8,7 +8,7 @@ from qtpy import QtWidgets as QW
 
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientConstants as CC
-from hydrus.client.gui.pages import ClientGUIMediaResultsPanelLoading
+from hydrus.client.gui.pages import ClientGUIMediaResultsPanelThumbnails
 from hydrus.core import HydrusNumbers
 
 def GetSearchProvider( provider: int ) -> QAbstractLocatorSearchProvider | None:
@@ -123,6 +123,7 @@ class FavSearchesSearchProvider( HydrusSearchProvider ):
         
         self.result_id_counter = 0
         self.result_ids_to_fav_searches = {}
+        self.result_ids_to_pages = {}
         
     
     def title( self ):
@@ -727,12 +728,12 @@ class MediaMenuSearchProvider( HydrusSearchProviderCrazyLaggy ):
         
         media_panel = media_page.GetMediaResultsPanel()
         
-        if media_panel is None or isinstance( media_panel, ClientGUIMediaResultsPanelLoading.MediaResultsPanelLoading ):
+        if media_panel is None or not isinstance( media_panel, ( ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails, ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnailsGraphicsViewTest ) ):
             
             return 
             
         
-        self.menu = media_panel.ShowMenu( True )
+        self.menu = media_panel.GetMenu()
         
         # helper function to traverse menu and generate entries
         # TODO: need to filter out menu items not suitable for display in locator

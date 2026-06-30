@@ -203,7 +203,7 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
             
             self._listctrl_panel.AddMenuButton( 'export', menu_template_items, enabled_only_on_selection = True )
             
-            ( gumpf, preview_height ) = ClientGUIFunctions.ConvertTextToPixels( self._old_siblings, ( 12, 4 ) )
+            preview_height = ClientGUIFunctions.ConvertTextToPixelHeight( self._old_siblings, 4 )
             
             self._old_siblings.setMinimumHeight( preview_height )
             
@@ -749,8 +749,8 @@ class ManageTagSiblings( ClientGUIScrolledPanels.ManagePanel ):
                     
                 else:
                     
-                    synced_names = sorted( ( CG.client_controller.services_manager.GetName( s_k ) for ( s_k, work_to_do ) in service_keys_to_work_to_do.items() if not work_to_do ) )
-                    unsynced_names = sorted( ( CG.client_controller.services_manager.GetName( s_k ) for ( s_k, work_to_do ) in service_keys_to_work_to_do.items() if work_to_do ) )
+                    synced_names = sorted( ( CG.client_controller.services_manager.GetNameSafe( s_k ) for ( s_k, work_to_do ) in service_keys_to_work_to_do.items() if not work_to_do ) )
+                    unsynced_names = sorted( ( CG.client_controller.services_manager.GetNameSafe( s_k ) for ( s_k, work_to_do ) in service_keys_to_work_to_do.items() if work_to_do ) )
                     
                     synced_string = ', '.join( ( '"{}"'.format( name ) for name in synced_names ) )
                     unsynced_string = ', '.join( ( '"{}"'.format( name ) for name in unsynced_names ) )

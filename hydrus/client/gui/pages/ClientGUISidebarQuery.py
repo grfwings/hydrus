@@ -22,7 +22,8 @@ from hydrus.client.gui.pages import ClientGUISidebarCore
 from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
-from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaList
+from hydrus.client.media import ClientMediaSort
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
 
@@ -168,7 +169,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         self._query_job_status.Cancel()
         
-        panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, [] )
+        panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, [] )
         
         panel.SetEmptyPageStatusOverride( 'search cancelled!' )
         
@@ -272,7 +273,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
         else:
             
-            panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, [] )
+            panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, [] )
             
             panel.SetEmptyPageStatusOverride( 'no search' )
             
@@ -280,7 +281,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         self._page.SwapMediaResultsPanel( panel )
         
     
-    def _SortChanged( self, media_sort: ClientMedia.MediaSort ):
+    def _SortChanged( self, media_sort: ClientMediaSort.MediaSort ):
         
         super()._SortChanged( media_sort )
         
@@ -396,9 +397,9 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         self._query_job_status.Cancel()
         
     
-    def EnterPredicates( self, page_key, predicates ):
+    def EnterPredicates( self, predicates: list[ ClientSearchPredicate.Predicate ] ):
         
-        self._tag_autocomplete.EnterPredicates( page_key, predicates )
+        self._tag_autocomplete.EnterPredicates( predicates )
         
     
     def GetPredicates( self ):
@@ -414,7 +415,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
         
         do_yes_no = True
         
-        hashes = [ m.GetHash() for m in ClientMedia.FlattenMedia( self._page.GetMedia() ) ]
+        hashes = [ m.GetHash() for m in ClientMediaList.FlattenMedia( self._page.GetMedia() ) ]
         
         if len( predicates ) == 0:
             
@@ -583,7 +584,7 @@ class SidebarQuery( ClientGUISidebarCore.Sidebar ):
             
             location_context = self._page_manager.GetLocationContext()
             
-            panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
+            panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
             
             # little ugly, but whatever we out here for now
             panel.SetTagContext( self._tag_autocomplete.GetFileSearchContext().GetTagContext() )

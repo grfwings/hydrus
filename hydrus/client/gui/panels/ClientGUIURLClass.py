@@ -11,7 +11,6 @@ from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
 
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientStrings
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -681,7 +680,7 @@ class EditURLClassPanel( ClientGUIScrolledPanels.EditPanel ):
         
         self._example_url.setText( example_url )
         
-        example_url_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._example_url, 75 )
+        example_url_width = ClientGUIFunctions.ConvertTextToPixelWidth( self._example_url, 60 )
         
         self._example_url.setMinimumWidth( example_url_width )
         
@@ -1733,7 +1732,7 @@ class EditURLDomainMaskWidget( ClientGUICommon.StaticBox ):
         
         title = 'Enter domain regex.'
         
-        with ClientGUITopLevelWindowsPanels.DialogEdit( self, title, frame_key = 'regular_center_dialog' ) as dlg:
+        with ClientGUITopLevelWindowsPanels.DialogEdit( self, title, frame_key = 'quick_entry_dialog' ) as dlg:
             
             panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
             
@@ -1745,7 +1744,7 @@ class EditURLDomainMaskWidget( ClientGUICommon.StaticBox ):
             
             control.SetValue( domain_regex )
             
-            width = ClientGUIFunctions.ConvertTextToPixelWidth( control, 36 )
+            width = ClientGUIFunctions.ConvertTextToPixelWidth( control, 40 )
             
             control.setMinimumWidth( width )
             

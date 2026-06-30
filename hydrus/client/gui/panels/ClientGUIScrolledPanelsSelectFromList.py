@@ -56,7 +56,7 @@ class EditSelectFromListPanel( ClientGUIScrolledPanels.EditPanel ):
         
         max_label_width_chars = max( ( len( label ) for ( label, value ) in choice_tuples ) )
         
-        width_chars = min( 64, max_label_width_chars + 2 )
+        width_chars = min( 60, max_label_width_chars )
         height_chars = min( len( choice_tuples ), 36 )
         
         ( width_px, height_px ) = ClientGUIFunctions.ConvertTextToPixels( self._list, ( width_chars, height_chars ) )
@@ -248,6 +248,7 @@ class EditSelectMultiple( ClientGUIScrolledPanels.EditPanel ):
         vbox = QP.VBoxLayout()
         
         QP.AddToLayout( vbox, self._checkboxes, CC.FLAGS_EXPAND_BOTH_WAYS )
+        vbox.addStretch( 0 )
         
         self.widget().setLayout( vbox )
         

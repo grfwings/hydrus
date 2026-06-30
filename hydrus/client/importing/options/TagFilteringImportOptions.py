@@ -4,7 +4,11 @@ from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTags
 
-class TagFilteringImportOptions( HydrusSerialisable.SerialisableBase ):
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
+
+class TagFilteringImportOptions( IOC.ImportOptionsMetatype ):
+    
+    IMPORT_OPTIONS_TYPE = IOC.IMPORT_OPTIONS_TYPE_TAG_FILTERING
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_TAG_FILTERING_IMPORT_OPTIONS
     SERIALISABLE_NAME = 'Tag Filtering Import Options'
@@ -46,13 +50,18 @@ class TagFilteringImportOptions( HydrusSerialisable.SerialisableBase ):
         self._tag_blacklist = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_tag_blacklist )
         
     
+    def AllowsEverything( self ):
+        
+        return self._tag_blacklist.AllowsEverything() and len( self._tag_whitelist ) == 0
+        
+    
     def CheckTagsVeto( self, tags: collections.abc.Collection[ str ], sibling_tags: collections.abc.Collection[ str ] ):
         
-        tags = set( tags )
+        tags_set = set( tags )
         
-        sibling_tags = set( sibling_tags )
+        sibling_tags_set = set( sibling_tags )
         
-        for test_tags in ( tags, sibling_tags ):
+        for test_tags in ( tags_set, sibling_tags_set ):
             
             ok_tags = self._tag_blacklist.Filter( test_tags, apply_unnamespaced_rules_to_namespaced_tags = True )
             
@@ -68,7 +77,7 @@ class TagFilteringImportOptions( HydrusSerialisable.SerialisableBase ):
         
         if len( self._tag_whitelist ) > 0:
             
-            all_tags = tags.union( sibling_tags )
+            all_tags = tags_set.union( sibling_tags_set )
             
             for tag in list( all_tags ):
                 
@@ -86,9 +95,11 @@ class TagFilteringImportOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetSummary( self, show_downloader_options: bool = True ):
+    def GetSummary( self, import_options_caller_type: int ):
         
         statements = []
+        
+        show_downloader_options = import_options_caller_type not in IOC.NON_DOWNLOADER_IMPORT_OPTION_CALLER_TYPES
         
         if show_downloader_options:
             

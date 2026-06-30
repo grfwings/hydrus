@@ -6,10 +6,13 @@ from hydrus.core import HydrusTime
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.metadata import ClientContentUpdates
 
-class LocationImportOptions( HydrusSerialisable.SerialisableBase ):
+class LocationImportOptions( IOC.ImportOptionsMetatype ):
+    
+    IMPORT_OPTIONS_TYPE = IOC.IMPORT_OPTIONS_TYPE_LOCATIONS
     
     SERIALISABLE_TYPE = HydrusSerialisable.SERIALISABLE_TYPE_LOCATION_IMPORT_OPTIONS
     SERIALISABLE_NAME = 'Location Import Options'
@@ -135,21 +138,19 @@ class LocationImportOptions( HydrusSerialisable.SerialisableBase ):
         return self._import_destination_location_context
         
     
-    def GetSummary( self, show_downloader_options: bool = True ):
+    def GetSummary( self, import_options_caller_type: int ):
         
         statements = []
         
         #
         
-        try:
+        destination_names = sorted( CG.client_controller.services_manager.GetNameSafe( service_key ) for service_key in self._import_destination_location_context.current_service_keys )
+        
+        statements.append( 'imports to ' + ', '.join( destination_names ) )
+        
+        if False in ( CG.client_controller.services_manager.ServiceExists( service_key ) for service_key in self._import_destination_location_context.current_service_keys ):
             
-            destination_names = sorted( CG.client_controller.services_manager.GetName( service_key ) for service_key in self._import_destination_location_context.current_service_keys )
-            
-            statements.append( 'imports to ' + ', '.join( destination_names ) )
-            
-        except:
-            
-            statements.append( 'problem with destination: wants to import to a location that no longer exists?' )
+            statements.append( 'problem: seems to want to import to a location that no longer exists!' )
             
         
         if self._automatically_archives:

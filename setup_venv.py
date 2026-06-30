@@ -65,12 +65,16 @@ def check_python_version():
         
     
 
-def confirm_venv_delete(venv_path):
+def handle_existing_venv( venv_path, doing_interactive_install: bool ):
     
     if venv_path.exists():
         
-        print( 'Virtual environment will be reinstalled. Press Enter to continue.' )
-        input()
+        if doing_interactive_install:
+            
+            print( 'Virtual environment will be reinstalled. Press Enter to continue.' )
+            input()
+            
+        
         print( 'Deleting old venv...' )
         
         shutil.rmtree( venv_path )
@@ -84,24 +88,27 @@ def confirm_venv_delete(venv_path):
         
     else:
         
-        print( 'If you do not know what this is, check the "running from source" help.' )
-        print( 'Press Enter to continue.' )
-        input()
+        if doing_interactive_install:
+            
+            print( 'If you do not know what this is, check the "running from source" help.' )
+            print( 'Press Enter to continue.' )
+            input()
+            
         
     
 
-def get_install_type():
+def get_interaction_type():
     
     print()
     print( 'Do you want the (s)imple or (a)dvanced install?' )
     
     while True:
         
-        install_type = input().strip().lower()
+        interaction_type = input().strip().lower()
         
-        if install_type in ( 's', 'a' ):
+        if interaction_type in ( 's', 'a' ):
             
-            return install_type
+            return interaction_type
             
         
         print( 'Sorry, did not understand that input! Enter "s" or "a".' )
@@ -131,22 +138,32 @@ def get_user_choice( prompt_text, valid_choices, default_choice: str ):
         
     
 
-def process_advanced_options( requirements_dict: dict[ str, str | None ] ):
+def process_advanced_options( requirements_dict: dict[ str, str | None ], doing_interactive_install: bool ):
     """Get advanced requirements customisation from user."""
     
     print( '--------' )
-    print( 'We will now choose versions for larger libraries.' )
-    print( 'If something does not install, run this script again and it will clear everything and try again.' )
-    print( 'Press Enter to use the default choice (shown in brackets).' )
-    print()
     
-    # Qt
-    print( 'Qt (PySide6) - User Interface' )
-    print( 'Most people want (n)ormal.' )
-    print( 'Very old OSes should try (o)ld. Python 3.14+ should try (t)est.' )
-    print( 'If normal Qt does not work, try (o)ld, (q) for PyQt6, or (w)rite your own.' )
-    
-    qt = get_user_choice( 'Qt choice (o/n/t/q/w)', ( 'o', 'n', 't', 'q', 'w' ), 'n' )
+    if doing_interactive_install:
+        
+        print( 'We will now choose versions for larger libraries.' )
+        print( 'If something does not install, run this script again and it will clear everything and try again.' )
+        print( 'Press Enter to use the default choice (shown in brackets).' )
+        print()
+        
+        # Qt
+        print( 'Qt (PySide6) - User Interface' )
+        print( 'Most people want (n)ormal.' )
+        print( 'Very old OSes should try (o)ld. Python 3.14+ should try (t)est.' )
+        print( 'If normal Qt does not work, try (o)ld, (q) for PyQt6, or (w)rite your own.' )
+        
+        qt = get_user_choice( 'Qt choice (o/n/t/q/w)', ( 'o', 'n', 't', 'q', 'w' ), 'n' )
+        
+    else:
+        
+        print( 'Selecting the (t)est PySide6 install.' )
+        
+        qt = 't'
+        
     
     if qt == 'o':
         
@@ -155,7 +172,7 @@ def process_advanced_options( requirements_dict: dict[ str, str | None ] ):
         
     elif qt == 't':
         
-        requirements_dict[ 'pyside6' ] = '==6.10.1'
+        requirements_dict[ 'pyside6' ] = '==6.10.3'
         requirements_dict[ 'qtpy' ] = '==2.4.3'
         
     elif qt == 'q':
@@ -185,17 +202,26 @@ def process_advanced_options( requirements_dict: dict[ str, str | None ] ):
     
     # no mpv version in testing atm
     '''
-    # mpv
     print()
-    print( 'mpv - audio and video playback' )
-    print( 'Most people want (n)ormal.' )
     
-    if sys.platform == "darwin":
+    if doing_interactive_install:
         
-        print( 'WARNING: mpv is broken on macOS. Choose 'n' as a safe default.' )
+        print( 'mpv - audio and video playback' )
+        print( 'Most people want (n)ormal. The (t)est is a newer version of the library.' )
         
-    
-    mpv = get_user_choice( 'mpv choice (n/t)', ( 'n', 't' ), 'n' )
+        if sys.platform == "darwin":
+            
+            print( 'WARNING: mpv is broken on macOS. Choose 'n' as a safe default.' )
+            
+        
+        mpv = get_user_choice( 'mpv choice (n/t)', ( 'n', 't' ), 'n' )
+        
+    else:
+        
+        print( 'Selecting the (t)est mpv install.' )
+        
+        mpv = 't'
+        
     
     if mpv == 't':
         
@@ -205,47 +231,78 @@ def process_advanced_options( requirements_dict: dict[ str, str | None ] ):
     
     # OpenCV
     print()
-    print( 'OpenCV - Images' )
-    print( 'Most people want (n)ormal.' )
-    print( 'Very old OSes should try (o)ld. Python 3.14+ should try (t)est.' )
-    opencv = get_user_choice( 'OpenCV choice (o/n/t)', ( 'o', 'n', 't' ), 'n' )
+    
+    
+    if doing_interactive_install:
+        
+        print( 'OpenCV - Images' )
+        print( 'Most people want (n)ormal.' )
+        print( 'Very old OSes should try (o)ld. Python 3.14+ should try (t)est.' )
+        opencv = get_user_choice( 'OpenCV choice (o/n/t)', ( 'o', 'n', 't' ), 'n' )
+        
+    else:
+        
+        print( 'Selecting the (t)est OpenCV install.' )
+
+        opencv = 't'
+        
     
     if opencv == 'o':
-        
-        requirements_dict[ 'opencv-python-headless' ] = '==4.8.1.78'
+
+        requirements_dict['opencv-python-headless'] = '==4.8.1.78'
         requirements_dict[ 'numpy' ] = '<=2.3.1'
         
     elif opencv == 't':
         
-        requirements_dict[ 'opencv-python-headless' ] = '==4.13.0.90'
+        requirements_dict[ 'opencv-python-headless' ] = '==4.13.0.92'
         requirements_dict[ 'numpy' ] = '==2.4.1'
         
     
     # Future libraries
     print()
-    print( 'Future Libraries' )
-    print( 'There is a test for a new domain parsing library. Want to try it?' )
-    future = get_user_choice( 'Future libraries (y/n)', ( 'y', 'n' ), 'n' )
+    
+    if doing_interactive_install:
+        
+        print('Future Libraries')
+        print('There is a test for curl_cffi. Want to try it?')
+        future = get_user_choice('Future libraries (y/n)', ('y', 'n'), 'n')
+        
+    else:
+        
+        print( 'Selecting to install curl_cffi test.' )
+        
+        future = 'y'
+        
     
     if future == 'y':
         
-        requirements_dict[ 'tldextract' ] = '==5.3.1'
+        requirements_dict[ 'curl-cffi' ] = '==0.15.0'
         
     
     # Dev mode
     print()
-    print( 'Development Tools' )
-    print( 'Do you want to install development tools (Httmock, etc.)?' )
-    dev = get_user_choice( 'Install dev tools (y/n)', ( 'y', 'n' ), 'n' )
+    
+    if doing_interactive_install:
+        
+        print( 'Development Tools' )
+        print( 'Do you want to install development tools (Httmock, etc.)?' )
+        dev = get_user_choice( 'Install dev tools (y/n)', ( 'y', 'n' ), 'n' )
+        
+    else:
+        
+        print( 'Selecting to install dev tools.' )
+        
+        dev = 'y'
+        
     
     if dev == 'y':
         
-        requirements_dict[ 'httmock' ] = '>=1.4.0'
+        requirements_dict[ 'httmock' ] = '<=1.4.0'
         requirements_dict[ 'mkdocs-material' ] = '==9.7.1'
         
     
 
-def create_venv(venv_path):
+def create_venv( venv_path ):
     
     print( '--------' )
     print( 'Creating new venv...' )
@@ -293,9 +350,21 @@ def main():
         
         argparser = argparse.ArgumentParser( description = 'hydrus network venv setup' )
         
+        argparser.add_argument( '-i', '--install_type', help = 'choose a template for non-interactive install (s=simple, a=advanced with all test choices and dev stuff)', choices = [ 's', 'a' ] )
         argparser.add_argument( '-v', '--venv_name', help = 'set the name of the venv folder (default=venv)' )
         
         result = argparser.parse_args()
+        
+        if result.install_type is None:
+            
+            install_type = 'c'
+            
+        else:
+            
+            install_type = result.install_type
+            
+        
+        doing_interactive_install = install_type == 'c'
         
         if result.venv_name is None:
             
@@ -303,7 +372,7 @@ def main():
             
         else:
             
-            venv_name = result.venv_name
+            venv_name = os.path.expanduser( result.venv_name )
             
         
         print_banner()
@@ -315,7 +384,7 @@ def main():
         print( f'venv path: {venv_path}' )
         print()
         
-        confirm_venv_delete(venv_path)
+        handle_existing_venv( venv_path, doing_interactive_install )
         
         # OK, hydev is reworking this whole thing to be hacky and outside of the pyproject.toml
         # background: we moved old multi-requirements.txt mess to a shared pyproject.toml that had 'groups' to simulate the old/normal/test choices we take here
@@ -324,32 +393,33 @@ def main():
         # we are basically just being a requirements.txt in code; I care not
         
         requirements_dict = {
-            'beautifulsoup4' : '>=4.0.0',
-            'cbor2' : '>=5.6.5',
-            'chardet' : '>=3.0.4,<6',
-            'cryptography' : '>=44.0.0',
-            'dateparser' : '==1.2.1',
-            'html5lib' : '>=1.0.1',
-            'lxml' : '>=4.5.0',
-            'lz4' : '>=3.0.0',
-            'olefile' : '>=0.47',
-            'pillow' : '>=10.0.1',
-            'pillow-heif' : '>=0.12.0',
-            'pillow-jxl-plugin' : '>=1.3.0',
-            'psutil' : '>=5.0.0',
-            'pympler' : '>=1.1',
-            'pyopenssl' : '>=19.1.0',
-            'pysocks' : '>=1.7.0',
-            'python-dateutil' : '>=2.9.0.post0',
-            'pyyaml' : '>=5.0.0',
-            'send2trash' : '>=1.5.0',
-            'service-identity' : '>=18.1.0',
-            'show-in-file-manager' : '>=1.1.5',
-            'twisted[http2,tls]' : '>=20.3.0',
-            'requests' : '==2.32.5',
+            'beautifulsoup4' : '<=4.14.3',
+            'cbor2' : '<=6.1.1',
+            'chardet' : '<=7.4.3',
+            'cryptography' : '<=48.0.0',
+            'html5lib' : '<=1.1',
+            'lxml' : '<=6.1.1',
+            'lz4' : '<=4.4.5',
+            'olefile' : '<=0.47',
+            'pillow' : '<=12.2.0',
+            'pillow-heif' : '<=1.3.0',
+            'pillow-jxl-plugin' : '<=1.3.7',
+            'psutil' : '<=7.2.2',
+            'pympler' : '<=1.1',
+            'pyopenssl' : '<=26.2.0',
+            'pysocks' : '<=1.7.1',
+            'python-dateutil' : '<=2.9.0.post0',
+            'pyyaml' : '<=6.0.3',
+            'send2trash' : '<=2.1.0',
+            'service-identity' : '<=24.2.0',
+            'show-in-file-manager' : '<=1.1.6',
+            'twisted[http2,tls]' : '<=26.4.0',
             'mpv' : '==1.0.8',
-            'opencv-python-headless' : '==4.11.0.86',
+            'opencv-python-headless' : '==4.12.0.88',
             'numpy' : '<=2.3.1',
+            'dateparser' : '==1.4.0',
+            'tldextract' : '==5.3.1',
+            'requests' : '==2.33.1',
             'pyside6' : '==6.9.3',
             'qtpy' : '==2.4.3',
         }
@@ -358,7 +428,7 @@ def main():
             
             requirements_dict.update(
                 {
-                    'pywin32' : None,
+                    'pywin32' : '<=311',
                 }
             )
             
@@ -366,19 +436,32 @@ def main():
             
             requirements_dict.update(
                 {
-                    'pyobjc-core' : '>=10.1',
-                    'pyobjc-framework-cocoa' : '>=10.1',
-                    'pyobjc-framework-quartz' : '>=10.1',
+                    'pyobjc-core' : '<=12.1',
+                    'pyobjc-framework-cocoa' : '<=12.1',
+                    'pyobjc-framework-quartz' : '<=12.1',
                 }
             )
             
         
-        # Get installation type
-        install_type = get_install_type()
-        
-        if install_type == "a":
+        if install_type == 's':
             
-            process_advanced_options( requirements_dict )
+            print( 'Starting a simple non-interactive install...' )
+            
+        elif install_type == 'a':
+            
+            print( 'Starting an advanced non-interactive install...' ) 
+            
+            process_advanced_options( requirements_dict, doing_interactive_install )
+            
+        else:
+            
+            # Get installation type
+            interaction_type = get_interaction_type()
+            
+            if interaction_type == "a":
+                
+                process_advanced_options( requirements_dict, True )
+                
             
         
         # Create venv
@@ -436,7 +519,7 @@ def main():
         
     finally:
         
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' and doing_interactive_install:
             
             # most Win users are double-clicking the file and would appreciate a moment to see the "Done!" conclusion before the window disappears
             input( 'Hit enter to close...' )

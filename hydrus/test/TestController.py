@@ -10,6 +10,8 @@ import unittest
 from qtpy import QtCore as QC
 from qtpy import QtWidgets as QW
 
+from twisted.internet import reactor
+
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
@@ -40,6 +42,7 @@ from hydrus.client.gui import ClientGUISplash
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.lists import ClientGUIListManager
 from hydrus.client.importing import ClientImportFiles
+from hydrus.client.importing.options import ImportOptionsManager
 from hydrus.client.media import ClientMediaResultCache
 from hydrus.client.metadata import ClientTagsHandling
 from hydrus.client.networking import ClientNetworking
@@ -77,7 +80,6 @@ from hydrus.test import TestClientThreading
 from hydrus.test import TestDialogs
 from hydrus.test import TestGlobals as TG
 from hydrus.test import TestHydrusData
-from hydrus.test import TestHydrusNATPunch
 from hydrus.test import TestHydrusNetworking
 from hydrus.test import TestHydrusPaths
 from hydrus.test import TestHydrusSerialisable
@@ -193,9 +195,19 @@ class Controller( object ):
         self.run_finished = False
         self.was_successful = False
         
+        self._timestamps_lock = threading.Lock()
+        
+        self._timestamps_ms = collections.defaultdict( lambda: 0 )
+        
+        self._boot_id = HydrusData.GenerateKey()
+        
         self.main_qt_thread = self.app.thread()
         
         self.call_after_catcher = ClientGUICallAfter.CallAfterEventCatcher( QW.QApplication.instance() )
+        
+        self._twisted_thread = threading.Thread( target = reactor.run, name = 'twisted', daemon = True, kwargs = { 'installSignalHandlers' : 0 } )
+        
+        self._twisted_thread.start()
         
         self._test_db = None
         
@@ -397,6 +409,8 @@ class Controller( object ):
         
         self.tag_display_manager = ClientTagsHandling.TagDisplayManager()
         
+        self.import_options_manager = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager()
+        
         self.duplicates_auto_resolution_manager = ClientDuplicatesAutoResolution.DuplicatesAutoResolutionManager( self )
         
         self._managers[ 'undo' ] = ClientManagers.UndoManager( self )
@@ -404,6 +418,7 @@ class Controller( object ):
         self.images_cache = ClientCaches.ImageRendererCache( self )
         self.image_tiles_cache = ClientCaches.ImageTileCache( self )
         self.thumbnails_cache = ClientCaches.ThumbnailCache( self )
+        self.thumbnails_cache_graphics_view_test = ClientCaches.ThumbnailCacheGraphicsViewTest( self )
         
         self.server_session_manager = HydrusSessions.HydrusSessionManagerServer()
         
@@ -669,6 +684,11 @@ class Controller( object ):
         return False
         
     
+    def GetBootId( self ):
+        
+        return self._boot_id
+        
+    
     def GetCurrentSessionPageAPIInfoDict( self ):
         
         return {
@@ -718,6 +738,11 @@ class Controller( object ):
         return self._server_files_dir
         
     
+    def GetHydrusTempDir( self ):
+        
+        return self._hydrus_temp_dir
+        
+    
     def GetMainGUI( self ):
         
         return self.win
@@ -757,9 +782,12 @@ class Controller( object ):
         return read
         
     
-    def GetHydrusTempDir( self ):
+    def GetTimestampMS( self, name: str ) -> int:
         
-        return self._hydrus_temp_dir
+        with self._timestamps_lock:
+            
+            return self._timestamps_ms[ name ]
+            
         
     
     def GetWrite( self, name ):
@@ -1007,17 +1035,13 @@ class Controller( object ):
             TestClientDuplicatesAutoResolution
         ]
         
-        module_lookup[ 'nat' ] = [
-            TestHydrusNATPunch
-        ]
-        
         module_lookup[ 'networking' ] = [
             TestClientNetworking,
             TestClientNetworkingSettings,
             TestHydrusNetworking
         ]
         
-        module_lookup[ 'import' ] = [
+        module_lookup[ 'subscriptions' ] = [
             TestClientImportSubscriptions
         ]
         
@@ -1116,6 +1140,16 @@ class Controller( object ):
         
     
     def TidyUp( self ):
+        
+        if reactor.running:
+            
+            reactor.callFromThread( reactor.stop )
+            
+            if self._twisted_thread is not None:
+                
+                HydrusThreading.ShutdownThread( self._twisted_thread )
+                
+            
         
         time.sleep( 2 )
         

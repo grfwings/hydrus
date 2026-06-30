@@ -20,6 +20,7 @@ from hydrus.client import ClientServices
 from hydrus.client.files.images import ClientImagePerceptualHashes
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIFunctions
+from hydrus.client.gui import ClientGUIFunctionsImage
 from hydrus.client.gui import ClientGUIOptionsPanels
 from hydrus.client.gui import ClientGUIRatings
 from hydrus.client.gui import QtPorting as QP
@@ -1177,7 +1178,7 @@ class PanelPredicateSystemHash( PanelPredicateSystemSingle ):
         
         self._hashes.setPlaceholderText( 'enter hash (paste newline-separated for multiple hashes)' )
         
-        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._hashes, ( 66, 10 ) )
+        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._hashes, ( 60, 10 ) )
         
         self._hashes.setMinimumSize( QC.QSize( init_width, init_height ) )
         
@@ -1249,6 +1250,10 @@ class PanelPredicateSystemHash( PanelPredicateSystemSingle ):
                 stripped_hashes.append( hash )
                 
                 we_split_some = True
+                
+            else:
+                
+                stripped_hashes.append( line )
                 
             
         
@@ -2318,16 +2323,7 @@ class PredicateSystemRatingIncDec( PanelPredicateSystemSingle ):
         
         self._service_key = service_key
         
-        try:
-            
-            service = CG.client_controller.services_manager.GetService( self._service_key )
-            
-            name = service.GetName()
-            
-        except Exception as e:
-            
-            name = 'unknown service'
-            
+        name = CG.client_controller.services_manager.GetNameSafe( self._service_key )
         
         name_st = ClientGUICommon.BetterStaticText( self, name )
         
@@ -2441,16 +2437,7 @@ class PredicateSystemRatingLike( PanelPredicateSystemSingle ):
         
         self._service_key = service_key
         
-        try:
-            
-            service = CG.client_controller.services_manager.GetService( self._service_key )
-            
-            name = service.GetName()
-            
-        except HydrusExceptions.DataMissing:
-            
-            name = 'unknown service'
-            
+        name = CG.client_controller.services_manager.GetNameSafe( self._service_key )
         
         name_st = ClientGUICommon.BetterStaticText( self, name )
         
@@ -2596,16 +2583,7 @@ class PredicateSystemRatingNumerical( PanelPredicateSystemSingle ):
         
         self._service_key = service_key
         
-        try:
-            
-            service = CG.client_controller.services_manager.GetService( self._service_key )
-            
-            name = service.GetName()
-            
-        except HydrusExceptions.DataMissing:
-            
-            name = 'unknown service'
-            
+        name = CG.client_controller.services_manager.GetNameSafe( self._service_key )
         
         name_st = ClientGUICommon.BetterStaticText( self, name )
         
@@ -2813,7 +2791,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
         
         self._perceptual_hashes = QW.QPlainTextEdit( self )
         
-        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._pixel_hashes, ( 66, 4 ) )
+        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._pixel_hashes, ( 60, 4 ) )
         
         self._pixel_hashes.setMinimumWidth( init_width )
         self._pixel_hashes.setMaximumHeight( init_height )
@@ -2902,7 +2880,7 @@ class PanelPredicateSystemSimilarToData( PanelPredicateSystemSingle ):
                 
                 qt_image = CG.client_controller.GetClipboardImage()
                 
-                numpy_image = ClientGUIFunctions.ConvertQtImageToNumPy( qt_image )
+                numpy_image = ClientGUIFunctionsImage.ConvertQtImageToNumPy( qt_image )
                 
                 pixel_hash = HydrusImageHandling.GetImagePixelHashNumPy( numpy_image )
                 
@@ -3036,7 +3014,7 @@ class PanelPredicateSystemSimilarToFiles( PanelPredicateSystemSingle ):
         
         self._hashes = QW.QPlainTextEdit( self )
         
-        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._hashes, ( 66, 6 ) )
+        ( init_width, init_height ) = ClientGUIFunctions.ConvertTextToPixels( self._hashes, ( 60, 6 ) )
         
         self._hashes.setMinimumWidth( init_width )
         self._hashes.setMaximumHeight( init_height )
@@ -3238,7 +3216,7 @@ class PanelPredicateSystemTagAdvanced( PanelPredicateSystemSingle ):
         
         self._tag.setText( tag )
         
-        width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag, 48 )
+        width = ClientGUIFunctions.ConvertTextToPixelWidth( self._tag, 40 )
         
         self._tag.setMinimumWidth( width )
         

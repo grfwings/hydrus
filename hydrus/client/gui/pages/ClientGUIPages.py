@@ -250,7 +250,7 @@ class Page( QW.QWidget ):
                 
                 sorted_initial_media_results = [ hashes_to_media_results[ hash ] for hash in self._initial_hashes if hash in hashes_to_media_results ]
                 
-                media_panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self, self._page_key, self._page_manager, sorted_initial_media_results )
+                media_panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self, self._page_key, self._page_manager, sorted_initial_media_results )
                 
                 self._SwapMediaResultsPanel( media_panel )
                 
@@ -477,11 +477,11 @@ class Page( QW.QWidget ):
         CG.client_controller.ReleasePageKey( self._page_key )
         
     
-    def EnterPredicates( self, predicates ):
+    def EnterPredicates( self, predicates: list[ ClientSearchPredicate.Predicate ] ):
         
-        self._sidebar.EnterPredicates( self._page_key, predicates )
+        self._sidebar.EnterPredicates( predicates )
         
-        
+    
     def EventPreviewUnsplit( self, event ):
         
         QP.Unsplit( self._search_preview_split, self._preview_panel )
@@ -1233,8 +1233,15 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 self.setCurrentIndex( new_page_focus )
                 
+                current_page = self.GetCurrentMediaPage()
+                
+                if current_page is not None:
+                    
+                    current_page.SetMediaFocus()
+                    
+                
             
-        
+         
         self.UpdatePreviousPageIndex()
         
         return True
@@ -2370,17 +2377,52 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
     
+    def RenameCurrentPage( self ):
+        
+        selection = self.currentIndex()
+        
+        if selection != -1:
+            
+            page = self.widget( selection )
+            
+            if isinstance( page, PagesNotebook ):
+                
+                if page.GetNumPagesHeld() > 0:
+                    
+                    page.RenameCurrentPage()
+                    
+                else:
+                    
+                    self._RenamePage( selection )
+                    
+                
+            else:
+                
+                self._RenamePage( selection )
+                
+            
+        
+    
     def eventFilter( self, watched, event ):
         
         try:
             
             if event.type() in ( QC.QEvent.Type.MouseButtonDblClick, QC.QEvent.Type.MouseButtonRelease ):
                 
-                screen_position = QG.QCursor.pos()
+                event = typing.cast( QG.QMouseEvent, event )
+                
+                if isinstance( watched, QW.QWidget ):
+                    
+                    mouse_pos = watched.mapToGlobal( event.pos() )
+                    
+                else:
+                    
+                    mouse_pos = ClientGUIFunctions.GetMousePos()
+                    
                 
                 if watched == self.tabBar():
                     
-                    tab_pos = self.tabBar().mapFromGlobal( screen_position )
+                    tab_pos = self.tabBar().mapFromGlobal( mouse_pos )
                     
                     over_a_tab = self.tabBar().tabAt( tab_pos ) != -1
                     over_tab_greyspace = not over_a_tab
@@ -2389,7 +2431,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                     
                     over_a_tab = False
                     
-                    widget_under_mouse = typing.cast( QW.QApplication, QW.QApplication.instance() ).widgetAt( screen_position )
+                    widget_under_mouse = typing.cast( QW.QApplication, QW.QApplication.instance() ).widgetAt( mouse_pos )
                     
                     if widget_under_mouse is None:
                         
@@ -2414,7 +2456,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                     
                     if event.button() == QC.Qt.MouseButton.LeftButton and over_tab_greyspace and not over_a_tab:
                         
-                        self.EventNewPageFromScreenPosition( screen_position )
+                        self.EventNewPageFromScreenPosition( mouse_pos )
                         
                         return True
                         
@@ -2425,13 +2467,13 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                     
                     if event.button() == QC.Qt.MouseButton.RightButton and ( over_a_tab or over_tab_greyspace ):
                         
-                        self.ShowMenuFromScreenPosition( screen_position )
+                        self.ShowMenuFromScreenPosition( mouse_pos )
                         
                         return True
                         
                     elif event.button() == QC.Qt.MouseButton.MiddleButton and over_tab_greyspace and not over_a_tab:
                         
-                        self.EventNewPageFromScreenPosition( screen_position )
+                        self.EventNewPageFromScreenPosition( mouse_pos )
                         
                         return True
                         
@@ -2606,13 +2648,11 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
             for page in self._GetPages():
                 
+                total += 1
+                
                 if isinstance( page, PagesNotebook ):
                     
                     total += page.GetNumPagesHeld( only_my_level = False )
-                    
-                else:
-                    
-                    total += 1
                     
                 
             
@@ -2654,7 +2694,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         
     
-    def GetOrMakeMultipleWatcherPage( self, desired_page_name = None, desired_page_key = None, select_page = True ):
+    def GetOrMakeMultipleWatcherPage( self, desired_page_name = None, desired_page_key = None, select_page = True, destination_import_options_container = None ):
         
         potential_watcher_pages = [ page for page in self._GetMediaPages( False ) if page.IsMultipleWatcherPage() ]
         
@@ -2665,6 +2705,25 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         elif desired_page_name is not None:
             
             potential_watcher_pages = [ page for page in potential_watcher_pages if page.GetName() == desired_page_name ]
+            
+        
+        if destination_import_options_container is not None:
+            
+            good_watcher_pages = []
+            
+            for watcher_page in potential_watcher_pages:
+                
+                multiple_watcher_import = watcher_page.GetPageManager().GetVariable( 'multiple_watcher_import' )
+                
+                watcher_import_options_container = multiple_watcher_import.GetImportOptionsContainer()
+                
+                if watcher_import_options_container.DumpToString() == destination_import_options_container.DumpToString():
+                    
+                    good_watcher_pages.append( watcher_page )
+                    
+                
+            
+            potential_watcher_pages = good_watcher_pages
             
         
         if len( potential_watcher_pages ) > 0:
@@ -2684,11 +2743,11 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         else:
             
-            return self.NewPageImportMultipleWatcher( page_name = desired_page_name, on_deepest_notebook = True, select_page = select_page )
+            return self.NewPageImportMultipleWatcher( page_name = desired_page_name, on_deepest_notebook = True, select_page = select_page, destination_import_options_container = destination_import_options_container )
             
         
     
-    def GetOrMakeURLImportPage( self, desired_page_name = None, desired_page_key = None, select_page = True, destination_location_context = None, destination_tag_import_options = None ):
+    def GetOrMakeURLImportPage( self, desired_page_name = None, desired_page_key = None, select_page = True, destination_import_options_container = None ):
         
         potential_url_import_pages = [ page for page in self._GetMediaPages( False ) if page.IsURLImportPage() ]
         
@@ -2701,7 +2760,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             potential_url_import_pages = [ page for page in potential_url_import_pages if page.GetName() == desired_page_name ]
             
         
-        if destination_location_context is not None:
+        if destination_import_options_container is not None:
             
             good_url_import_pages = []
             
@@ -2709,28 +2768,9 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
                 
                 urls_import = url_import_page.GetPageManager().GetVariable( 'urls_import' )
                 
-                file_import_options = urls_import.GetFileImportOptions()
+                url_import_import_options_container = urls_import.GetImportOptionsContainer()
                 
-                if not file_import_options.IsDefault() and file_import_options.GetLocationImportOptions().GetDestinationLocationContext() == destination_location_context:
-                    
-                    good_url_import_pages.append( url_import_page )
-                    
-                
-            
-            potential_url_import_pages = good_url_import_pages
-            
-        
-        if destination_tag_import_options is not None:
-            
-            good_url_import_pages = []
-            
-            for url_import_page in potential_url_import_pages:
-                
-                urls_import = url_import_page.GetPageManager().GetVariable( 'urls_import' )
-                
-                tag_import_options = urls_import.GetTagImportOptions()
-                
-                if tag_import_options.GetSerialisableTuple() == destination_tag_import_options.GetSerialisableTuple():
+                if url_import_import_options_container.DumpToString() == destination_import_options_container.DumpToString():
                     
                     good_url_import_pages.append( url_import_page )
                     
@@ -2756,7 +2796,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
             
         else:
             
-            return self.NewPageImportURLs( page_name = desired_page_name, on_deepest_notebook = True, select_page = select_page, destination_location_context = destination_location_context, destination_tag_import_options = destination_tag_import_options )
+            return self.NewPageImportURLs( page_name = desired_page_name, on_deepest_notebook = True, select_page = select_page, destination_import_options_container = destination_import_options_container )
             
         
     
@@ -3142,7 +3182,7 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         
         location_context = source_page_manager.GetLocationContext()
         
-        screen_position = QG.QCursor.pos()
+        screen_position = ClientGUIFunctions.GetMousePos()
         
         dest_notebook = self._GetNotebookFromScreenPosition( screen_position )
         
@@ -3400,16 +3440,16 @@ class PagesNotebook( QP.TabWidgetWithDnD ):
         return self.NewPage( page_manager, on_deepest_notebook = on_deepest_notebook )
         
     
-    def NewPageImportMultipleWatcher( self, page_name = None, url = None, on_deepest_notebook = False, select_page = True ):
+    def NewPageImportMultipleWatcher( self, page_name = None, url = None, on_deepest_notebook = False, select_page = True, destination_import_options_container = None ):
         
-        page_manager = ClientGUIPageManager.CreatePageManagerImportMultipleWatcher( page_name = page_name, url = url )
+        page_manager = ClientGUIPageManager.CreatePageManagerImportMultipleWatcher( page_name = page_name, url = url, destination_import_options_container = destination_import_options_container )
         
         return self.NewPage( page_manager, on_deepest_notebook = on_deepest_notebook, select_page = select_page )
         
     
-    def NewPageImportURLs( self, page_name = None, on_deepest_notebook = False, select_page = True, destination_location_context = None, destination_tag_import_options = None ):
+    def NewPageImportURLs( self, page_name = None, on_deepest_notebook = False, select_page = True,  destination_import_options_container = None ):
         
-        page_manager = ClientGUIPageManager.CreatePageManagerImportURLs( page_name = page_name, destination_location_context = destination_location_context, destination_tag_import_options = destination_tag_import_options )
+        page_manager = ClientGUIPageManager.CreatePageManagerImportURLs( page_name = page_name, destination_import_options_container = destination_import_options_container )
         
         return self.NewPage( page_manager, on_deepest_notebook = on_deepest_notebook, select_page = select_page )
         

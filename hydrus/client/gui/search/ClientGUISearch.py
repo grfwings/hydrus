@@ -32,6 +32,8 @@ FLESH_OUT_SYSTEM_PRED_TYPES = {
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DIMENSIONS,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_WIDTH,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HEIGHT,
+    ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_PIXELS,
+    ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_IMPORT_TIME,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_ARCHIVED_TIME,
     ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_MODIFIED_TIME,
@@ -193,9 +195,9 @@ class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
         
         super().__init__( parent )
         
-        predicates = list( predicates )
+        predicates_list = list( predicates )
         
-        predicates.sort( key = lambda p: p.GetMagicSortValue() )
+        predicates_list.sort( key = lambda p: p.GetMagicSortValue() )
         
         self._uneditable_predicates = []
         
@@ -217,7 +219,7 @@ class EditPredicatesPanel( ClientGUIScrolledPanels.EditPanel ):
         KNOWN_URL_REGEX = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_KNOWN_URLS, ( True, 'regex', '', '' ) )
         FILE_VIEWS_PRED = ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_FILE_VIEWING_STATS, ( 'views', ( 'media', ), '>', 0 ) )
         
-        for predicate in predicates:
+        for predicate in predicates_list:
             
             predicate_type = predicate.GetType()
             
@@ -632,6 +634,25 @@ class FleshOutPredicatePanel( ClientGUIScrolledPanels.EditPanel ):
             static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_WIDTH, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 3840 ) ), ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HEIGHT, ClientNumberTest.NumberTest.STATICCreateFromCharacters( '=', 2160 ) ) ), forced_label = '4k', show_remove_button = False ) )
             
             editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemHeight, predicate ) )
+            
+        elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_PIXELS:
+            
+            recent_predicate_types = [ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_NUM_PIXELS ]
+            
+            editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemNumPixels, predicate ) )
+            
+        elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO:
+            
+            recent_predicate_types = [ ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO ]
+            
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( '=', 16, 9 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( '=', 9, 16 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( '=', 4, 3 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( '=', 1, 1 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( 'taller than', 1, 1 ) ), ), show_remove_button = False ) )
+            static_pred_buttons.append( ClientGUIPredicatesSingle.StaticSystemPredicateButton( self, ( ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_RATIO, ( 'wider than', 1, 1 ) ), ), show_remove_button = False ) )
+            
+            editable_pred_panels.append( self._PredOKPanel( self, ClientGUIPredicatesSingle.PanelPredicateSystemRatio, predicate ) )
             
         elif predicate_type == ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_DURATION:
             
@@ -1122,11 +1143,12 @@ class TagContextButton( ClientGUICommon.BetterButton ):
     
     valueChanged = QC.Signal( ClientSearchTagContext.TagContext )
     
-    def __init__( self, parent: QW.QWidget, tag_context: ClientSearchTagContext.TagContext, use_short_label = False ):
+    def __init__( self, parent: QW.QWidget, tag_context: ClientSearchTagContext.TagContext, use_short_label = False, combined_tags_ok = True ):
         
         self._tag_context = ClientSearchTagContext.TagContext()
         
         self._use_short_label = use_short_label
+        self._combined_tags_ok = combined_tags_ok
         
         super().__init__( parent, 'initialising', self._Edit )
         
@@ -1137,7 +1159,12 @@ class TagContextButton( ClientGUICommon.BetterButton ):
         
         services_manager = CG.client_controller.services_manager
         
-        service_types_in_order = [ HC.LOCAL_TAG, HC.TAG_REPOSITORY, HC.COMBINED_TAG ]
+        service_types_in_order = [ HC.LOCAL_TAG, HC.TAG_REPOSITORY ]
+        
+        if self._combined_tags_ok:
+            
+            service_types_in_order.append( HC.COMBINED_TAG )
+            
         
         services = services_manager.GetServices( service_types_in_order )
         

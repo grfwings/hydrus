@@ -392,7 +392,7 @@ class ExpandCollapseArrowButton( BetterButton ):
         
         super().__init__( parent, label = self.UP_ARROW, func = self.ExpandCollapseFlip )
         
-        self.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self, 4 ) )
+        self.setFixedWidth( ClientGUIFunctions.ConvertTextToPixelWidth( self, 4.5 ) )
         
         self._is_collapsed = True
         self._expands_downward = expands_downward
@@ -425,31 +425,31 @@ class ExpandCollapseArrowButton( BetterButton ):
     
     def _UpdateLabel( self ):
         
-        if self._is_collapsed:
+        if self._expands_downward:
             
-            if self._expands_downward:
+            if self._is_collapsed:
                 
                 label = self.DOWN_ARROW
+                object_name = 'HydrusCollapseArrowDown'
                 
             else:
                 
                 label = self.UP_ARROW
+                object_name = 'HydrusCollapseArrowUp'
                 
-            
-            object_name = 'HydrusCollapseArrowCollapsed'
             
         else:
             
-            if self._expands_downward:
+            if self._is_collapsed:
                 
                 label = self.UP_ARROW
+                object_name = 'HydrusCollapseArrowUp'
                 
             else:
                 
                 label = self.DOWN_ARROW
+                object_name = 'HydrusCollapseArrowDown'
                 
-            
-            object_name = 'HydrusCollapseArrowExpanded'
             
         
         self.setText( label )
@@ -514,6 +514,8 @@ class BetterCheckBoxList( QW.QListWidget ):
         self.addItem( item )
         
         self._ItemCheckStateChanged( item )
+        
+        return item
         
     
     def Check( self, index: int, value: bool = True ):
@@ -588,10 +590,8 @@ class BetterCheckBoxList( QW.QListWidget ):
         
         if row_height == -1:
             
-            ( width_gumpf, row_height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 20, 1 ) )
+            row_height = ClientGUIFunctions.ConvertTextToPixelHeight( self, 1 )
             
-        
-        # ( width, height ) = ClientGUIFunctions.ConvertTextToPixels( self, ( 10, num_chars ) )
         
         height = ( row_height * num_chars ) + ( self.frameWidth() * 2 )
         
@@ -838,7 +838,7 @@ class ButtonWithMenuArrow( QW.QToolButton ):
             
             if event.type() == QC.QEvent.Type.Show and watched == self._menu:
                 
-                pos = QG.QCursor.pos()
+                pos = ClientGUIFunctions.GetMousePos()
                 
                 self._menu.move( pos )
                 

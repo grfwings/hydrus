@@ -9,16 +9,27 @@ QT_MULTIMEDIA_IS_AVAILABLE = True
 QT_MULTIMEDIA_MODULE_NOT_FOUND = False
 QT_MULTIMEDIA_IMPORT_ERROR = 'QtMultimedia seems fine!'
 
-try:
-    
-    from qtpy import QtMultimediaWidgets as QMW
-    from qtpy import QtMultimedia as QM
-    
-except Exception as e_qt_m:
+from hydrus.client import ClientGlobals as CG
+
+if CG.NO_QT_MULTIMEDIA:
     
     QT_MULTIMEDIA_IS_AVAILABLE = False
-    QT_MULTIMEDIA_MODULE_NOT_FOUND = isinstance( e_qt_m, ModuleNotFoundError )
-    QT_MULTIMEDIA_IMPORT_ERROR = traceback.format_exc()
+    QT_MULTIMEDIA_MODULE_NOT_FOUND = False
+    QT_MULTIMEDIA_IMPORT_ERROR = 'QtMedia is disabled by launch arguments.'
+    
+else:
+    
+    try:
+        
+        from qtpy import QtMultimediaWidgets as QMW
+        from qtpy import QtMultimedia as QM
+        
+    except Exception as e_qt_m:
+        
+        QT_MULTIMEDIA_IS_AVAILABLE = False
+        QT_MULTIMEDIA_MODULE_NOT_FOUND = isinstance( e_qt_m, ModuleNotFoundError )
+        QT_MULTIMEDIA_IMPORT_ERROR = traceback.format_exc()
+        
     
 
 from hydrus.core import HydrusConstants as HC
@@ -26,12 +37,12 @@ from hydrus.core import HydrusData
 
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
-from hydrus.client import ClientGlobals as CG
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIShortcuts
 from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui.canvas import ClientGUITransparency
 from hydrus.client.gui.media import ClientGUIMediaVolume
-from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaSingle
 
 if typing.TYPE_CHECKING:
     
@@ -123,6 +134,8 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         super().__init__( parent )
         
+        self._media = None
+        
         self._canvas_type = canvas_type
         self._canvas = canvas
         self._background_colour_generator = background_colour_generator
@@ -130,6 +143,7 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._my_audio_placeholder = QW.QWidget( self )
         
         # 2026-01: this is the first time hydev has done GraphicsView stuff, and thus all this was divined via haruspex
+        # 2026-04: adding transparency checkerboard. the Gods are with us, the stars align in the Weave of Providence
         
         self._my_graphics_view = MyQGraphicsView( self )
         
@@ -149,6 +163,7 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._my_audio_output: QM.QAudioOutput | None = None
         
         self._SetAudioDeviceFromOptions()
+        self._UpdateBackgroundBrush()
         
         self._media_player.setVideoOutput( self._my_video_output )
         
@@ -164,8 +179,6 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         QP.AddToLayout( vbox, self._my_audio_placeholder, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
         
         self.setLayout( vbox )
-        
-        self._media = None
         
         self._near_endpoint = False
         self._playthrough_count = 0
@@ -186,6 +199,7 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         CG.client_controller.sub( self, 'UpdateAudioMute', 'new_audio_mute' )
         CG.client_controller.sub( self, 'UpdateAudioVolume', 'new_audio_volume' )
         CG.client_controller.sub( self, 'UpdateFromOptions', 'notify_new_options' )
+        CG.client_controller.sub( self, 'UpdateFromTransparencyOptions', 'new_transparency_options' )
         
     
     def _EnsureAudioOutputIsGood( self ):
@@ -307,6 +321,11 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._EnsureAudioOutputIsGood()
         
+        self._SetCurrentAudioDevice()
+        
+    
+    def _SetCurrentAudioDevice( self ):
+        
         if self._media_player.audioOutput() != self._my_audio_output:
             
             try:
@@ -329,6 +348,28 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     def _SetVideoTrack( self, i ):
         
         self._media_player.setActiveVideoTrack( i )
+        
+    
+    def _UpdateBackgroundBrush( self ):
+        
+        if self._background_colour_generator.CanDoTransparencyCheckerboard() and self._media is not None and self._media.GetFileInfoManager().has_transparency:
+            
+            if CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_as_greenscreen' ):
+                
+                brush = ClientGUITransparency.MakeGreenscreenBrush()
+                
+            else:
+                
+                brush = ClientGUITransparency.MakeCheckerboardBrush( int( 16 * self.devicePixelRatio() ) )
+                
+            
+        else:
+            
+            brush = QG.QBrush( self._background_colour_generator.GetColour() )
+            
+        
+        # set it to the QGraphicsView, not the QGraphicsView.scene()
+        self._my_graphics_view.setBackgroundBrush( brush )
         
     
     def AddPlayerMenus( self, menu: QW.QMenu ):
@@ -602,7 +643,7 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._background_colour_generator = background_colour_generator
         
     
-    def SetMedia( self, media: ClientMedia.MediaSingleton, start_paused = False ):
+    def SetMedia( self, media: ClientMediaSingle.MediaSingle, start_paused = False ):
         
         if media == self._media:
             
@@ -612,6 +653,8 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self.ClearMedia()
         
         self._media = media
+        
+        self._UpdateBackgroundBrush()
         
         self._stop_for_slideshow = False
         
@@ -623,7 +666,7 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 self._my_audio_output = None
                 
-                self._media_player.setAudioOutput( None )
+                self._SetCurrentAudioDevice()
                 
             else:
                 
@@ -673,11 +716,23 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def UpdateAudioMute( self ):
+    def IsMuted( self ):
+        
+        return self._my_audio_output.isMuted()
+        
+    
+    def UpdateAudioMute( self, mute_state = None ):
         
         if self._my_audio_output is not None:
             
-            self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
+            if mute_state is None:
+                
+                self._my_audio_output.setMuted( ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type ) )
+                
+            else:
+                
+                self._my_audio_output.setMuted( mute_state )
+                
             
         
 
@@ -692,5 +747,11 @@ class QtMediaPlayer( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     def UpdateFromOptions( self ):
         
         self._SetAudioDeviceFromOptions()
+        self._UpdateBackgroundBrush()
+        
+    
+    def UpdateFromTransparencyOptions( self ):
+        
+        self._UpdateBackgroundBrush()
         
     

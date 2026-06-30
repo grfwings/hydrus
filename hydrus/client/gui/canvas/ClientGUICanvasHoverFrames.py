@@ -11,6 +11,7 @@ from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusSerialisable
+from hydrus.core import HydrusTime
 
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
@@ -38,8 +39,8 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.gui.widgets import ClientGUIPainterShapes
-from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResultPrettyInfo
+from hydrus.client.media import ClientMediaSingle
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientRatings
 
@@ -441,7 +442,7 @@ class CanvasHoverFrame( QW.QFrame ):
     sendApplicationCommand = QC.Signal( CAC.ApplicationCommand )
     
     mediaCleared = QC.Signal()
-    mediaChanged = QC.Signal( ClientMedia.MediaSingleton )
+    mediaChanged = QC.Signal( ClientMediaSingle.MediaSingle )
     
     def __init__( self, parent: QW.QWidget, my_canvas, canvas_key ):
         
@@ -642,7 +643,7 @@ class CanvasHoverFrame( QW.QFrame ):
             return
             
         
-        mouse_pos = self.parentWidget().mapFromGlobal( QG.QCursor.pos() )
+        mouse_pos = self.parentWidget().mapFromGlobal( ClientGUIFunctions.GetMousePos() )
         
         mouse_x = mouse_pos.x()
         mouse_y = mouse_pos.y()
@@ -779,7 +780,7 @@ class CanvasHoverFrame( QW.QFrame ):
             
             self.mediaCleared.emit()
             
-        elif isinstance( self._current_media, ClientMedia.MediaSingleton ): # just to be safe on the delicate type def requirements here
+        elif isinstance( self._current_media, ClientMediaSingle.MediaSingle ): # just to be safe on the delicate type def requirements here
             
             self.mediaChanged.emit( self._current_media )
             
@@ -828,24 +829,6 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         QP.AddToLayout( vbox, self._info_text, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self.setLayout( vbox )
-        
-        self._window_always_on_top = False
-        
-        # it is a bit beardy managing this from this hover window rather than the canvas, but it is fine for now
-        # if we want a shortcut or something I guess we'll migrate to the canvas proper
-        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_always_on_top' ):
-            
-            self._window_always_on_top = True
-            
-            self.window().setWindowFlag( QC.Qt.WindowType.WindowStaysOnTopHint, True )
-            
-        
-        self._window_hide_frame = False # should always start with titlebar/frame (to establish taskbar gubbins?)
-        
-        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_frameless' ):
-            
-            CG.client_controller.CallLaterQtSafe( self, 0.1, 'removing titlebar from media viewer', self._FlipHideWindowFrame )
-            
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
         CG.client_controller.sub( self, 'SetIndexString', 'canvas_new_index_string' )
@@ -948,10 +931,9 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         zoom_out.SetToolTipWithShortcuts( 'zoom out', CAC.SIMPLE_ZOOM_OUT )
         zoom_out.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
-        zoom_switch = ClientGUICommon.IconButton( self, CC.global_icons().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM_VIEWER_CENTER ) )
-        zoom_switch.SetToolTipWithShortcuts( 'zoom switch', CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM )
-        #zoom_switch = ClientGUICommon.IconButton( self, CC.global_icons().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER ) )
-        #zoom_switch.SetToolTipWithShortcuts( 'zoom switch3', CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_FIT_AND_FILL_ZOOM_VIEWER_CENTER )
+        zoom_switch_command = CG.client_controller.new_options.GetInteger( 'zoom_switch_command' )
+        zoom_switch = ClientGUICommon.IconButton( self, CC.global_icons().zoom_switch, self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( zoom_switch_command ) )
+        zoom_switch.SetToolTipWithShortcuts( 'zoom switch', zoom_switch_command )
         zoom_switch.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         zoom_options = ClientGUICommon.IconButton( self, CC.global_icons().zoom_cog, self._ShowZoomOptionsMenu )
@@ -959,6 +941,7 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         zoom_options.setFocusPolicy( QC.Qt.FocusPolicy.TabFocus )
         
         self._volume_control = ClientGUIMediaControls.VolumeControl( self, CC.CANVAS_MEDIA_VIEWER )
+        self._volume_control.muteChanged.connect( self._my_canvas.UpdateMediaWindowMute )
         
         if not ClientGUIMPV.MPV_IS_AVAILABLE:
             
@@ -1152,31 +1135,6 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         new_options.SetStringList( 'default_media_viewer_custom_shortcuts', default_media_viewer_custom_shortcuts )
         
     
-    def _FlipCanvasAlwaysOnTop( self ):
-        
-        self._window_always_on_top = not self._window_always_on_top
-        
-        self.window().setWindowFlag( QC.Qt.WindowType.WindowStaysOnTopHint, self._window_always_on_top )
-        
-        self.window().show()
-        
-        self.update()
-        
-    
-    def _FlipHideWindowFrame( self ):
-        
-        window_real_geom = self.window().geometry()
-        
-        self._window_hide_frame = not self._window_hide_frame
-        
-        self.window().setWindowFlag( QC.Qt.WindowType.FramelessWindowHint, self._window_hide_frame )
-        
-        self.window().setGeometry( window_real_geom )
-        
-        self.window().show()
-        self.update()
-        
-    
     def _ShowFileEmbeddedMetadata( self ):
         
         if self._current_media is None:
@@ -1236,15 +1194,25 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
             
         
         new_options = CG.client_controller.new_options
+        collapse_eye_menu_window = new_options.GetBoolean( 'collapse_eye_menu_window' )
+        collapse_eye_menu_hovers = new_options.GetBoolean( 'collapse_eye_menu_hovers' )
+        collapse_eye_menu_rendering = new_options.GetBoolean( 'collapse_eye_menu_rendering' )
         
         menu = ClientGUIMenus.GenerateMenu( self )
         
         #
         
-        window_menu = ClientGUIMenus.GenerateMenu( menu )
+        if collapse_eye_menu_window:
+            
+            window_menu = ClientGUIMenus.GenerateMenu( menu )
+            
+        else:
+            
+            window_menu = menu
+            
         
-        ClientGUIMenus.AppendMenuCheckItem( window_menu, 'always on top', 'Toggle whether this window is always on top.', self._window_always_on_top, self._FlipCanvasAlwaysOnTop )
-        ClientGUIMenus.AppendMenuCheckItem( window_menu, 'remove titlebar/frame', 'Toggle the OS frame of this window.', self._window_hide_frame, self._FlipHideWindowFrame )
+        ClientGUIMenus.AppendMenuCheckItem( window_menu, 'always on top', 'Toggle whether this window is always on top.', self._my_canvas.IsAlwaysOnTop(), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP ) )
+        ClientGUIMenus.AppendMenuCheckItem( window_menu, 'remove titlebar/frame', 'Toggle the OS frame of this window.', self._my_canvas.IsHidingWindowFrame(), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_WINDOW_FRAMELESS_FLIP ) )
         
         ClientGUIMenus.AppendSeparator( window_menu )
         
@@ -1254,11 +1222,29 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         checkbox_manager = ClientGUICommon.CheckboxManagerOptions( 'always_start_media_viewers_frameless' )
         ClientGUIMenus.AppendMenuCheckItem( window_menu, 'always start new media viewers without titlebar/frame', 'Set whether all new media viewers should start in this state.', checkbox_manager.GetCurrentValue(), checkbox_manager.Invert )
         
-        ClientGUIMenus.AppendMenu( menu, window_menu, 'window' )
-        
+        if collapse_eye_menu_window:
+            
+            ClientGUIMenus.AppendMenu( menu, window_menu, 'window' )
+            
+        else:
+            
+            ClientGUIMenus.AppendSeparator( menu )
+            
         #
         
-        hovers_menu = ClientGUIMenus.GenerateMenu( menu )
+        if collapse_eye_menu_hovers:
+            
+            hovers_menu = ClientGUIMenus.GenerateMenu( menu )
+            
+        else:
+            
+            hovers_menu = menu
+            
+            if collapse_eye_menu_window:
+                
+                ClientGUIMenus.AppendSeparator( menu )
+                
+            
         
         ClientGUIMenus.AppendMenuCheckItem( hovers_menu, 'draw tags (left) in the background', 'Draw a copy of the respective hover window\'s text in the background of the media viewer canvas.', new_options.GetBoolean( 'draw_tags_hover_in_media_viewer_background' ), flip_background_boolean, 'draw_tags_hover_in_media_viewer_background' )
         ClientGUIMenus.AppendMenuCheckItem( hovers_menu, 'draw file information (top) in the background', 'Draw a copy of the respective hover window\'s text in the background of the media viewer canvas.', new_options.GetBoolean( 'draw_top_hover_in_media_viewer_background' ), flip_background_boolean, 'draw_top_hover_in_media_viewer_background' )
@@ -1274,18 +1260,39 @@ class CanvasHoverFrameTop( CanvasHoverFrame ):
         ClientGUIMenus.AppendMenuCheckItem( hovers_menu, 'pop-in notes hover window on mouseover', 'Enable the notes hover window.', not new_options.GetBoolean( 'disable_notes_hover_in_media_viewer' ), flip_background_boolean, 'disable_notes_hover_in_media_viewer' )
         ClientGUIMenus.AppendMenuCheckItem( hovers_menu, 'pin the duplicates hover window so it is always visible', 'Ensure the special duplicates hover window is always visible in the duplicates filter.', new_options.GetBoolean( 'hover_window_duplicates_always_on_top' ), flip_background_boolean, 'hover_window_duplicates_always_on_top' )
         
-        ClientGUIMenus.AppendMenu( menu, hovers_menu, 'hovers' )
-        
+        if collapse_eye_menu_hovers:
+            
+            ClientGUIMenus.AppendMenu( menu, hovers_menu, 'hovers' )
+            
+        else:
+            
+            ClientGUIMenus.AppendSeparator( menu )
+            
         #
         
-        rendering_menu = ClientGUIMenus.GenerateMenu( menu )
+        if collapse_eye_menu_rendering:
+            
+            rendering_menu = ClientGUIMenus.GenerateMenu( menu )
+            
+        else:
+            
+            rendering_menu = menu
+            
+            if collapse_eye_menu_hovers:
+                
+                ClientGUIMenus.AppendSeparator( rendering_menu )
+                
+            
         
         ClientGUIMenus.AppendMenuCheckItem( rendering_menu, 'apply image ICC Profile colour adjustments', 'Set whether images with ICC Profiles should have them applied. This may be useful to flip back and forth if you are in the duplicate filter.', new_options.GetBoolean( 'do_icc_profile_normalisation' ), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_FLIP_ICC_PROFILE_APPLICATION ) )
         ClientGUIMenus.AppendMenuCheckItem( rendering_menu, 'draw transparency as checkerboard in media viewer', 'Set whether to draw transparency as something that stands out more.', new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas' ), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER ) )
         ClientGUIMenus.AppendMenuCheckItem( rendering_menu, 'draw transparency as checkerboard in media viewer (duplicate filter)', 'Set whether to draw transparency as something that stands out more in the duplicate filter.', new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas_duplicates' ), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER ) )
         ClientGUIMenus.AppendMenuCheckItem( rendering_menu, 'instead of checkerboard, use a bright greenscreen', 'Set whether to draw transparency as something that stands out more.', new_options.GetBoolean( 'draw_transparency_checkerboard_as_greenscreen' ), self.sendApplicationCommand.emit, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN ) )
         
-        ClientGUIMenus.AppendMenu( menu, rendering_menu, 'rendering' )
+        if collapse_eye_menu_rendering:
+            
+            ClientGUIMenus.AppendMenu( menu, rendering_menu, 'rendering' )
+            
         
         CGC.core().PopupMenu( self, menu )
         
@@ -1618,7 +1625,15 @@ class CanvasHoverFrameTopNavigableList( CanvasHoverFrameTopNavigable ):
         
         menu = ClientGUIMenus.GenerateMenu( self )
         
-        ClientGUICanvasMenus.AppendSlideshowMenu( self._my_canvas, menu, self._my_canvas.SlideshowIsRunning(), do_submenu = False, slideshow_resume_duration = self._slideshow_period )
+        ClientGUICanvasMenus.AppendSlideshowMenu(
+            self._my_canvas,
+            menu,
+            self._my_canvas.SlideshowIsRunning(),
+            do_submenu = False,
+            slideshow_duration = self._slideshow_period,
+            slideshow_is_shuffling = self._my_canvas.SlideshowIsShuffling(),
+            slideshow_is_playing_once_through = self._my_canvas.SlideshowIsPlayingMediaDurationOnceThrough()
+        )
         
         CGC.core().PopupMenu( self, menu )
         
@@ -2914,6 +2929,10 @@ class CanvasHoverFrameTags( CanvasHoverFrame ):
         
         self.setLayout( vbox )
         
+        self._last_wheel_direction = 0
+        self._last_wheel_direction_event_time = 0
+        self._last_media_transition_time = 0
+        
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
         
     
@@ -2988,23 +3007,87 @@ class CanvasHoverFrameTags( CanvasHoverFrame ):
     
     def SetMedia( self, media ):
         
+        
+        # on a new media from a scroll, we reset the times but _retain_ the direction. if the user wants to keep scrolling through all this, that's fine, we won't block them
+        # if it looks like they hit page_up or whatever, we reset the situation
+        if HydrusTime.TimeHasPassedFloat( self._last_wheel_direction_event_time + 250 ):
+            
+            self._last_wheel_direction = 0
+            
+        
+        self._last_media_transition_time = HydrusTime.GetNowFloat()
+        
         super().SetMedia( media )
         
         self._ResetTags()
         
     
-    def wheelEvent( self, event ):
+    def wheelEvent( self, event: QG.QWheelEvent ):
         
-        # need the mouse test here since some weird event passing happens on mouse events on other stuff, I think because this hover is child 0 of the parent, it somehow gets 'focus'
-        if self.rect().contains( self.mapFromGlobal( QG.QCursor.pos() ) ):
+        # used to need this for funny parent/child stuff
+        # if self.rect().contains( self.mapFromGlobal( ClientGUIFunctions.GetMousePos() ) ):
+        # not sure if we do any more
+        
+        media_viewer_tags_scrolling_behaviour = CG.client_controller.new_options.GetInteger( 'media_viewer_tags_scrolling_behaviour' )
+        
+        allow_propagation = True
+        
+        if media_viewer_tags_scrolling_behaviour == CC.MEDIA_VIEWER_TAGS_SCROLLING_BEHAVIOUR_NEVER_PROPAGATE:
             
-            # we do not want to send taglist wheel events up to the canvas lad
+            allow_propagation = False
+            
+        elif media_viewer_tags_scrolling_behaviour == CC.MEDIA_VIEWER_TAGS_SCROLLING_BEHAVIOUR_ONLY_PROPAGATE_ON_NO_SCROLLBAR:
+            
+            if self._tags.verticalScrollBar().isVisible():
+                
+                allow_propagation = False
+                
+            
+        elif media_viewer_tags_scrolling_behaviour == CC.MEDIA_VIEWER_TAGS_SCROLLING_BEHAVIOUR_ONLY_PROPAGATE_AFTER_DELAY:
+            
+            wheel_direction = 1 if event.angleDelta().y() > 0 else -1
+            
+            THIS_IS_INTENTIONAL_DELAY = 0.57
+            
+            self._last_wheel_direction_event_time = max( self._tags.GetLastWheelEventThatScrolledTime(), self._last_wheel_direction_event_time )
+            
+            # if the user is looking at a scrollbar and hasn't just flicked to it...
+            if self._tags.verticalScrollBar().isVisible() and HydrusTime.TimeHasPassedFloat( self._last_media_transition_time + THIS_IS_INTENTIONAL_DELAY ):
+                
+                if self._last_wheel_direction == 0:
+                    
+                    self._last_wheel_direction = self._tags.GetLastWheelEventThatScrolledDirection()
+                    
+                
+                if self._last_wheel_direction == wheel_direction:
+                    
+                    if not HydrusTime.TimeHasPassedFloat( self._last_wheel_direction_event_time + THIS_IS_INTENTIONAL_DELAY ):
+                        
+                        # we are still in a scroll cascade from the taglist
+                        
+                        allow_propagation = False
+                        
+                    
+                else:
+                    
+                    # user changed direction recently; hold up
+                    
+                    allow_propagation = False
+                    
+                
+            
+            self._last_wheel_direction_event_time = HydrusTime.GetNowFloat()
+            self._last_wheel_direction = wheel_direction
+            
+        
+        if allow_propagation:
+            
+            # allow the normal stuff to happen
+            super().wheelEvent( event )
+            
+        else:
             
             event.accept()
             
-            return
-            
-        
-        CanvasHoverFrame.wheelEvent( self, event )
         
     

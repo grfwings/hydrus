@@ -15,16 +15,36 @@ from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsButtonQuestions
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
+from hydrus.client.gui.panels import ClientGUIScrolledPanelsNumberEntry
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsSelectFromList
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsTextEntry
 
-def EnterText( win: QW.QWidget, message: str, default = '', placeholder = None, allow_blank = False, suggestions = None, max_chars = None, password_entry = False, min_char_width = 72 ) -> str:
+def EnterNumber( win: QW.QWidget, message: str, default = 0, min_value = None, max_value = None, title = 'Enter Number' ) -> int:
     
-    title = 'Enter Text'
-    
-    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'regular_center_dialog' ) as dlg:
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'quick_entry_dialog' ) as dlg:
         
-        panel = ClientGUIScrolledPanelsTextEntry.EditTextPanel( dlg, message, default, placeholder, allow_blank, suggestions, max_chars, password_entry, min_char_width = min_char_width )
+        panel = ClientGUIScrolledPanelsNumberEntry.EditTextSpinboxPanel( dlg, message, default, min_value, max_value )
+        
+        dlg.SetPanel( panel )
+        
+        if dlg.exec() == QW.QDialog.DialogCode.Accepted:
+            
+            number = panel.GetValue()
+            
+            return number
+            
+        else:
+            
+            raise HydrusExceptions.CancelledException( 'Dialog cancelled.' )
+            
+        
+    
+
+def EnterText( win: QW.QWidget, message: str, default = '', placeholder = None, allow_blank = False, allow_whitespace = True, suggestions = None, max_chars = None, password_entry = False, min_char_width = 72, title = 'Enter Text' ) -> str:
+    
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'quick_entry_dialog' ) as dlg:
+        
+        panel = ClientGUIScrolledPanelsTextEntry.EditTextPanel( dlg, message, default, placeholder, allow_blank, allow_whitespace, suggestions, max_chars, password_entry, min_char_width = min_char_width )
         
         dlg.SetPanel( panel )
         
@@ -45,7 +65,7 @@ def GetDeleteFilesJobs( win: QW.QWidget, media, default_reason, suggested_file_s
     
     title = 'Delete files?'
     
-    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'regular_center_dialog' ) as dlg:
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'quick_select_dialog' ) as dlg:
         
         panel = ClientGUIScrolledPanelsEdit.EditDeleteFilesPanel( dlg, media, default_reason, suggested_file_service_key = suggested_file_service_key )
         
@@ -130,15 +150,15 @@ def PickDirectory( parent: QW.QWidget, message: str, starting_dir_path: str | No
         options |= QW.QFileDialog.Option.DontUseNativeDialog
         
     
-    path = QW.QFileDialog.getExistingDirectory( parent, caption = message, dir = starting_dir_path, options = options )
+    qt_response_path = QW.QFileDialog.getExistingDirectory( parent, caption = message, dir = starting_dir_path, options = options )
     
-    if path == '':
+    if qt_response_path == '':
         
         raise HydrusExceptions.CancelledException()
         
     
     # as well as A/foo/../B collapse stuff, this wangles forward slashes on windows to backslashes (this dialog returns slashes, hooray)
-    path = os.path.normpath( path )
+    path = os.path.normpath( qt_response_path )
     
     LAST_FOLDER_SELECTED = path
     
@@ -297,7 +317,7 @@ def SelectFromList( win: QW.QWidget, title: str, choice_tuples, value_to_select 
         return data
         
     
-    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title ) as dlg:
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'quick_select_dialog' ) as dlg:
         
         panel = ClientGUIScrolledPanelsSelectFromList.EditSelectFromListPanel( dlg, choice_tuples, value_to_select = value_to_select, sort_tuples = sort_tuples )
         
@@ -325,7 +345,7 @@ def SelectFromListButtons( win: QW.QWidget, title: str, choice_tuples, message =
         return data
         
     
-    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, hide_buttons = True ) as dlg:
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, hide_buttons = True, frame_key = 'quick_select_dialog' ) as dlg:
         
         panel = ClientGUIScrolledPanelsSelectFromList.EditSelectFromListButtonsPanel( dlg, choice_tuples, message = message )
         
@@ -346,7 +366,7 @@ def SelectFromListButtons( win: QW.QWidget, title: str, choice_tuples, message =
 
 def SelectMultipleFromList( win: QW.QWidget, title: str, choice_tuples ):
     
-    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title ) as dlg:
+    with ClientGUITopLevelWindowsPanels.DialogEdit( win, title, frame_key = 'quick_select_dialog' ) as dlg:
         
         panel = ClientGUIScrolledPanelsSelectFromList.EditSelectMultiple( dlg, choice_tuples )
         

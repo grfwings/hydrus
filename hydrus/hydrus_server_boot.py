@@ -6,22 +6,22 @@
 
 action = 'start'
 
-import sys
+import locale
 
 try:
     
-    import locale
+    locale.setlocale( locale.LC_ALL, '' )
     
-    try:
-        
-        locale.setlocale( locale.LC_ALL, '' )
-        
-    except Exception as e:
-        
-        pass
-        
+except Exception as e:
     
-    import os
+    pass
+    
+
+import sys
+import os
+
+try:
+    
     import threading
     
     from hydrus.core import HydrusBoot
@@ -43,8 +43,6 @@ try:
     from hydrus.core import HydrusTime
     
     from hydrus.server import ServerController
-    
-    from twisted.internet import reactor
     
     #
     
@@ -173,6 +171,7 @@ except Exception as e:
     
     sys.exit( 1 )
     
+
 def boot():
     
     try:
@@ -206,11 +205,6 @@ def boot():
                 
                 HydrusData.Print( 'Initialising controller' + HC.UNICODE_ELLIPSIS )
                 
-                # noinspection PyUnresolvedReferences
-                target = reactor.run
-                
-                threading.Thread( target = target, name = 'twisted', kwargs = { 'installSignalHandlers' : 0 } ).start()
-                
                 controller = ServerController.Controller( db_dir, logger )
                 
                 controller.Run()
@@ -242,12 +236,6 @@ def boot():
                 
                 controller.pubimmediate( 'wake_daemons' )
                 
-            
-            # noinspection PyUnresolvedReferences
-            target = reactor.stop
-            
-            # noinspection PyUnresolvedReferences
-            reactor.callFromThread( target )
             
             HydrusData.Print( 'hydrus server shut down' )
             

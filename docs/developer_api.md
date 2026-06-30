@@ -184,139 +184,155 @@ Also, note that all users can now copy their service keys from _review services_
 
 Hydrus manages its different available domains and actions with what it calls _services_. If you are a regular user of the program, you will know about _review services_ and _manage services_. The Client API needs to refer to services, either to accept commands from you or to tell you what metadata files have and where.
 
-When it does this, it gives you this structure, typically under a `services` key right off the root node:
+When the client tells you about the available services, it gives you the following structure, typically under a `services_v2` key right off the root node.
 
-```json title="Services Object"
-{
-  "c6f63616c2074616773" : {
+```json title="Services Object (actually a List)"
+[
+  {
     "name" : "my tags",
+    "service_key" : "c6f63616c2074616773",
     "type": 5,
     "type_pretty" : "local tag domain"
   },
-  "5674450950748cfb28778b511024cfbf0f9f67355cf833de632244078b5a6f8d" : {
+  {
     "name" : "example tag repo",
+    "service_key" : "5674450950748cfb28778b511024cfbf0f9f67355cf833de632244078b5a6f8d",
     "type" : 0,
     "type_pretty" : "hydrus tag repository"
   },
-  "6c6f63616c2066696c6573" : {
+  {
     "name" : "my files",
+    "service_key" : "6c6f63616c2066696c6573",
     "type" : 2,
     "type_pretty" : "local file domain"
   },
-  "7265706f7369746f72792075706461746573" : {
+  {
     "name" : "repository updates",
+    "service_key" : "7265706f7369746f72792075706461746573",
     "type" : 20,
     "type_pretty" : "local update file domain"
   },
-  "ae7d9a603008919612894fc360130ae3d9925b8577d075cd0473090ac38b12b6" : {
+  {
     "name": "example file repo",
+    "service_key" : "ae7d9a603008919612894fc360130ae3d9925b8577d075cd0473090ac38b12b6",
     "type" : 1,
     "type_pretty" : "hydrus file repository"
   },
-  "616c6c206c6f63616c2066696c6573" : {
+  {
     "name" : "hydrus local file storage",
+    "service_key" : "616c6c206c6f63616c2066696c6573",
     "type": 15,
     "type_pretty" : "virtual combined local file domain"
   },
-  "616c6c206c6f63616c206d65646961" : {
+  {
     "name" : "combined local file domains",
+    "service_key" : "616c6c206c6f63616c206d65646961",
     "type" : 21,
     "type_pretty" : "virtual combined local media domain"
   },
-  "616c6c206b6e6f776e2066696c6573" : {
+  {
     "name" : "all known files",
+    "service_key" : "616c6c206b6e6f776e2066696c6573",
     "type" : 11,
     "type_pretty" : "virtual combined file domain"
   },
-  "616c6c206b6e6f776e2074616773" : {
+  {
     "name" : "all known tags",
+    "service_key" : "616c6c206b6e6f776e2074616773",
     "type": 10,
     "type_pretty" : "virtual combined tag domain"
   },
-  "74d52c6238d25f846d579174c11856b1aaccdb04a185cb2c79f0d0e499284f2c" : {
+  {
     "name" : "example local rating like service",
+    "service_key" : "74d52c6238d25f846d579174c11856b1aaccdb04a185cb2c79f0d0e499284f2c",
     "type" : 7,
     "type_pretty" : "local like/dislike rating service",
     "star_shape" : "svg",
     "show_in_thumbnail" : true,
     "show_in_thumbnail_even_when_null" : true,
     "colours": {
-        "dislike": {
-            "brush": "#FFFFFF",
-            "pen": "#000000"
-        },
-        "like": {
-            "brush": "#50C878",
-            "pen": "#000000"
-        },
-        "mixed": {
-            "brush": "#5F5F5F",
-            "pen": "#000000"
-        },
-        "null": {
-            "brush": "#BFBFBF",
-            "pen": "#000000"
-        }
+      "dislike": {
+        "brush": "#FFFFFF",
+        "pen": "#000000"
+      },
+      "like": {
+        "brush": "#50C878",
+        "pen": "#000000"
+      },
+      "mixed": {
+        "brush": "#5F5F5F",
+        "pen": "#000000"
+      },
+      "null": {
+        "brush": "#BFBFBF",
+        "pen": "#000000"
+      }
+    },
   },
-  "90769255dae5c205c975fc4ce2efff796b8be8a421f786c1737f87f98187ffaf" : {
-    "name" : "example local rating numerical service",
-    "type" : 6,
-    "type_pretty" : "local numerical rating service",
-    "star_shape" : "fat star",
-    "allows_zero" : false,
-    "min_stars" : 1,
-    "max_stars" : 5,
-    "show_in_thumbnail" : true,
-    "show_in_thumbnail_even_when_null" : false,
+  {
+    "name": "example local rating numerical service",
+    "service_key" : "90769255dae5c205c975fc4ce2efff796b8be8a421f786c1737f87f98187ffaf",
+    "type": 6,
+    "type_pretty": "local numerical rating service",
+    "star_shape": "fat star",
+    "allows_zero": false,
+    "min_stars": 1,
+    "max_stars": 5,
+    "show_in_thumbnail": true,
+    "show_in_thumbnail_even_when_null": false,
     "colours": {
-        "dislike": {
-            "brush": "#FFFFFF",
-            "pen": "#000000"
-        },
-        "like": {
-            "brush": "#50C878",
-            "pen": "#000000"
-        },
-        "mixed": {
-            "brush": "#5F5F5F",
-            "pen": "#000000"
-        },
-        "null": {
-            "brush": "#BFBFBF",
-            "pen": "#000000"
-        }
+      "dislike": {
+        "brush": "#FFFFFF",
+        "pen": "#000000"
+      },
+      "like": {
+        "brush": "#50C878",
+        "pen": "#000000"
+      },
+      "mixed": {
+        "brush": "#5F5F5F",
+        "pen": "#000000"
+      },
+      "null": {
+        "brush": "#BFBFBF",
+        "pen": "#000000"
+      }
+    }
   },
-  "b474e0cbbab02ca1479c12ad985f1c680ea909a54eb028e3ad06750ea40d4106" : {
-    "name" : "example local rating inc/dec service",
-    "type" : 22,
-    "type_pretty" : "local inc/dec rating service",
-    "show_in_thumbnail" : false,
-    "show_in_thumbnail_even_when_null" : false,
+  {
+    "name": "example local rating inc/dec service",
+    "service_key" : "b474e0cbbab02ca1479c12ad985f1c680ea909a54eb028e3ad06750ea40d4106",
+    "type": 22,
+    "type_pretty": "local inc/dec rating service",
+    "show_in_thumbnail": false,
+    "show_in_thumbnail_even_when_null": false,
     "colours": {
-        "like": {
-            "brush": "#50C878",
-            "pen": "#000000"
-        },
-        "mixed": {
-            "brush": "#5F5F5F",
-            "pen": "#000000"
-        }
+      "like": {
+        "brush": "#50C878",
+        "pen": "#000000"
+      },
+      "mixed": {
+        "brush": "#5F5F5F",
+        "pen": "#000000"
+      }
+    }
   },
-  "7472617368" : {
+  {
     "name" : "trash",
+    "service_key" : "7472617368",
     "type" : 14,
     "type_pretty" : "local trash file domain"
   }
-}
+]
 ```
 
-I hope you recognise some of the information here. But what's that hex key on each section? It is the `service_key`.
+You will likely see an older, uglier format, under a `services` key--you can ignore this.
 
 All services have these properties:
 
 - `name` - A mutable human-friendly name like 'my tags'. You can use this to present the service to the user--they should recognise it.
 - `type` - An integer enum saying whether the service is a local tag domain or like/dislike rating or whatever. This cannot change.
-- `service_key` - The true 'id' of the service. It is a string of hex, sometimes just twenty or so characters but in many cases 64 characters. This cannot change, and it is how we will refer to different services.
+- `service_key` - The true 'id' of the service. It is a string of hex, sometimes just twenty or so characters but in many cases sixty-four characters. This cannot change, and it is how we will refer to different services.
 
 This `service_key` is important. A user can rename their services, so `name` is not an excellent identifier, and definitely not something you should save to any permanent config file.
 
@@ -349,13 +365,13 @@ You won't see all of these, but the service `type` enum is:
 Rating services have some extra data:
 
 - They all have some `colours` for differing rating states, the same as you'd see in `manage services`. Pen and brush are the line and the fill of the rating star shape, respectively. `like` generally means set/left-click, `dislike` means off/right-click, `null` means not set, and `mixed` is what I show in the edit rating dialog for multiple files when the files have differing values. Feel free to use them however you like.
-- They all have `show_in_thumbnail` and `show_in_thumbnail_even_if_null`, which you can obey in your display context if convenient.
+- They all have `show_in_thumbnail` and `show_in_thumbnail_even_when_null`, which you can obey in your display context if convenient.
 - Like/dislike and numerical services have `star_shape`, which is one of `circle | square | fat star | pentagram star | six point star | eight point star | x shape | square cross | triangle up | triangle down | triangle right | triangle left | diamond | rhombus right | rhombus left | hourglass | pentagon | hexagon | small hexagon | heart | teardrop | crescent moon` -or- `svg`, which means a custom user svg that can be fetched with [/get\_service\_rating\_svg](#get_service_rating_svg).
 - Numerical services have `min_stars` (0 or 1) and `max_stars` (1 to 20). `allows_zero` lines up with `min_stars` and is for your convenience.
 
 If you are displaying ratings, don't feel crazy obligated to obey the shape! Show a 4/5, select from a dropdown list, do whatever you like!
 
-If you want to know the services in a client, hit up [/get\_services](#get_services), which simply gives the above. The same structure has recently been added to [/get\_files/file\_metadata](#get_files_file_metadata) for convenience, since that refers to many different services when it is talking about file locations and ratings and so on.
+If you want to know the services in a client, hit up [/get\_services](#get_services), which simply gives the above. The same structure appears in a few other calls for convenience, like [/get\_files/file\_metadata](#get_files_file_metadata), since that refers to many different services when it is talking about file locations and ratings and so on.
 
 Note: If you need to do some quick testing, you should be able to copy the `service_key` of any service by hitting the 'copy service key' button in _review services_.
 
@@ -412,7 +428,8 @@ Also, it is often the case that content that is recorded as deleted is more diff
 
 _Gets the current API version. This increments every time I alter the API._
 
-Restricted access: NO.
+Restricted access:
+:   NO.
     
 Required Headers: n/a
     
@@ -436,7 +453,8 @@ Response:
 
 _Register a new external program with the client. This requires the 'add from api request' mini-dialog under_ services->review services _to be open, otherwise it will 403._
 
-Restricted access: NO.
+Restricted access:
+:   NO.
     
 Required Headers: n/a
     
@@ -486,7 +504,8 @@ The `permits_everything` overrules all the individual permissions and will encom
 
 _Get a new session key._
 
-Restricted access: YES. No permissions required.
+Restricted access:
+:   YES. No permissions required.
     
 Required Headers: n/a
     
@@ -510,7 +529,8 @@ Response:
 
 _Check your access key is valid._
 
-Restricted access: YES. No permissions required.
+Restricted access:
+:   YES. No permissions required.
     
 Required Headers: n/a
     
@@ -527,6 +547,31 @@ Response:
   "human_description" : "API Permissions (autotagger): add tags to files, import files, search for files: Can search: only autotag this"
 }
 ```
+
+### **GET `/client_info`** { id="client_info" }
+
+_Ask the client about its current boot and status._
+
+Restricted access: 
+:   YES. No permissions required.
+
+Required Headers: n/a
+
+Arguments: n/a
+
+Response: 
+:   Some JSON about the current state of the client.
+```json title="Example response"
+{
+    "boot_id": "df59ca0100536e89afbbc8d66ac382464a3119013f0b96c90848a48de545117f",
+    "boot_time": 1779118174.24,
+    "currently_idle": false
+}
+```
+
+The `boot_id` is a random string of hex generated on every program start, and `boot_time` is a timestamp float from when the main program controller started, which is typically a few seconds after the program process starts. Use one or both if you need to track client restarts.
+
+`currently_idle` is a bool for whether the Client API is currently 'idle' as per `options->maintenance and processing`. If you want to add some heavy CPU work and don't want to interrupt the user, check this.
 
 ### **GET `/get_service`** { id="get_service" }
 
@@ -589,7 +634,7 @@ Response:
 This now primarily uses [The Services Object](#services_object).
 
 !!! note
-    If you do the request and look at the actual response, you will see a lot more data under different keys--this is deprecated, and will be deleted in 2024. If you use the old structure, please move over!
+    If you do the request and look at the actual response, you will see a lot more data under different keys. This call has evolved a bunch over the years, and I never had the heart to properly deprecate and delete things (it would break an old script).
 
 ### **GET `/get_service_rating_svg`** { id="get_service_rating_svg" }
 
@@ -672,7 +717,7 @@ Response:
     *   4 - File failed to import
     *   7 - File vetoed
     
-    A file 'veto' is caused by the file import options (which in this case is the 'quiet' set under the client's _options->importing_) stopping the file due to its resolution or minimum file size rules, etc...
+    A file 'veto' (aka 'ignored') is caused by the file import options (which in this case is the 'client api' set under the client's _options->import options_) stopping the file due to its resolution or minimum file size rules, etc...
     
     'hash' is the file's SHA256 hash in hexadecimal, and 'note' is any additional human-readable text appropriate to the file status that you may recognise from hydrus's normal import workflow. For an outright import error, it will be a summary of the exception that you can present to the user, and a new field `traceback` will have the full trace for debugging purposes.
      
@@ -934,7 +979,7 @@ Response:
 
 The `url_file_statuses` is a list of zero-to-n JSON Objects, each representing a file match the client found in its database for the URL. Typically, it will be of length 0 (for as-yet-unvisited URLs or Gallery/Watchable URLs that are not attached to files) or 1, but sometimes multiple files are given the same URL (sometimes by mistaken misattribution, sometimes by design, such as a mini-manga Post URL that hosts 4 files). Handling n files per URL is a pain but an unavoidable issue you should account for.
 
-`status` mas the same mapping as for `/add_files/add_file`, but the possible results are different:
+`status` has the same mapping as for `/add_files/add_file`, but the possible results are different:
 
   *   0 - File not in database, ready for import (you will only see this very rarely--usually in this case you will just get no matches)
   *   2 - File already in database
@@ -1705,13 +1750,15 @@ If you send `null` timestamp time, then this will instruct to delete the existin
 *   7 - File originally imported time
 
 !!! warning "Adding or Deleting"
-    You can add or delete type 0 (web domain) timestamps, but you can only edit existing instances of all the others. This is broadly how the _manage times_ dialog works, also. Stuff like 'last viewed' is tied up with other numbers like viewtime and num_views, so if that isn't already in the database, then we can't just add the timestamp on its own. Same with 'deleted time' for a file that isn't deleted! So, in general, other than web domain stuff, you can only edit times you already see in [/get\_files/file\_metadata](#get_files_file_metadata).
+    You can add or delete type 0 (web domain) timestamps and set an archived time with no previous record, but you can only edit existing instances of all the others. This is broadly how the _manage times_ dialog works, also. Stuff like 'last viewed' is tied up with other numbers like viewtime and num_views, so if that isn't already in the database, then we can't just add the timestamp on its own. Same with 'deleted time' for a file that isn't deleted! So, in general, other than web domain stuff, you can only edit times you already see in [/get\_files/file\_metadata](#get_files_file_metadata).
 
 If you select 0, you have to include a `domain`, which will usually be a web domain, but you can put anything in there.
 
 If you select 1, the client will _not_ alter the modified time on your hard disk, only the database record. This is unlike the dialog. Let's let this system breathe a bit before we try to get too clever.
 
 If you select 3, 4, or 7, you have to include a `file_service_key`. The 'previously imported' time is for deleted files only; it records when the file was originally imported so if the user hits 'undo', the database knows what import time to give back to it.
+
+If you select 5 and the file is currently in the inbox, it will be archived!
 
 If you select 6, you have to include a `canvas_type`, which is:
 
@@ -2214,6 +2261,7 @@ Response:
       "num_frames" : 102,
       "num_words" : null,
       "is_inbox" : false,
+      "time_archived" : 1641044542,
       "is_local" : true,
       "is_trashed" : false,
       "is_deleted" : false,
@@ -3291,7 +3339,7 @@ Arguments (in JSON):
 
 You can set 'value' to be null, which will clear any existing cookie with the corresponding name, domain, and path (acting essentially as a delete).
 
-Expires can be null, but session cookies will time-out in hydrus after 60 minutes of non-use.
+Expires can be null, to make a session cookie. Hydrus does not purge session cookies very aggressively, so they may hang around for a long time.
 
 ## Managing HTTP Headers
 
@@ -3916,6 +3964,110 @@ Response:
 
 Poll the `page_state` in [/manage\_pages/get\_pages](#manage_pages_get_pages) or [/manage\_pages/get\_page\_info](#manage_pages_get_page_info) to see when the search is complete.
 
+### **POST `/manage_pages/new_page`** { id="manage_pages_new_page" }
+
+_Create a new page in the main GUI._
+
+Restricted access: 
+:   YES. Manage Pages permission needed.
+
+Required Headers:
+:   
+    *   `Content-Type`: application/json
+
+Arguments (in JSON):
+:   
+    *   `page_type`: (int, required) The type of page to create.
+
+        The supported page types are:
+
+        *   1 - Gallery downloader
+        *   2 - Simple downloader
+        *   3 - Hard drive import
+        *   5 - Petitions
+        *   6 - File search
+        *   7 - URL downloader
+        *   8 - Duplicates
+        *   9 - Thread watcher
+        *   10 - Page of pages
+
+    *   `page_name`: (optional, string) A name for the new page. If not provided, a default name is used.
+    *   `page_of_pages_key`: (optional, hexadecimal) The page key of a 'page of pages' to insert the new page into. If not provided, the top-level notebook is used.
+    *   `focus_page`: (optional, bool, default `true`) Whether to switch the UI to the new page after creation.
+    *   `tags`: (optional, a list of tag strings, default `[]`) Tags for a file search (page type 6) page's search. Works with the same [system predicate](#get_files_search_files) syntax.
+    *   `file_service_key`: (optional, hexadecimal) The file service for the new page's search domain (page types 6 and 8).
+    *   `tag_service_key`: (optional, hexadecimal) The tag service for the new page's search domain (page type 6).
+    *   `hashes`: (optional, a list of hexadecimal SHA256 hashes) Initial hashes to show on a file search (page type 6) page.
+    *   `service_key`: (optional, hexadecimal) The service key for a petitions (page type 5) page.
+    *   `paths`: (optional, a list of file system paths, default `[]`) File paths to import for a hard drive import (page type 3) page.
+    *   `delete_after_success`: (optional, bool, default `false`) Whether to delete source files after a successful import (page type 3).
+    *   `file_sort_type`: (optional, int) Sort type for the page, same enum as in [/get\_files/search\_files](#get_files_search_files) (page type 6). Mutually exclusive with `file_sort_namespaces`.
+    *   `file_sort_asc`: (optional, bool, default `true`) Sort order for files (page type 6).
+    *   `file_sort_namespaces`: (optional, a list of namespace strings) Sort by namespace order (page type 6). Mutually exclusive with `file_sort_type`.
+    *   `collect_namespaces`: (optional, a list of namespace strings) Namespaces to collect/group files by (page type 6).
+    *   `system_hash_locked`: (optional, bool) If `true`, locks the page to the given hashes and syncs new/removed hashes (page type 6). Requires `hashes` to be provided.
+    *   `urls`: (optional, a list of URL strings, default `[]`) URLs to pend for a URL downloader (page type 7) page.
+    *   `url`: (optional, string) A URL for a gallery/thread watcher (page type 9) page.
+
+```json title="Example request body (file search page)"
+{
+  "page_type" : 6,
+  "page_name" : "my search",
+  "tags" : ["blue eyes", "blonde hair"],
+  "file_service_key" : "6c6f63616c2066696c6573",
+  "tag_service_key" : "6c6f63616c2074616773",
+  "focus_page" : true
+}
+```
+
+```json title="Example request body (page of pages)"
+{
+  "page_type" : 10,
+  "page_name" : "my sub-notebook",
+  "focus_page" : false
+}
+```
+
+```json title="Example request body (URL downloader with seeds)"
+{
+  "page_type" : 7,
+  "page_name" : "my urls",
+  "urls" : ["https://example.com/image1.png", "https://example.com/image2.png"],
+  "focus_page" : false
+}
+```
+
+```json title="Example request body (thread watcher)"
+{
+  "page_type" : 9,
+  "page_name" : "my watcher",
+  "url" : "https://example.com/gallery/page/1",
+  "focus_page" : false
+}
+```
+
+```json title="Example request body (hard drive import)"
+{
+  "page_type" : 3,
+  "page_name" : "my import",
+  "paths" : ["E:\\to_import"],
+  "delete_after_success" : true,
+  "focus_page" : false
+}
+```
+
+Response:
+:   A JSON Object containing the new page's details.
+
+```json title="Example response"
+{
+  "page_key" : "af98318b6eece15fef3cf0378385ce759bfe056916f6e12157cd928eb56c1f18",
+  "page_type" : 6,
+  "page_name" : "my search"
+}
+```
+
+The `page_key` is the page's unique identifier for use in other manage_pages commands. If the `page_of_pages_key` is not found, this will 404. If the `page_type` is unrecognised or unsupported, or contradictory arguments like both `file_sort_type` and `file_sort_namespaces` are provided, this will 400. Petitions pages require a `service_key`, otherwise they will 400.
 
 ## Managing Popups
 

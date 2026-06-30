@@ -43,14 +43,16 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanelsCommitFiltering
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.gui.widgets import ClientGUIPainterShapes
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaList
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultPrettyInfo
+from hydrus.client.media import ClientMediaSingle
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientRatings
 from hydrus.client.metadata import ClientTags
 from hydrus.client.metadata import ClientTagSorting
 
-def AddAudioVolumeMenu( menu, canvas_type ):
+def AddAudioVolumeMenu( menu, canvas_type, this_container ):
     
     mute_volume_type = None
     volume_volume_type = ClientGUIMediaControls.AUDIO_GLOBAL
@@ -108,6 +110,16 @@ def AddAudioVolumeMenu( menu, canvas_type ):
         
         ClientGUIMenus.AppendMenuItem( volume_menu, label, 'Mute/unmute audio.', ClientGUIMediaControls.FlipMute, mute_volume_type )
         
+        if this_container.IsMuted():
+            
+            label = 'unmute this window'
+            
+        else:
+            
+            label = 'mute this window'
+            
+        
+        ClientGUIMenus.AppendMenuItem( volume_menu, label, 'Mute/unmute audio.', this_container.UpdateMediaWindowMute, not this_container.IsMuted() )
     
     #
     
@@ -171,7 +183,7 @@ class CanvasBackgroundColourGeneratorDuplicates( CanvasBackgroundColourGenerator
     
     def CanDoTransparencyCheckerboard( self ) -> bool:
         
-        return CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas' ) or CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas_duplicates' )
+        return CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_media_canvas_duplicates' )
         
     
     def GetColour( self ) -> QG.QColor:
@@ -320,7 +332,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
     CANVAS_TYPE = CC.CANVAS_MEDIA_VIEWER
     
     mediaCleared = QC.Signal()
-    mediaChanged = QC.Signal( ClientMedia.MediaSingleton )
+    mediaChanged = QC.Signal( ClientMediaSingle.MediaSingle )
     haveDestroyedAllMediaWindows = QC.Signal()
     
     def __init__( self, parent, location_context: ClientLocation.LocationContext ):
@@ -351,7 +363,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         
         self._service_keys_to_services = {}
         
-        self._current_media: ClientMedia.MediaSingleton | None = None
+        self._current_media: ClientMediaSingle.MediaSingle | None = None
         
         catch_mouse = True
         
@@ -694,7 +706,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             return
             
         
-        point = self.mapFromGlobal( QG.QCursor.pos() )
+        point = self.mapFromGlobal( ClientGUIFunctions.GetMousePos() )
         
         self._last_drag_pos = point
         self._current_drag_is_touch = False
@@ -795,6 +807,16 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         pass
         
     
+    def IsAlwaysOnTop( self ):
+        
+        return False
+        
+    
+    def IsHidingWindowFrame( self ):
+        
+        return False
+        
+    
     def ManageNotes( self, canvas_key, name_to_start_on = None ):
         
         if canvas_key == self._canvas_key:
@@ -820,22 +842,6 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         else:
             
             return self._media_container.MouseIsNearAnimationBar()
-            
-        
-    
-    def MouseIsOverMedia( self ):
-        
-        if self._current_media is None:
-            
-            return False
-            
-        else:
-            
-            media_mouse_pos = self._media_container.mapFromGlobal( QG.QCursor.pos() )
-            
-            media_rect = self._media_container.rect()
-            
-            return media_rect.contains( media_mouse_pos )
             
         
     
@@ -1440,6 +1446,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 CG.client_controller.pub( 'clear_image_cache' )
                 CG.client_controller.pub( 'clear_image_tile_cache' )
+                CG.client_controller.pub( 'new_transparency_options' )
                 
             else:
                 
@@ -1453,7 +1460,25 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 return
                 
             
-            command_processed = ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, command, (self._current_media,) )
+            command_processed = ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, command, ( self._current_media, ) )
+            
+        elif command.IsInteractiveContentCommand():
+            
+            if self._current_media is None:
+                
+                return
+                
+            
+            content_command = ClientGUIMediaModalActions.GetContentApplicationCommandFromInteractiveContentCommand( self, command, self._current_media )
+            
+            if content_command.IsContentCommand():
+                
+                command_processed = ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, content_command, ( self._current_media, ) )
+                
+            else:
+                
+                command_processed = False
+                
             
         else:
             
@@ -1480,7 +1505,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._location_context = location_context
         
     
-    def SetMedia( self, media: ClientMedia.MediaSingleton | None, start_paused = None ):
+    def SetMedia( self, media: ClientMediaSingle.MediaSingle | None, start_paused = None ):
         
         if media is not None and not self.isVisible():
             
@@ -1558,7 +1583,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
                 self.mediaCleared.emit()
                 
-            elif isinstance( self._current_media, ClientMedia.MediaSingleton ): # just to be safe on the delicate type def requirements here
+            elif isinstance( self._current_media, ClientMediaSingle.MediaSingle ): # just to be safe on the delicate type def requirements here
                 
                 self.mediaChanged.emit( self._current_media )
                 
@@ -1698,25 +1723,13 @@ class CanvasPanel( Canvas ):
         
         CG.client_controller.sub( self, 'ProcessContentUpdatePackage', 'content_updates_gui' )
         
-    
-    def mouseReleaseEvent( self, event ):
-        
-        if event.button() != QC.Qt.MouseButton.RightButton:
-            
-            Canvas.mouseReleaseEvent( self, event )
-            
-            return
-            
-        
-        # contextmenu doesn't quite work here yet due to focus issues
-        
-        self.ShowMenu()
+        self.setContextMenuPolicy( QC.Qt.ContextMenuPolicy.CustomContextMenu )
+        self.customContextMenuRequested.connect( self.ShowMenuFromSignal )
         
     
     def ClearMedia( self ):
         
         self._hidden_page_current_media = None
-        self._hidden_splitter_current_media = None
         
         Canvas.ClearMedia( self )
         
@@ -1747,7 +1760,7 @@ class CanvasPanel( Canvas ):
         self._hidden_page_current_media = None
         
     
-    def ShowMenu( self ):
+    def ShowMenuFromSignal( self, pos ):
         
         menu = ClientGUIMenus.GenerateMenu( self )
         
@@ -1781,7 +1794,7 @@ class CanvasPanel( Canvas ):
             ClientGUIMenus.AppendSeparator( menu )
             
         
-        AddAudioVolumeMenu( menu, self.CANVAS_TYPE )
+        AddAudioVolumeMenu( menu, self.CANVAS_TYPE, self._media_container )
         
         if self._current_media is not None:
             
@@ -1814,7 +1827,7 @@ class CanvasPanel( Canvas ):
                     
                     file_service_key = local_file_service_keys_we_are_in[0]
                     
-                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetNameSafe( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
                     
                 else:
                     
@@ -1822,7 +1835,7 @@ class CanvasPanel( Canvas ):
                     
                     for file_service_key in local_file_service_keys_we_are_in:
                         
-                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetNameSafe( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
                         
                     
                     ClientGUIMenus.AppendMenu( menu, delete_menu, 'delete' )
@@ -2292,6 +2305,19 @@ class CanvasWithHovers( Canvas ):
         
         #
         
+        self._window_always_on_top = False
+        self._hide_window_frame = False # should always start with titlebar/frame (to establish taskbar gubbins?)
+        
+        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_always_on_top' ):
+            
+            CG.client_controller.CallLaterQtSafe( self, 0.1, 'setting media viewer window on top', self._FlipWindowAlwaysOnTop )
+            
+        
+        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_frameless' ):
+            
+            CG.client_controller.CallLaterQtSafe( self, 0.1, 'removing titlebar from media viewer', self._FlipShowHideWindowFrame )
+            
+        
         self._cursor_autohide_timer = QC.QTimer( self )
         self._last_cursor_autohide_touch_time = HydrusTime.GetNowFloat()
         
@@ -2309,6 +2335,27 @@ class CanvasWithHovers( Canvas ):
         self._cursor_autohide_timer.start( 100 )
         
         self._RestartCursorHideWait()
+        
+    
+    def _DoShowHideWindowFrame( self ):
+        
+        window_real_geom = self.window().geometry()
+        
+        self.window().setWindowFlag( QC.Qt.WindowType.FramelessWindowHint, self._hide_window_frame )
+        
+        self.window().setGeometry( window_real_geom )
+        
+        self.window().show()
+        self.update()
+        
+    
+    def _DoWindowAlwaysOnTop( self ):
+        
+        self.window().setWindowFlag( QC.Qt.WindowType.WindowStaysOnTopHint, self._window_always_on_top )
+        
+        self.window().show()
+        
+        self.update()
         
     
     def _DrawAdditionalTopMiddleInfo( self, painter: QG.QPainter, current_y ):
@@ -2862,6 +2909,20 @@ class CanvasWithHovers( Canvas ):
             
         
     
+    def _FlipShowHideWindowFrame( self ):
+        
+        self._hide_window_frame = not self._hide_window_frame
+        
+        self._DoShowHideWindowFrame()
+        
+    
+    def _FlipWindowAlwaysOnTop( self ):
+        
+        self._window_always_on_top = not self._window_always_on_top
+        
+        self._DoWindowAlwaysOnTop()
+        
+    
     def _GenerateHoverTopFrame( self ) -> ClientGUICanvasHoverFrames.CanvasHoverFrameTop:
         
         raise NotImplementedError()
@@ -2927,7 +2988,7 @@ class CanvasWithHovers( Canvas ):
             
         elif not should_be_hidden and not mouse_currently_shown:
             
-            self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
+            self.unsetCursor()
             
         
         self._cursor_autohide_timer.start( next_check_period_ms )
@@ -2962,7 +3023,7 @@ class CanvasWithHovers( Canvas ):
     
     def CleanBeforeDestroy( self ):
         
-        self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
+        self.unsetCursor()
         
         self.canvasWithHoversExiting.emit()
         
@@ -3003,7 +3064,7 @@ class CanvasWithHovers( Canvas ):
         CC.CAN_HIDE_MOUSE = True
         
         # due to the mouse setPos below, the event pos can get funky I think due to out of order coordinate setting events, so we'll poll current value directly
-        event_pos = self.mapFromGlobal( QG.QCursor.pos() )
+        event_pos = self.mapFromGlobal( ClientGUIFunctions.GetMousePos() )
         
         mouse_currently_shown = self.cursor().shape() == QC.Qt.CursorShape.ArrowCursor
         
@@ -3072,7 +3133,7 @@ class CanvasWithHovers( Canvas ):
                 
                 if not mouse_currently_shown:
                     
-                    self.setCursor( QG.QCursor( QC.Qt.CursorShape.ArrowCursor ) )
+                    self.unsetCursor()
                     
                 
                 self._RestartCursorHideWait()
@@ -3092,6 +3153,16 @@ class CanvasWithHovers( Canvas ):
     def GetCanvasType( self ):
         
         return self._canvas_type
+        
+    
+    def IsAlwaysOnTop( self ):
+        
+        return self._window_always_on_top
+        
+    
+    def IsHidingWindowFrame( self ):
+        
+        return self._hide_window_frame
         
     
     def NotifyWeAreClosing( self ):
@@ -3135,6 +3206,23 @@ class CanvasWithHovers( Canvas ):
                 
                 self.parentWidget().FullscreenSwitch()
                 
+            elif action in ( CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP, CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON, CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF ):
+                
+                if action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON:
+                    
+                    self._window_always_on_top = False
+                    
+                elif action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF:
+                    
+                    self._window_always_on_top = True
+                    
+                
+                self._FlipWindowAlwaysOnTop()
+                
+            elif action == CAC.SIMPLE_WINDOW_FRAMELESS_FLIP:
+                
+                self._FlipShowHideWindowFrame()
+                
             else:
                 
                 command_processed = False
@@ -3163,6 +3251,11 @@ class CanvasWithHovers( Canvas ):
         return True
         
     
+    def UpdateMediaWindowMute( self, mute_state ):
+        
+        self._media_container.UpdateMediaWindowMute( mute_state )
+        
+    
     def TIMERUIUpdate( self ):
         
         for hover in self._hovers:
@@ -3182,7 +3275,7 @@ class CanvasMediaList( CanvasWithHovers ):
         
         super().__init__( parent, location_context )
         
-        self._media_list = ClientMedia.MediaList( location_context, media_results )
+        self._media_list = ClientMediaList.MediaList( location_context, media_results )
         
         self._page_key = page_key
         
@@ -4059,6 +4152,9 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
         self._normal_slideshow_period = 0.0
         self._special_slideshow_period_for_current_media = None
         
+        self._slideshow_is_shuffling = CG.client_controller.new_options.GetBoolean( 'slideshows_progress_randomly' )
+        self._slideshow_is_playing_once_through = CG.client_controller.new_options.GetBoolean( 'slideshow_always_play_duration_media_once_through' )
+        
         if first_hash is None:
             
             first_media = self._media_list.GetFirst()
@@ -4197,7 +4293,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             if self._media_container.CurrentlyPresentingMediaWithDuration():
                 
-                if CG.client_controller.new_options.GetBoolean( 'slideshow_always_play_duration_media_once_through' ):
+                if self._slideshow_is_playing_once_through:
                     
                     if not self._media_container.HasPlayedOnceThrough():
                         
@@ -4220,7 +4316,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 return
                 
             
-            if CG.client_controller.new_options.GetBoolean( 'slideshows_progress_randomly' ):
+            if self._slideshow_is_shuffling:
                 
                 self._ShowRandom()
                 
@@ -4330,12 +4426,14 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
         
     
-    def contextMenuEvent( self, event ):
+    def SlideshowIsShuffling( self ):
         
-        if event.reason() == QG.QContextMenuEvent.Reason.Keyboard:
-            
-            self.ShowMenu()
-            
+        return self._slideshow_is_shuffling
+        
+    
+    def SlideshowIsPlayingMediaDurationOnceThrough( self ):
+        
+        return self._slideshow_is_playing_once_through
         
     
     def NotifyUserChangedMedia( self ):
@@ -4370,9 +4468,25 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                     self._StartSlideshow( period_seconds )
                     
                 
+            elif action == CAC.SIMPLE_FLIP_THISWINDOW_SLIDESHOW_SHUFFLE:
+                
+                self._slideshow_is_shuffling = not self._slideshow_is_shuffling
+                
+            elif action == CAC.SIMPLE_FLIP_GLOBAL_SLIDESHOW_SHUFFLE:
+                
+                self._slideshow_is_shuffling = CG.client_controller.new_options.FlipBoolean( 'slideshows_progress_randomly' )
+                
+            elif action == CAC.SIMPLE_FLIP_THISWINDOW_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH:
+                
+                self._slideshow_is_playing_once_through = not self._slideshow_is_playing_once_through
+                
+            elif action == CAC.SIMPLE_FLIP_GLOBAL_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH:
+                
+                self._slideshow_is_playing_once_through = CG.client_controller.new_options.FlipBoolean( 'slideshow_always_play_duration_media_once_through' )
+                
             elif action == CAC.SIMPLE_SHOW_MENU:
                 
-                self.ShowMenu()
+                self.ShowMenuFromSignal( self.mapFromGlobal( ClientGUIFunctions.GetMousePos() ) )
                 
             else:
                 
@@ -4392,13 +4506,11 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
         return command_processed
         
     
-    def ShowMenu( self ):
+    def ShowMenuFromSignal( self, pos ):
         
         if self._current_media is not None:
             
             new_options = CG.client_controller.new_options
-            
-            advanced_mode = new_options.GetBoolean( 'advanced_mode' )
             
             services = CG.client_controller.services_manager.GetServices()
             
@@ -4470,11 +4582,18 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 ClientGUIMenus.AppendMenuItem( menu, 'go fullscreen', 'Make this media viewer a fullscreen window without borders.', self.ProcessApplicationCommand, CAC.ApplicationCommand.STATICCreateSimpleCommand( CAC.SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW ) )
                 
             
-            ClientGUICanvasMenus.AppendSlideshowMenu( self, menu, self._slideshow_is_running, slideshow_resume_duration = self._normal_slideshow_period )
+            ClientGUICanvasMenus.AppendSlideshowMenu(
+                self,
+                menu,
+                self._slideshow_is_running,
+                slideshow_duration = self._normal_slideshow_period,
+                slideshow_is_shuffling = self._slideshow_is_shuffling,
+                slideshow_is_playing_once_through = self._slideshow_is_playing_once_through
+            )
             
             ClientGUIMenus.AppendSeparator( menu )
             
-            AddAudioVolumeMenu( menu, self.CANVAS_TYPE )
+            AddAudioVolumeMenu( menu, self.CANVAS_TYPE, self._media_container )
             
             ClientGUIMenus.AppendSeparator( menu )
             
@@ -4508,7 +4627,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                     
                     file_service_key = local_file_service_keys_we_are_in[0]
                     
-                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                    ClientGUIMenus.AppendMenuItem( menu, 'delete from {}'.format( CG.client_controller.services_manager.GetNameSafe( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
                     
                 else:
                     
@@ -4516,7 +4635,7 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                     
                     for file_service_key in local_file_service_keys_we_are_in:
                         
-                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetName( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
+                        ClientGUIMenus.AppendMenuItem( delete_menu, 'from {}'.format( CG.client_controller.services_manager.GetNameSafe( file_service_key ) ), 'Delete this file.', self._Delete, file_service_key = file_service_key )
                         
                     
                     ClientGUIMenus.AppendMenu( menu, delete_menu, 'delete' )

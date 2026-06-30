@@ -204,6 +204,15 @@ SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER = 191
 SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER = 192
 SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN = 193
 SIMPLE_START_SLIDESHOW = 194
+SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP = 195
+SIMPLE_WINDOW_ALWAYS_ON_TOP_ON = 196
+SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF = 197
+SIMPLE_WINDOW_FRAMELESS_FLIP = 198
+SIMPLE_RENAME_PAGE = 199
+SIMPLE_FLIP_THISWINDOW_SLIDESHOW_SHUFFLE = 200
+SIMPLE_FLIP_GLOBAL_SLIDESHOW_SHUFFLE = 201
+SIMPLE_FLIP_THISWINDOW_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH = 202
+SIMPLE_FLIP_GLOBAL_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH = 203
 
 REARRANGE_THUMBNAILS_TYPE_FIXED = 0
 REARRANGE_THUMBNAILS_TYPE_COMMAND = 1
@@ -269,7 +278,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB : 'close media viewer and focus the tab the media came from, if possible',
     SIMPLE_CLOSE_MEDIA_VIEWER_AND_FOCUS_TAB_AND_FOCUS_MEDIA : 'close media viewer and focus the tab the media came from, if possible, and focus the media',
     SIMPLE_FOCUS_TAB_AND_MEDIA : 'focus the tab the media came from, if possible, and focus the media',
-    SIMPLE_CLOSE_PAGE : 'close page',
+    SIMPLE_CLOSE_PAGE : 'pages: close current',
+    SIMPLE_RENAME_PAGE : 'pages: rename current',
     LEGACY_SIMPLE_COPY_BMP : 'copy bmp of image',
     LEGACY_SIMPLE_COPY_LITTLE_BMP : 'copy small bmp of image for quick source lookups',
     LEGACY_SIMPLE_COPY_BMP_OR_FILE_IF_NOT_BMPABLE : 'copy bmp of image; otherwise copy file',
@@ -310,9 +320,9 @@ simple_enum_to_str_lookup = {
     LEGACY_SIMPLE_GET_SIMILAR_TO_SIMILAR : 'show similar files: 4 (similar)',
     LEGACY_SIMPLE_GET_SIMILAR_TO_SPECULATIVE : 'show similar files: 8 (speculative)',
     LEGACY_SIMPLE_GET_SIMILAR_TO_VERY_SIMILAR : 'show similar files: 2 (very similar)',
-    SIMPLE_GLOBAL_AUDIO_MUTE : 'mute global audio',
-    SIMPLE_GLOBAL_AUDIO_MUTE_FLIP : 'mute/unmute global audio',
-    SIMPLE_GLOBAL_AUDIO_UNMUTE : 'unmute global audio',
+    SIMPLE_GLOBAL_AUDIO_MUTE : 'global audio: mute',
+    SIMPLE_GLOBAL_AUDIO_MUTE_FLIP : 'global audio: mute/unmute',
+    SIMPLE_GLOBAL_AUDIO_UNMUTE : 'global audio: unmute',
     SIMPLE_HIDE_TO_SYSTEM_TRAY : 'hide to system tray',
     SIMPLE_INBOX_FILE : 'inbox file',
     SIMPLE_LAUNCH_MEDIA_VIEWER : 'launch the media viewer',
@@ -387,7 +397,7 @@ simple_enum_to_str_lookup = {
     SIMPLE_ZOOM_MAX : 'zoom: max',
     SIMPLE_SWITCH_BETWEEN_FULLSCREEN_BORDERLESS_AND_REGULAR_FRAMED_WINDOW : 'switch between fullscreen borderless and regular framed window',
     SIMPLE_SYNCHRONISED_WAIT_SWITCH : 'switch between searching a page immediately on new tags and waiting',
-    SIMPLE_UNCLOSE_PAGE : 'restore the most recently closed page',
+    SIMPLE_UNCLOSE_PAGE : 'pages: unclose the most recently closed',
     SIMPLE_UNDELETE_FILE : 'undelete file',
     SIMPLE_UNDO : 'undo (limited support)',
     SIMPLE_VIEW_FIRST : 'media navigation: first',
@@ -429,7 +439,7 @@ simple_enum_to_str_lookup = {
     SIMPLE_DUPLICATE_MEDIA_CLEAR_ALL_FOCUSED_FALSE_POSITIVES : 'file relationships: clear all false positives (just focused file)',
     SIMPLE_DUPLICATE_MEDIA_CLEAR_INTERNAL_FALSE_POSITIVES : 'file relationships: delete false positives within selection',
     SIMPLE_AUTOCOMPLETE_FORCE_FETCH : 'force-fetch tag autocomplete results',
-    SIMPLE_AUTOCOMPLETE_IME_MODE : 'flip IME-friendly mode on/off (this disables extra shortcut processing so you can do IME popup stuff)',
+    SIMPLE_AUTOCOMPLETE_IME_MODE : 'IME-friendly mode: flip on/off (this disables extra shortcut processing so you can do IME popup stuff)',
     SIMPLE_AUTOCOMPLETE_IF_EMPTY_TAB_LEFT : 'if input is empty, move left one autocomplete dropdown tab',
     SIMPLE_AUTOCOMPLETE_IF_EMPTY_TAB_RIGHT : 'if input is empty, move right one autocomplete dropdown tab',
     SIMPLE_AUTOCOMPLETE_IF_EMPTY_PAGE_LEFT : 'if input & results list are empty, move to left one service page',
@@ -437,8 +447,8 @@ simple_enum_to_str_lookup = {
     SIMPLE_AUTOCOMPLETE_IF_EMPTY_MEDIA_PREVIOUS : 'if input & results list are empty and in media viewer manage tags dialog, move to previous media',
     SIMPLE_AUTOCOMPLETE_IF_EMPTY_MEDIA_NEXT : 'if input & results list are empty and in media viewer manage tags dialog, move to previous media',
     SIMPLE_MEDIA_SEEK_DELTA : 'seek media',
-    SIMPLE_GLOBAL_PROFILE_MODE_FLIP : 'flip profile mode on/off',
-    SIMPLE_GLOBAL_FORCE_ANIMATION_SCANBAR_SHOW : 'force the animation scanbar to show (flip on/off)',
+    SIMPLE_GLOBAL_PROFILE_MODE_FLIP : 'profile mode: flip on/off',
+    SIMPLE_GLOBAL_FORCE_ANIMATION_SCANBAR_SHOW : 'force the animation scanbar to show: flip on/off',
     SIMPLE_OPEN_COMMAND_PALETTE : 'open the command palette',
     SIMPLE_MOVE_THUMBNAIL_FOCUS : 'move the thumbnail focus',
     SIMPLE_SELECT_FILES : 'select files',
@@ -448,11 +458,19 @@ simple_enum_to_str_lookup = {
     SIMPLE_NATIVE_OPEN_FILE_PROPERTIES : 'open file properties',
     SIMPLE_NATIVE_OPEN_FILE_WITH_DIALOG : 'open in another program',
     SIMPLE_RELOAD_CURRENT_STYLESHEET : 'reload current qss stylesheet',
-    SIMPLE_FLIP_ICC_PROFILE_APPLICATION : 'flip apply image ICC Profile colour adjustments',
-    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER : 'flip drawing transparency as checkerboard in media viewer',
-    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER : 'flip drawing transparency as checkerboard in media viewer (duplicate filter)',
-    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN : 'flip between drawing transparency and checkerboard and greenscreen',
-    SIMPLE_OPEN_OPTIONS : 'open the options dialog'
+    SIMPLE_FLIP_ICC_PROFILE_APPLICATION : 'apply image ICC Profile colour adjustments: flip on/off',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER : 'drawing transparency as checkerboard: flip on/off',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_MEDIA_VIEWER_DUPLICATE_FILTER : 'drawing transparency as checkerboard (duplicate filter): flip on/off',
+    SIMPLE_FLIP_TRANSPARENCY_CHECKERBOARD_GREENSCREEN : 'drawing transparency as greenscreen: flip on/off',
+    SIMPLE_OPEN_OPTIONS : 'open the options dialog',
+    SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP : 'window "always on top": flip on/off',
+    SIMPLE_WINDOW_ALWAYS_ON_TOP_ON : 'window "always on top": set on',
+    SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF : 'window "always on top": set off',
+    SIMPLE_WINDOW_FRAMELESS_FLIP : 'window "frameless": flip on/off',
+    SIMPLE_FLIP_THISWINDOW_SLIDESHOW_SHUFFLE : 'slideshow shuffle: override/flip for current window',
+    SIMPLE_FLIP_GLOBAL_SLIDESHOW_SHUFFLE : 'slideshow shuffle: flip global option (and apply to current window)',
+    SIMPLE_FLIP_THISWINDOW_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH: 'always play media once through: override/flip for current window',
+    SIMPLE_FLIP_GLOBAL_SLIDESHOW_ALWAYS_PLAY_DURATION_MEDIA_ONCE_THROUGH: 'always play media once through: flip global option (and apply to current window)',
 }
 
 legacy_simple_str_to_enum_lookup = {
@@ -568,6 +586,7 @@ legacy_simple_str_to_enum_lookup = {
 
 APPLICATION_COMMAND_TYPE_SIMPLE = 0
 APPLICATION_COMMAND_TYPE_CONTENT = 1
+APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT = 2
 
 class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
     
@@ -659,6 +678,18 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
             
             serialisable_data = ( service_key.hex(), content_type, action, value )
             
+        elif self._command_type == APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+            
+            ( service_key, content_type, action ) = self._data
+            
+            data_dict = HydrusSerialisable.SerialisableDictionary()
+            
+            data_dict[ 'service_key' ] = service_key.hex()
+            data_dict[ 'content_type' ] = content_type
+            data_dict[ 'action' ] = action
+            
+            serialisable_data = data_dict.GetSerialisableTuple()
+            
         else:
             
             raise NotImplementedError( 'Unknown command type!' )
@@ -702,6 +733,16 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                 
             
             self._data = ( bytes.fromhex( serialisable_service_key ), content_type, action, value )
+            
+        elif self._command_type == APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+            
+            data_dict = HydrusSerialisable.CreateFromSerialisableTuple( serialisable_data )
+            
+            service_key = bytes.fromhex( data_dict[ 'service_key' ] )
+            content_type = data_dict[ 'content_type' ]
+            action = data_dict[ 'action' ]
+            
+            self._data = ( service_key, content_type, action )
             
         
     
@@ -962,6 +1003,42 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
         return value
         
     
+    def GetInteractiveContentServiceKey( self ):
+        
+        if self._command_type != APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+            
+            raise Exception( 'Not an interactive content command!' )
+            
+        
+        ( service_key, content_type, action ) = self._data
+        
+        return service_key
+        
+    
+    def GetInteractiveContentType( self ):
+        
+        if self._command_type != APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+            
+            raise Exception( 'Not an interactive content command!' )
+            
+        
+        ( service_key, content_type, action ) = self._data
+        
+        return content_type
+        
+    
+    def GetInteractiveContentAction( self ):
+        
+        if self._command_type != APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+            
+            raise Exception( 'Not an interactive content command!' )
+            
+        
+        ( service_key, content_type, action ) = self._data
+        
+        return action
+        
+    
     def IsSimpleCommand( self ):
         
         return self._command_type == APPLICATION_COMMAND_TYPE_SIMPLE
@@ -970,6 +1047,11 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
     def IsContentCommand( self ):
         
         return self._command_type == APPLICATION_COMMAND_TYPE_CONTENT
+        
+    
+    def IsInteractiveContentCommand( self ):
+        
+        return self._command_type == APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT
         
     
     def ToString( self ):
@@ -1050,7 +1132,7 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                         
                         ipfs_service_key = hacky_ipfs_dict[ 'ipfs_service_key' ]
                         
-                        name = CG.client_controller.services_manager.GetName( ipfs_service_key )
+                        name = CG.client_controller.services_manager.GetNameSafe( ipfs_service_key )
                         
                     except Exception as e:
                         
@@ -1134,16 +1216,9 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                     
                 elif content_type == HC.CONTENT_TYPE_FILES and value is not None:
                     
-                    try:
-                        
-                        from_name = CG.client_controller.services_manager.GetName( value )
-                        
-                        value_string = '(from {})'.format( from_name )
-                        
-                    except Exception as e:
-                        
-                        value_string = ''
-                        
+                    from_name = CG.client_controller.services_manager.GetNameSafe( value )
+                    
+                    value_string = '(from {})'.format( from_name )
                     
                 elif value is not None:
                     
@@ -1164,20 +1239,17 @@ class ApplicationCommand( HydrusSerialisable.SerialisableBase ):
                     components.append( 'for' )
                     
                 
-                services_manager = CG.client_controller.services_manager
-                
-                if services_manager.ServiceExists( service_key ):
-                    
-                    service = services_manager.GetService( service_key )
-                    
-                    components.append( service.GetName() )
-                    
-                else:
-                    
-                    components.append( 'unknown service!' )
-                    
+                components.append( CG.client_controller.services_manager.GetNameSafe( service_key ) )
                 
                 return ' '.join( components )
+                
+            elif self._command_type == APPLICATION_COMMAND_TYPE_INTERACTIVE_CONTENT:
+                
+                ( service_key, content_type, action ) = self._data
+                
+                service_name = CG.client_controller.services_manager.GetNameSafe( service_key )
+                
+                return 'popup {} entry dialog for {}'.format( HC.content_type_string_lookup[ content_type ], service_name )
                 
             
         except Exception as e:

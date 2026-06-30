@@ -20,7 +20,6 @@ from hydrus.client import ClientPaths
 from hydrus.client import ClientPDFHandling
 from hydrus.client import ClientThreading
 from hydrus.client.files import ClientFilesMaintenance
-from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
@@ -32,12 +31,14 @@ from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsEdit
 from hydrus.client.gui.panels import ClientGUIScrolledPanelsReview
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaList
 from hydrus.client.media import ClientMediaResultPrettyInfo
+from hydrus.client.media import ClientMediaSingle
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientFileMigration
 from hydrus.client.metadata import ClientTags
 
-def ApplyContentApplicationCommandToMedia( win: QW.QWidget, command: CAC.ApplicationCommand, media: collections.abc.Collection[ ClientMedia.MediaSingleton ] ):
+def ApplyContentApplicationCommandToMedia( win: QW.QWidget, command: CAC.ApplicationCommand, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ] ):
     
     if not command.IsContentCommand():
         
@@ -194,7 +195,7 @@ def CopyHashesToClipboard( win: QW.QWidget, hash_type: str, medias: collections.
     
     desired_hashes = []
     
-    flat_media = ClientMedia.FlattenMedia( medias )
+    flat_media = ClientMediaList.FlattenMedia( medias )
     
     sha256_hashes = [ media.GetHash() for media in flat_media ]
     
@@ -283,7 +284,7 @@ def CopyHashesToClipboard( win: QW.QWidget, hash_type: str, medias: collections.
         
     
 
-def DoClearFileViewingStats( win: QW.QWidget, flat_medias: collections.abc.Collection[ ClientMedia.MediaSingleton ] ):
+def DoClearFileViewingStats( win: QW.QWidget, flat_medias: collections.abc.Collection[ ClientMediaSingle.MediaSingle ] ):
     
     if len( flat_medias ) == 0:
         
@@ -401,7 +402,7 @@ def EditDuplicateContentMergeOptions( win: QW.QWidget, duplicate_type: int ):
     
 
 
-def EditFileNotes( win: QW.QWidget, media: ClientMedia.MediaSingleton, name_to_start_on = str | None ):
+def EditFileNotes( win: QW.QWidget, media: ClientMediaSingle.MediaSingle, name_to_start_on = str | None ):
     
     names_to_notes = media.GetNotesManager().GetNamesToNotes()
     
@@ -429,7 +430,7 @@ def EditFileNotes( win: QW.QWidget, media: ClientMedia.MediaSingleton, name_to_s
         
     
 
-def EditFileTimestamps( win: QW.QWidget, ordered_medias: list[ ClientMedia.MediaSingleton ] ):
+def EditFileTimestamps( win: QW.QWidget, ordered_medias: list[ ClientMediaSingle.MediaSingle ] ):
     
     title = 'manage times'
     
@@ -502,7 +503,7 @@ def EditFileTimestamps( win: QW.QWidget, ordered_medias: list[ ClientMedia.Media
 
 def ExportFiles( win: QW.QWidget, medias: collections.abc.Collection[ ClientMedia.Media ], do_export_and_then_quit = False ):
     
-    flat_media = ClientMedia.FlattenMedia( medias )
+    flat_media = ClientMediaList.FlattenMedia( medias )
     
     flat_media = [ m for m in flat_media if m.GetLocationsManager().IsLocal() ]
     
@@ -516,7 +517,101 @@ def ExportFiles( win: QW.QWidget, medias: collections.abc.Collection[ ClientMedi
         
     
 
-def GetContentUpdatesForAppliedContentApplicationCommandRatingsSetFlip( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], rating: float | None, BLOCK_SIZE = None ):
+def GetContentApplicationCommandFromInteractiveContentCommand( win: QW.QWidget, command: CAC.ApplicationCommand, media: ClientMediaSingle.MediaSingle ) -> CAC.ApplicationCommand:
+    
+    if not command.IsInteractiveContentCommand():
+        
+        return command
+        
+    
+    service_key = command.GetInteractiveContentServiceKey()
+    content_type = command.GetInteractiveContentType()
+    
+    try:
+        
+        service = CG.client_controller.services_manager.GetService( service_key )
+        
+    except HydrusExceptions.DataMissing:
+        
+        return command
+        
+    
+    service_type = service.GetServiceType()
+    service_name = CG.client_controller.services_manager.GetNameSafe( service_key )
+    
+    if service_type in HC.REAL_TAG_SERVICES:
+        
+        try:
+            
+            recent_tags = CG.client_controller.Read( 'recent_tags', service_key )
+            last_tag = ''
+            
+            if recent_tags is not None:
+                
+                if len( recent_tags ) > 10:
+                    
+                    recent_tags = recent_tags[:10]
+                    
+                if len( recent_tags ) > 0:
+                    
+                    last_tag = recent_tags[0]
+                    
+                
+            
+            value = ClientGUIDialogsQuick.EnterText( win, message=f'Enter the tag to be added to \'{service_name}\'.', allow_whitespace = False, default = last_tag, suggestions = recent_tags )
+            
+        except HydrusExceptions.CancelledException:
+            
+            return command
+            
+        
+        CG.client_controller.Write( 'push_recent_tags', service_key, list( ( value, ) ) )
+        
+    elif service_type in HC.RATINGS_SERVICES:
+        
+        if service_type == HC.LOCAL_RATING_NUMERICAL:
+            
+            num_stars = service.GetNumStars()
+            
+            star_options = [ ( f'{i}', i, f'Set rating to {i}/{num_stars}.' ) for i in range( num_stars + 1 ) ]
+            
+            if not service.AllowZero():
+                
+                star_options = star_options[1:]
+                
+            
+            try:
+                
+                value = ClientGUIDialogsQuick.SelectFromListButtons( win, 'Select the rating to be applied.', star_options )
+                
+                value = service.ConvertStarsToRating( value )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return command
+                
+            
+        elif service_type == HC.LOCAL_RATING_INCDEC:
+            
+            old_value = media.GetRatingsManager().GetRating( service_key )
+            
+            try:
+                
+                value = ClientGUIDialogsQuick.EnterNumber( win, message=f'Enter the number to apply to \'{service_name}\'.', default = old_value, min_value = 0, max_value = 1000000 )
+                
+            except HydrusExceptions.CancelledException:
+                
+                return command
+                
+            
+        
+    
+    content_command = CAC.ApplicationCommand( CAC.APPLICATION_COMMAND_TYPE_CONTENT, ( service_key, content_type, HC.CONTENT_UPDATE_SET, value ) )
+    
+    return content_command
+    
+
+def GetContentUpdatesForAppliedContentApplicationCommandRatingsSetFlip( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ], rating: float | None, BLOCK_SIZE = None ):
     
     hashes = set()
     
@@ -571,7 +666,7 @@ def GetContentUpdatesForAppliedContentApplicationCommandRatingsSetFlip( service_
     return content_updates
     
 
-def GetContentUpdatesForAppliedContentApplicationCommandRatingsIncDec( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], BLOCK_SIZE = None ):
+def GetContentUpdatesForAppliedContentApplicationCommandRatingsIncDec( service_key: bytes, action: int, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ], BLOCK_SIZE = None ):
     
     if action == HC.CONTENT_UPDATE_INCREMENT:
         
@@ -620,7 +715,7 @@ def GetContentUpdatesForAppliedContentApplicationCommandRatingsIncDec( service_k
     return all_content_updates
     
 
-def GetContentUpdatesForAppliedContentApplicationCommandRatingsNumericalIncDec( service_key: bytes, one_star_value: float, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], BLOCK_SIZE = None ):
+def GetContentUpdatesForAppliedContentApplicationCommandRatingsNumericalIncDec( service_key: bytes, one_star_value: float, action: int, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ], BLOCK_SIZE = None ):
     
     if action == HC.CONTENT_UPDATE_INCREMENT:
         
@@ -683,7 +778,7 @@ def GetContentUpdatesForAppliedContentApplicationCommandRatingsNumericalIncDec( 
     return all_content_updates
     
 
-def GetContentUpdatesForAppliedContentApplicationCommandTags( win: QW.QWidget, service_key: bytes, service_type: int, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], tag: str, BLOCK_SIZE = None ):
+def GetContentUpdatesForAppliedContentApplicationCommandTags( win: QW.QWidget, service_key: bytes, service_type: int, action: int, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ], tag: str, BLOCK_SIZE = None ):
     
     hashes = set()
     
@@ -804,9 +899,9 @@ def GetContentUpdatesForAppliedContentApplicationCommandTags( win: QW.QWidget, s
     return content_updates
     
 
-def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action: int, media: collections.abc.Collection[ ClientMedia.MediaSingleton ], source_service_key: bytes | None = None ):
+def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action: int, media: collections.abc.Collection[ ClientMediaSingle.MediaSingle ], source_service_key: bytes | None = None ):
     
-    dest_service_name = CG.client_controller.services_manager.GetName( dest_service_key )
+    dest_service_name = CG.client_controller.services_manager.GetNameSafe( dest_service_key )
     
     applicable_media = [ m for m in media if m.GetLocationsManager().IsInCombinedLocalFileDomains() and m.GetMime() not in HC.HYDRUS_UPDATE_FILES ]
     
@@ -885,7 +980,7 @@ def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action:
                 
                 for potential_source_service_key in potential_move_source_service_keys:
                     
-                    potential_source_service_name = CG.client_controller.services_manager.GetName( potential_source_service_key )
+                    potential_source_service_name = CG.client_controller.services_manager.GetNameSafe( potential_source_service_key )
                     
                     if action == HC.CONTENT_UPDATE_MOVE:
                         
@@ -920,7 +1015,7 @@ def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action:
                 
             
         
-        source_service_name = CG.client_controller.services_manager.GetName( source_service_key )
+        source_service_name = CG.client_controller.services_manager.GetNameSafe( source_service_key )
         
         # source service name is done, now let's see if we have a merge/move difference
         
@@ -1104,14 +1199,76 @@ def RedownloadURLClassURLsForceRefetch( win: QW.QWidget, medias, url_class ):
     CG.client_controller.gui.RedownloadURLsForceFetch( urls )
     
 
+def set_files_forced_filetypes( single_medias: list[ ClientMediaSingle.MediaSingle ], forced_mime: int ):
+    
+    job_status = ClientThreading.JobStatus( cancellable = True )
+    
+    job_status.SetStatusTitle( 'forcing filetypes' )
+    
+    BLOCK_SIZE = 64
+    
+    pauser = HydrusThreading.BigJobPauser()
+    
+    if len( single_medias ) > BLOCK_SIZE:
+        
+        CG.client_controller.pub( 'message', job_status )
+        
+    
+    for ( num_done, num_to_do, block_of_media ) in HydrusLists.SplitListIntoChunksRich( single_medias, BLOCK_SIZE ):
+        
+        if job_status.IsCancelled():
+            
+            break
+            
+        
+        job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
+        job_status.SetGauge( num_done, num_to_do )
+        
+        hashes = { media.GetHash() for media in block_of_media }
+        
+        CG.client_controller.WriteSynchronous( 'force_filetype', hashes, forced_mime )
+        
+        hashes_we_needed_to_dupe = set()
+        
+        for media in block_of_media:
+            
+            hash = media.GetHash()
+            
+            current_mime = media.GetMime()
+            mime_to_move_to = forced_mime
+            
+            if mime_to_move_to is None:
+                
+                mime_to_move_to = media.GetFileInfoManager().GetOriginalMime()
+                
+            
+            needed_to_dupe_the_file = CG.client_controller.client_files_manager.ChangeFileExt( hash, current_mime, mime_to_move_to )
+            
+            if needed_to_dupe_the_file:
+                
+                hashes_we_needed_to_dupe.add( hash )
+                
+            
+        
+        if len( hashes_we_needed_to_dupe ) > 0:
+            
+            CG.client_controller.WriteSynchronous( 'file_maintenance_add_jobs_hashes', hashes_we_needed_to_dupe, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_DELETE_NEIGHBOUR_DUPES, HydrusTime.GetNow() + 3600 )
+            
+        
+        pauser.Pause()
+        
+    
+    job_status.FinishAndDismiss()
+    
+
 def SetFilesForcedFiletypes( win: QW.QWidget, medias: collections.abc.Collection[ ClientMedia.Media ] ):
     
     # boot a panel, it shows the user what current mimes are, what forced mimes are, and they have the choice to set all to x
     # if it comes back yes, we save to db
     
-    medias = ClientMedia.FlattenMedia( medias )
+    single_medias = ClientMediaList.FlattenMedia( medias )
     
-    file_info_managers = [ media.GetFileInfoManager() for media in medias ]
+    file_info_managers = [ media.GetFileInfoManager() for media in single_medias ]
     
     original_mimes_count = collections.Counter( file_info_manager.GetOriginalMime() for file_info_manager in file_info_managers )
     forced_mimes_count = collections.Counter( file_info_manager.mime for file_info_manager in file_info_managers if file_info_manager.FiletypeIsForced() )
@@ -1126,81 +1283,12 @@ def SetFilesForcedFiletypes( win: QW.QWidget, medias: collections.abc.Collection
             
             forced_mime = panel.GetValue()
             
-            def work_callable():
-                
-                job_status = ClientThreading.JobStatus( cancellable = True )
-                
-                job_status.SetStatusTitle( 'forcing filetypes' )
-                
-                BLOCK_SIZE = 64
-                
-                pauser = HydrusThreading.BigJobPauser()
-                
-                if len( medias ) > BLOCK_SIZE:
-                    
-                    CG.client_controller.pub( 'message', job_status )
-                    
-                
-                for ( num_done, num_to_do, block_of_media ) in HydrusLists.SplitListIntoChunksRich( medias, BLOCK_SIZE ):
-                    
-                    if job_status.IsCancelled():
-                        
-                        break
-                        
-                    
-                    job_status.SetStatusText( HydrusNumbers.ValueRangeToPrettyString( num_done, num_to_do ) )
-                    job_status.SetGauge( num_done, num_to_do )
-                    
-                    hashes = { media.GetHash() for media in block_of_media }
-                    
-                    CG.client_controller.WriteSynchronous( 'force_filetype', hashes, forced_mime )
-                    
-                    hashes_we_needed_to_dupe = set()
-                    
-                    for media in block_of_media:
-                        
-                        hash = media.GetHash()
-                        
-                        current_mime = media.GetMime()
-                        mime_to_move_to = forced_mime
-                        
-                        if mime_to_move_to is None:
-                            
-                            mime_to_move_to = media.GetFileInfoManager().GetOriginalMime()
-                            
-                        
-                        needed_to_dupe_the_file = CG.client_controller.client_files_manager.ChangeFileExt( hash, current_mime, mime_to_move_to )
-                        
-                        if needed_to_dupe_the_file:
-                            
-                            hashes_we_needed_to_dupe.add( hash )
-                            
-                        
-                    
-                    if len( hashes_we_needed_to_dupe ) > 0:
-                        
-                        CG.client_controller.WriteSynchronous( 'file_maintenance_add_jobs_hashes', hashes_we_needed_to_dupe, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_DELETE_NEIGHBOUR_DUPES, HydrusTime.GetNow() + 3600 )
-                        
-                    
-                    pauser.Pause()
-                    
-                
-                job_status.FinishAndDismiss()
-                
-            
-            def publish_callable( result ):
-                
-                pass
-                
-            
-            job = ClientGUIAsync.AsyncQtJob( win, work_callable, publish_callable )
-            
-            job.start()
+            CG.client_controller.CallToThread( set_files_forced_filetypes, single_medias, forced_mime )
             
         
     
 
-def ShowFileEmbeddedMetadata( win: QW.QWidget, media: ClientMedia.MediaSingleton ):
+def ShowFileEmbeddedMetadata( win: QW.QWidget, media: ClientMediaSingle.MediaSingle ):
     
     info_lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( media.GetMediaResult() )
     

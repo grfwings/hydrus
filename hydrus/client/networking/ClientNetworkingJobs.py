@@ -22,9 +22,10 @@ from hydrus.core.processes import HydrusThreading
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientTime
+from hydrus.client.networking import ClientNetworkingConstants as CNC
 from hydrus.client.networking import ClientNetworkingContexts
 from hydrus.client.networking import ClientNetworkingFunctions
-from hydrus.client.networking import ClientNetworkingDomainSettings
+from hydrus.client.networking import ClientNetworkingSessions
 
 from hydrus.client.importing.options import FileFilteringImportOptions
 
@@ -561,6 +562,8 @@ class NetworkJob( object ):
         
         num_bytes_read_before_this_response = self._num_bytes_read
         
+        total_bytes_read_in_this_response = 0
+        
         for chunk in response.iter_content( chunk_size = 65536 ):
             
             if self._IsCancelled():
@@ -570,8 +573,18 @@ class NetworkJob( object ):
             
             stream_dest.write( chunk )
             
-            # get the raw bytes read, not the length of the chunk, as there may be transfer-encoding (chunked, gzip etc...)
-            total_bytes_read_in_this_response = response.raw.tell()
+            if hasattr( response, 'raw' ):
+                
+                # get the raw bytes read, not the length of the chunk, as there may be transfer-encoding (chunked, gzip etc...)
+                total_bytes_read_in_this_response = response.raw.tell()
+                
+            else:
+                
+                # ok well. curl_cffi has no raw for now
+                total_bytes_read_in_this_response += len( chunk )
+                
+                self._num_bytes_read_is_accurate = False
+                
             
             if total_bytes_read_in_this_response == 0:
                 
@@ -801,6 +814,8 @@ class NetworkJob( object ):
             
         
         session = self.engine.session_manager.GetSession( snc )
+        
+        ClientNetworkingSessions.CleanseHeadersForSession( session, headers )
         
         ( connect_timeout, read_timeout ) = self._GetTimeouts()
         
@@ -1602,7 +1617,7 @@ class NetworkJob( object ):
                                 
                                 num_seconds_to_wait = int( retry_after )
                                 
-                            except Exception as e:
+                            except Exception as e_retry_after:
                                 
                                 try:
                                     
@@ -1610,7 +1625,7 @@ class NetworkJob( object ):
                                     
                                     num_seconds_to_wait = min( max( 60, timestamp - HydrusTime.GetNow() ), 86400 )
                                     
-                                except Exception as e:
+                                except Exception as e_retry_after_2:
                                     
                                     HydrusData.Print( f'Was given an unparsable Retry-After of {retry_after}!' )
                                     
@@ -1622,7 +1637,7 @@ class NetworkJob( object ):
                     
                     if self._CanReattemptRequest():
                         
-                        self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_SERVERSIDE_BANDWIDTH )
+                        self.engine.domain_manager.ReportDomainEvent( self._url, CNC.NETWORK_CONTEXT_EVENT_SERVERSIDE_BANDWIDTH )
                         
                     else:
                         
@@ -1680,7 +1695,7 @@ class NetworkJob( object ):
                     
                     if self._CanReattemptConnection():
                         
-                        self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
+                        self.engine.domain_manager.ReportDomainEvent( self._url, CNC.NETWORK_CONTEXT_EVENT_NETWORK_INFRASTRUCTURE )
                         
                     else:
                         
@@ -1711,7 +1726,7 @@ class NetworkJob( object ):
                         
                         if self._CanReattemptConnection():
                             
-                            self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
+                            self.engine.domain_manager.ReportDomainEvent( self._url, CNC.NETWORK_CONTEXT_EVENT_NETWORK_INFRASTRUCTURE )
                             
                         else:
                             
@@ -1756,7 +1771,7 @@ class NetworkJob( object ):
                 
                 if isinstance( e, HydrusExceptions.NetworkInfrastructureException ):
                     
-                    self.engine.domain_manager.ReportDomainEvent( self._url, ClientNetworkingDomainSettings.DOMAIN_EVENT_NETWORK_INFRASTRUCTURE )
+                    self.engine.domain_manager.ReportDomainEvent( self._url, CNC.NETWORK_CONTEXT_EVENT_NETWORK_INFRASTRUCTURE )
                     
                 
                 self._status_text = 'Error: ' + str( e )

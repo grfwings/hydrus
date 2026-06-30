@@ -23,12 +23,15 @@ from hydrus.client.gui import ClientGUIExceptionHandling
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUIShortcuts
+from hydrus.client.gui import ClientGUITopLevelWindows
 from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUIMPV
 from hydrus.client.gui.canvas import ClientGUIQtMediaPlayer
-from hydrus.client.gui.media import ClientGUIMediaControls
+from hydrus.client.gui.canvas import ClientGUITransparency
+from hydrus.client.gui.media import ClientGUIMediaControls, ClientGUIMediaVolume
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
+from hydrus.client.media import ClientMediaSingle
 
 ZOOM_CENTERPOINT_MEDIA_CENTER = 0
 ZOOM_CENTERPOINT_VIEWER_CENTER = 1
@@ -386,6 +389,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._num_frames = 1
         
         self._frame_durations_ms = None
+        self._duration_ms = None
         
         self._stop_for_slideshow = False
         
@@ -538,69 +542,19 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
             if CG.client_controller.new_options.GetBoolean( 'draw_transparency_checkerboard_as_greenscreen' ):
                 
-                neon_greenscreen = QG.QColor( 34, 255, 0 )
-                
-                painter.setBackground( QG.QBrush( neon_greenscreen ) )
-                
-                painter.eraseRect( painter.viewport() )
+                brush = ClientGUITransparency.MakeGreenscreenBrush()
                 
             else:
                 
-                light_grey = QG.QColor( 237, 237, 237 )
-                dark_grey = QG.QColor( 222, 222, 222 )
-                
-                painter.setBackground( QG.QBrush( light_grey ) )
-                
-                painter.eraseRect( painter.viewport() )
-                
-                # 16x16 boxes, light grey in top right
-                BOX_LENGTH = int( 16 * self.devicePixelRatio() )
-                
-                painter_width = painter.viewport().width()
-                painter_height = painter.viewport().height()
-                
-                num_cols = painter_width // BOX_LENGTH
-                
-                if painter_width % BOX_LENGTH > 0:
-                    
-                    num_cols += 1
-                    
-                
-                num_rows = painter_height // BOX_LENGTH
-                
-                if painter_height % BOX_LENGTH > 0:
-                    
-                    num_rows += 1
-                    
-                
-                painter.setBrush( QG.QBrush( dark_grey ) )
-                painter.setPen( QG.QPen( QC.Qt.PenStyle.NoPen ) )
-                
-                for y_index in range( num_rows ):
-                    
-                    for x_index in range( num_cols ):
-                        
-                        if ( x_index + y_index ) % 2 == 1:
-                            
-                            rect = QC.QRect( x_index * BOX_LENGTH, y_index * BOX_LENGTH, BOX_LENGTH, BOX_LENGTH )
-                            
-                            if painter.viewport().intersects( rect ):
-                                
-                                painter.drawRect( rect )
-                                
-                            
-                        
-                    
-                
-                self._have_drawn_background_once = True
+                brush = ClientGUITransparency.MakeCheckerboardBrush( int( 16 * self.devicePixelRatio() ) )
                 
             
-            return
+        else:
+            
+            brush = QG.QBrush( self._background_colour_generator.GetColour() )
             
         
-        colour = self._background_colour_generator.GetColour()
-        
-        painter.setBackground( QG.QBrush( colour ) )
+        painter.setBackground( brush )
         
         painter.eraseRect( painter.viewport() )
         
@@ -818,7 +772,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._stop_for_slideshow = value
         
     
-    def SetMedia( self, media: ClientMedia.MediaSingleton | None, start_paused = False ):
+    def SetMedia( self, media: ClientMediaSingle.MediaSingle | None, start_paused = False ):
         
         if media == self._media:
             
@@ -977,6 +931,7 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
+
 class AnimationBar( QW.QWidget ):
     
     def __init__( self, parent ):
@@ -1210,7 +1165,7 @@ class AnimationBar( QW.QWidget ):
         
         my_width = self.size().width()
         
-        mouse_pos = self.mapFromGlobal( QG.QCursor.pos() )
+        mouse_pos = self.mapFromGlobal( ClientGUIFunctions.GetMousePos() )
         
         animated_scanbar_nub_width = CG.client_controller.new_options.GetInteger( 'animated_scanbar_nub_width' )
         
@@ -1532,6 +1487,9 @@ class MediaContainer( QW.QWidget ):
         
         self._animation_bar = AnimationBar( self._controls_bar )
         self._volume_control = ClientGUIMediaControls.VolumeControl( self._controls_bar, self._canvas_type, direction = 'up' )
+        
+        self._this_container_muted_state = ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type )
+        self._volume_control.muteChanged.connect( self._UpdateMediaWindowMute )
         
         self._volume_control.setCursor( QC.Qt.CursorShape.ArrowCursor )
         
@@ -2080,7 +2038,7 @@ class MediaContainer( QW.QWidget ):
                 
             elif zoom_center_type == ZOOM_CENTERPOINT_MOUSE:
                 
-                mouse_pos = self.parentWidget().mapFromGlobal( QG.QCursor.pos() )
+                mouse_pos = self.parentWidget().mapFromGlobal( ClientGUIFunctions.GetMousePos() )
                 
                 if self.parent().rect().contains( mouse_pos ):
                     
@@ -2110,6 +2068,21 @@ class MediaContainer( QW.QWidget ):
         if new_zoom > self._zoom_types_to_zooms[ MEDIA_VIEWER_ZOOM_TYPE_CANVAS ]:
             
             self.update()
+            
+        
+    
+    def _UpdateMediaWindowMute( self, mute_state ):
+        
+        muteable_window_classes = ( ClientGUIMPV.MPVWidget, ClientGUIQtMediaPlayer.QtMediaPlayer )
+        
+        if mute_state is not None:
+            
+            self._this_container_muted_state = mute_state
+            
+        
+        if isinstance( self._media_window, muteable_window_classes ):
+            
+            self._media_window.UpdateAudioMute( mute_state = mute_state )
             
         
     
@@ -2363,6 +2336,17 @@ class MediaContainer( QW.QWidget ):
         return self._current_zoom == max_zoom or self.width() == max_zoom_dimension or self.height() == max_zoom_dimension
         
     
+    def IsMuted( self ):
+        
+        if isinstance( self._media_window, ( ClientGUIMPV.MPVWidget, ClientGUIQtMediaPlayer.QtMediaPlayer ) ):
+            
+            return self._media_window.IsMuted()
+            
+        else:
+            
+            return ClientGUIMediaVolume.GetCorrectCurrentMute( self._canvas_type )
+        
+    
     def IsPaused( self ):
         
         if self.CurrentlyPresentingMediaWithDuration():
@@ -2397,16 +2381,14 @@ class MediaContainer( QW.QWidget ):
         
         if ShouldHaveAnimationBar( self._media, self._show_action ):
             
-            canvas_widget = self.parentWidget()
-            
-            if not ClientGUIFunctions.MouseIsOverWidget( canvas_widget ):
+            if not ClientGUIFunctions.MouseIsOverWidget( self._canvas ):
                 
                 return False
                 
             
             # there's some minor update stuff here now the scanbar can be hidden. its geometry may not update until later, so we need to map coordinates from widgets we know are in view instead!
             
-            container_mouse_pos = self.mapFromGlobal( QG.QCursor.pos() )
+            container_mouse_pos = self.mapFromGlobal( ClientGUIFunctions.GetMousePos() )
             
             controls_bar_rect = self.GetIdealControlsBarRect()
             
@@ -2558,7 +2540,7 @@ class MediaContainer( QW.QWidget ):
         self._static_image_window.SetBackgroundColourGenerator( self._background_colour_generator )
         
     
-    def SetMedia( self, media: ClientMedia.MediaSingleton, maintain_zoom, maintain_zoom_type, maintain_pan, start_paused = None ):
+    def SetMedia( self, media: ClientMediaSingle.MediaSingle, maintain_zoom, maintain_zoom_type, maintain_pan, start_paused = None ):
         
         if not self.ReadyToSwitchMedia():
             
@@ -2629,6 +2611,8 @@ class MediaContainer( QW.QWidget ):
             self._media_window.show()
             
         
+        CG.client_controller.CallAfterQtSafe( self, self._UpdateMediaWindowMute, self._this_container_muted_state )
+        
         CG.client_controller.gui.RegisterUIUpdateWindow( self )
         
         self.show()
@@ -2678,7 +2662,12 @@ class MediaContainer( QW.QWidget ):
         window_geometry = self.window().geometry()
         title_bar_offset = frame_geometry.top() - window_geometry.top()
         
-        adjusted_pos = QC.QPoint(media_win_pos.x(), media_win_pos.y() + title_bar_offset)
+        adjusted_pos = QC.QPoint( media_win_pos.x(), media_win_pos.y() + title_bar_offset )
+        
+        if not CG.client_controller.new_options.GetBoolean( 'disable_get_safe_position_test' ):
+            
+            ( adjusted_pos, silenced_message ) = ClientGUITopLevelWindows.GetSafePosition( adjusted_pos, 'media_window_size_self_to_media' )
+            
         
         self.window().showNormal()
         
@@ -2749,7 +2738,12 @@ class MediaContainer( QW.QWidget ):
             
         
     
-    def ZoomMaintainingZoom( self, previous_media: ClientMedia.MediaSingleton ):
+    def UpdateMediaWindowMute( self, mute_state ):
+        
+        self._UpdateMediaWindowMute( mute_state )
+        
+    
+    def ZoomMaintainingZoom( self, previous_media: ClientMediaSingle.MediaSingle ):
         
         if self._media is None:
             
@@ -3273,13 +3267,22 @@ class EmbedButton( QW.QWidget ):
         
         if needs_thumb:
             
-            thumbnail_path = CG.client_controller.client_files_manager.GetThumbnailPath( self._media.GetDisplayMedia().GetMediaResult() )
+            display_media_result = self._media.GetDisplayMediaResult()
             
-            thumbnail_mime = HydrusFileHandling.GetThumbnailMime( thumbnail_path )
-            
-            self._thumbnail_qt_pixmap = ClientRendering.GenerateHydrusBitmap( thumbnail_path, thumbnail_mime ).GetQtPixmap()
-            
-            self.update()
+            if display_media_result is None:
+                
+                self._thumbnail_qt_pixmap = None
+                
+            else:
+                
+                thumbnail_path = CG.client_controller.client_files_manager.GetThumbnailPath( display_media_result )
+                
+                thumbnail_mime = HydrusFileHandling.GetThumbnailMime( thumbnail_path )
+                
+                self._thumbnail_qt_pixmap = ClientRendering.GenerateHydrusBitmap( thumbnail_path, thumbnail_mime ).GetQtPixmap()
+                
+                self.update()
+                
             
         else:
             
@@ -3302,23 +3305,28 @@ class OpenExternallyPanel( QW.QWidget ):
         
         if self._media.GetLocationsManager().IsLocal():
             
-            qt_pixmap = CG.client_controller.thumbnails_cache.GetThumbnail( media.GetDisplayMedia().GetMediaResult() ).GetQtPixmap()
+            display_media_result = media.GetDisplayMediaResult()
             
-            thumbnail_dpr_percent = CG.client_controller.new_options.GetInteger( 'thumbnail_dpr_percent' )
-            
-            if thumbnail_dpr_percent != 100:
+            if display_media_result is not None:
                 
-                qt_pixmap.setDevicePixelRatio( thumbnail_dpr_percent / 100 )
+                qt_pixmap = CG.client_controller.thumbnails_cache.GetThumbnail( display_media_result ).GetQtPixmap()
                 
-            
-            if qt_pixmap.width() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0] or qt_pixmap.height() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1]:
+                thumbnail_dpr_percent = CG.client_controller.new_options.GetInteger( 'thumbnail_dpr_percent' )
                 
-                qt_pixmap.scaled( OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0], OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1], QC.Qt.AspectRatioMode.KeepAspectRatio, QC.Qt.TransformationMode.SmoothTransformation )
+                if thumbnail_dpr_percent != 100:
+                    
+                    qt_pixmap.setDevicePixelRatio( thumbnail_dpr_percent / 100 )
+                    
                 
-            
-            thumbnail_window = QW.QLabel( self, pixmap = qt_pixmap )
-            
-            QP.AddToLayout( vbox, thumbnail_window, CC.FLAGS_CENTER )
+                if qt_pixmap.width() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0] or qt_pixmap.height() > OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1]:
+                    
+                    qt_pixmap.scaled( OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[0], OPEN_EXTERNALLY_MAX_THUMBNAIL_SIZE[1], QC.Qt.AspectRatioMode.KeepAspectRatio, QC.Qt.TransformationMode.SmoothTransformation )
+                    
+                
+                thumbnail_window = QW.QLabel( self, pixmap = qt_pixmap )
+                
+                QP.AddToLayout( vbox, thumbnail_window, CC.FLAGS_CENTER )
+                
             
         
         m_text = HC.mime_string_lookup[ media.GetMime() ]

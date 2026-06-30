@@ -8,7 +8,7 @@ try:
     
     # For Russian and Polish and some other 24-hour-only systems, it is highly important this happens before Qt and mpv get their teeth into things
     # it establishes some timezone cache that requires the locale to be clean
-    # I don't know if it needs to be before locale.setlocale, but I know that it works if it does
+    # I don't know if it needs to be before locale.setlocale too, but I know that it works if it does
     import dateparser
     
 except Exception as e:
@@ -28,10 +28,10 @@ except Exception as e:
     
 
 import sys
+import os
 
 try:
     
-    import os
     import argparse
     
     from hydrus.core import HydrusBoot
@@ -68,6 +68,7 @@ try:
     argparser.add_argument( '--profile_mode', action='store_true', help = 'start the program with profile mode (db) on, capturing boot performance' )
     argparser.add_argument( '--pause_network_traffic', action='store_true', help = 'start the program with all new network traffic paused' )
     argparser.add_argument( '--win_qt_darkmode_test', action='store_true', help = 'Windows only: Try Qt\'s automatic darkmode recognition.' )
+    argparser.add_argument( '--no_qt_multimedia', action='store_true', help = 'Do not attempt to load QtMedia.' )
     argparser.add_argument( '--no_wal', action='store_true', help = 'OBSOLETE: run using TRUNCATE db journaling' )
     argparser.add_argument( '--db_memory_journaling', action='store_true', help = 'OBSOLETE: run using MEMORY db journaling (DANGEROUS)' )
     
@@ -123,6 +124,13 @@ try:
     
     HG.no_db_temp_files = result.no_db_temp_files
     
+    if result.no_qt_multimedia:
+        
+        from hydrus.client import ClientGlobals as CG
+        
+        CG.NO_QT_MULTIMEDIA = True
+        
+    
     HG.boot_debug = result.boot_debug
     
     from hydrus.core import HydrusStaticDir
@@ -164,7 +172,7 @@ try:
     
 except Exception as e:
     
-    title = 'Critical boot error occurred! Details written to crash.log in either your db dir, userdir, or desktop!'
+    title = 'Critical boot error occurred! Details written to hydrus_crash.log in either your db dir, userdir, or desktop!'
     
     import traceback
     
@@ -247,16 +255,6 @@ def boot():
             
             HydrusData.Print( 'hydrus client started' )
             
-            if not HG.twisted_is_broke:
-                
-                import threading
-                
-                # noinspection PyUnresolvedReferences
-                target = reactor.run
-                
-                threading.Thread( target = target, name = 'twisted', kwargs = { 'installSignalHandlers' : 0 } ).start()
-                
-            
             from hydrus.client import ClientController
             
             controller = ClientController.Controller( db_dir, logger )
@@ -282,13 +280,25 @@ def boot():
                 controller.pubimmediate( 'wake_daemons' )
                 
             
-            if not HG.twisted_is_broke:
+            if HG.shutdown_report_mode:
                 
-                # noinspection PyUnresolvedReferences
-                target = reactor.stop
+                import time
                 
-                # noinspection PyUnresolvedReferences
-                reactor.callFromThread( target )
+                time.sleep( 1 )
+                
+                import threading
+                
+                print( 'Hey, printing alive threads for shutdown report:' )
+                
+                for t in threading.enumerate():
+                    
+                    if not t.is_alive():
+                        
+                        continue
+                        
+                    
+                    print( f'{t.name}: daemon: {t.daemon}' )
+                    
                 
             
             HydrusData.Print( 'hydrus client shut down' )

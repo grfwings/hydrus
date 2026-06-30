@@ -128,7 +128,7 @@ def MakeSomeFakePetitions( service_key: bytes ):
                 
                 from hydrus.client.media import ClientMediaResult
                 
-                for i in range( random.randint( 4, 15 ) ):
+                for j in range( random.randint( 4, 15 ) ):
                     
                     some_media_results = random.sample( cached_local_media_results, 64 )
                     
@@ -1220,7 +1220,7 @@ class SidebarPetitions( ClientGUISidebarCore.Sidebar ):
             media_results = CG.client_controller.Read( 'media_results', hashes )
             
         
-        panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
+        panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
         
         panel.Collect( self._media_collect_widget.GetValue() )
         

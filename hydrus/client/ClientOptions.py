@@ -12,11 +12,14 @@ from hydrus.core import HydrusTags
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.importing.options import FileFilteringImportOptions
 from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
 from hydrus.client.importing.options import LocationImportOptions
 from hydrus.client.importing.options import PrefetchImportOptions
+from hydrus.client.metadata import ClientMetadataMigration
 
 class ClientOptions( HydrusSerialisable.SerialisableBase ):
     
@@ -151,7 +154,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'use_native_menubar' : HC.PLATFORM_MACOS,
             'shortcuts_merge_non_number_numpad' : True,
             'disable_get_safe_position_test' : False,
-            'save_window_size_and_position_on_close' : False,
+            'fuzzy_relocate_on_get_safe_position_test' : True,
+            'fuzzy_relocate_on_get_safe_position_test_only_for_self_sizing_media_viewer_canvas' : False,
+            'save_media_viewer_window_size_and_position_on_close' : False,
             'freeze_message_manager_when_mouse_on_other_monitor' : False,
             'freeze_message_manager_when_main_gui_minimised' : False,
             'load_images_with_pil' : True,
@@ -281,6 +286,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'disable_tags_hover_in_media_viewer': False,
             'disable_top_right_hover_in_media_viewer': False,
             'disable_notes_hover_in_media_viewer': False,
+            'collapse_eye_menu_window' : True,
+            'collapse_eye_menu_hovers' : True,
+            'collapse_eye_menu_rendering' : True,
             'media_viewer_window_always_on_top': False,
             'media_viewer_lock_current_zoom_type': False,
             'media_viewer_lock_current_zoom': False,
@@ -338,6 +346,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'use_legacy_mpv_mediator' : False,
             'potential_duplicate_pairs_search_context_panel_stops_to_estimate' : True,
             'potential_duplicate_pairs_search_can_do_file_search_based_optimisation' : True,
+            'potential_duplicate_pairs_search_starts_paused' : False,
             'manage_tags_show_deleted_mappings' : False,
             'mpv_destruction_test' : False,
             'hover_window_duplicates_always_on_top' : True,
@@ -355,6 +364,9 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'import_options_simple_mode' : True,
             'qt_media_player_null_audio_on_silent_media' : False,
             'mpv_null_audio_on_silent_media' : False,
+            'mpv_allow_crashy_files_silently' : False,
+            'test_thumbnails_graphics_view' : False,
+            'copy_import_files_to_temp_dir' : True,
         }
         
         #
@@ -452,7 +464,6 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         from hydrus.core.files.images import HydrusImageHandling
         from hydrus.core.files.images import HydrusImageColours
         from hydrus.client.metadata import ClientTags
-        from hydrus.client.importing.options import ImportOptionsContainer
         
         self._dictionary[ 'integers' ] = {
             'notebook_tab_alignment' : CC.DIRECTION_UP,
@@ -516,6 +527,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'thumbnail_border' : 1,
             'thumbnail_margin' : 2,
             'thumbnail_dpr_percent' : 100,
+            'forgive_frame_gubbins_fuzzy_padding' : 40,
             'file_maintenance_idle_throttle_files' : 1,
             'file_maintenance_idle_throttle_time_delta' : 2,
             'file_maintenance_active_throttle_files' : 1,
@@ -573,7 +585,15 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'tag_list_tag_display_type_sidebar' : ClientTags.TAG_DISPLAY_SELECTION_LIST,
             'tag_list_tag_display_type_media_viewer_hover' : ClientTags.TAG_DISPLAY_SINGLE_MEDIA,
             'command_palette_num_chars_for_results_threshold' : 1,
-            'last_selected_import_options_container_panel_options_type' : ImportOptionsContainer.IMPORT_OPTIONS_TYPE_TAGS
+            'last_selected_import_options_container_panel_options_type' : IOC.IMPORT_OPTIONS_TYPE_TAGS,
+            'thread_slots_misc' : 10,
+            'thread_slots_gallery_files' : 15,
+            'thread_slots_gallery_search' : 5,
+            'thread_slots_watcher_files' : 15,
+            'thread_slots_watcher_check' : 5,
+            'ffmpeg_subprocess_timeout' : 15,
+            'media_viewer_tags_scrolling_behaviour' : CC.MEDIA_VIEWER_TAGS_SCROLLING_BEHAVIOUR_ONLY_PROPAGATE_AFTER_DELAY,
+            'zoom_switch_command' : CAC.SIMPLE_SWITCH_BETWEEN_100_PERCENT_AND_CANVAS_ZOOM,
         }
         
         self._dictionary[ 'floats' ] = {
@@ -659,6 +679,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             'qt_media_player_preferred_audio_device_name' : None,
             'qt_media_player_preferred_audio_device_id_hex' : None,
             'mpv_preferred_audio_device' : None,
+            'curl_cffi_definition' : None, # this guy is going to end up in the new network context settings for 'global' 
         }
         
         self._dictionary[ 'strings' ] = {
@@ -716,13 +737,13 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         #
         
-        from hydrus.client.media import ClientMedia
+        from hydrus.client.media import ClientMediaSort
         from hydrus.client.metadata import ClientTags
         
         default_namespace_sorts = HydrusSerialisable.SerialisableList()
         
-        default_namespace_sorts.append( ClientMedia.MediaSort( sort_type = ( 'namespaces', ( ( 'series', 'creator', 'title', 'volume', 'chapter', 'page' ), ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) ) ) )
-        default_namespace_sorts.append( ClientMedia.MediaSort( sort_type = ( 'namespaces', ( ( 'creator', 'series', 'title', 'volume', 'chapter', 'page' ), ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) ) ) )
+        default_namespace_sorts.append( ClientMediaSort.MediaSort( sort_type = ( 'namespaces', ( ( 'series', 'creator', 'title', 'volume', 'chapter', 'page' ), ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) ) ) )
+        default_namespace_sorts.append( ClientMediaSort.MediaSort( sort_type = ( 'namespaces', ( ( 'creator', 'series', 'title', 'volume', 'chapter', 'page' ), ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL ) ) ) )
         
         self._dictionary[ 'default_namespace_sorts' ] = default_namespace_sorts
         
@@ -872,13 +893,15 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         self._dictionary[ 'frame_locations' ][ 'regular_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'review_services' ] = ( False, True, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'deeply_nested_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'topleft', False, False )
-        self._dictionary[ 'frame_locations' ][ 'regular_center_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'center', False, False )
         self._dictionary[ 'frame_locations' ][ 'file_history_chart' ] = ( True, True, ( 960, 720 ), None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'mr_bones' ] = ( True, True, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'manage_urls_dialog' ] = ( True, True, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'manage_times_dialog' ] = ( True, True, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'manage_notes_dialog' ] = ( True, True, None, None, ( -1, -1 ), 'topleft', False, False )
         self._dictionary[ 'frame_locations' ][ 'export_files_frame' ] = ( True, True, None, None, ( -1, -1 ), 'topleft', False, False )
+        self._dictionary[ 'frame_locations' ][ 'quick_select_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'center', False, False )
+        self._dictionary[ 'frame_locations' ][ 'quick_yesno_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'center', False, False )
+        self._dictionary[ 'frame_locations' ][ 'quick_entry_dialog' ] = ( False, False, None, None, ( -1, -1 ), 'center', False, False )
         
         #
         
@@ -912,12 +935,13 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
         
         #
         
-        from hydrus.client.media import ClientMedia
+        from hydrus.client.media import ClientMediaCollect
+        from hydrus.client.media import ClientMediaSort
         
-        self._dictionary[ 'default_sort' ] = ClientMedia.MediaSort( ( 'system', CC.SORT_FILES_BY_FILESIZE ), CC.SORT_ASC )
-        self._dictionary[ 'fallback_sort' ] = ClientMedia.MediaSort( ( 'system', CC.SORT_FILES_BY_IMPORT_TIME ), CC.SORT_ASC )
+        self._dictionary[ 'default_sort' ] = ClientMediaSort.MediaSort( ( 'system', CC.SORT_FILES_BY_FILESIZE ), CC.SORT_ASC )
+        self._dictionary[ 'fallback_sort' ] = ClientMediaSort.MediaSort( ( 'system', CC.SORT_FILES_BY_IMPORT_TIME ), CC.SORT_ASC )
         
-        self._dictionary[ 'default_collect' ] = ClientMedia.MediaCollect()
+        self._dictionary[ 'default_collect' ] = ClientMediaCollect.MediaCollect()
         
         #
         
@@ -1113,7 +1137,6 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
                 
                 default_neighbouring_txt_tag_service_keys = [ bytes.fromhex( hex_key ) for hex_key in encoded_default_neighbouring_txt_tag_service_keys ]
                 
-                from hydrus.client.metadata import ClientMetadataMigration
                 from hydrus.client.metadata import ClientMetadataMigrationExporters
                 from hydrus.client.metadata import ClientMetadataMigrationImporters
                 
@@ -1213,6 +1236,27 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
+    def DeleteDefaultFileImportOptions( self ):
+        
+        with self._lock:
+            
+            del self._dictionary[ 'default_file_import_options' ]
+            
+        
+    
+    def DeleteFrameLocation( self, frame_key ):
+        
+        with self._lock:
+            
+            frame_locations = self._dictionary[ 'frame_locations' ]
+            
+            if frame_key in frame_locations:
+                
+                del frame_locations[ frame_key ]
+                
+            
+        
+    
     def FlipBoolean( self, name ):
         
         with self._lock:
@@ -1290,7 +1334,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetDefaultExportFilesMetadataRouters( self ):
+    def GetDefaultExportFilesMetadataRouters( self ) -> list[ ClientMetadataMigration.SingleFileMetadataRouter ]:
         
         with self._lock:
             
@@ -1598,7 +1642,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetNoneableString( self, name ):
+    def GetNoneableString( self, name ) -> str | None:
         
         with self._lock:
             
@@ -1722,7 +1766,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def GetSuggestedTagsFavourites( self, service_key ):
+    def GetSuggestedTagsMostUsed( self, service_key ):
         
         with self._lock:
             
@@ -2162,7 +2206,7 @@ class ClientOptions( HydrusSerialisable.SerialisableBase ):
             
         
     
-    def SetSuggestedTagsFavourites( self, service_key, tags ):
+    def SetSuggestedTagsMostUsed( self, service_key, tags ):
         
         with self._lock:
             

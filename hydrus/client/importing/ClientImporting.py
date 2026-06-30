@@ -1,6 +1,5 @@
 import random
 
-from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusText
@@ -9,9 +8,9 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.importing import ClientImportFileSeeds
-from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
+from hydrus.client.importing.options import ImportOptionsContainer
 from hydrus.client.networking import ClientNetworkingJobs
-from hydrus.client.parsing import ClientParsingResults
 
 CHECKER_STATUS_OK = 0
 CHECKER_STATUS_DEAD = 1
@@ -36,35 +35,6 @@ downloader_enum_sort_lookup = {
 DID_SUBSTANTIAL_FILE_WORK_MINIMUM_SLEEP_TIME = 0.1
 
 REPEATING_JOB_TYPICAL_PERIOD = 30.0
-
-def ConvertParsedPostsToFileSeeds( parsed_posts: list[ ClientParsingResults.ParsedPost ], source_url: str, file_import_options: FileImportOptionsLegacy.FileImportOptionsLegacy ):
-    
-    file_seeds = []
-    
-    seen_urls = set()
-    
-    for parsed_post in parsed_posts:
-        
-        parsed_urls = parsed_post.GetURLs( ( HC.URL_TYPE_DESIRED, ), only_get_top_priority = True )
-        
-        parsed_urls = [ url for url in parsed_urls if url not in seen_urls ]
-        
-        seen_urls.update( parsed_urls )
-        
-        for url in parsed_urls:
-            
-            file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
-            
-            file_seed.SetReferralURL( source_url )
-            
-            file_seed.AddParsedPost( parsed_post, file_import_options )
-            
-            file_seeds.append( file_seed )
-            
-        
-    
-    return file_seeds
-    
 
 def GenerateMultiplePopupNetworkJobPresentationContextFactory( job_status ):
     
@@ -136,9 +106,6 @@ def THREADDownloadURL( job_status, url, url_string ):
     
     #
     
-    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-    file_import_options.SetIsDefault( True )
-    
     def network_job_factory( *args, **kwargs ):
         
         network_job = ClientNetworkingJobs.NetworkJob( *args, **kwargs )
@@ -157,11 +124,15 @@ def THREADDownloadURL( job_status, url, url_string ):
     
     file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
     
+    import_options_container = ImportOptionsContainer.ImportOptionsContainer()
+    
+    full_import_options_container = CG.client_controller.import_options_manager.GenerateFullImportOptionsContainer( import_options_container, IOC.IMPORT_OPTIONS_CALLER_TYPE_POST_URLS, urls = file_seed.GetURLsForOptionsLookup() )
+    
     #
     
     try:
         
-        file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
+        file_seed.DownloadAndImportRawFile( url, full_import_options_container, network_job_factory, network_job_presentation_context_factory, status_hook )
         
         status = file_seed.status
         
@@ -193,6 +164,7 @@ def THREADDownloadURL( job_status, url, url_string ):
         job_status.Finish()
         
     
+
 def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
     
     job_status.SetStatusTitle( title )
@@ -205,9 +177,6 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
     
     presentation_hashes = []
     presentation_hashes_fast = set()
-    
-    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-    file_import_options.SetIsDefault( True )
     
     def network_job_factory( *args, **kwargs ):
         
@@ -239,9 +208,13 @@ def THREADDownloadURLs( job_status: ClientThreading.JobStatus, urls, title ):
         
         file_seed = ClientImportFileSeeds.FileSeed( ClientImportFileSeeds.FILE_SEED_TYPE_URL, url )
         
+        import_options_container = ImportOptionsContainer.ImportOptionsContainer()
+        
+        full_import_options_container = CG.client_controller.import_options_manager.GenerateFullImportOptionsContainer( import_options_container, IOC.IMPORT_OPTIONS_CALLER_TYPE_POST_URLS, urls = file_seed.GetURLsForOptionsLookup() )
+        
         try:
             
-            file_seed.DownloadAndImportRawFile( url, file_import_options, FileImportOptionsLegacy.IMPORT_TYPE_LOUD, network_job_factory, network_job_presentation_context_factory, status_hook )
+            file_seed.DownloadAndImportRawFile( url, full_import_options_container, network_job_factory, network_job_presentation_context_factory, status_hook )
             
             status = file_seed.status
             

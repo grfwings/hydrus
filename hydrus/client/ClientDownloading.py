@@ -8,10 +8,12 @@ from hydrus.core import HydrusTemp
 
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDaemons
+from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientThreading
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.importing.options import FileFilteringImportOptions
-from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
+from hydrus.client.importing.options import ImportOptionsContainer
 from hydrus.client.importing.options import PrefetchImportOptions
 
 class GalleryIdentifier( HydrusSerialisable.SerialisableBase ):
@@ -227,12 +229,14 @@ class QuickDownloadManager( ClientDaemons.ManagerWithMainLoop ):
                                     file_filtering_import_options.SetAllowsDecompressionBombs( True )
                                     file_filtering_import_options.SetExcludesDeleted( False ) # important
                                     
-                                    file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
+                                    import_options_container = ImportOptionsContainer.ImportOptionsContainer()
                                     
-                                    file_import_options.SetPrefetchImportOptions( prefetch_import_options )
-                                    file_import_options.SetFileFilteringImportOptions( file_filtering_import_options )
+                                    import_options_container.SetImportOptions( prefetch_import_options )
+                                    import_options_container.SetImportOptions( file_filtering_import_options )
                                     
-                                    file_import_job = ClientImportFiles.FileImportJob( temp_path, file_import_options, human_file_description = f'Downloaded File - {hash.hex()}' )
+                                    full_import_options_container = CG.client_controller.import_options_manager.GenerateFullImportOptionsContainer( import_options_container, IOC.IMPORT_OPTIONS_CALLER_TYPE_LOCAL_IMPORT )
+                                    
+                                    file_import_job = ClientImportFiles.FileImportJob( temp_path, full_import_options_container, human_file_description = f'Downloaded File - {hash.hex()}' )
                                     
                                     file_import_job.DoWork()
                                     

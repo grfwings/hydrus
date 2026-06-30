@@ -31,7 +31,6 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client import ClientOptions
 from hydrus.client import ClientServices
 from hydrus.client import ClientThreading
 from hydrus.client import ClientTime
@@ -91,6 +90,7 @@ from hydrus.client.networking import ClientNetworkingSessions
 from hydrus.client.search import ClientSearchFavouriteSearches
 from hydrus.client.search import ClientSearchFileSearchContext
 from hydrus.client.search import ClientSearchPredicate
+from hydrus.client.search import ClientSearchTagContext
 
 # noinspection PyUnresolvedReferences
 from hydrus.client.importing import ClientImportSubscriptionLegacy
@@ -1245,6 +1245,8 @@ class DB( HydrusDB.HydrusDB ):
             self._AddService( service_key, service_type, name, dictionary )
             
         
+        from hydrus.client import ClientOptions
+        
         new_options = ClientOptions.ClientOptions()
         
         new_options.SetSimpleDownloaderFormulae( ClientDefaults.GetDefaultSimpleDownloaderFormulae() )
@@ -1346,6 +1348,12 @@ class DB( HydrusDB.HydrusDB ):
         column_list_manager = ClientGUIListManager.ColumnListManager()
         
         self.modules_serialisable.SetJSONDump( column_list_manager )
+        
+        from hydrus.client.importing.options import ImportOptionsManager
+        
+        import_options_manager = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager()
+        
+        self.modules_serialisable.SetJSONDump( import_options_manager )
         
     
     def _DeletePending( self, service_key ):
@@ -3047,7 +3055,7 @@ class DB( HydrusDB.HydrusDB ):
         return ( results_dict, we_stopped_early )
         
     
-    def _GetRelatedTags( self, file_service_key, tag_service_key, search_tags, max_time_to_take = 0.5, max_results = 100, concurrence_threshold = 0.04, search_tag_slices_weight_dict = None, result_tag_slices_weight_dict = None, other_tags_to_exclude = None ):
+    def _GetRelatedTags( self, file_service_key, tag_context: ClientSearchTagContext.TagContext, search_tags, tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, max_time_to_take = 0.5, max_results = 100, concurrence_threshold = 0.04, search_tag_slices_weight_dict = None, result_tag_slices_weight_dict = None, other_tags_to_exclude = None ):
         
         # a user provided the basic idea here
         
@@ -3070,6 +3078,9 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
+        search_tag_service_key = tag_context.service_key
+        display_tag_service_key = tag_context.display_service_key
+        
         num_tags_searched = 0
         num_tags_to_search = 0
         num_skipped = 0
@@ -3083,14 +3094,13 @@ class DB( HydrusDB.HydrusDB ):
             return ( num_tags_searched, num_tags_to_search, num_skipped, [ ClientSearchPredicate.Predicate( ClientSearchPredicate.PREDICATE_TYPE_TAG, value = 'no search tags to work with!' ) ] )
             
         
-        tag_display_type = ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL
-        
-        tag_service_id = self.modules_services.GetServiceId( tag_service_key )
+        search_tag_service_id = self.modules_services.GetServiceId( search_tag_service_key )
+        display_tag_service_id = self.modules_services.GetServiceId( display_tag_service_key )
         file_service_id = self.modules_services.GetServiceId( file_service_key )
         
         if tag_display_type == ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL:
             
-            search_tags = self.modules_tag_siblings.GetIdeals( tag_display_type, tag_service_key, search_tags )
+            search_tags = self.modules_tag_siblings.GetIdeals( tag_display_type, display_tag_service_key, search_tags )
             
             # I had a thing here that added the parents, but it gave some whack results compared to what you expected
             
@@ -3099,7 +3109,7 @@ class DB( HydrusDB.HydrusDB ):
         
         with self._MakeTemporaryIntegerTable( search_tag_ids_to_search_tags.keys(), 'tag_id' ) as temp_tag_id_table_name:
             
-            search_tag_ids_to_total_counts = collections.Counter( { tag_id : abs( current_count ) + abs( pending_count ) for ( tag_id, current_count, pending_count ) in self.modules_mappings_counts.GetCountsForTags( tag_display_type, file_service_id, tag_service_id, temp_tag_id_table_name ) } )
+            search_tag_ids_to_total_counts = collections.Counter( { tag_id : abs( current_count ) + abs( pending_count ) for ( tag_id, current_count, pending_count ) in self.modules_mappings_counts.GetCountsForTags( tag_display_type, file_service_id, search_tag_service_id, temp_tag_id_table_name ) } )
             
         
         #
@@ -3179,7 +3189,7 @@ class DB( HydrusDB.HydrusDB ):
             
             search_tag_id = self.modules_tags_local_cache.GetTagId( search_tag )
             
-            ( tag_ids_to_matching_counts, it_stopped_early ) = self._GetRelatedTagCountsForOneTag( tag_display_type, file_service_id, tag_service_id, search_tag_id, max_num_files_to_search, stop_time_for_finding_results = stop_time_for_finding_results )
+            ( tag_ids_to_matching_counts, it_stopped_early ) = self._GetRelatedTagCountsForOneTag( tag_display_type, file_service_id, search_tag_service_id, search_tag_id, max_num_files_to_search, stop_time_for_finding_results = stop_time_for_finding_results )
             
             if search_tag_id in tag_ids_to_matching_counts:
                 
@@ -3206,14 +3216,14 @@ class DB( HydrusDB.HydrusDB ):
         if other_tags_to_exclude is not None:
             
             # this is the list of all tags in the list, don't want them either
-            other_tag_ideals = self.modules_tag_siblings.GetIdeals( tag_display_type, tag_service_key, other_tags_to_exclude )
+            other_tag_ideals = self.modules_tag_siblings.GetIdeals( ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, display_tag_service_key, other_tags_to_exclude )
             
             other_tag_ids = set( self.modules_tags_local_cache.GetTagIdsToTags( tags = other_tag_ideals ).keys() )
             
             tag_ids_to_exclude.update( other_tag_ids )
             
         
-        for ( search_tag_id, parent_tag_ids ) in self.modules_tag_parents.GetTagsToAncestors( tag_display_type, tag_service_id, set( tag_ids_to_exclude ) ).items():
+        for ( search_tag_id, parent_tag_ids ) in self.modules_tag_parents.GetTagsToAncestors( ClientTags.TAG_DISPLAY_DISPLAY_ACTUAL, display_tag_service_id, set( tag_ids_to_exclude ) ).items():
             
             # we don't want any of their parents either!
             tag_ids_to_exclude.update( parent_tag_ids )
@@ -3255,7 +3265,7 @@ class DB( HydrusDB.HydrusDB ):
         
         with self._MakeTemporaryIntegerTable( all_tag_ids, 'tag_id' ) as temp_tag_id_table_name:
             
-            tag_ids_to_total_counts = { tag_id : abs( current_count ) + abs( pending_count ) for ( tag_id, current_count, pending_count ) in self.modules_mappings_counts.GetCountsForTags( tag_display_type, file_service_id, tag_service_id, temp_tag_id_table_name ) }
+            tag_ids_to_total_counts = { tag_id : abs( current_count ) + abs( pending_count ) for ( tag_id, current_count, pending_count ) in self.modules_mappings_counts.GetCountsForTags( tag_display_type, file_service_id, search_tag_service_id, temp_tag_id_table_name ) }
             
         
         tag_ids_to_total_counts.update( search_tag_ids_to_total_counts )
@@ -3327,7 +3337,7 @@ class DB( HydrusDB.HydrusDB ):
         
         tag_ids_to_full_counts = { tag_id : ( int( score * 1000 ), None, pending_count, None ) for ( tag_id, score ) in tag_ids_to_scores.items() }
         
-        predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, tag_service_id, tag_ids_to_full_counts )
+        predicates = self.modules_tag_display.GeneratePredicatesFromTagIdsAndCounts( tag_display_type, display_tag_service_id, tag_ids_to_full_counts )
         
         result_predicates = []
         
@@ -3662,9 +3672,9 @@ class DB( HydrusDB.HydrusDB ):
             HydrusData.ShowText( 'File import job starting db job' )
             
         
-        file_import_options = file_import_job.GetFileImportOptions()
+        import_options_container = file_import_job.GetImportOptionsContainer()
         
-        location_import_options = file_import_options.GetLocationImportOptions()
+        location_import_options = import_options_container.GetLocationImportOptions()
         
         destination_location_context = location_import_options.GetDestinationLocationContext()
         
@@ -3771,7 +3781,7 @@ class DB( HydrusDB.HydrusDB ):
             
             #
             
-            if file_import_options.GetLocationImportOptions().AutomaticallyArchives():
+            if import_options_container.GetLocationImportOptions().AutomaticallyArchives():
                 
                 if HG.file_import_report_mode:
                     
@@ -4470,7 +4480,7 @@ class DB( HydrusDB.HydrusDB ):
         
         if 'malformed' in tb:
             
-            HydrusData.ShowText( 'A database exception looked like it could be a very serious \'database image is malformed\' error! Unless you know otherwise, please shut down the client immediately and check the \'help my db is broke.txt\' under install_dir/db.' )
+            HydrusData.ShowText( 'A database exception looked like it could be a very serious \'database image is malformed\' error! Unless you know otherwise, please shut down the client immediately and check the \'Recovery->Help my db is broke\' document in the help.' )
             
         
         if job.IsSynchronous():
@@ -6266,9 +6276,11 @@ class DB( HydrusDB.HydrusDB ):
             message += '\n' * 2
             message += 'If you wish, click ok on this message and the client will re-add fresh options with default values. But if you want to solve this problem otherwise, kill the hydrus process now.'
             message += '\n' * 2
-            message += 'If you do not already know what caused this, it was likely a hard drive fault--either due to a recent abrupt power cut or actual hardware failure. Check \'help my db is broke.txt\' in the install_dir/db directory as soon as you can.'
+            message += 'If you do not already know what caused this, it was likely a hard drive fault--either due to a recent abrupt power cut or actual hardware failure. Check the \'Recovery->Help my db is broke\' document in the help as soon as you can.'
             
             self._controller.BlockingSafeShowMessage( message )
+            
+            from hydrus.client import ClientOptions
             
             new_options = ClientOptions.ClientOptions()
             
@@ -7031,154 +7043,6 @@ class DB( HydrusDB.HydrusDB ):
         #                   IN MEMORIAM
         #       v592 PERMISSION CORRECTION UPDATE CODE
         # 
-        
-        if version == 601:
-            
-            try:
-                
-                self._controller.frame_splash_status.SetText( f'scanning for missing import archive timestamps' )
-                
-                we_have_missing_import_archive_timestamps = self.modules_files_inbox.WeHaveMissingImportArchiveTimestamps()
-                
-                if not we_have_missing_import_archive_timestamps:
-                    
-                    self._controller.frame_splash_status.SetText( f'scanning for missing legacy archive timestamps' )
-                    
-                    we_have_missing_legacy_archive_timestamps = self.modules_files_inbox.WeHaveMissingLegacyArchiveTimestamps()
-                    
-                else:
-                    
-                    we_have_missing_legacy_archive_timestamps = False
-                    
-                
-                if we_have_missing_import_archive_timestamps or we_have_missing_legacy_archive_timestamps:
-                    
-                    self.pub_initial_message( 'Hey, I discovered you have some missing file archived times, which we can now fill in with synthetic values. Hit up the new "database->file maintenance->fix missing file archived times" job to review your options!' )
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to check for archived time gaps failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 603:
-            
-            try:
-                
-                all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
-                
-                with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
-                    
-                    hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_HAVE_PERCEPTUAL_HASH ) ) ) )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_CHECK_SIMILAR_FILES_MEMBERSHIP )
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'A file maintenance job failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 606:
-            
-            try:
-                
-                self._Execute( 'SELECT viewtime FROM file_viewing_stats;' ).fetchone()
-                
-                do_it = True
-                
-            except Exception as e:
-                
-                do_it = False
-                
-            
-            if do_it:
-                
-                try:
-                    
-                    self._controller.frame_splash_status.SetSubtext( 'updating file viewing times to ms' )
-                    
-                    # drop/recreate table to keep index names nice!
-                    self._Execute( 'DROP INDEX IF EXISTS file_viewing_stats_viewtime_index;' )
-                    
-                    self._Execute( 'ALTER TABLE file_viewing_stats RENAME COLUMN viewtime TO viewtime_ms;' )
-                    self._Execute( 'UPDATE file_viewing_stats SET viewtime_ms = viewtime_ms * 1000;' )
-                    
-                    self._CreateIndex( 'main.file_viewing_stats', [ 'viewtime_ms' ] )
-                    
-                except Exception as e:
-                    
-                    raise Exception( f'Could not change viewtimes table to ms! Error: {e}' )
-                    
-                
-            
-            try:
-                
-                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
-                
-                new_options.SetBoolean( 'show_extended_single_file_info_in_status_bar', True )
-                
-                for option_name in [
-                    'file_viewing_statistics_media_min_time',
-                    'file_viewing_statistics_media_max_time',
-                    'file_viewing_statistics_preview_min_time',
-                    'file_viewing_statistics_preview_max_time'
-                ]:
-                    
-                    the_time = new_options.GetNoneableInteger( option_name )
-                    
-                    if the_time is None:
-                        
-                        the_time_ms = None
-                        
-                    else:
-                        
-                        the_time_ms = the_time * 1000
-                        
-                    
-                    new_options.SetNoneableInteger( option_name + '_ms', the_time_ms )
-                    
-                
-                self.modules_serialisable.SetJSONDump( new_options )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update your options failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 609:
-            
-            try:
-                
-                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
-                
-                new_options.SetInteger( 'file_viewing_stats_menu_display', CC.FILE_VIEWING_STATS_MENU_DISPLAY_SUMMED_AND_THEN_SUBMENU )
-                
-                self.modules_serialisable.SetJSONDump( new_options )
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update your options failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
         
         if version == 611:
             
@@ -8293,9 +8157,123 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
+        if version == 668:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                new_options.DeleteFrameLocation( 'regular_center_dialog' )
+                new_options.DeleteFrameLocation( 'deeply_nested_dialogs' )
+                
+                self.modules_serialisable.SetJSONDump( new_options )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update your options failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 670:
+            
+            try:
+                
+                possible_import_options_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_IMPORT_OPTIONS_MANAGER )
+                
+                if possible_import_options_manager is None:
+                    
+                    new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                    
+                    from hydrus.client.importing.options import FileImportOptionsLegacy
+                    from hydrus.client.importing.options import ImportOptionsContainerMigration
+                    
+                    domain_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_NETWORK_DOMAIN_MANAGER )
+                    
+                    domain_manager.Initialise()
+                    
+                    ( file_post_default_tag_import_options, watchable_default_tag_import_options, url_class_keys_to_default_tag_import_options ) = domain_manager.GetDefaultTagImportOptions()
+                    ( file_post_default_note_import_options, watchable_default_note_import_options, url_class_keys_to_default_note_import_options ) = domain_manager.GetDefaultNoteImportOptions()
+                    
+                    import_options_manager = ImportOptionsContainerMigration.GenerateImportOptionsManagerFromOldSystem(
+                        file_post_default_tag_import_options,
+                        watchable_default_tag_import_options,
+                        url_class_keys_to_default_tag_import_options,
+                        file_post_default_note_import_options,
+                        watchable_default_note_import_options,
+                        url_class_keys_to_default_note_import_options,
+                        new_options.GetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_QUIET ),
+                        new_options.GetDefaultFileImportOptions( FileImportOptionsLegacy.IMPORT_TYPE_LOUD ),
+                    )
+                    
+                    self.modules_serialisable.SetJSONDump( import_options_manager )
+                    
+                    new_options.DeleteDefaultFileImportOptions()
+                    
+                    self.modules_serialisable.SetJSONDump( new_options )
+                    
+                    domain_manager.DeleteDefaultImportOptions()
+                    
+                    self.modules_serialisable.SetJSONDump( domain_manager )
+                    
+                
+            except Exception as e:
+                
+                HydrusData.Print( 'Problem doing the import options migration! Please forward this error to hydev and roll back to v670:' )
+                HydrusData.PrintException( e, do_wait = False )
+                
+                raise Exception( f'The import options migration had a problem! Please check your logfile for the full error and send it to hydev, and then roll back to v670! Error summary:\n\n{e}' )
+                
+            
+        
+        if version == 675:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                qt_stylesheet_name = new_options.GetNoneableString( 'qt_stylesheet_name' )
+                
+                update_mapping = {
+                    'Paper_Dark_built_release.qss' : 'Paper_Dark.qss',
+                    'e621_redux_built_release.qss' : 'e621_redux.qss',
+                    'e621_built_release.qss' : 'e621.qss',
+                }
+                
+                if qt_stylesheet_name in update_mapping:
+                    
+                    new_options.SetNoneableString( 'qt_stylesheet_name', update_mapping[ qt_stylesheet_name ] )
+                    
+                    self.modules_serialisable.SetJSONDump( new_options )
+                    
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update your qss stylesheet name failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        #
+        
         self._controller.frame_splash_status.SetTitleText( 'updated db to v{}'.format( HydrusNumbers.ToHumanInt( version + 1 ) ) )
         
-        self._Execute( 'UPDATE version SET version = ?;', ( version + 1, ) )
+        current_version = version + 1
+        
+        self._Execute( 'UPDATE version SET version = ?;', ( current_version, ) )
+        
+        versions_that_could_do_with_a_new_venv = { 670 }
+        
+        if HC.RUNNING_FROM_SOURCE and HC.GOT_A_NORMAL_LOOKING_VENV and current_version in versions_that_could_do_with_a_new_venv:
+            
+            self.pub_initial_message( 'Hey, it looks like you are running from source, and probably with my setup_venv.py script. If you did not do it already, this release is a good time to build a new venv!' )
+            
         
     
     def _UpdateServerServices( self, admin_service_key, serverside_services, service_keys_to_access_keys, deletee_service_keys ):
@@ -8315,6 +8293,7 @@ class DB( HydrusDB.HydrusDB ):
         for serverside_service in serverside_services:
             
             service_key = serverside_service.GetServiceKey()
+            port = serverside_service.GetPort()
             
             if service_key in current_service_keys:
                 
@@ -8324,18 +8303,7 @@ class DB( HydrusDB.HydrusDB ):
                 
                 credentials = service.GetCredentials()
                 
-                upnp_port = serverside_service.GetUPnPPort()
-                
-                if upnp_port is None:
-                    
-                    port = serverside_service.GetPort()
-                    
-                    credentials.SetAddress( host, port )
-                    
-                else:
-                    
-                    credentials.SetAddress( host, upnp_port )
-                    
+                credentials.SetAddress( host, port )
                 
                 service.SetCredentials( credentials )
                 
@@ -8354,18 +8322,7 @@ class DB( HydrusDB.HydrusDB ):
                     
                     credentials = service.GetCredentials()
                     
-                    upnp_port = serverside_service.GetUPnPPort()
-                    
-                    if upnp_port is None:
-                        
-                        port = serverside_service.GetPort()
-                        
-                        credentials.SetAddress( host, port )
-                        
-                    else:
-                        
-                        credentials.SetAddress( host, upnp_port )
-                        
+                    credentials.SetAddress( host, port )
                     
                     credentials.SetAccessKey( access_key )
                     

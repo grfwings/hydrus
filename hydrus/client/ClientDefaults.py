@@ -66,27 +66,27 @@ def GetClientDefaultOptions():
     
 def GetDefaultCheckerOptions( name ):
     
-    from hydrus.client.importing.options import ClientImportOptions
+    from hydrus.client.importing.options import CheckerImportOptions
     
     if name == 'thread':
         
-        return ClientImportOptions.CheckerOptions( intended_files_per_check = 4, never_faster_than = 300, never_slower_than = 86400, death_file_velocity = ( 1, 3 * 86400 ) )
+        return CheckerImportOptions.CheckerOptions( intended_files_per_check = 4, never_faster_than = 300, never_slower_than = 86400, death_file_velocity = (1, 3 * 86400) )
         
     elif name == 'slow thread':
         
-        return ClientImportOptions.CheckerOptions( intended_files_per_check = 1, never_faster_than = 4 * 3600, never_slower_than = 7 * 86400, death_file_velocity = ( 1, 30 * 86400 ) )
+        return CheckerImportOptions.CheckerOptions( intended_files_per_check = 1, never_faster_than = 4 * 3600, never_slower_than = 7 * 86400, death_file_velocity = ( 1, 30 * 86400 ) )
         
     elif name == 'artist subscription':
         
-        return ClientImportOptions.CheckerOptions( intended_files_per_check = 4, never_faster_than = 86400, never_slower_than = 90 * 86400, death_file_velocity = ( 1, 180 * 86400 ) )
+        return CheckerImportOptions.CheckerOptions( intended_files_per_check = 4, never_faster_than = 86400, never_slower_than = 90 * 86400, death_file_velocity = ( 1, 180 * 86400 ) )
         
     elif name == 'fast tag subscription':
         
-        return ClientImportOptions.CheckerOptions( intended_files_per_check = 10, never_faster_than = 43200, never_slower_than = 30 * 86400, death_file_velocity = ( 1, 90 * 86400 ) )
+        return CheckerImportOptions.CheckerOptions( intended_files_per_check = 10, never_faster_than = 43200, never_slower_than = 30 * 86400, death_file_velocity = ( 1, 90 * 86400 ) )
         
     elif name == 'slow tag subscription':
         
-        return ClientImportOptions.CheckerOptions( intended_files_per_check = 1, never_faster_than = 7 * 86400, never_slower_than = 180 * 86400, death_file_velocity = ( 1, 365 * 86400 ) )
+        return CheckerImportOptions.CheckerOptions( intended_files_per_check = 1, never_faster_than = 7 * 86400, never_slower_than = 180 * 86400, death_file_velocity = (1, 365 * 86400) )
         
     
 
@@ -808,7 +808,7 @@ def SetDefaultDomainManagerData( domain_manager ):
 
 def SetDefaultFavouriteSearchManagerData( favourite_search_manager ):
     
-    from hydrus.client.media import ClientMedia
+    from hydrus.client.media import ClientMediaSort
     from hydrus.client.search import ClientSearchFileSearchContext
     from hydrus.client.search import ClientSearchPredicate
     from hydrus.client.search import ClientSearchTagContext
@@ -839,7 +839,7 @@ def SetDefaultFavouriteSearchManagerData( favourite_search_manager ):
     file_search_context = ClientSearchFileSearchContext.FileSearchContext( location_context = location_context, tag_context = tag_context, predicates = predicates )
     
     synchronised = True
-    media_sort = ClientMedia.MediaSort( sort_type = ( 'system', CC.SORT_FILES_BY_FILESIZE ), sort_order = CC.SORT_DESC )
+    media_sort = ClientMediaSort.MediaSort( sort_type = ( 'system', CC.SORT_FILES_BY_FILESIZE ), sort_order = CC.SORT_DESC )
     media_collect = None
     
     rows.append( ( foldername, name, file_search_context, synchronised, media_sort, media_collect ) )

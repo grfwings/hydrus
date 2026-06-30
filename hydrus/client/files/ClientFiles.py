@@ -20,10 +20,16 @@ from hydrus.client import ClientVideoHandling
 
 class PathParsingJob( object ):
     
-    def __init__( self, path: str, search_subdirectories: bool = True ):
+    def __init__( self, path: str, search_subdirectories: bool = True, parent_dirs = None ):
+        
+        if parent_dirs is None:
+            
+            parent_dirs = set()
+            
         
         self.path = path
         self.search_subdirectories = search_subdirectories
+        self._parent_dirs = set( parent_dirs )
         
     
     def GetFilePathsAndSubPathParsingJobs( self ) -> tuple[ list[ str ], list[ "PathParsingJob" ] ]:
@@ -33,31 +39,23 @@ class PathParsingJob( object ):
         
         if self.IsDir():
             
-            try:
+            with os.scandir( self.path ) as scan:
                 
-                # on Windows, some network file paths return True on isdir(). maybe something to do with path length or number of subdirs
-                path_listdir = os.listdir( self.path )
-                
-            except NotADirectoryError:
-                
-                file_paths.append( self.path )
-                
-                return ( file_paths, sub_path_parsing_jobs )
-                
-            
-            subpaths = [ os.path.join( self.path, filename ) for filename in path_listdir ]
-            
-            for subpath in subpaths:
-                
-                if os.path.isfile( subpath ):
+                for entry in scan:
                     
-                    file_paths.append( subpath )
-                    
-                else:
-                    
-                    if self.search_subdirectories:
+                    if entry.is_dir():
                         
-                        sub_path_parsing_jobs.append( PathParsingJob( subpath, search_subdirectories = self.search_subdirectories ) )
+                        if self.search_subdirectories and os.path.normpath( entry.path ) not in self._parent_dirs:
+                            
+                            sub_parent_dirs = set( self._parent_dirs )
+                            sub_parent_dirs.add( os.path.normpath( self.path ) )
+                            
+                            sub_path_parsing_jobs.append( PathParsingJob( entry.path, search_subdirectories = self.search_subdirectories, parent_dirs = sub_parent_dirs ) )
+                            
+                        
+                    elif entry.is_file():
+                        
+                        file_paths.append( entry.path )
                         
                     
                 
@@ -132,6 +130,45 @@ def GetAllFilePaths( path: str, search_subdirectories: bool, clear_out_sidecars 
     
     HydrusText.HumanTextSort( file_paths )
     
+    PopulateComparableSidecarPrefixes( file_paths, comparable_sidecar_prefixes )
+    
+    if clear_out_sidecars:
+        
+        ( file_paths, sidecar_paths ) = DifferentiateSidecarPaths( file_paths, comparable_sidecar_prefixes )
+        
+    
+    return ( file_paths, sidecar_paths )
+    
+
+def DifferentiateSidecarPaths( file_paths, comparable_sidecar_prefixes ):
+    
+    undifferentiated_file_paths = file_paths
+    
+    file_paths = []
+    sidecar_paths = []
+    
+    for path in undifferentiated_file_paths:
+        
+        if LooksLikeSidecarPath( path, comparable_sidecar_prefixes ):
+            
+            sidecar_paths.append( path )
+            
+        else:
+            
+            file_paths.append( path )
+            
+        
+    
+    return ( file_paths, sidecar_paths )
+    
+
+def LooksLikeSidecarPath( file_path, comparable_sidecar_prefixes ):
+    
+    return has_sidecar_ext( file_path ) and get_comparable_sidecar_prefix( file_path ) in comparable_sidecar_prefixes
+    
+
+def PopulateComparableSidecarPrefixes( file_paths, comparable_sidecar_prefixes ):
+    
     for file_path in file_paths:
         
         if not has_sidecar_ext( file_path ):
@@ -139,27 +176,6 @@ def GetAllFilePaths( path: str, search_subdirectories: bool, clear_out_sidecars 
             comparable_sidecar_prefixes.add( get_comparable_sidecar_prefix( file_path ) )
             
         
-    
-    if clear_out_sidecars:
-        
-        undifferentiated_file_paths = file_paths
-        
-        file_paths = []
-        
-        for path in undifferentiated_file_paths:
-            
-            if has_sidecar_ext( path ) and get_comparable_sidecar_prefix( path ) in comparable_sidecar_prefixes:
-                
-                sidecar_paths.append( path )
-                
-            else:
-                
-                file_paths.append( path )
-                
-            
-        
-    
-    return ( file_paths, sidecar_paths )
     
 
 def HasHumanReadableEmbeddedMetadata( path, mime, human_file_description = None ):

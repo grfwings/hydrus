@@ -12,7 +12,8 @@ from hydrus.client import ClientLocation
 from hydrus.client.db import ClientDB
 from hydrus.client.duplicates import ClientDuplicatesAutoResolutionComparators
 from hydrus.client.files.images import ClientVisualData
-from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
+from hydrus.client.importing.options import ImportOptionsManager
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.metadata import ClientMetadataConditional
 from hydrus.client.search import ClientSearchFileSearchContext
@@ -84,10 +85,9 @@ class TestComparatorOneFileHardcoded( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', name ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -667,10 +667,9 @@ class TestComparatorHardcoded( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', name ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -853,10 +852,9 @@ class TestComparatorVisualDuplicates( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', name ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         

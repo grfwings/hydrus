@@ -39,7 +39,7 @@ def PopulateMetadataAPIDict( metadata_list: list[ dict ], hashes: list[ bytes ],
     if not hide_service_keys_tags:
         
         warnings.warn(
-            'Hey, the hide_service_keys_tags parameter is deprecated, but a Client API script you are using it just relied on it! That script may stop working in v668 if it is not updated to use the newer "tags" structure!',
+            'Hey, the hide_service_keys_tags parameter is deprecated, but a Client API script you are using it just relied on it! It would be better to use the newer "tags" structure!',
             FutureWarning,
             stacklevel = 2
         )
@@ -181,6 +181,17 @@ def PopulateMetadataAPIDict( metadata_list: list[ dict ], hashes: list[ bytes ],
             metadata_dict[ 'time_modified_details' ] = { domain : time_converter( timestamp_ms ) for ( domain, timestamp_ms ) in domains_to_file_modified_timestamps_ms.items() }
             
             metadata_dict[ 'is_inbox' ] = locations_manager.inbox
+            
+            if not locations_manager.inbox:
+                
+                archived_time_ms = times_manager.GetArchivedTimestampMS()
+                
+                if archived_time_ms is not None:
+                    
+                    metadata_dict[ 'time_archived' ] = time_converter( archived_time_ms )
+                    
+                
+            
             metadata_dict[ 'is_local' ] = locations_manager.IsLocal()
             metadata_dict[ 'is_trashed' ] = locations_manager.IsTrashed()
             metadata_dict[ 'is_deleted' ] = CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY in locations_manager.GetDeleted() or locations_manager.IsTrashed()

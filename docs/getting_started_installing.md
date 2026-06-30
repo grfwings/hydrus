@@ -14,47 +14,32 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
 
 ## Installing
 
+Hydrus is available as a simple built release that extracts/installs and lets you just run an executable. It is also easy to run it directly from source.
+
+Running the program from source takes a little extra first-time setup, but it almost always runs better and future updates only take a few seconds. You might like to start with the built release and migrate to source later.
+
 === "Windows"
 
     *   If you want the easy solution, download the .exe installer. Run it, hit ok several times.
     *   If you know what you are doing and want a little more control, get the .zip. Don't extract it to Program Files unless you are willing to run it as administrator every time (it stores all its user data inside its own folder). You probably want something like D:\\hydrus.
-    *   _If you run <Win10, you need [Visual C++ Redistributable for Visual Studio 2015](https://www.microsoft.com/en-us/download/details.aspx?id=48145) if you don't already have it for vidya._
-    *   _If you use Windows 10 N (a version of Windows without some media playback features), you will likely need the 'Media Feature Pack'. There have been several versions of this, so it may best found by searching for the latest version or hitting Windows Update, but otherwise check [here](https://support.microsoft.com/en-us/help/3145500/media-feature-pack-list-for-windows-n-editions)._  
-    *   _If you run Win7, you cannot run Qt6 programs, so you cannot run the official executable release. You have options by [running from source](running_from_source.md)._
+    *   _If you run Win 10, the built release may not run, and you are probably looking at cobbling a source install together, but the clock is ticking on that, too. I'm not telling you anything you don't know, but it is time to migrate to Linux mate._
     *   **Third parties (not maintained by Hydrus Developer)**:  
         * [Chocolatey](https://community.chocolatey.org/packages/hydrus-network)
         * [Scoop](https://github.com/ScoopInstaller/Scoop) (`hydrus-network` in the 'Extras' bucket)    
         * Winget. The command is `winget install --id=HydrusNetwork.HydrusNetwork  -e --location "\PATH\TO\INSTALL\HERE"`, which can, if you know what you are doing, be `winget install --id=HydrusNetwork.HydrusNetwork  -e --location ".\"`, maybe rolled into a batch file.
         * [User guide for Anaconda](https://gist.github.com/jufogu/b78509695c6c65cdb2866a56fb14a820)
 
-=== "macOS"
-
-    * I used to have an Intel App, but unfortunately the move to Apple Silicon presented too many technical hurdles to keep going.
-    * The program has always worked better on macOS when [run from source](running_from_source.md), and this is now the only option here.
-
-    !!! info "mpv on macOS"
-        macOS users have no mpv support for now. Use the QtMediaPlayer instead!
-
 === "Linux"
     
-    !!! warning "Wayland (and MPV)"
-        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. Newer versions are less buggy, and [running from source](running_from_source.md) may improve the situation, but some of these issues, particularly mpv embedding, seem to be intractable.
-        
-        If mpv is the only problem, then switch to the QtMediaPlayer under `options->media playback`.
-        
-        If you really want mpv or have other UI issues, user testing suggests that the best solution for now is just to launch the program in X11. Launch the program _without_ the WAYLAND_DISPLAY variable and _with_ `QT_QPA_PLATFORM=xcb`, which you can achieve with `unset WAYLAND_DISPLAY` and `export QT_QPA_PLATFORM=xcb` in a boot script that launches `hydrus_client`. You might need to do `sudo apt install xwayland` first.
-        
-        You should be able to see which window manager hydrus thinks it is running under in `help->about`, on the "Qt" row.
-        
-        I expect to revisit this question in future versions of Qt and Wayland, and I plan to try a different mpv embedding technique that I know Wayland should support--we'll see if the situation stabilises.
+    I generally recommend Linux users [run from source](running_from_source.md), but I do offer an Ubuntu-built built release every week. To set up this built release:
     
-    ??? warning "MangoHUD and MPV"
-        A user notes that MangoHUD may also interfere with mpv, causing crashes.
-        
-        Try `unset MANGOHUD` or `export MANGOHUD=0` to remove the MangoHUD environment variable in your hydrus launch script to fix this!
-    
-    ??? warning "KDE and QtMediaPlayer"
-        A user notes that those on KDE may need the `mit-krb5` package to get QtMediaPlayer working. Hit up `help->about` and the "Optional Libraries" tab once you are up to see if QtMultimedia loaded ok.
+    *   Get the .tar.zst from the github releases page. Extract it anywhere you like and create a shortcut to the 'hydrus_client' executable in the base install dir. The build is made on Ubuntu, so if you run something else, compatibility is hit and miss.
+    *   If you have problems running the Ubuntu build, [running from source](running_from_source.md) is almost always an improvement.
+    *   You can also try [running the Windows version in Wine/Bottles](wine.md).
+    *   **Third parties (not maintained by Hydrus Developer)**:  
+        * (These both run from source, so if you have trouble with the built release, they may work better for you!)
+        * [AUR package](https://aur.archlinux.org/packages/hydrus/) - *Although please note that since AUR packages work off your system python, this has been known to cause issues when Arch suddenly updates to the latest Qt or something before we have had a chance to test things and it breaks hydrus. If you can, try just [running from source](running_from_source.md) yourself instead, where we can control things better!*
+        * [flatpak](https://flathub.org/apps/details/io.github.hydrusnetwork.hydrus) 
     
     !!! note "Qt compatibility"
         
@@ -76,38 +61,61 @@ I try to release a new version every Wednesday by 8pm EST and write an accompany
         
         One user reports that Fedora might need `libxkbcommon` too.
         
+        **One user had a related error that caused a program crash any time he pressed any key. This was an _incompatibility_ with the `libxkbcommon` bundled with the built release. The solution here--and with any other severe crashes than can be traced to a specific bundled .so file--is to run from source.**
+        
     
-    *   Get the .tag.gz. Extract it somewhere useful and create shortcuts to 'hydrus_client' and 'hydrus_server' as you like. The build is made on Ubuntu, so if you run something else, compatibility is hit and miss.
-    *   If you have problems running the Ubuntu build, [running from source](running_from_source.md) is usually an improvement, and it is easy to set up these days.
-    *   You might need to get 'libmpv1' or 'libmpv2' to get mpv working and playing video/audio. This is the mpv _library_, not the necessarily the player. Check _help->about_ to see if it is available--if not, see if you can get it like so:
-        * `sudo apt install libmpv1` or `sudo apt install libmpv2`
-        * Use _options->media_ to set your audio/video/animations to 'show using mpv' once you have it installed.
-        * If the about window provides you an mpv error popup like this:  
-    ```
-    OSError: /lib/x86_64-linux-gnu/libgio-2.0.so.0: undefined symbol: g_module_open_full
-    (traceback)
-    pyimod04_ctypes.install.<locals>.PyInstallerImportError: Failed to load dynlib/dll 'libmpv.so.1'. Most likely this dynlib/dll was not found when the application was frozen.
-    ```  
-    Then please do this:  
-            1. Search your /usr/ dir for `libgmodule*`. You are looking for something like `libgmodule-2.0.so`. Users report finding it in `/usr/lib64/` and `/usr/lib/x86_64-linux-gnu`.
-            2. Copy that .so file to the hydrus install base directory.
-            3. Boot the client and hit _help->about_ to see if it reports a version.
-            4. If it all seems good, hit _options->media playback_ to set up mpv as your player for video/audio and try to view some things.
-            5. If it still doesn't work, see if you can do the same for libmpv.so and libcdio.so--or consider [running from source](running_from_source.md)
-    *   You can also try [running the Windows version in wine](wine.md).
-    *   **Third parties (not maintained by Hydrus Developer)**:  
-        * (These both run from source, so if you have trouble with the built release, they may work better for you!)
-        * [AUR package](https://aur.archlinux.org/packages/hydrus/) - *Although please note that since AUR packages work off your system python, this has been known to cause issues when Arch suddenly updates to the latest Qt or something before we have had a chance to test things and it breaks hydrus. If you can, try just [running from source](running_from_source.md) yourself instead, where we can control things better!*
-        * [flatpak](https://flathub.org/apps/details/io.github.hydrusnetwork.hydrus) 
+    !!! warning "Wayland (and MPV)"
+        Unfortunately, hydrus has several bad bugs in Wayland. The mpv window will not embed properly into the media viewer, menus and windows may position on the wrong screen, and the taskbar icon may not work at all. Newer versions are less buggy, and [running from source](running_from_source.md) may improve the situation, but some of these issues, particularly mpv embedding, seem to be intractable.
+        
+        If mpv is the only problem, then switch to the QtMediaPlayer under `options->media playback`.
+        
+        If you really want mpv or have other UI issues, user testing suggests that the best solution for now is just to launch the program in X11. Launch the program _without_ the WAYLAND_DISPLAY variable and _with_ `QT_QPA_PLATFORM=xcb`, which you can achieve with `unset WAYLAND_DISPLAY` and `export QT_QPA_PLATFORM=xcb` in a boot script that launches `hydrus_client`. You might need to do `sudo apt install xwayland` first.
+        
+        You should be able to see which window manager hydrus thinks it is running under in `help->about`, on the "Qt" row.
+        
+        I expect to revisit this question in future versions of Qt and Wayland, and I plan to try a different mpv embedding technique that I know Wayland should support--we'll see if the situation stabilises.
     
+    !!! note "installing mpv"
+        *   You might need to get 'libmpv1' or 'libmpv2' to get mpv working and playing video/audio. This is the mpv _library_, not the necessarily the player. Check _help->about_ to see if it is available--if not, see if you can get it like so:
+            * `sudo apt install libmpv1` or `sudo apt install libmpv2`
+            * Use _options->media_ to set your audio/video/animations to 'show using mpv' once you have it installed.
+            * If the `help->about` window provides you an mpv error popup like this:  
+        ```
+        OSError: /lib/x86_64-linux-gnu/libgio-2.0.so.0: undefined symbol: g_module_open_full
+        (traceback)
+        pyimod04_ctypes.install.<locals>.PyInstallerImportError: Failed to load dynlib/dll 'libmpv.so.1'. Most likely this dynlib/dll was not found when the application was frozen.
+        ```  
+        Then please do this:  
+                1. Search your /usr/ dir for `libgmodule*`. You are looking for something like `libgmodule-2.0.so`. Users report finding it in `/usr/lib64/` and `/usr/lib/x86_64-linux-gnu`.
+                2. Copy that .so file to the hydrus install base directory.
+                3. Boot the client and hit _help->about_ to see if it reports a version.
+                4. If it all seems good, hit _options->media playback_ to set up mpv as your player for video/audio and try to view some things.
+                5. If it still doesn't work, see if you can do the same for libmpv.so and libcdio.so--or consider [running from source](running_from_source.md)
+    ??? warning "MangoHUD and MPV"
+        A user notes that MangoHUD may also interfere with mpv, causing crashes.
+        
+        Try `unset MANGOHUD` or `export MANGOHUD=0` to remove the MangoHUD environment variable in your hydrus launch script to fix this!
+    
+    ??? warning "KDE and QtMediaPlayer"
+        A user notes that those on KDE may need the `mit-krb5` package to get QtMediaPlayer working. Hit up `help->about` and the "Optional Libraries" tab once you are up to see if QtMultimedia loaded ok.
+    
+
+=== "macOS"
+
+    I used to have an Intel App, but unfortunately the move to Apple Silicon presented too many technical hurdles to keep going.
+    
+    The program has always worked better on macOS when [run from source](running_from_source.md), and this is now the only option here.
+    
+    !!! info "mpv on macOS"
+        macOS users have no mpv support for now. Use the QtMediaPlayer instead!
 
 === "Docker"
 
-    * A rudimentary documentation for the [container](https://github.com/hydrusnetwork/hydrus/pkgs/container/hydrus) setup can be found [here](docker.md).
+    A rudimentary documentation for the [container](https://github.com/hydrusnetwork/hydrus/pkgs/container/hydrus) setup can be found [here](docker.md).
 
 === "From Source"
 
-    *   You can also [run from source](running_from_source.md). This is often the best way to fix compatibility problems, the only way to run on macOS, and the most pleasant way to run and update the program (you can update in five seconds!), although it requires a bit more work to set up the first time. It is not too complicated to do, though--my guide will walk you through each step.
+    You can also [run from source](running_from_source.md). This is often the best way to fix compatibility problems, the only way to run on macOS, and the most pleasant way to run and update the program (you can update in five seconds!), although it requires a bit more work to set up the first time. It is not complicated--my guide will walk you through each step.
 
 By default, hydrus stores all its data—options, files, subscriptions, _everything_—entirely inside its own directory. You can extract it to a usb stick, move it from one place to another, have multiple installs for multiple purposes, wrap it all up inside an encrypted volume, whatever you like. The .exe installer writes some unavoidable uninstall registry stuff to Windows, but the 'installed' client itself will run fine if you manually move it.
 
@@ -163,7 +171,7 @@ The update process:
 * Update your install:
     1. **If you use the installer**, just download the new installer and run it. It should detect where the last install was and overwrite everything automatically.
     2. **If you use the extract**, then just extract the new version right on top of your current install and overwrite manually. *It is wise to extract it straight from the archive to your install folder.*
-    4. **If you run from source**, then run `git pull` as normal. If it has been a few months since you made your venv, or the changelog talks about a new library version specifically, you might like to run `setup_venv` again.
+    3. **If you run from source**, then run `git pull` as normal. If it has been a few months since you made your venv, or the changelog talks about a new library version specifically, you might like to run `setup_venv` again.
 * Start your client or server. It may take a few minutes to update its database. I will say in the release post if it is likely to take longer.
 
 A user has written a longer and more formal guide to updating [here](update_guide.rtf).
@@ -209,7 +217,11 @@ After you have re-extracted, you'll have a 'clean' version of hydrus that is as 
 
 If you have not updated in some time--say twenty versions or more--doing it all in one jump, like v290->v330, may not work. I am doing a lot of unusual stuff with hydrus, change my code at a fast pace, and do not have a ton of testing in place. Hydrus update code often falls to [bit rot](https://en.wikipedia.org/wiki/Software_rot), and so some underlying truth I assumed for the v299->v300 code may not still apply six months later. If you try to update more than 50 versions at once (i.e. trying to perform more than a year of updates in one go), the client will give you a polite error rather than even try.
 
-As a result, if you get a failure on trying to do a big update, try cutting the distance in half--try v290->v310 first, and boot it once. If the database updates correctly and the program launches ok, then shut down and move on to v310->v330. If the update does not work, cut down the gap and try v290->v300, and so on. **Again, it is very important you make a backup before starting a process like this so you can roll back and try a different version if things go wrong.**
+As a result, if you get a failure on trying to do a big update, try cutting the distance in half--try v290->v310 first, and boot it once. If the database updates correctly and the program launches ok, then shut down and move on to v310->v330. If the update does not work, cut down the gap and try v290->v300, and so on.
+
+Source users need to use [special git commands](running_from_source.md#selecting_version_tag) to select particular versions.
+
+When hydrus updates a database through several versions, it does it one version at a time. It will attempt 290->291 and then save, 291->292 and then save, 292->293 and then save, and so on. If any step fails, it will roll back to the last saved version. So, an update that tries to do 290->300 that fails might leave a database on version 293. If you then attempt to install and update to v297, it will then start with 293-294. This is usually fine, but in rare situations it can cause bitrot.  **Again, it is very important you make a backup of your known working copy before starting a process like this so you can roll back and try a different version if things go very wrong.**
 
 If you narrow the gap down to just one version and still get an error, please let me know. If the problem is ever quick to appear and ugly/serious-looking, and perhaps talking about a "bootloader" or "dll" issue, then try doing a clean install as above. I am very interested in these sorts of problems and will be happy to help figure out a fix with you (and everyone else who might be affected).
 
@@ -295,6 +307,19 @@ Some of those you can mitigate (don't run the database over a network!) and some
 If you do not already have a backup routine for your files, this is a great time to start. I now run a backup every week of all my data so that if my computer blows up or anything else awful happens, I'll at worst have lost a few days' work. Before I did this, I once lost an entire drive with tens of thousands of files, and it felt awful. If you are new to saving a lot of media, I hope you can avoid what I felt. ;\_;
 
 I use [ToDoList](http://abstractspoon.com/) to remind me of my jobs for the day, including backup tasks, and [FreeFileSync](http://sourceforge.net/projects/freefilesync/) to actually mirror over to an external usb drive. I recommend both highly (and for ToDoList, I recommend hiding the complicated columns, stripping it down to a simple interface). It isn't a huge expense to get a couple-TB usb drive either--it is **absolutely** worth it for the peace of mind.
+
+??? note "ToDoList on Wine"
+    ToDoList only has a Windows build, but it works with a couple minor UI bugs on Wine. I have found success with a different setup than what they recommend:
+    
+    - Install `wine` and `winetricks`
+    - Boot `winetricks` from the terminal and create a new prefix called `wine_todo`. This will be at `/home/you/.local/share/wineprefixes/wine_todo`
+    - `WINEPREFIX=/home/you/.local/share/wineprefixes/wine_todo/ winecfg` and make sure it looks ok
+    - `WINEPREFIX=/home/you/.local/share/wineprefixes/wine_todo/ winetricks mfc42`
+    - `WINEPREFIX=/home/you/.local/share/wineprefixes/wine_todo/ winetricks mfc140`
+    - `WINEPREFIX=/home/you/.local/share/wineprefixes/wine_todo/ winetricks dotnet48` (takes a while and may spam some errors, you are fine)
+    - Extract todolist to `.../wine_todo/drive_c/todolist` or similar
+    - Your command for a .sh/.desktop launcher is `WINEPREFIX=/home/you/.local/share/wineprefixes/wine_todo/ wine /home/you/.local/share/wineprefixes/wine_todo/drive_c/todolist/ToDoList.exe`
+    - Back up the whole 'todolist' folder regularly.
 
 By default, hydrus stores all your user data in one location, so backing up is simple:
 

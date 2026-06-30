@@ -344,7 +344,7 @@ class ClientFilesManager( object ):
                     HydrusData.DebugPrint( 'Missing locations follow:' )
                     HydrusData.DebugPrint( missing_string )
                     
-                    text = 'When initialising the client files manager, some file locations did not exist! They have all been written to the log!'
+                    text = 'When initialising the client files manager, some file locations either did not exist or were not available! They have all been written to the log!'
                     text += '\n' * 2
                     text += 'If this is happening on client boot, you should now be presented with a dialog to correct this manually!'
                     
@@ -352,7 +352,7 @@ class ClientFilesManager( object ):
                     
                 else:
                     
-                    text = 'When initialising the client files manager, these file locations did not exist:'
+                    text = 'When initialising the client files manager, these file locations either did not exist or were not available:'
                     text += '\n' * 2
                     text += missing_string
                     text += '\n' * 2
@@ -819,6 +819,8 @@ class ClientFilesManager( object ):
                 
             
         
+        # ruh roh, we cannot find the file
+        
         subfolders = self._GetPossibleSubfoldersForFile( hash, 'f' )
         
         for subfolder in subfolders:
@@ -853,9 +855,7 @@ class ClientFilesManager( object ):
     
     def _RepopulateMissingLocationsReference( self ):
         
-        # this would be faster if we did a scandir on the shared parents, but I tried it and it has bad worst case scenarios if we hit a granularity 2 with granularity 3 expectations
-        
-        self._missing_subfolders = { subfolder for subfolders in self._prefixes_to_client_files_subfolders.values() for subfolder in subfolders if not subfolder.PathExists() }
+        self._missing_subfolders = { subfolder for subfolders in self._prefixes_to_client_files_subfolders.values() for subfolder in subfolders if not subfolder.PathExists( lazy_check_ok = True ) }
         
     
     def _WaitOnWakeup( self ):

@@ -39,13 +39,14 @@ from hydrus.client.gui.search import ClientGUIACDropdown
 from hydrus.client.gui.widgets import ClientGUICommon
 from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaSingle
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.search import ClientSearchTagContext
 
 class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPanels.ManagePanel ):
     
-    def __init__( self, parent, location_context: ClientLocation.LocationContext, tag_presentation_location: int, medias: list[ ClientMedia.MediaSingleton ], immediate_commit = False, canvas_key = None ):
+    def __init__( self, parent, location_context: ClientLocation.LocationContext, tag_presentation_location: int, medias: list[ ClientMediaSingle.MediaSingle ], immediate_commit = False, canvas_key = None ):
         
         super().__init__( parent )
         
@@ -173,17 +174,17 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             
             service_key = page.GetServiceKey()
             
-            service_name = CG.client_controller.services_manager.GetServiceName( service_key )
+            name = CG.client_controller.services_manager.GetNameSafe( service_key )
             
             num_tags = page.GetTagCount()
             
             if num_tags > 0:
                 
-                tab_name = f'{service_name} ({num_tags})'
+                tab_name = f'{name} ({num_tags})'
                 
             else:
                 
-                tab_name = service_name
+                tab_name = name
                 
             
             if page.HasChanges():
@@ -360,7 +361,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
         showNext = QC.Signal()
         valueChanged = QC.Signal()
         
-        def __init__( self, parent, location_context: ClientLocation.LocationContext, tag_service_key, tag_presentation_location: int, media: list[ ClientMedia.MediaSingleton ], immediate_commit, canvas_key = None ):
+        def __init__( self, parent, location_context: ClientLocation.LocationContext, tag_service_key, tag_presentation_location: int, media: list[ ClientMediaSingle.MediaSingle ], immediate_commit, canvas_key = None ):
             
             super().__init__( parent )
             
@@ -369,6 +370,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             self._tag_presentation_location = tag_presentation_location
             self._immediate_commit = immediate_commit
             self._canvas_key = canvas_key
+            self._media = set()
             
             self._pending_content_update_packages = []
             
@@ -431,7 +433,7 @@ class ManageTagsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPa
             self._incremental_tagging_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Incremental Tagging' ) )
             self._incremental_tagging_button.setVisible( len( media ) > 1 )
             
-            width = ClientGUIFunctions.ConvertTextToPixelWidth( self._incremental_tagging_button, 5 )
+            width = ClientGUIFunctions.ConvertTextToPixelWidth( self._incremental_tagging_button, 4.5 )
             self._incremental_tagging_button.setFixedWidth( width )
             
             self._cog_button = ClientGUIMenuButton.CogIconButton( self._tags_box_sorter, menu_template_items )

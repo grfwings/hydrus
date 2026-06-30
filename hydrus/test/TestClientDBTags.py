@@ -14,7 +14,8 @@ from hydrus.client import ClientLocation
 from hydrus.client import ClientServices
 from hydrus.client.db import ClientDB
 from hydrus.client.importing import ClientImportFiles
-from hydrus.client.importing.options import FileImportOptionsLegacy
+from hydrus.client.importing.options import ImportOptionsConstants as IOC
+from hydrus.client.importing.options import ImportOptionsManager
 from hydrus.client.metadata import ClientContentUpdates
 from hydrus.client.metadata import ClientTags
 from hydrus.client.search import ClientSearchFileSearchContext
@@ -785,16 +786,15 @@ class TestClientDBTags( unittest.TestCase ):
             import_hashes = []
             filenames = [ 'muh_gif.gif', 'muh_jpg.jpg', 'muh_mp4.mp4', 'muh_mpeg.mpeg', 'muh_png.png', 'muh_webm.webm' ]
             
+            full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
+            
             for filename in filenames:
                 
                 TG.test_controller.SetRead( 'hash_status', ClientImportFiles.FileImportStatus.STATICGetUnknownStatus() )
                 
                 path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
                 
-                file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-                file_import_options.SetIsDefault( True )
-                
-                file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+                file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
                 
                 file_import_job.GeneratePreImportHashAndStatus()
                 
@@ -1105,10 +1105,9 @@ class TestClientDBTags( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', 'muh_jpg.jpg' ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -1206,10 +1205,9 @@ class TestClientDBTags( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', 'muh_jpg.jpg' ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -1308,10 +1306,9 @@ class TestClientDBTags( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', 'muh_jpg.jpg' ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -1412,10 +1409,9 @@ class TestClientDBTags( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', 'muh_jpg.jpg' ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -1515,10 +1511,9 @@ class TestClientDBTags( unittest.TestCase ):
         
         path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', 'muh_jpg.jpg' ) )
         
-        file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-        file_import_options.SetIsDefault( True )
+        full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
         
-        file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+        file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
         
         file_import_job.GeneratePreImportHashAndStatus()
         
@@ -2636,8 +2631,7 @@ class TestClientDBTags( unittest.TestCase ):
                 
                 # doing this again tests a very simple add_file
                 
-                file_import_options = FileImportOptionsLegacy.FileImportOptionsLegacy()
-                file_import_options.SetIsDefault( True )
+                full_import_options_container = ImportOptionsManager.ImportOptionsManager.STATICGetDefaultInitialisedManager().GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
                 
                 for filename in ( 'muh_jpg.jpg', 'muh_png.png', 'muh_apng.png' ):
                     
@@ -2645,7 +2639,7 @@ class TestClientDBTags( unittest.TestCase ):
                     
                     path = HydrusStaticDir.GetStaticPath( os.path.join( 'testing', filename ) )
                     
-                    file_import_job = ClientImportFiles.FileImportJob( path, file_import_options )
+                    file_import_job = ClientImportFiles.FileImportJob( path, full_import_options_container )
                     
                     file_import_job.GeneratePreImportHashAndStatus()
                     

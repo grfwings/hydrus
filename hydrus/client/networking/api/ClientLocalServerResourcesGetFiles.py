@@ -15,7 +15,7 @@ from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
 from hydrus.client import ClientThreading
 from hydrus.client import ClientUgoiraHandling
-from hydrus.client.media import ClientMedia
+from hydrus.client.media import ClientMediaSort
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaResultAPI
 from hydrus.client.media import ClientMediaManagers
@@ -75,17 +75,12 @@ class HydrusResourceClientAPIRestrictedGetFilesSearchFiles( HydrusResourceClient
                 raise HydrusExceptions.BadRequestException( 'Sorry, did not understand that sort type!' )
                 
             
-            file_sort_asc = False
-            
-            if 'file_sort_asc' in request.parsed_request_args:
-                
-                file_sort_asc = request.parsed_request_args.GetValue( 'file_sort_asc', bool )
-                
+            file_sort_asc = request.parsed_request_args.GetValue( 'file_sort_asc', bool, default_value = True )
             
             sort_order = CC.SORT_ASC if file_sort_asc else CC.SORT_DESC
             
             # newest first
-            sort_by = ClientMedia.MediaSort( sort_type = ( 'system', file_sort_type ), sort_order = sort_order )
+            sort_by = ClientMediaSort.MediaSort( sort_type = ( 'system', file_sort_type ), sort_order = sort_order )
             
             if 'return_hashes' in request.parsed_request_args:
                 
@@ -519,6 +514,7 @@ class HydrusResourceClientAPIRestrictedGetFilesFileMetadata( HydrusResourceClien
         if include_services_object:
             
             body_dict[ 'services' ] = ClientLocalServerCore.GetServicesDict()
+            body_dict[ 'services_v2' ] = ClientLocalServerCore.GetServicesList()
             
         
         mime = request.preferred_mime
