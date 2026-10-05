@@ -45,7 +45,7 @@ Backing such an arrangement up is obviously more complicated, and the internal c
 !!! danger
     **As always, I recommend creating a backup before you try any of this, just in case it goes wrong.**
 
-If you would like to move your files and thumbnails to new locations, hit _database->move media files_, giving you this dialog:
+If you would like to move your files and thumbnails to new locations, hit `database->locations`, giving you this dialog:
 
 ![](images/db_migration.png)
 
@@ -55,7 +55,7 @@ The buttons let you add more locations and remove old ones. The operations on th
 
 **Weight** means the relative amount of media you would like to store in that location. It only matters if you are spreading your files across multiple locations. If location A has a weight of 1 and B has a weight of 2, A will get approximately one third of your files and B will get approximately two thirds.
 
-**Max Size** means the max total size of files the client will want to store in that location. Again, it only matters if you are spreading your files across multiple locations, but it is a simple way to ensure you don't go over a particular smaller hard drive's size. One location must always be limitless. This is not precise, so give it some padding. When one location is maxed out, the remaining locations will distribute the remainder of the files according to their respective weights. _For the meantime, this will not update by itself. If you import many files, the location may go over its limit and you will have to revisit 'move media files' to rebalance your files again. Bear with me--I will fix this soon with the background migrate._ 
+**Max Size** means the max total size of files the client will want to store in that location. Again, it only matters if you are spreading your files across multiple locations, but it is a simple way to ensure you don't go over a particular smaller hard drive's size. One location must always be limitless. This is not precise, so give it some padding. When one location is maxed out, the remaining locations will distribute the remainder of the files according to their respective weights. _For the meantime, this will not update by itself. If you import many files, the location may go over its limit and you will have to revisit `database->locations` to rebalance your files again. Bear with me--I will fix this soon with the background migrate._ 
 
 Let's set up an example move:
 
@@ -88,7 +88,7 @@ The current and ideal usages line up, and the defunct `C:\Hydrus Network\db\clie
 
 When you first start, the hydrus database stores its files in a two-hex 'granularity'. This means that your files or thumbnails are split into two sets of 256 folders called 'fxx' or 'txx', where 'xx' is 00-ff in hexadecimal and corresponding to the prefix hex of a particular file hash. As the largest clients ran into the millions of files, each subfolder was getting pretty large, slowing access latency in certain cases (e.g. "open externally" causing an external video player to scan the origin folder to search for subtitle files). We realised we needed a finer granularity of storage.
 
-As of v660, we are experimenting with three-hex storage, which means that each 'fxx' or 'txx' folder now has 16 subfolders, 0-f, and thus each internal prefix would be 'fxxx' and 'txxx', for two sets of 4096 partitions. You can see your current granularity on the `database->move media files` dialog and open up a sub-panel just to handle this variable:
+As of v660, we are experimenting with three-hex storage, which means that each 'fxx' or 'txx' folder now has 16 subfolders, 0-f, and thus each internal prefix would be 'fxxx' and 'txxx', for two sets of 4096 partitions. You can see your current granularity on the `database->locations` dialog and open up a sub-panel just to handle this variable:
 
 ![](images/db_migration_granularity_panel.png)
 
@@ -177,6 +177,9 @@ You should now have _something_ like this (let's say the D drive is the fast SSD
 
 ![](images/db_migration_example.png)
 
+!!! info "File Folder Permissions"
+    Make sure that hydrus has read/write permissions to any new db or folder structures you point it at! This can be a subtle question in some NAS/Docker setups, where permissions rules can be sophisticated. Make sure the username that runs the hydrus process has full read/write access (which sometimes includes an extra "append" access, to _create_ a new file), and make sure it applies to subfolders too.
+
 ## moving to a new machine { id="to_new_OS" }
 
 The hydrus database is completely portable. Everything that makes your client your client is stored within what I have described above--there are no settings stored in a conf file somewhere in your OS. As well as moving your hydrus client around the same system, you can move it to another computer quite easily. You are generally looking at creating a new install and then moving your "db" folder from the old location to the new. It all jumps between Windows/Linux/macOS with no big modifications needed. The one thing you do need to check is the paths the database uses to talk to other parts of the local hard drive--for instance the location of an Export Folder.
@@ -208,7 +211,7 @@ Then:
 - check `options->open externally` and update anything as needed
 - check `options->exporting` and update the default export directory
 - check a file's `right-click->share->export files` window to see what the default export path there is
-- check `database->move media files` and remove any empty stubs from the old system
+- check `database->locations` and remove any empty stubs from the old system
 - edit your import folders to point at the correct locations
 - edit your export folders to point at the correct locations
 - unpause import/export folders

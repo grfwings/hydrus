@@ -9,6 +9,7 @@ from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusLists
 from hydrus.core import HydrusNumbers
+from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTime
 from hydrus.core.files.images import HydrusImageMetadata
 from hydrus.core.files.images import HydrusImageOpening
@@ -17,7 +18,6 @@ from hydrus.core.processes import HydrusThreading
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
-from hydrus.client import ClientPaths
 from hydrus.client import ClientPDFHandling
 from hydrus.client import ClientThreading
 from hydrus.client.files import ClientFilesMaintenance
@@ -27,6 +27,7 @@ from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui.duplicates import ClientGUIDuplicatesContentMergeOptions
+from hydrus.client.gui.executables import ClientGUIExecutableActions
 from hydrus.client.gui.exporting import ClientGUIExport
 from hydrus.client.gui.media import ClientGUIMediaSimpleActions
 from hydrus.client.gui.metadata import ClientGUIEditTimestamps
@@ -223,7 +224,7 @@ def CopyHashesToClipboard( win: QW.QWidget, hash_type: str, medias: collections.
     else:
         
         num_hashes = len( sha256_hashes )
-        num_remote_medias = len( [ not media.GetLocationsManager().IsLocal() for media in flat_media ] )
+        num_remote_medias = len( [ media for media in flat_media if not media.GetLocationsManager().IsLocal()] )
         
         source_to_desired = CG.client_controller.Read( 'file_hashes', sha256_hashes, 'sha256', hash_type )
         
@@ -247,7 +248,7 @@ def CopyHashesToClipboard( win: QW.QWidget, hash_type: str, medias: collections.
                 message += ' {} of the files you wanted are not currently in this client. If they have never visited this client, the lookup is impossible.'.format( HydrusNumbers.ToHumanInt( num_remote_medias ) )
                 
             
-            if num_remote_medias < num_hashes:
+            if num_remote_medias < num_missing:
                 
                 message += ' It could be that some of the local files are currently missing this information in the hydrus database. A file maintenance job (under the database menu) can repopulate this data.'
                 
@@ -316,7 +317,7 @@ def DoClearFileViewingStats( win: QW.QWidget, flat_medias: collections.abc.Colle
         
     
 
-def DoOpenKnownURLFromShortcut( win, media ):
+def DoOpenKnownURLFromShortcut( win: QW.QWidget, media ):
     
     urls = media.GetLocationsManager().GetURLs()
     
@@ -374,7 +375,7 @@ def DoOpenKnownURLFromShortcut( win, media ):
             
         
     
-    ClientPaths.LaunchURLInDefaultWebBrowser( url )
+    ClientGUIExecutableActions.OpenExternallyURLDefault( win, url )
     
 
 # this isn't really a 'media' guy, and it edits the options in place, so maybe move/edit/whatever!
@@ -1060,7 +1061,7 @@ def MoveOrDuplicateLocalFiles( win: QW.QWidget, dest_service_key: bytes, action:
     CG.client_controller.CallToThread( ClientFileMigration.DoMoveOrDuplicateLocalFiles, dest_service_key, action, applicable_media_results, source_service_key )
     
 
-def OpenURLs( win: QW.QWidget, urls, web_browser_launch_path ):
+def OpenURLs( win: QW.QWidget, urls, executable_id_and_name: HydrusSerialisable.IdAndName ):
     
     urls = sorted( urls )
     
@@ -1113,7 +1114,7 @@ def OpenURLs( win: QW.QWidget, urls, web_browser_launch_path ):
                     job_status.SetGauge( i, num_urls )
                     
                 
-                ClientPaths.LaunchURLInWebBrowser( url, web_browser_launch_path )
+                ClientGUIExecutableActions.OpenExternallyURL( win, executable_id_and_name, url )
                 
                 time.sleep( 1 )
                 
@@ -1130,7 +1131,7 @@ def OpenURLs( win: QW.QWidget, urls, web_browser_launch_path ):
     CG.client_controller.CallToThread( do_it, urls )
     
 
-def OpenMediaURLs( win: QW.QWidget, medias, web_browser_launch_path ):
+def OpenMediaURLs( win: QW.QWidget, medias, executable_id_and_name ):
     
     urls = set()
     
@@ -1141,10 +1142,10 @@ def OpenMediaURLs( win: QW.QWidget, medias, web_browser_launch_path ):
         urls.update( media_urls )
         
     
-    OpenURLs( win, urls, web_browser_launch_path )
+    OpenURLs( win, urls, executable_id_and_name )
     
 
-def OpenMediaURLClassURLs( win: QW.QWidget, medias, url_class, web_browser_launch_path ):
+def OpenMediaURLClassURLs( win: QW.QWidget, medias, url_class, executable_id_and_name ):
     
     urls = set()
     
@@ -1162,7 +1163,7 @@ def OpenMediaURLClassURLs( win: QW.QWidget, medias, url_class, web_browser_launc
             
         
     
-    OpenURLs( win, urls, web_browser_launch_path )
+    OpenURLs( win, urls, executable_id_and_name )
     
 
 def RedownloadURLClassURLsForceRefetch( win: QW.QWidget, medias, url_class ):

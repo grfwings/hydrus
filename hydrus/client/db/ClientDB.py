@@ -1227,6 +1227,15 @@ class DB( HydrusDB.HydrusDB ):
             self._AddService( service_key, service_type, name, dictionary )
             
         
+        from hydrus.client.executables import ClientExecutableManager
+        from hydrus.client.executables import ClientExecutableDefaults
+        
+        executable_manager = ClientExecutableManager.ExecutableManager()
+        
+        executable_manager.SetCallables( ClientExecutableDefaults.GetAllDefaults( True ) )
+        
+        self.modules_serialisable.SetJSONDump( executable_manager )
+        
         from hydrus.client import ClientOptions
         
         new_options = ClientOptions.ClientOptions()
@@ -3986,6 +3995,7 @@ class DB( HydrusDB.HydrusDB ):
                 'import_file' : self._ImportFile,
                 'import_update' : self._ImportUpdate,
                 'maintain_similar_files_search_for_potential_duplicates' : self._PerceptualHashesSearchForPotentialDuplicates,
+                'maintain_trash' : self._MaintainTrash,
                 'migration_clear_job' : self._MigrationClearJob,
                 'migration_start_mappings_job' : self._MigrationStartMappingsJob,
                 'migration_start_pairs_job' : self._MigrationStartPairsJob,
@@ -4485,6 +4495,75 @@ class DB( HydrusDB.HydrusDB ):
         )
         
         self._modules.append( self.modules_files_duplicates_auto_resolution_search )
+        
+    
+    def _MaintainTrash( self, expected_work_time: float ):
+        
+        def get_current_total_trash_size():
+            
+            service_info = self._GetServiceInfoSpecific( self.modules_services.trash_service_id, HC.LOCAL_FILE_TRASH_DOMAIN, { HC.SERVICE_INFO_TOTAL_SIZE } )
+            
+            return service_info[ HC.SERVICE_INFO_TOTAL_SIZE ]
+            
+        
+        time_to_stop = HydrusTime.GetNowFloat() + expected_work_time
+        
+        still_work_to_do = False
+        
+        if HC.options[ 'trash_max_size' ] is not None:
+            
+            max_size = HC.options[ 'trash_max_size' ] * 1048576
+            
+            while get_current_total_trash_size() > max_size:
+                
+                hashes = self._GetTrashHashes( limit = 1 )
+                
+                if len( hashes ) > 0:
+                    
+                    content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes )
+                    
+                    content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
+                    
+                    self.modules_content_updates.ProcessContentUpdatePackage( content_update_package )
+                    
+                    still_work_to_do = True
+                    
+                else:
+                    
+                    self._DeleteServiceInfo( CC.TRASH_SERVICE_KEY, [ HC.SERVICE_INFO_TOTAL_SIZE ] )
+                    
+                
+                if HydrusTime.TimeHasPassedFloat( time_to_stop ):
+                    
+                    return still_work_to_do
+                    
+                
+            
+        
+        if HC.options[ 'trash_max_age' ] is not None:
+            
+            max_age = HC.options[ 'trash_max_age' ] * 3600
+            
+            hashes = self._GetTrashHashes( limit = 1, minimum_age = max_age )
+            
+            while len( hashes ) > 0:
+                
+                content_update = ClientContentUpdates.ContentUpdate( HC.CONTENT_TYPE_FILES, HC.CONTENT_UPDATE_DELETE, hashes )
+                
+                content_update_package = ClientContentUpdates.ContentUpdatePackage.STATICCreateFromContentUpdate( CC.HYDRUS_LOCAL_FILE_STORAGE_SERVICE_KEY, content_update )
+                
+                self.modules_content_updates.ProcessContentUpdatePackage( content_update_package )
+                
+                still_work_to_do = True
+                
+                if HydrusTime.TimeHasPassedFloat( time_to_stop ):
+                    
+                    return still_work_to_do
+                    
+                
+            
+        
+        return still_work_to_do
         
     
     def _ManageDBError( self, job, e ):
@@ -7624,7 +7703,14 @@ class DB( HydrusDB.HydrusDB ):
                     
                     if len( hash_ids ) > 0:
                         
-                        do_transparency_recheck = self._controller.CallBlockingToQtTLW( ask_what_to_do_transparency_recheck_644, len( hash_ids ) )
+                        if HG.non_interactive_update:
+                            
+                            do_transparency_recheck = True
+                            
+                        else:
+                            
+                            do_transparency_recheck = self._controller.CallBlockingToQtTLW( ask_what_to_do_transparency_recheck_644, len( hash_ids ) )
+                            
                         
                         if do_transparency_recheck:
                             
@@ -7840,7 +7926,14 @@ class DB( HydrusDB.HydrusDB ):
                         message += '\n\n'
                         message += 'If you close this dialog, I will continue with the update but insert the default "db/client_files" location for this entry, and you will get the repair file locations dialog after the update. If you know you need to fix this by a different method, kill the hydrus process now.'
                         
-                        CG.client_controller.BlockingSafeShowCriticalMessage( 'Problem updating!', message )
+                        if HG.non_interactive_update:
+                            
+                            HydrusData.Print( message )
+                            
+                        else:
+                            
+                            CG.client_controller.BlockingSafeShowCriticalMessage( 'Problem updating!', message )
+                            
                         
                         problem_locations.add( absolute_location )
                         
@@ -8256,7 +8349,14 @@ class DB( HydrusDB.HydrusDB ):
                 
                 self._controller.frame_splash_status.SetSubtext( f'scheduling file metadata regen maintenance' )
                 
-                do_it = self._controller.CallBlockingToQtTLW( ask_what_to_do_metadata_regen_682 )
+                if HG.non_interactive_update:
+                    
+                    do_it = True
+                    
+                else:
+                    
+                    do_it = self._controller.CallBlockingToQtTLW( ask_what_to_do_metadata_regen_682 )
+                    
                 
                 if do_it:
                     
@@ -8364,6 +8464,185 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
+        if version == 686:
+            
+            try:
+                
+                from hydrus.client.executables import ClientExecutableDefaults
+                from hydrus.client.executables import ClientExecutableManager
+                from hydrus.client.executables import ClientExecutableLegacy
+                from hydrus.client.executables import ClientExecutablePipelines
+                
+                executable_manager = ClientExecutableManager.ExecutableManager()
+                
+                executable_manager.SetCallables( ClientExecutableDefaults.GetAllDefaults( True ) )
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                new_options_dict = new_options._dictionary
+                
+                #
+                
+                calls_to_add = set()
+                
+                # update open url calls
+                
+                if 'web_browser_launch_paths' in new_options_dict:
+                    
+                    web_browser_launch_paths = list( new_options_dict[ 'web_browser_launch_paths' ] )
+                    
+                    if len( web_browser_launch_paths ) == 0:
+                        
+                        web_browser_launch_paths = [ None ]
+                        
+                    
+                else:
+                    
+                    web_browser_launch_paths = [ None ]
+                    
+                
+                web_browser_executable_ids_and_names = HydrusSerialisable.SerialisableList()
+                
+                for path in web_browser_launch_paths:
+                    
+                    if path is None:
+                        
+                        call = executable_manager.GetOSCallable( ClientExecutablePipelines.EXECUTABLE_PIPELINE_TYPE_OPEN_EXTERNALLY_SINGLE_URL )
+                        
+                    else:
+                        
+                        try:
+                            
+                            call = ClientExecutableLegacy.ConvertOldURLCallToExecutableActualCall( path )
+                            
+                        except Exception as e:
+                            
+                            HydrusData.Print( f'Could not convert the web browser launch path "{path}"' )
+                            HydrusData.PrintException( e )
+                            
+                            continue
+                            
+                        
+                        calls_to_add.add( call )
+                        
+                    
+                    web_browser_executable_ids_and_names.append( call.GetIdAndName() )
+                    
+                
+                new_options_dict[ 'launch_url_executable_ids_and_names' ] = web_browser_executable_ids_and_names
+                
+                #
+                
+                if 'open_externally_launch_paths' in new_options_dict:
+                    
+                    open_externally_launch_paths = dict( new_options_dict[ 'open_externally_launch_paths' ] )
+                    
+                    if len( open_externally_launch_paths ) == 0:
+                        
+                        open_externally_launch_paths = { HC.GENERAL_FILE : [ None ] }
+                        
+                    
+                else:
+                    
+                    open_externally_launch_paths = { HC.GENERAL_FILE : [ None ] }
+                    
+                
+                open_externally_mimes_to_executable_ids_and_names = HydrusSerialisable.SerialisableDictionary()
+                
+                for ( mime, launch_paths ) in open_externally_launch_paths.items():
+                    
+                    open_externally_executable_ids_and_names = HydrusSerialisable.SerialisableList()
+                    
+                    for path in launch_paths:
+                        
+                        if path is None:
+                            
+                            call = executable_manager.GetOSCallable( ClientExecutablePipelines.EXECUTABLE_PIPELINE_TYPE_OPEN_EXTERNALLY_SINGLE_FILE )
+                            
+                        else:
+                            
+                            try:
+                                
+                                call = ClientExecutableLegacy.ConvertOldFileCallToExecutableActualCall( path )
+                                
+                            except Exception as e:
+                                
+                                HydrusData.Print( f'Could not convert the open-externally file launch path "{path}"' )
+                                HydrusData.PrintException( e )
+                                
+                                continue
+                                
+                            
+                            calls_to_add.add( call )
+                            
+                        
+                        open_externally_executable_ids_and_names.append( call.GetIdAndName() )
+                        
+                    
+                    open_externally_mimes_to_executable_ids_and_names[ mime ] = open_externally_executable_ids_and_names
+                    
+                
+                new_options_dict[ 'mimes_to_launch_file_executable_ids_and_names' ] = open_externally_mimes_to_executable_ids_and_names
+                
+                #
+                
+                new_callables = list( executable_manager.GetCallables() )
+                
+                existing_names = { c.GetName() for c in new_callables }
+                
+                for call in calls_to_add:
+                    
+                    HydrusSerialisable.SetNonDupeName( call, existing_names )
+                    
+                    existing_names.add( call.GetName() )
+                    
+                    new_callables.append( call )
+                    
+                
+                executable_manager.SetCallables( new_callables )
+                
+                executable_manager.SetClean()
+                
+                if 'web_browser_launch_paths' in new_options_dict:
+                    
+                    del new_options_dict[ 'web_browser_launch_paths' ]
+                    
+                
+                if 'open_externally_launch_paths' in new_options_dict:
+                    
+                    del new_options_dict[ 'open_externally_launch_paths' ]
+                    
+                
+                self.modules_serialisable.SetJSONDump( new_options )
+                self.modules_serialisable.SetJSONDump( executable_manager )
+                
+            except Exception as e:
+                
+                raise Exception( 'Hey, unfortunately I could not initialise the new executable manager for you. Something is very wrong; roll back to v686 and tell hydev about this. There should be more info in the log.' ) from e
+                
+            
+        
+        if version == 687:
+            
+            try:
+                
+                import_options_manager = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_IMPORT_OPTIONS_MANAGER )
+                
+                from hydrus.client.importing.options import ImportOptionsConstants as IOC
+                
+                global_import_options_container = import_options_manager.GetDefaultImportOptionsContainerForCallerType( IOC.IMPORT_OPTIONS_CALLER_TYPE_GLOBAL )
+                
+                from hydrus.client.importing.options import ExternalProgramsImportOptions
+                
+                global_import_options_container.SetImportOptions( ExternalProgramsImportOptions.ExternalProgramsImportOptions() )
+                
+                self.modules_serialisable.SetJSONDump( import_options_manager )
+                
+            except Exception as e:
+                
+                raise Exception( 'Hey, unfortunately I could not update your import options. Something is wrong. Roll back to v687 and tell hydev about this. There should be more info in the log.' ) from e
+                
+            
         #
         
         self._controller.frame_splash_status.SetTitleText( 'updated db to v{}'.format( HydrusNumbers.ToHumanInt( version + 1 ) ) )

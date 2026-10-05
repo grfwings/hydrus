@@ -7,6 +7,112 @@ title: Changelog
 !!! note
     This is the new changelog, only the most recent builds. For all versions, see the [old changelog](old_changelog.html).
 
+## [Version 689](https://github.com/hydrusnetwork/hydrus/releases/tag/v689)
+
+### all misc this week
+
+* with the tests complete, everyone is moved to the new 'GraphicsView' thumbnail rendering system. the old thumbnail grid rendering code and related thumb cache and other objects are deleted
+* for local file services, you can now delete a deleted tag record in manage tags. if you are looking at a deleted tags (i.e. one with an X count, like `skirt (X1)`), then actioning it (double-click etc..) now gives you the option to either undelete it or clear its deletion record. the 'remove? yes/no' dialog that you may have set to appear when you hit the delete key will now say whether you are about to remove or purge your selection
+* the daemon that deletes overflowing/old files from the trash (when you give the trash a max size or age under `options->files and trash`) is migrated from the old daemon type to the newer. it uses fewer database queries to work, has smarter and lower-latency work/sleep timings that cap out after a half-second of dynamically flexible work, no longer fights with the user if they happen to undelete the oldest trashed files while it is working, avoids work for the sixty seconds after you delete a file from anywhere, and deletes up to the satisfaction of the rules and no further (previously, it would work in batches and cut the trash down to way under the size/age the rules asked for)
+* a 'is this file in use by another process?' test on to-be-imported files no longer attempts the 'rename file to itself' method in non-Windows. this test was false-positive failing on some POSIX systems with advanced permission setups and had no true-positive outcome
+* the 'is this file in use by another process?' test now checks in with `flock` in non-Windows systems. it'll try to open a read on the file and grab an exclusive lock; if either fail, it says no. if this flock test causes permission issues in your storage setup, it _should_ still work while spitting info to log; you can turn it off completely with a new checkbox in `options->files and trash`
+* fixed disappearing system tray icons on 'hide to system tray' on OSes with a Window Manager that needs a full QWidget for the system tray icon. thanks to the reporting user for figuring this out! (issue #2091)
+* fixed the 'move left/right one tab/service page' and 'move to previous/next media' shortcut actions not being listed as choosable action types in the autocomplete shortcut set! (issue #2087)
+
+## [Version 688](https://github.com/hydrusnetwork/hydrus/releases/tag/v688)
+
+### run external program on import
+
+* when importing files, there is a new 'external programs import options'. it allows you to run a 'send single file' call every time a file imports with a result of 'successful (and new)', 'successful (already in db)', or both. if you are building a secondary database of your hydrus files, let's say some special duplicate or search data, you can now auto-populate this guy with your new imports
+* when the import options panels are in simple mode, this new options type appears in global, local hard drive import, import folders, and specific import options. I expect most people who use this will want it for either a specific import folder or for everything
+
+### exe manager misc
+
+* I added a first draft of an 'executable manager' help page to https://hydrusnetwork.github.io/hydrus/external_programs.html . the options page now links to this
+* the 'open externally (single file)' and 'open URL (single URL)' executable types are renamed to 'send single file' and 'send single URL'
+* the 'default programs' options page is renamed back to 'open externally'
+* if you import an local process call with any of: exe path longer than 256 characters; more than 16 parameters; or more than 1024 characters of parameters, then the import routine tells you about the weirdness, showing what is weird, and asks if you are yes/no ok to add it
+
+### import options
+
+* the `options->import options` panel now shows your favourites/presets in a new list. this is the stuff normally tucked into the 'star' button, just exposed better. it is all synced with the star button, so changes show up immediately
+* the box-panels holding the three lists are now also collapsible, if you need more space
+* added some simple texts to the boxes and tweaked some labels here. 'favourites' are now generally called 'favourites/presets'
+* fixed the default/url class 'paste custom' menu option to actually boot the customise panel, rather than just doing a paste-merge
+* the 'Pasted!' micro-notifications in the options panel no longer appear when the paste action is cancelled
+
+### misc
+
+* added `--non_interactive_update` launch switch, which makes the client auto-choose the recommended default choice if the update routine wants to ask the user a yes/no question. if you do headless/absent updates, let me know if this is sufficient
+* the splash screen now prefers to use an svg, and I have drawn an svg for it to use. it looks like the old png. feel free to create your own `db_dir/static/hydrus_splash.svg`  (or .png) file and that will be used instead. it renders at 144x196, the size of the old png, but maybe we can adjust a little now we have the tech
+* fixed a small blank box that was appearing in some stylesheets in the 'external call' box of the new exe manager UI
+* fixed thumbnail redraw in the new thumbnail rendering tech when you change stylesheets or flip darkmode or change blurhash rendering
+* fixed thumbnail redraw in the new thumbnail rendering tech when you change thumb border or margin
+* yes/no dialogs (and some other 'quick' dialogs) now max out at ~48 lines of text height. they get a scrolling panel and everything, but if these guys want to dump a gigantic list or error traceback or something, they'll stop being a giant column
+* all file imports will now assign 'ignored' status to a file that is 'already in db' but for which the file filtering options would deny (let's say you have an import folder set up to not get any pngs). previously, these files were set as 'already in db', before the file filtering checks had a chance to make a judgment, and since the file was therefore considered 'successful', additional metadata like tags could be applied even though the file would have been ignored otherwise. it will now be set as 'ignored' and no metadata added
+* if you have multiple since/before time predicates of a particular type in a search (e.g. 'imported since two weeks ago' and 'imported since one week ago'), the search is now careful to select the most restrictive of those, satisfying both. previously it pseudorandomly selected one to use (issue #2089)
+* fixed the 'x files were not in client' error label when you try to copy some non-sha256 hashes and not all of them can be found. it was counting wrong before and just saying the total selection size
+* fixed right-clicking on files with unknown filetype (the new open-with executable stuff wasn't handling it correct)
+* if the deferred physical delete system encounters a file with seemingly no file info, the system now stops deferred physical delete for that boot and gives the user a note that they should regen their local hashes cache. this symptom seems to be a knock-on from a desynced hash cache
+
+### boring stuff
+
+* refactored some 'manage options' stuff so it is less coupled to the dialog
+* the favourite tags list is now only refreshed across your autocomplete dropdowns if it actually changes on an options ok
+* some custom-colour widgets now only redraw themselves if darkmode actually flips on options ok
+* fixed a mermaid chart in the 'virtual memory in linux' help
+
+## [Version 687](https://github.com/hydrusnetwork/hydrus/releases/tag/v687)
+
+### misc
+
+* the popup toaster is now very anti-taking-focus. if you navigating the thumbs via keyboard while popups bounce around doing their thing, particularly subs, they should now be less likely to steal focus from what you were doing. even clicking buttons shouldn't do it. this is mostly an experiment, so let me know how it works out
+* updated `mkdocs-material` from `6.7.1` to `6.7.7` due to a dependbot alert about an XSS issue with the search box
+
+### simpler menubar
+
+* in an effort to make the main gui's top-level menubar menus thinner and easier to mouse through, a machete has been applied. long labels are reworked or banished, 'manage x...' is now generally just 'x...', and some 'x and y' are now 'x/y', and some big weird things are pushed down to a submenu. Some tooltips are altered to help. I apologise for the jolt to muscle memory here, but I've been meaning to do this for ages and I'm trying to pack a bunch into one bigger frustration than continually reworking it in dribs and drabs
+* one thing I'm not totally happy with is the 'pending' menu. putting the count of pending stuff at the top of the submenu keeps it tucked out of the way, but if you find you are clicking that and not 'commit' two weeks from now, I'll need to re-do it
+
+### menubar boring details
+
+* under the 'file' menu, I clipped the labels a bit
+* the 'undo' menu is fine
+* under the 'pages' menu, I pushed the page count and weight measure to a 'weight' flyout submenu, the 'sidebar and preview panels' submenu is now just 'sidebar', and the 'new x page' labels are clipped
+* under the 'database' menu, all the long backup gubbins is put into a 'backup' submenu, 'move media files' is renamed to 'locations', and 'file viewing statistics' is renamed to 'clear'
+* under the 'network' menu, 'downloader components' are folded into 'downloaders' and the 'logins' legacy label is pushed to the submenu. also, an ancient ancient and hacky tumblr GDPR click-through patch is removed
+* under the 'services' menu, we just have 'review', 'edit', and 'administrate'. this is another "manage" to "edit" change, which is nomenclature borne from a stupid old technical difference that doesn't matter to the end user and which I am slowly changing. also this weird 'import update files' job is pushed to an 'advanced' submenu
+* under the 'tags' menu, everything is cut to the bone and 'manage where siblings and parents apply' is pushed down to an 'advanced' submenu
+* under the 'pending' menu, the count is now pushed to the flyout submenu, making the top menu just your service names. should make it both thinner and less bouncy as things are pending/uploading in the background
+* under the 'help' menu, I clipped a couple things
+* I think I updated all the help docs to point to the new labels, but let me know if you see something I missed
+
+### executable manager
+
+* the executable manager is now real. check it out under the 'external programs' options page. it supports 'open single file' and 'open url' pipelines to start, and like other hydrus things the objects can be exported and shared between users in a bunch of ways
+* the 'default programs' options page uses the new executable manager. your existing launch paths will be converted to the new system. feel free to rename them. if you are feeling brave, poke around and make your own callable
+* when you do 'open externally' on a file or URL, it all works on the new system. this includes stuff like hyperlinks. the call is cleaner, more secure, and has nicer failure reporting
+* added a 'show PATH' button to the exe manager's process call edit panel. it throws up the PATH as hydrus sees it with a bit of blurb
+
+### exe manager boring stuff
+
+* on init or update, an exe manager is created and populated with defaults or a migration of your existing string launch paths
+* the exe manager now tracks dirty/clean status and is plugged into the normal manager save checker
+* the existing 'open url/file' options are converted to the new calls, and the new exe manager is populated with executables for the old launch paths
+* all the 'default programs' UI is converted to the new 'select which exe' system. it provides live choices from the current the 'external programs' page
+* hooked up some extra safety code to make sure the exe manager provides the fallback default OS call when there is nothing else set, and to remove defunct items on dialog ok and such
+* process calls in the executable manager system now clean their parameters on init, deserialisation, or simple dialog editing. newlines are removed, leading or trailing whitespace is stripped, and multiple whitespace is collapsed to single
+* wrote some migration code for the legacy string templates to the new executable callable objects
+* cleaned up the whole 'open url/file' pipeline of all sorts of old cruft, and updated it to work on media results rather than media singles (part of a long-time cleanup job). similarly deleted a bunch of old code
+* wrote more safety code to inject and fall back to the 'open with default OS call' for 'open file/url' calls that have no options set up for whatever reason
+* fixed some edge case harmless errors when hitting 'open file/url' in the media viewer in the moment it is closing
+* all the open file/url calls now catch the new exceptions and report in nice info popup dialogs when things go wrong
+* fixed some tucked away 'open this url' menu entries (stuff like the regex help link) that were using the wrong 'launch url' call in last week's multi-browser-launch-options refactor
+* refactored some 'populate exe manager with defaults' code to share the same call
+* refactored the executable manager action calls out of the manager to their own file and moved some 'open url with default browser' calls in there too
+* refactored the 'open help docs here' to better tapdance around the new 'open url' pipeline
+* wrote up a slender gui-executable-actions wrapper module for all 'open url/file' commands so if there is error, there is always an UI context upon which to throw up an information error message dialog. there is better testing and error reporting when trying to open a non-local file externally
+
 ## [Version 686](https://github.com/hydrusnetwork/hydrus/releases/tag/v686)
 
 ### misc
@@ -374,151 +480,3 @@ title: Changelog
 
 * I am making another future build this week. This is a special build with new libraries that I would like advanced users to test out so I know they are safe to fold into the normal release.
 * in the release post, I will link to this alternate build. if you are experienced and would like to help me, please check it out
-
-## [Version 679](https://github.com/hydrusnetwork/hydrus/releases/tag/v679)
-
-### misc
-
-* added a checkbox to `options->importing` to disable .cbz scanning. switch this off, and .cbzs will import or metadata-rescan as .zips
-* fixed a recent issue where the mouse could become perma-hidden in the media viewer when transitioning to an mpv window with the mouse clicked down (e.g. in archive/delete)
-* on Linux, I no longer set an application-associated desktop file on boot if you do not have a `io.github.hydrusnetwork.hydrus.desktop` file in your Applications dir(s). this fixes a warning many LInux users were seeing on boot
-
-### system tray
-
-* I gave the system tray hide/show tech a KISS pass. the main controls are now: 'left-click' the system tray will either (restore and) bring the program to the front, or, if it is already the front, minimise it. 'middle-click' the system tray does the full hide/show that disappears the gui from the taskbar. the 'system tray' options panel now says this specifically
-* when windows go through the hide/show cycle, they remember their state better. if a media viewer is minimised before the hide, it now remembers that
-* the system tray now has the 'minimise/close to system tray' and 'start in system tray' options in a new submenu. if there is a problem restoring from hide state (and thus you can't get to the options), there is now an escape hatch
-* restoring from minimise is also more reliable; if the main gui was maximised before the minimise, it remembers this better
-* some loop-de-doop systray icon double-click handling was removed. just middle-click it bro
-* the "doesn't work half the time" 'restore/minimise' menu option is removed from system-tray right-click. just left-click it bro
-
-### file embedded text clarity
-
-* the 'embedded metadata' text that many images have, and which you can review using the little document button up top of the media viewer, has never been great. it grabs everything our image decoder can see and spits it into something human-readable. today I clip out many common file metadata rows so that when you see this property, you'll actually see something rich and not the ten-thousandth instance of 'this is a jfif'
-* specifically, the keys of `jfif, jfif_unit, jfif_density, jfif_version, dpi, compression, resolution, srgb, gamma, and chromaticity` are no longer included in the metadata text. these are file property strings that PIL munged on load, not true embedded textual metadata. if a file has these tags (and if it has ICC profile data too), this is now presented in nice hardcoded lines below the embedded text box, same place it currently says 'progressive' and 'subsampling' for jpegs. less noise in the complex bit, more signal in the hardcoded bit!
-* I am NOT scheduling a 'has embedded text?' rescan on existing files just yet. there are more rows out there, like 'Software' and a bunch of 'adobe' stuff. I'll keep working here, and advanced users please give me your feedback, and when we've culled things to our satisfaction, I'll trigger a regen on all old files and we'll wipe out a whole bunch of false-positive 'has embedded text' flags and make this thing interesting and useful
-
-### custom temp dir
-
-* the `temp_dir` launch argument can now be relative to your userdir, like `~/blah/hydrus_temp`, or simply relative, `db/temp`, which will be treated as relative to the base install dir, and it'll now resolve properly
-* if you specify a dir that does not exist, hydrus will try to create it
-* if you specify a dir that does not have write permission, hydrus now raises an exception and boot is cancelled
-
-### faster manage tags
-
-* if you have the 'related tags' tag suggestions panel set up, the manage tags dialog is now much more careful about how it asks that guy to go fetch tags. previously, too many pages' of related tags could be searched for on init, and they were scheduled too aggressively, and on legit refresh calls we could get overlapping refreshes, all leading to wasted CPU work. I cleaned it up a bunch
-* if you have the 'file lookup scripts' tag suggestions panel set up, the manage tags dialog is now a frame or two faster to boot after first boot. the scripts are now cached rather than loaded for each service panel on each dialog load
-* on my fairly dense but session-light test client, this got manage tags on one file from 160ms down to 120ms load time
-
-### file maintenance updates
-
-* when files get metadata updates during file maintenance, e.g. it realises it has an ICC Profile when previously it did not think so, the file is now re-queued for search in all duplicates auto-resolution rules it is in with a pertinent status (i.e. did not match search, ready to test, failed test, passed test ready to action)
-* a bunch of 'ok this file has new metadata, reload the metadata object and redraw them thumb' signals are now more careful to only do that when the pertinent metadata actually changed
-* re-setting pixel hashes and perceptual hashes now skips the remove/set work if the desired hashes are already set
-
-### new client api projects
-
-* added a couple links to the client api help: first, one to 'hydit', which is a lightweight, feature-rich hydrus client for Android (https://github.com/BashCooler/hydit)
-* second, 'kaimen', which shows hydrus searches in your file explorer using virtual FUSE mounts (https://github.com/Dry-Leaf/kaimen)
-
-### some mostly boring duplicates cleanup/optimisation
-
-* added an index to optimise some duplicate-files setting code that would particularly slow down a client with many alternates
-* optimised a particular 'reset potential dupe search' update call that is used in various file relationship dissolve and 'remove alternate member' operations (and I think some triggered by normal but complicated duplicate-setting operations too as certain groups are merged)
-* optimised a number of sqlite delete calls, particularly in the duplicate files system, and particularly for clients with many dupes or alts, that were performing inefficiently on non-bleeding-edge versions of SQLite due to a particular dual-index OR clause
-* fixed a file domain filtering issue with the 'maintenance: fix orphan potential pairs' job in duplicates auto-resolution; in some cases it was adding pairs that were outside of the rule's location context
-
-* boring UI cleanup
-* did a big cleanup and decoupling refactor on the new TreeView test. all my code here needs a good cleanup as we integrate the new tech, because it is groaning under the weight of five rewrites, including a transition through UI engines from years ago, and there is weird stuff all over
-* decoupled the history panel from the new view, added some cleaner signals for close/reposition
-* decoupled the filter panel too, same deal
-* fixed filter panel focus-on-show
-* removed the Application-wide eventfilter hook, which was eating a ton of CPU, and redirected to an object focus hook and a new main gui geometry/window state change signal
-* removed some erroneous copy/paste spam from new code
-* did some method reordering and other linting cleanup
-* Main GUI no longer eventFilters itself just for minimise tracking
-
-## [Version 678](https://github.com/hydrusnetwork/hydrus/releases/tag/v678)
-
-### misc
-
-* audio files that have embedded images will now get thumbnails! all your existing audio files will be scheduled for a thumb regen on update
-* fixed the core ffmpeg video metadata info call to use the 'ffmpeg timeout' option, which by accident it wasn't. thank you for the reports here; this was what was stuck on 15 seconds timeout despite the new option
-* the file import object right-click menu now differentiates parsed tags from inherited tags, and the gallery import object right-click menu now shows inherited tags (issue #2056)
-* pdf documents that have empty human-readable file metadata text (this happens when they have no Title, Author, Subject, or Keywords) are now considered to have no such text. all pdfs are scheduled for a 'has human-readable text' regen on update
-
-### some more UI
-
-* thanks to a user, we have some more UI updates.
-* the options search system reveals some tucked-away widgets better and excludes some other things appropriately
-* there are new shortcut commands for the new per-player mute/unmute/flip-mute (issue #2050)
-* I fixed some issues with the per-player mute (issue #2049)
-* there's an `EXPERIMENTAL: Show tab tree view` setting under `options->gui pages` that has some neat new tech, with a tree to replace the existing tab-bar and some interesting flags to move the main page sidebar to the right. this needs a bit more work but is another thing we are playing with and will bring us a few steps towards a more modular 'place it where you like' UI layout
-
-### boring mute cleanup
-
-* tore out and rewrote the new per-player mute/unmute pipeline, fixing several issues related to mute check logic and subsequent state setting, also cleaned up some bad enum names and non-hooked-up signals (issue #2054)
-* for KISS, the Qt and mpv players no longer track mute options; they just handle the doing of it. the parent container now tracks and reacts to options changes and the new per-player state
-* the volume menu now offers a way to stop forcing mute/unmute
-
-### boring ffmpeg cleanup
-
-* added audio and image ffmpeg stream parsing
-* added image stream rendering for audio thumbnail gen
-* refactored the monolith thumbgen call, made it more reliable for weird failure cases
-* refactored ffmpeg rendering calls to their own file
-* misc ffmpeg calling and parsing refactoring and cleanup
-* removed defunct 'only render first second' frame-counting hack
-* deleted some redundant old psd ffmpeg code
-* added a note to the install help about FFMPEG on Linux (issue #2052)
-
-### other boring code cleanup
-
-* fixed and cleaned up the layout code and some options juggling in the new treeview experiment, cleaned up some misc splitter/sizes stuff along the way
-
-## [Version 677](https://github.com/hydrusnetwork/hydrus/releases/tag/v677)
-
-### misc
-
-* fixed an issue with last week's downloader metadata overhaul that broke some downloaders. specifically, when downloaders had a post with one file url and that file url was changed through normalisation (typically through a URL Class), metadata application was not working. if you had a twitter-type downloader that seemed not to add tags in v676 when there was only one file in the post, please queue up those downloads again in a new urls downloader page and they will get their tags and so on
-* the 'min time to view a file in x' settings in `options->file viewing statistics` are now minimum 50ms (previously 1s)
-* when doing 'special duplicate' on a shortcut with F12 as the key, it now jumps to F13 (issue #2042)
-* reduced the overhead on two important 'wait a moment' checks that many of the thread workers consult. previously, when checking if the pubsub or db were busy, threads would wake too frequently in busy periods and thrash as they competed for 'is busy' locks. now the pubsub and db themselves maintain a single 'I am idle' signal the waiters can wait nicely on without needing extra checks
-* the code that terminates and then kills a timed out subprocess (ffmpeg, typically) now catches permission errors better (issue #2046)
-* fixed a stupid typo from the non-interactive `setup_venv.py` mode that broke the 'advanced' manual, interactive install. I was so focused on the new thing, I didn't test the old thing to see it still worked
-
-### client api
-
-* fixed the new `/manage_pages/new_page` command for a 'page of pages' type and updated the unit test to catch this (issue #2044)
-* client api version is now 94
-
-### human-readable metadata fix and improvements
-
-* a user noticed my recent 'chara' file metadata parsing was causing issues for files with metadata that included non-text datatypes and spotted where it was happening. just a stupid logical typo that was causing a bunch of filres with human-readable metadata to parse as not having any at all. I have fixed this issue so these files will show up with metadata again, and it will render correctly
-* any image imported after june 2nd (v674) will get a 'has human-readable metadata?' rescan
-* I have hidden the 'progression/progressive' keys from human-readable metadata presentation; we scan this elsewhere and show it as 'progressive? yes/no' on the same panel. I think I'd like to do the same for some other stuff like the 'jfif' and 'dpi' gubbins you often see
-
-### modern animations and ffmpeg
-
-* tl;dr: fixed some video parsing bugs with the new ffmpeg 8.x.x. avifs and heifs with num_frames=1 should be fixed, you do not have to do anything
-* many users, including all windows built users, have been on ffmpeg 8.x.x for a while now, and my video metadata parser recently broke for the animated 'sequence' variants of AVIF, HEIC, and HEIF. these files were being parsed with a num_frames of 1 and rendering as just a still image or throwing an error depending on the renderer
-* hydrus now recognises when any video file has multiple tracks, and if one track seems to be just a still image file, it selects the true animation stream for fps calculations and so on
-* also, the native renderer will now recognise this situation; if there seems to be no second frame during a render run, it will inspect the file closer to see if there is a different video track to select
-* also, I updated the deprecated `vsync` ffmpeg call to be `fps_mode`. this was another source of errors for various native rendering with modern ffmpeg
-* also updatedk the old `-s` to a combined `-vf` line with optional crop
-* also updated the overcomplicated `-f image2pipe` to `-f rawvideo`. works the same, but it is semantically better and may fix some frame timings
-* also updated the core metadata parse routine to no longer render the first second of the vid at small scale since this is an old hack that burns CPU but isn't used for anything any more and crops resolution parsing to 120 height for certain formats in ffmpeg 8.x.x (old mpegs at least, by my test)
-* all animated AVIF, HEIF, and HEIC files are scheduled for a metadata reparse (issue #2041, #1891)
-
-### new thumbgrid drawing tech
-
-* I found some time to work on the new thumbgrid test. it is better integrated and I fixed some bugs, but there's still some stuff not working so I'll hold off on the wider test
-* so, just as a record, I did--
-   - fixing up some type hints
-   - misc refactoring
-   - undoing thumbnail movable/selectable flags to stop some inherent Qt behaviour stepping in on mouse events (this fixes ctrl+click selection, which was being pseudo-randomly undone I think in the QGraphicsScene event handling)
-   - thumbs now have their own selection bool
-   - moving click-event/selection responsibility to the GraphicsView since thumbs don't do anything but call the parent atm anyway
-   - fixed thumb resolution stuff for non-resolution-having media when cache entry is invalidated
-   - made thumbnail 'media' (and the new 'is_selected') bools public
-   - tiny bit of thumb gen optimisation

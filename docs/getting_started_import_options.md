@@ -3,9 +3,7 @@ title: Import Options
 ---
 
 !!! warning "THIS IS NEW"
-    This is a new system! All users will be migrated on v671 from the old file/tag/note options to a seven-part system!
-    
-    I am happy with the technical side of this, but it is not the most user-friendly. Most users never need to touch it, but if you frequently play around with custom import options, let me know what works well and badly and what in here or the UI is confusing.
+    I am happy with the technical side of this, but it is still not the most user-friendly. Most users never need to touch it, but if you frequently play around with custom import options, let me know what works well and badly and what in here or the UI is confusing.
 
 # Import Options
 
@@ -58,7 +56,7 @@ Note that the panel here says your 'Location Import Options' and 'Presentation I
 
 Let's say you have found a nice place to download from, but it has some pretty terrible tags. You decide you want to put those tags in a special place and filter out the bad stuff. You need to do a test download to test a new import options setup.
 
-By default, hydrus grabs all available tags from normal gallery-like sites and puts them in the 'downloader tags' local tag domain. For this example, we will say that you have hit up `services->manage services` and created a new local tag domain, "unreliable tags".
+By default, hydrus grabs all available tags from normal gallery-like sites and puts them in the 'downloader tags' local tag domain. For this example, we will say that you have hit up `services->edit` and created a new local tag domain, "unreliable tags".
 
 Opening up a new gallery downloader page, here is our default state for 'tag import options':
 
@@ -261,7 +259,7 @@ The bottom are:
 
 Generally speaking, you can just have a play around with the system and you'll get the feel for it.
 
-Since you may be copying from and then pasting onto seven separate sets of options, there are several kinds of paste:
+Since you may be copying from and then pasting onto multiple separate sets of options, there are several kinds of paste:
 
 [![](images/import_options_favourites_paste_menu.png)](images/import_options_favourites_paste_menu.png)
 

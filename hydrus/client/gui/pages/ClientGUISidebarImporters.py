@@ -12,7 +12,6 @@ from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientDefaults
 from hydrus.client import ClientGlobals as CG
 from hydrus.client import ClientLocation
-from hydrus.client import ClientPaths
 from hydrus.client import ClientThreading
 from hydrus.client.gui import ClientGUIAsync
 from hydrus.client.gui import ClientGUIDialogsMessage
@@ -22,6 +21,7 @@ from hydrus.client.gui import ClientGUILayout as CGL
 from hydrus.client.gui import ClientGUIMenus
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
 from hydrus.client.gui import QtPorting as QP
+from hydrus.client.gui.executables import ClientGUIExecutableActions
 from hydrus.client.gui.importing import ClientGUIFileSeedCache
 from hydrus.client.gui.importing import ClientGUIGallerySeedLog
 from hydrus.client.gui.importing import ClientGUIImport
@@ -446,7 +446,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
         
         media_results = []
         
-        panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+        panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
         
         panel.SetEmptyPageStatusOverride( 'no highlighted query' )
         
@@ -762,7 +762,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
                     
                     self._highlighted_gallery_import.PublishToPage( True )
                     
-                    panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+                    panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
                     
                     panel.SetEmptyPageStatusOverride( 'no files for this query and its publishing settings' )
                     
@@ -1075,7 +1075,7 @@ class SidebarImporterMultipleGallery( SidebarImporter ):
             
             media_results = CG.client_controller.Read( 'media_results', hashes, sorted = True )
             
-            panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+            panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
             
             self._page.SwapMediaResultsPanel( panel )
             
@@ -1549,7 +1549,7 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
         
         media_results = []
         
-        panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+        panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
         
         panel.SetEmptyPageStatusOverride( 'no highlighted watcher' )
         
@@ -1888,7 +1888,7 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
                     
                     self._highlighted_watcher.PublishToPage( True )
                     
-                    panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+                    panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
                     
                     panel.SetEmptyPageStatusOverride( 'no files for this watcher and its publishing settings' )
                     
@@ -1944,7 +1944,7 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
             
             for watcher in watchers:
                 
-                ClientPaths.LaunchURLInDefaultWebBrowser( watcher.GetURL() )
+                ClientGUIExecutableActions.OpenExternallyURLDefault( self, watcher.GetURL() )
                 
             
         
@@ -2156,7 +2156,7 @@ class SidebarImporterMultipleWatcher( SidebarImporter ):
             
             media_results = CG.client_controller.Read( 'media_results', hashes, sorted = True )
             
-            panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+            panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
             
             self._page.SwapMediaResultsPanel( panel )
             

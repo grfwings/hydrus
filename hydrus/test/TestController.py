@@ -35,6 +35,8 @@ from hydrus.client import ClientStrings
 from hydrus.client import ClientThreading
 from hydrus.client.caches import ClientCaches
 from hydrus.client.duplicates import ClientDuplicatesAutoResolution
+from hydrus.client.executables import ClientExecutableManager
+from hydrus.client.executables import ClientExecutableDefaults
 from hydrus.client.files import ClientFilesManager
 from hydrus.client.files import ClientFilesPhysical
 from hydrus.client.gui import ClientGUICallAfter
@@ -330,6 +332,10 @@ class Controller( object ):
         
         self.parsing_cache = ClientCaches.ParsingCache()
         
+        self.executable_manager = ClientExecutableManager.ExecutableManager()
+        
+        self.executable_manager.SetCallables( ClientExecutableDefaults.GetAllDefaults( True ) )
+        
         bandwidth_manager = ClientNetworkingBandwidth.NetworkBandwidthManager()
         session_manager = ClientNetworkingSessions.NetworkSessionManager()
         domain_manager = ClientNetworkingDomain.NetworkDomainManager()
@@ -418,7 +424,6 @@ class Controller( object ):
         self.images_cache = ClientCaches.ImageRendererCache( self )
         self.image_tiles_cache = ClientCaches.ImageTileCache( self )
         self.thumbnails_cache = ClientCaches.ThumbnailCache( self )
-        self.thumbnails_cache_graphics_view_test = ClientCaches.ThumbnailCacheGraphicsViewTest( self )
         
         self.server_session_manager = HydrusSessions.HydrusSessionManagerServer()
         

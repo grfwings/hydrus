@@ -22,6 +22,7 @@ from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.duplicates import ClientPotentialDuplicatesSearchContext
 from hydrus.client.files.images import ClientVisualData
 from hydrus.client.gui import ClientGUIAsync
+from hydrus.client.gui import ClientGUIDialogsDocumentation
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
 from hydrus.client.gui import ClientGUITopLevelWindowsPanels
@@ -51,7 +52,7 @@ class EditDuplicatesAutoResolutionRulesPanel( ClientGUIScrolledPanels.EditPanel 
         
         menu_template_items = []
         
-        call = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
+        call = HydrusData.Call( ClientGUIDialogsDocumentation.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
         
         menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
         
@@ -524,17 +525,14 @@ class EditPairActionsWidget( ClientGUICommon.StaticBox ):
             
         
         self._delete_a = QW.QCheckBox( self )
+        self._delete_a.setToolTip( ClientGUIFunctions.WrapToolTip( 'This sends the file to the trash.' ) )
+        
         self._delete_b = QW.QCheckBox( self )
+        self._delete_b.setToolTip( ClientGUIFunctions.WrapToolTip( 'This sends the file to the trash.' ) )
         
         self._use_default_duplicates_content_merge_options = QW.QCheckBox( self )
         
         self._custom_duplicate_content_merge_options = ClientGUIDuplicatesContentMergeOptions.EditDuplicateContentMergeOptionsWidget( self, HC.DUPLICATE_BETTER, ClientDuplicates.DuplicateContentMergeOptions(), can_expand = True, start_expanded = False )
-        
-        # TODO: a lovely panel that handles merge options lad
-        
-        # I really want this to be a live in-place widget, which means we'll have to dynamically update this guy with action as we switch things!!
-        # also, we'll want to disable/enable with the checkbox
-        # also, we'll want a favourites system, which the new staticbox could do
         
         #
         
@@ -1474,7 +1472,7 @@ class ReviewDuplicatesAutoResolutionPanel( QW.QWidget ):
         
         menu_template_items = []
         
-        call = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
+        call = HydrusData.Call( ClientGUIDialogsDocumentation.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES_AUTO_RESOLUTION )
         
         menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the duplicates auto-resolution help', 'Open the help page for duplicates auto-resolution in your web browser.', call ) )
         

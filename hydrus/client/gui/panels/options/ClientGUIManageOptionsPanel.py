@@ -69,20 +69,20 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
         self._listbook = ClientGUIListBook.ListBook( self, list_chars_width = 28 )
         
         self._listbook.AddPage( 'gui', GUIPanel.GUIPanel( self._listbook ) ) # leave this at the top, to make it default page
+        
+        external_programs_panel = ExternalProgramsPanel.ExternalProgramsPanel( self._listbook, self._new_options )
+        
+        self._listbook.AddPage( 'external programs', external_programs_panel )
+        
+        self._listbook.AddPage( 'open externally', OpenExternallyPanel.OpenExternallyPanel( self._listbook, external_programs_panel.GetExecutableManager ) )
+        
         self._listbook.AddPage( 'audio', AudioPanel.AudioPanel( self._listbook, self._new_options ) )
         self._listbook.AddPage( 'command palette', CommandPalettePanel.CommandPalettePanel( self._listbook, self._new_options ) )
         self._listbook.AddPage( 'colours', ColoursPanel.ColoursPanel( self._listbook ) )
         self._listbook.AddPage( 'connection', ConnectionPanel.ConnectionPanel( self._listbook ) )
-        self._listbook.AddPage( 'default programs', OpenExternallyPanel.OpenExternallyPanel( self._listbook) )
         self._listbook.AddPage( 'downloading', DownloadingPanel.DownloadingPanel( self._listbook, self._new_options ) )
         self._listbook.AddPage( 'duplicates', DuplicatesPanel.DuplicatesPanel( self._listbook, self._new_options ) )
         self._listbook.AddPage( 'exporting', ExportingPanel.ExportingPanel( self._listbook ) )
-        
-        if self._new_options.GetBoolean( 'advanced_mode' ):
-            
-            self._listbook.AddPage( 'external programs (TESTING)', ExternalProgramsPanel.ExternalProgramsPanel( self._listbook, self._new_options ) )
-            
-        
         self._listbook.AddPage( 'files and trash', FilesAndTrashPanel.FilesAndTrashPanel( self._listbook ) )
         self._listbook.AddPage( 'file search', FileSearchPanel.FileSearchPanel( self._listbook, self._new_options ) )
         self._listbook.AddPage( 'file sort/collect', FileSortCollectPanel.FileSortCollectPanel( self._listbook, self._new_options ) )
@@ -262,31 +262,6 @@ class ManageOptionsPanel( ClientGUIScrolledPanels.ManagePanel ):
             CG.client_controller.WriteSynchronous( 'save_options', HC.options )
             
             CG.client_controller.WriteSynchronous( 'serialisable', self._new_options )
-            
-            # TODO: move all this, including 'original options' gubbins, to the manageoptions call. this dialog shouldn't care about these signals
-            # we do this to convert tuples to lists and so on
-            test_new_options = self._new_options.Duplicate()
-            
-            if test_new_options.GetMediaViewOptions() != self._original_new_options.GetMediaViewOptions():
-                
-                CG.client_controller.pub( 'clear_image_tile_cache' )
-                
-            
-            res_changed = HC.options[ 'thumbnail_dimensions' ] != self._original_options[ 'thumbnail_dimensions' ]
-            type_changed = test_new_options.GetInteger( 'thumbnail_scale_type' ) != self._original_new_options.GetInteger( 'thumbnail_scale_type' )
-            dpr_changed = test_new_options.GetInteger( 'thumbnail_dpr_percent' ) != self._original_new_options.GetInteger( 'thumbnail_dpr_percent' )
-            
-            if res_changed or type_changed or dpr_changed:
-                
-                CG.client_controller.pub( 'clear_thumbnail_cache' )
-                
-            
-            curl_cffi_changes = self._original_new_options.GetNoneableString( 'curl_cffi_definition' ) != test_new_options.GetNoneableString( 'curl_cffi_definition' )
-            
-            if curl_cffi_changes:
-                
-                CG.client_controller.network_engine.session_manager.ReinitialiseSessions()
-                
             
         except Exception as e:
             

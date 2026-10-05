@@ -35,6 +35,99 @@
             <h1 id="changelog"><a href="#changelog">changelog</a></h1>
             <ul>
                 <li>
+                    <h2 id="version_689"><a href="#version_689">version 689</a></h2>
+                    <ul>
+                        <li><h3>all misc this week</h3></li>
+                        <li>with the tests complete, everyone is moved to the new 'GraphicsView' thumbnail rendering system. the old thumbnail grid rendering code and related thumb cache and other objects are deleted</li>
+                        <li>for local file services, you can now delete a deleted tag record in manage tags. if you are looking at a deleted tags (i.e. one with an X count, like `skirt (X1)`), then actioning it (double-click etc..) now gives you the option to either undelete it or clear its deletion record. the 'remove? yes/no' dialog that you may have set to appear when you hit the delete key will now say whether you are about to remove or purge your selection</li>
+                        <li>the daemon that deletes overflowing/old files from the trash (when you give the trash a max size or age under `options-&gt;files and trash`) is migrated from the old daemon type to the newer. it uses fewer database queries to work, has smarter and lower-latency work/sleep timings that cap out after a half-second of dynamically flexible work, no longer fights with the user if they happen to undelete the oldest trashed files while it is working, avoids work for the sixty seconds after you delete a file from anywhere, and deletes up to the satisfaction of the rules and no further (previously, it would work in batches and cut the trash down to way under the size/age the rules asked for)</li>
+                        <li>a 'is this file in use by another process?' test on to-be-imported files no longer attempts the 'rename file to itself' method in non-Windows. this test was false-positive failing on some POSIX systems with advanced permission setups and had no true-positive outcome</li>
+                        <li>the 'is this file in use by another process?' test now checks in with `flock` in non-Windows systems. it'll try to open a read on the file and grab an exclusive lock; if either fail, it says no. if this flock test causes permission issues in your storage setup, it _should_ still work while spitting info to log; you can turn it off completely with a new checkbox in `options-&gt;files and trash`</li>
+                        <li>fixed disappearing system tray icons on 'hide to system tray' on OSes with a Window Manager that needs a full QWidget for the system tray icon. thanks to the reporting user for figuring this out! (issue #2091)</li>
+                        <li>fixed the 'move left/right one tab/service page' and 'move to previous/next media' shortcut actions not being listed as choosable action types in the autocomplete shortcut set! (issue #2087)</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_688"><a href="#version_688">version 688</a></h2>
+                    <ul>
+                        <li><h3>run external program on import</h3></li>
+                        <li>when importing files, there is a new 'external programs import options'. it allows you to run a 'send single file' call every time a file imports with a result of 'successful (and new)', 'successful (already in db)', or both. if you are building a secondary database of your hydrus files, let's say some special duplicate or search data, you can now auto-populate this guy with your new imports</li>
+                        <li>when the import options panels are in simple mode, this new options type appears in global, local hard drive import, import folders, and specific import options. I expect most people who use this will want it for either a specific import folder or for everything</li>
+                        <li><h3>exe manager misc</h3></li>
+                        <li>I added a first draft of an 'executable manager' help page to https://hydrusnetwork.github.io/hydrus/external_programs.html . the options page now links to this</li>
+                        <li>the 'open externally (single file)' and 'open URL (single URL)' executable types are renamed to 'send single file' and 'send single URL'</li>
+                        <li>the 'default programs' options page is renamed back to 'open externally'</li>
+                        <li>if you import an local process call with any of: exe path longer than 256 characters; more than 16 parameters; or more than 1024 characters of parameters, then the import routine tells you about the weirdness, showing what is weird, and asks if you are yes/no ok to add it</li>
+                        <li><h3>import options</h3></li>
+                        <li>the `options-&gt;import options` panel now shows your favourites/presets in a new list. this is the stuff normally tucked into the 'star' button, just exposed better. it is all synced with the star button, so changes show up immediately</li>
+                        <li>the box-panels holding the three lists are now also collapsible, if you need more space</li>
+                        <li>added some simple texts to the boxes and tweaked some labels here. 'favourites' are now generally called 'favourites/presets'</li>
+                        <li>fixed the default/url class 'paste custom' menu option to actually boot the customise panel, rather than just doing a paste-merge</li>
+                        <li>the 'Pasted!' micro-notifications in the options panel no longer appear when the paste action is cancelled</li>
+                        <li><h3>misc</h3></li>
+                        <li>added `--non_interactive_update` launch switch, which makes the client auto-choose the recommended default choice if the update routine wants to ask the user a yes/no question. if you do headless/absent updates, let me know if this is sufficient</li>
+                        <li>the splash screen now prefers to use an svg, and I have drawn an svg for it to use. it looks like the old png. feel free to create your own `db_dir/static/hydrus_splash.svg`  (or .png) file and that will be used instead. it renders at 144x196, the size of the old png, but maybe we can adjust a little now we have the tech</li>
+                        <li>fixed a small blank box that was appearing in some stylesheets in the 'external call' box of the new exe manager UI</li>
+                        <li>fixed thumbnail redraw in the new thumbnail rendering tech when you change stylesheets or flip darkmode or change blurhash rendering</li>
+                        <li>fixed thumbnail redraw in the new thumbnail rendering tech when you change thumb border or margin</li>
+                        <li>yes/no dialogs (and some other 'quick' dialogs) now max out at ~48 lines of text height. they get a scrolling panel and everything, but if these guys want to dump a gigantic list or error traceback or something, they'll stop being a giant column</li>
+                        <li>all file imports will now assign 'ignored' status to a file that is 'already in db' but for which the file filtering options would deny (let's say you have an import folder set up to not get any pngs). previously, these files were set as 'already in db', before the file filtering checks had a chance to make a judgment, and since the file was therefore considered 'successful', additional metadata like tags could be applied even though the file would have been ignored otherwise. it will now be set as 'ignored' and no metadata added</li>
+                        <li>if you have multiple since/before time predicates of a particular type in a search (e.g. 'imported since two weeks ago' and 'imported since one week ago'), the search is now careful to select the most restrictive of those, satisfying both. previously it pseudorandomly selected one to use (issue #2089)</li>
+                        <li>fixed the 'x files were not in client' error label when you try to copy some non-sha256 hashes and not all of them can be found. it was counting wrong before and just saying the total selection size</li>
+                        <li>fixed right-clicking on files with unknown filetype (the new open-with executable stuff wasn't handling it correct)</li>
+                        <li>if the deferred physical delete system encounters a file with seemingly no file info, the system now stops deferred physical delete for that boot and gives the user a note that they should regen their local hashes cache. this symptom seems to be a knock-on from a desynced hash cache</li>
+                        <li><h3>boring stuff</h3></li>
+                        <li>refactored some 'manage options' stuff so it is less coupled to the dialog</li>
+                        <li>the favourite tags list is now only refreshed across your autocomplete dropdowns if it actually changes on an options ok</li>
+                        <li>some custom-colour widgets now only redraw themselves if darkmode actually flips on options ok</li>
+                        <li>fixed a mermaid chart in the 'virtual memory in linux' help</li>
+                    </ul>
+                </li>
+                <li>
+                    <h2 id="version_687"><a href="#version_687">version 687</a></h2>
+                    <ul>
+                        <li><h3>misc</h3></li>
+                        <li>the popup toaster is now very anti-taking-focus. if you navigating the thumbs via keyboard while popups bounce around doing their thing, particularly subs, they should now be less likely to steal focus from what you were doing. even clicking buttons shouldn't do it. this is mostly an experiment, so let me know how it works out</li>
+                        <li>updated `mkdocs-material` from `6.7.1` to `6.7.7` due to a dependbot alert about an XSS issue with the search box</li>
+                        <li><h3>simpler menubar</h3></li>
+                        <li>in an effort to make the main gui's top-level menubar menus thinner and easier to mouse through, a machete has been applied. long labels are reworked or banished, 'manage x...' is now generally just 'x...', and some 'x and y' are now 'x/y', and some big weird things are pushed down to a submenu. Some tooltips are altered to help. I apologise for the jolt to muscle memory here, but I've been meaning to do this for ages and I'm trying to pack a bunch into one bigger frustration than continually reworking it in dribs and drabs</li>
+                        <li>one thing I'm not totally happy with is the 'pending' menu. putting the count of pending stuff at the top of the submenu keeps it tucked out of the way, but if you find you are clicking that and not 'commit' two weeks from now, I'll need to re-do it</li>
+                        <li><h3>menubar boring details</h3></li>
+                        <li>under the 'file' menu, I clipped the labels a bit</li>
+                        <li>the 'undo' menu is fine</li>
+                        <li>under the 'pages' menu, I pushed the page count and weight measure to a 'weight' flyout submenu, the 'sidebar and preview panels' submenu is now just 'sidebar', and the 'new x page' labels are clipped</li>
+                        <li>under the 'database' menu, all the long backup gubbins is put into a 'backup' submenu, 'move media files' is renamed to 'locations', and 'file viewing statistics' is renamed to 'clear'</li>
+                        <li>under the 'network' menu, 'downloader components' are folded into 'downloaders' and the 'logins' legacy label is pushed to the submenu. also, an ancient ancient and hacky tumblr GDPR click-through patch is removed</li>
+                        <li>under the 'services' menu, we just have 'review', 'edit', and 'administrate'. this is another "manage" to "edit" change, which is nomenclature borne from a stupid old technical difference that doesn't matter to the end user and which I am slowly changing. also this weird 'import update files' job is pushed to an 'advanced' submenu</li>
+                        <li>under the 'tags' menu, everything is cut to the bone and 'manage where siblings and parents apply' is pushed down to an 'advanced' submenu</li>
+                        <li>under the 'pending' menu, the count is now pushed to the flyout submenu, making the top menu just your service names. should make it both thinner and less bouncy as things are pending/uploading in the background</li>
+                        <li>under the 'help' menu, I clipped a couple things</li>
+                        <li>I think I updated all the help docs to point to the new labels, but let me know if you see something I missed</li>
+                        <li><h3>executable manager</h3></li>
+                        <li>the executable manager is now real. check it out under the 'external programs' options page. it supports 'open single file' and 'open url' pipelines to start, and like other hydrus things the objects can be exported and shared between users in a bunch of ways</li>
+                        <li>the 'default programs' options page uses the new executable manager. your existing launch paths will be converted to the new system. feel free to rename them. if you are feeling brave, poke around and make your own callable</li>
+                        <li>when you do 'open externally' on a file or URL, it all works on the new system. this includes stuff like hyperlinks. the call is cleaner, more secure, and has nicer failure reporting</li>
+                        <li>added a 'show PATH' button to the exe manager's process call edit panel. it throws up the PATH as hydrus sees it with a bit of blurb</li>
+                        <li><h3>exe manager boring stuff</h3></li>
+                        <li>on init or update, an exe manager is created and populated with defaults or a migration of your existing string launch paths</li>
+                        <li>the exe manager now tracks dirty/clean status and is plugged into the normal manager save checker</li>
+                        <li>the existing 'open url/file' options are converted to the new calls, and the new exe manager is populated with executables for the old launch paths</li>
+                        <li>all the 'default programs' UI is converted to the new 'select which exe' system. it provides live choices from the current the 'external programs' page</li>
+                        <li>hooked up some extra safety code to make sure the exe manager provides the fallback default OS call when there is nothing else set, and to remove defunct items on dialog ok and such</li>
+                        <li>process calls in the executable manager system now clean their parameters on init, deserialisation, or simple dialog editing. newlines are removed, leading or trailing whitespace is stripped, and multiple whitespace is collapsed to single</li>
+                        <li>wrote some migration code for the legacy string templates to the new executable callable objects</li>
+                        <li>cleaned up the whole 'open url/file' pipeline of all sorts of old cruft, and updated it to work on media results rather than media singles (part of a long-time cleanup job). similarly deleted a bunch of old code</li>
+                        <li>wrote more safety code to inject and fall back to the 'open with default OS call' for 'open file/url' calls that have no options set up for whatever reason</li>
+                        <li>fixed some edge case harmless errors when hitting 'open file/url' in the media viewer in the moment it is closing</li>
+                        <li>all the open file/url calls now catch the new exceptions and report in nice info popup dialogs when things go wrong</li>
+                        <li>fixed some tucked away 'open this url' menu entries (stuff like the regex help link) that were using the wrong 'launch url' call in last week's multi-browser-launch-options refactor</li>
+                        <li>refactored some 'populate exe manager with defaults' code to share the same call</li>
+                        <li>refactored the executable manager action calls out of the manager to their own file and moved some 'open url with default browser' calls in there too</li>
+                        <li>refactored the 'open help docs here' to better tapdance around the new 'open url' pipeline</li>
+                        <li>wrote up a slender gui-executable-actions wrapper module for all 'open url/file' commands so if there is error, there is always an UI context upon which to throw up an information error message dialog. there is better testing and error reporting when trying to open a non-local file externally</li>
+                    </ul>
+                </li>
+                <li>
                     <h2 id="version_686"><a href="#version_686">version 686</a></h2>
                     <ul>
                         <li><h3>misc</h3></li>

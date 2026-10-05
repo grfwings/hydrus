@@ -925,7 +925,7 @@ class COLUMN_LIST_MANAGE_SERVICES( COLUMN_LIST_DEFINITION ):
     DELETABLE = 2
     
 
-column_list_type_name_lookup[ COLUMN_LIST_MANAGE_SERVICES.ID ] = 'manage services'
+column_list_type_name_lookup[ COLUMN_LIST_MANAGE_SERVICES.ID ] = 'edit services'
 
 register_column_type( COLUMN_LIST_MANAGE_SERVICES.ID, COLUMN_LIST_MANAGE_SERVICES.NAME, 'name', False, 20, True )
 register_column_type( COLUMN_LIST_MANAGE_SERVICES.ID, COLUMN_LIST_MANAGE_SERVICES.TYPE, 'type', False, 20, True )
@@ -940,13 +940,13 @@ class COLUMN_LIST_OPEN_EXTERNALLY( COLUMN_LIST_DEFINITION ):
     ID = 42
     
     FILE_TYPE = 0
-    LAUNCH_PATH = 1
+    EXTERNAL_CALL = 1
     
 
 column_list_type_name_lookup[ COLUMN_LIST_OPEN_EXTERNALLY.ID ] = 'open externally'
 
 register_column_type( COLUMN_LIST_OPEN_EXTERNALLY.ID, COLUMN_LIST_OPEN_EXTERNALLY.FILE_TYPE, 'filetype', False, 20, True )
-register_column_type( COLUMN_LIST_OPEN_EXTERNALLY.ID, COLUMN_LIST_OPEN_EXTERNALLY.LAUNCH_PATH, 'launch path', False, 30, True )
+register_column_type( COLUMN_LIST_OPEN_EXTERNALLY.ID, COLUMN_LIST_OPEN_EXTERNALLY.EXTERNAL_CALL, 'external call', False, 30, True )
 
 default_column_list_sort_lookup[ COLUMN_LIST_OPEN_EXTERNALLY.ID ] = ( COLUMN_LIST_OPEN_EXTERNALLY.FILE_TYPE, True )
 

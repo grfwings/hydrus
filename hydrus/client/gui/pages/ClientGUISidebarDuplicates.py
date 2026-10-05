@@ -13,6 +13,7 @@ from hydrus.client import ClientLocation
 from hydrus.client.duplicates import ClientPotentialDuplicatesManager
 from hydrus.client.duplicates import ClientPotentialDuplicatesPairFactory
 from hydrus.client.gui import ClientGUIAsync
+from hydrus.client.gui import ClientGUIDialogsDocumentation
 from hydrus.client.gui import ClientGUIDialogsMessage
 from hydrus.client.gui import ClientGUIDialogsQuick
 from hydrus.client.gui import ClientGUIFunctions
@@ -334,7 +335,7 @@ class PreparationPanel( QW.QWidget ):
         
         menu_template_items = []
         
-        page_func = HydrusData.Call( ClientGUIDialogsQuick.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES )
+        page_func = HydrusData.Call( ClientGUIDialogsDocumentation.OpenDocumentation, self, HC.DOCUMENTATION_DUPLICATES )
         
         menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCall( 'open the html duplicates help', 'Open the help page for duplicates processing in your web browser.', page_func ) )
         
@@ -811,7 +812,7 @@ class SidebarDuplicateFilter( ClientGUISidebarCore.Sidebar ):
             media_results = []
             
         
-        panel = ClientGUIMediaResultsPanelThumbnails.GetThumbnailPanelBridge( self._page, self._page_key, self._page_manager, media_results )
+        panel = ClientGUIMediaResultsPanelThumbnails.MediaResultsPanelThumbnails( self._page, self._page_key, self._page_manager, media_results )
         
         panel.SetEmptyPageStatusOverride( 'no dupes found' )
         

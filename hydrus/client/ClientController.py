@@ -236,7 +236,6 @@ class Controller( HydrusController.HydrusController ):
         self.call_after_catcher = ClientGUICallAfter.CallAfterEventCatcher( QW.QApplication.instance() )
         
         self.thumbnails_cache = None
-        self.thumbnails_cache_graphics_view_test = None
         
         Controller.my_instance = self
         
@@ -696,7 +695,6 @@ class Controller( HydrusController.HydrusController ):
         self.images_cache.Clear()
         self.image_tiles_cache.Clear()
         self.thumbnails_cache.Clear()
-        self.thumbnails_cache_graphics_view_test.Clear()
         
     
     def ClipboardHasImage( self ):
@@ -1274,6 +1272,7 @@ class Controller( HydrusController.HydrusController ):
         from hydrus.core import HydrusPaths
         
         HydrusPaths.DO_NOT_DO_CHMOD_MODE = self.new_options.GetBoolean( 'do_not_do_chmod_mode' )
+        HydrusPaths.DO_FLOCK_ALREADY_IN_USE_TEST_IN_POSIX = self.new_options.GetBoolean( 'do_flock_already_in_use_test_in_posix' )
         
         with self._thread_slot_lock:
             
@@ -1315,10 +1314,8 @@ class Controller( HydrusController.HydrusController ):
         
         self.images_cache = ClientCaches.ImageRendererCache( self )
         self.image_tiles_cache = ClientCaches.ImageTileCache( self )
+        # TODO: if this guy still needs a mainloop, formalise him all as a mainloop manager. atm he calls his own loop start argh
         self.thumbnails_cache = ClientCaches.ThumbnailCache( self )
-        # TODO: When you move this guy to being the only thumb cache, and when you clean up the thumbs rendering pipeline...
-        # if this guy still has a mainloop, move him to being a DAEMON and formalise it all as a manager. atm he calls his own loop start argh
-        self.thumbnails_cache_graphics_view_test = ClientCaches.ThumbnailCacheGraphicsViewTest( self )
         
         self.frame_splash_status.SetText( 'initialising managers' )
         
@@ -1383,6 +1380,23 @@ class Controller( HydrusController.HydrusController ):
             
         
         self.client_api_manager = client_api_manager
+        
+        from hydrus.client.executables import ClientExecutableManager
+        from hydrus.client.executables import ClientExecutableDefaults
+        
+        executable_manager = self.Read( 'serialisable', HydrusSerialisable.SERIALISABLE_TYPE_EXECUTABLE_MANAGER )
+        
+        if executable_manager is None:
+            
+            executable_manager = ClientExecutableManager.ExecutableManager()
+            
+            # this sets him dirty
+            executable_manager.SetCallables( ClientExecutableDefaults.GetAllDefaults( True ) )
+            
+            self.BlockingSafeShowCriticalMessage( 'Problem loading object', 'Your executable manager was missing on boot! I have recreated a new empty one. You will have to recreate/remap any executable calls you had set up, sorry! Please check that your hard drive and client are ok and let the hydrus dev know the details if there is a mystery.' )
+            
+        
+        self.executable_manager = executable_manager
         
         from hydrus.client.networking import ClientNetworkingBandwidth
         
@@ -1610,6 +1624,12 @@ class Controller( HydrusController.HydrusController ):
         self.import_folders_manager = ClientImportLocal.ImportFoldersManager( self )
         
         self._managers_with_mainloops.append( self.import_folders_manager )
+        
+        from hydrus.client.files import ClientTrashManager
+        
+        self.trash_maintenance_manager = ClientTrashManager.TrashMaintenanceManager( self )
+        
+        self._managers_with_mainloops.append( self.trash_maintenance_manager )
         
         from hydrus.client.importing import ClientImportSubscriptions
         
@@ -1897,10 +1917,6 @@ class Controller( HydrusController.HydrusController ):
         job.ShouldDelayOnWakeup( True )
         self._daemon_jobs[ 'export_folders' ] = job
         
-        job = self.CallRepeating( 30.0, 3600.0, ClientDaemons.DAEMONMaintainTrash )
-        job.ShouldDelayOnWakeup( True )
-        self._daemon_jobs[ 'maintain_trash' ] = job
-        
         job = self.CallRepeating( 0.0, 30.0, self.SaveDirtyObjectsImportant )
         job.WakeOnPubSub( 'important_dirt_to_clean' )
         self._daemon_jobs[ 'save_dirty_objects_important' ] = job
@@ -1921,6 +1937,7 @@ class Controller( HydrusController.HydrusController ):
         self.database_maintenance_manager.Start()
         self.duplicates_auto_resolution_manager.Start()
         self.import_folders_manager.Start()
+        self.trash_maintenance_manager.Start()
         self.subscriptions_manager.Start()
         
     
@@ -2055,6 +2072,15 @@ class Controller( HydrusController.HydrusController ):
                 self.WriteSynchronous( 'serialisable', self.client_api_manager )
                 
                 self.client_api_manager.SetClean()
+                
+            
+            if self.executable_manager.IsDirty():
+                
+                self.frame_splash_status.SetSubtext( 'executables' )
+                
+                self.WriteSynchronous( 'serialisable', self.executable_manager )
+                
+                self.executable_manager.SetClean()
                 
             
             if self.network_engine.domain_manager.IsDirty():
@@ -2358,11 +2384,6 @@ class Controller( HydrusController.HydrusController ):
         if self.thumbnails_cache is not None:
             
             self.thumbnails_cache.shutdown()
-            
-        
-        if self.thumbnails_cache_graphics_view_test is not None:
-            
-            self.thumbnails_cache_graphics_view_test.shutdown()
             
         
         if self._is_booted:
